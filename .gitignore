@@ -45,3 +45,13 @@ Thumbs.db
 
 # Uploads
 uploads/
+
+# Documentation files (exclude from Git)
+*.md
+!README.md
+
+# Scripts
+scripts/
+
+# Gemini directory
+.gemini/
