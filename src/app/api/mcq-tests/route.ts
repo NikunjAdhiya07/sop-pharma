@@ -121,7 +121,19 @@ export async function POST(request: NextRequest) {
     const attemptNumber = previousAttempts + 1;
 
     // Process answers and calculate score
-    const processedQuestions = [];
+    const processedQuestions: Array<{
+      questionIndex: number;
+      question: string;
+      aiIcon: string;
+      difficulty: string;
+      difficultyStars: string;
+      options: string[];
+      selectedAnswer: string;
+      correctAnswer: string;
+      isCorrect: boolean;
+      explanation: string;
+      sopReference: string;
+    }> = [];
     let correctAnswers = 0;
     let incorrectAnswers = 0;
     let skippedQuestions = 0;
