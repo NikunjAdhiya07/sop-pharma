@@ -1,0 +1,230 @@
+Standard Operating Procedure
+Quality Control Testing for Pharmaceutical Products
+
+SOP ID: SOP-QC-001
+Version: 1.0
+Effective Date: January 5, 2026
+Department: Quality Control
+Author: QC Manager
+
+1. PURPOSE
+This Standard Operating Procedure (SOP) describes the procedures for quality control testing of pharmaceutical products to ensure they meet established specifications and regulatory requirements.
+
+2. SCOPE
+This procedure applies to all quality control personnel in the testing laboratory who are responsible for performing physical, chemical, and microbiological testing of raw materials, in-process materials, and finished pharmaceutical products.
+
+3. RESPONSIBILITIES
+
+3.1 QC Manager
+- Oversees all testing activities and ensures compliance with this SOP
+- Reviews and approves all test results
+- Ensures proper training of QC personnel
+- Maintains testing equipment and calibration schedules
+
+3.2 QC Analyst
+- Performs testing procedures according to approved methods
+- Documents all test results accurately and completely
+- Reports out-of-specification results immediately
+- Maintains cleanliness and organization of testing area
+
+3.3 QA Manager
+- Reviews and approves final test reports
+- Conducts periodic audits of testing procedures
+- Ensures regulatory compliance
+- Approves deviations and investigations
+
+4. PROCEDURE
+
+4.1 Sample Receipt and Handling
+4.1.1 Upon receipt of samples:
+- Verify sample identification matches the sample request form
+- Check sample container integrity for any damage or contamination
+- Record sample temperature if temperature-sensitive
+- Log sample information in the Laboratory Information Management System (LIMS)
+- Assign unique sample identification number
+- Store samples under appropriate conditions (2-8°C for refrigerated items, room temperature for stable items)
+
+4.1.2 Sample Storage Requirements:
+- Refrigerated samples: 2-8°C
+- Frozen samples: -20°C or below
+- Room temperature samples: 15-25°C
+- Light-sensitive samples: Store in amber containers or dark area
+
+4.2 Testing Procedures
+
+4.2.1 Pre-Testing Requirements:
+- Review and understand the approved test method
+- Ensure all required equipment is available and calibrated
+- Verify reagents are within expiry dates
+- Wear appropriate Personal Protective Equipment (PPE)
+- Document environmental conditions (temperature, humidity)
+
+4.2.2 Testing Execution:
+- Follow approved test methods exactly as written
+- Use only calibrated and qualified equipment
+- Record all observations in real-time
+- Perform duplicate or triplicate testing when required by the method
+- Include appropriate controls (positive and negative)
+- Never backdate or pre-date entries
+
+4.2.3 Calculations and Data Recording:
+- Perform all calculations using validated formulas
+- Have a second analyst verify complex calculations
+- Record all raw data in permanent ink
+- Cross out errors with a single line and initial
+- Never use correction fluid or erase entries
+
+4.3 Documentation Requirements
+
+4.3.1 Test Records Must Include:
+- Sample identification and batch number
+- Test method reference and version
+- Date and time of testing
+- Analyst name and signature
+- Equipment identification numbers
+- Reagent lot numbers and expiry dates
+- All raw data and observations
+- Calculations and final results
+- Acceptance criteria and pass/fail determination
+
+4.3.2 Reporting Timeline:
+- Routine tests: Report results within 24 hours
+- Urgent tests: Report results within 4 hours
+- Microbiological tests: Report preliminary results in 24 hours, final results in 5-7 days
+- Stability samples: Report results within 48 hours
+
+4.3.3 Record Retention:
+- Archive all test records for minimum 5 years
+- Store in secure, climate-controlled area
+- Maintain electronic backups of all data
+- Ensure records are readily retrievable for audits
+
+4.4 Out-of-Specification (OOS) Results
+
+4.4.1 When OOS results are obtained:
+- Stop testing and notify QC Manager immediately
+- Do not discard sample or materials
+- Document all circumstances surrounding the test
+- Initiate OOS investigation within 24 hours
+- Perform retest only after investigation approval
+
+4.4.2 Investigation Requirements:
+- Review all raw data and calculations
+- Check equipment calibration status
+- Verify reagent quality and expiry
+- Interview analyst about testing conditions
+- Document all findings in investigation report
+- Determine root cause and corrective actions
+
+5. EQUIPMENT AND MATERIALS
+
+5.1 Required Equipment:
+- Analytical balance (calibrated quarterly)
+- pH meter (calibrated daily)
+- UV-Vis spectrophotometer (qualified annually)
+- HPLC system (qualified annually)
+- Dissolution apparatus (calibrated semi-annually)
+- Incubators (temperature mapped quarterly)
+- Microscope (calibrated annually)
+
+5.2 Reagents and Standards:
+- Use only ACS grade or higher reagents
+- Verify Certificate of Analysis for all standards
+- Label all reagents with receipt date and expiry
+- Store reagents according to manufacturer recommendations
+- Prepare fresh solutions as specified in test methods
+
+6. SAFETY REQUIREMENTS
+
+6.1 Personal Protective Equipment (PPE):
+- Laboratory coat (mandatory at all times)
+- Safety glasses with side shields
+- Nitrile gloves (change when contaminated)
+- Closed-toe shoes
+- Face shield when handling hazardous materials
+
+6.2 Chemical Handling:
+- Review Safety Data Sheets (SDS) before use
+- Use fume hood for volatile or toxic chemicals
+- Never pipette by mouth
+- Label all containers clearly
+- Dispose of chemical waste in designated containers
+
+6.3 Incident Reporting:
+- Report all spills, exposures, or injuries immediately
+- Complete incident report within 24 hours
+- Seek medical attention for any exposure
+- Notify supervisor and safety officer
+
+7. QUALITY CONTROL MEASURES
+
+7.1 System Suitability:
+- Perform system suitability tests before each analytical run
+- Document all system suitability parameters
+- Do not proceed with testing if system suitability fails
+- Investigate and resolve failures before continuing
+
+7.2 Control Samples:
+- Analyze control samples with each batch
+- Plot control results on control charts
+- Investigate trends or out-of-control points
+- Update control limits annually
+
+7.3 Proficiency Testing:
+- Participate in external proficiency testing programs
+- Review and document all proficiency test results
+- Investigate any unsatisfactory results
+- Implement corrective actions as needed
+
+8. TRAINING REQUIREMENTS
+
+8.1 Initial Training:
+- All new QC analysts must complete training on this SOP
+- Training must include both theoretical and practical components
+- Analysts must demonstrate competency before independent testing
+- Document all training in training records
+
+8.2 Ongoing Training:
+- Annual refresher training on this SOP
+- Training on any SOP revisions within 30 days
+- Competency assessment annually
+- Cross-training on multiple test methods
+
+9. DEVIATIONS
+
+9.1 Any deviation from this SOP must be:
+- Documented immediately
+- Reported to QC Manager
+- Investigated for impact on results
+- Approved by QA before continuing
+- Included in batch documentation
+
+10. REFERENCES
+
+10.1 Regulatory Guidelines:
+- FDA 21 CFR Part 211 - Current Good Manufacturing Practice
+- ICH Q7 - Good Manufacturing Practice for Active Pharmaceutical Ingredients
+- USP General Chapter <1058> - Analytical Instrument Qualification
+- ISO/IEC 17025 - General Requirements for Competence of Testing Laboratories
+
+10.2 Related SOPs:
+- SOP-QC-002: Equipment Calibration and Maintenance
+- SOP-QC-003: Laboratory Safety Procedures
+- SOP-QC-004: Handling of Out-of-Specification Results
+- SOP-QC-005: Documentation and Record Keeping
+
+11. REVISION HISTORY
+
+Version 1.0 - January 5, 2026 - Initial Release
+- Original document created and approved
+
+APPROVAL SIGNATURES:
+
+Prepared by: _________________ Date: _________
+QC Manager
+
+Reviewed by: _________________ Date: _________
+QA Manager
+
+Approved by: _________________ Date: _________
+Site Director
