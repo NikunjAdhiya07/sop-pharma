@@ -29,11 +29,11 @@ async function resetFailedSOPs() {
       }
 
       // Reset status to allow reprocessing
-      sop.status = 'pending';
+      sop.status = 'uploaded';
       sop.mcqCount = 0;
       await sop.save();
 
-      console.log(`✅ ${identifier}: Reset to 'pending' status`);
+      console.log(`✅ ${identifier}: Reset to 'uploaded' status`);
     }
 
     console.log('\n✅ All failed SOPs have been reset!');
