@@ -3,6 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
 import TestAssignment from '@/models/TestAssignment';
 import TestResult from '@/models/TestResult';
+import { logAction } from '@/lib/auditLogger';
 
 export async function GET() {
   try {
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
   try {
     await dbConnect();
 
-    const { username, password, name, role, employeeId, department, email, allowedSections } = await request.json();
+    const { username, password, name, role, employeeId, department, email, allowedSections, creatorInfo } = await request.json();
 
     if (!username || !password || !name) {
       return NextResponse.json(
@@ -99,6 +100,23 @@ export async function POST(request: Request) {
     });
 
     await newUser.save();
+
+    // Log the user creation
+    if (creatorInfo) {
+      await logAction({
+        action: 'USER_LOGIN', 
+        userId: creatorInfo.id,
+        username: creatorInfo.username,
+        userFullName: creatorInfo.name,
+        details: {
+          action: 'USER_CREATED',
+          newUserId: newUser._id,
+          newUsername: newUser.username,
+          newRole: newUser.role
+        },
+        request: request
+      });
+    }
 
     return NextResponse.json({
       success: true,

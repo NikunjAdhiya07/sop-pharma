@@ -73,11 +73,11 @@ const UserSchema = new mongoose.Schema<IUser>({
     default: function() {
       // Default sections based on role
       if (this.role === 'admin') {
-        return ['dashboard', 'sop-upload', 'mcq-bank', 'bulk-process', 'files-manager', 'admin', 'mcq-tests'];
+        return ['dashboard', 'sop-upload', 'mcq-bank', 'bulk-process', 'files-manager', 'admin', 'mcq-tests', 'sop-scheduler'];
       } else if (this.role === 'trainer') {
-        return ['dashboard', 'sop-upload', 'mcq-bank', 'mcq-tests'];
+        return ['dashboard', 'sop-upload', 'mcq-bank', 'mcq-tests', 'sop-scheduler'];
       } else {
-        return ['dashboard', 'mcq-tests'];
+        return ['dashboard', 'mcq-tests', 'sop-scheduler'];
       }
     },
   },

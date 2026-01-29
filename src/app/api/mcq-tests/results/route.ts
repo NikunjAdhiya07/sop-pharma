@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import MCQBankTestResult from '@/models/MCQBankTestResult';
+import User from '@/models/User';
+import { logAction } from '@/lib/auditLogger';
 
 // GET: Fetch test result details
 export async function GET(request: NextRequest) {
@@ -62,7 +64,7 @@ export async function PATCH(request: NextRequest) {
     await connectDB();
 
     const body = await request.json();
-    const { resultId } = body;
+    const { resultId, reviewerInfo } = body;
 
     if (!resultId) {
       return NextResponse.json(
@@ -78,13 +80,31 @@ export async function PATCH(request: NextRequest) {
         reviewedAt: new Date(),
       },
       { new: true }
-    );
+    ).populate('userId', 'name username');
 
     if (!result) {
       return NextResponse.json(
         { error: 'Test result not found' },
         { status: 404 }
       );
+    }
+
+    // Log the review action if reviewerInfo is provided
+    if (reviewerInfo) {
+      await logAction({
+        action: 'EXAM_EVALUATION',
+        userId: reviewerInfo.id,
+        username: reviewerInfo.username,
+        userFullName: reviewerInfo.name,
+        targetId: result._id,
+        targetName: result.testName,
+        details: {
+          examinedUserId: result.userId,
+          score: result.score,
+          reviewedAt: result.reviewedAt
+        },
+        request: request
+      });
     }
 
     return NextResponse.json({

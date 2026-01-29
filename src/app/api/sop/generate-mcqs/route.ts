@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
 import MCQBank from '@/models/MCQBank';
-import { generateMCQsFromSOP } from '@/lib/gemini';
+import { mcqQueue } from '@/lib/mcqQueue';
+import { logAction } from '@/lib/auditLogger';
 
 export async function POST(request: NextRequest) {
   try {
     await connectDB();
 
-    const { sopId, mcqBankId, targetCount } = await request.json();
+    const { sopId, mcqBankId, targetCount, userInfo } = await request.json();
 
     if (!sopId) {
       return NextResponse.json(
@@ -26,124 +27,62 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let existingBank = null;
-    let existingQuestions: string[] = [];
-
-    if (mcqBankId) {
-      existingBank = await MCQBank.findById(mcqBankId);
-      if (existingBank) {
-        existingQuestions = existingBank.mcqs.map(m => m.question);
-        console.log(`🔄 Generating MORE questions for bank: ${mcqBankId}. Current count: ${existingQuestions.length}`);
-      }
-    }
-
-    // Update SOP status to processing
-    sop.status = 'processing';
-    await sop.save();
-
-    try {
-      // Generate MCQs using Gemini with incremental saving
-      const result = await generateMCQsFromSOP({
-        sopContent: sop.content,
-        sopName: sop.name,
-        sopIdentifier: sop.identifier,
-        existingQuestions: existingQuestions,
-        targetCount: targetCount,
-        isBulk: false,
-        onBatchComplete: async (batchMcqs: any[]) => {
-          if (batchMcqs.length > 0) {
-            // Get the freshest bank state to avoid duplicates and race conditions
-            const currentBank = await MCQBank.findOne({ sopId: sop._id });
-            
-            if (!currentBank) {
-              // Create new bank if it doesn't exist
-              await MCQBank.create({
-                sopId: sop._id,
-                sopName: sop.name,
-                sopIdentifier: sop.identifier,
-                department: sop.department,
-                mcqs: batchMcqs,
-                totalQuestions: batchMcqs.length,
-                difficultyDistribution: {
-                  easy: batchMcqs.filter(m => m.difficulty === 'Easy').length,
-                  medium: batchMcqs.filter(m => m.difficulty === 'Medium').length,
-                  hard: batchMcqs.filter(m => m.difficulty === 'Hard').length,
-                },
-                aiModel: 'gemini-3-flash-preview',
-              });
-              console.log(`💾 Created NEW bank with first batch of ${batchMcqs.length} questions`);
-            } else {
-              // Get current question texts to filter out any accidental duplicates
-              const currentQuestions = new Set(currentBank.mcqs.map(m => m.question.replace(/^⭐\s*/, '').trim()));
-              
-              // Filter out duplicates from the new batch
-              const uniqueNewMcqs = batchMcqs.filter(m => {
-                const questionText = m.question.replace(/^⭐\s*/, '').trim();
-                return !currentQuestions.has(questionText);
-              });
-
-              if (uniqueNewMcqs.length > 0) {
-                // Append only unique questions
-                currentBank.mcqs = [...currentBank.mcqs, ...uniqueNewMcqs];
-                currentBank.totalQuestions = currentBank.mcqs.length;
-                
-                // Recalculate distribution
-                currentBank.difficultyDistribution = {
-                  easy: currentBank.mcqs.filter(m => m.difficulty === 'Easy').length,
-                  medium: currentBank.mcqs.filter(m => m.difficulty === 'Medium').length,
-                  hard: currentBank.mcqs.filter(m => m.difficulty === 'Hard').length,
-                };
-                
-                await currentBank.save();
-                console.log(`💾 Appended ${uniqueNewMcqs.length} unique questions to existing bank. Total: ${currentBank.mcqs.length}`);
-              }
-            }
-          }
-        }
+    // Check if it's already in the queue or being processed
+    // If it's already there, we'll just wait for it to complete
+    if (mcqQueue.isProcessing(sopId)) {
+      console.log(`⏳ SOP ${sopId} is already processing in the queue. Waiting for it...`);
+    } else {
+      // Add to queue with HIGH priority
+      mcqQueue.addTask({
+        sopId: sopId,
+        targetCount: targetCount || 100,
+        mcqBankId: mcqBankId,
+        priority: 10, // High priority for user-initiated clicks
       });
-
-      // Fetch the final state of the bank
-      const finalBank = await MCQBank.findOne({ sopId: sop._id });
-
-      // If no questions were generated at all AND no bank exists, THEN it's a failure
-      if ((!finalBank || finalBank.mcqs.length === 0) && result.mcqs.length === 0) {
-        sop.status = 'failed';
-        await sop.save();
-        return NextResponse.json(
-          { error: 'AI failed to generate any questions. Please try again when the service is less busy.' },
-          { status: 503 }
-        );
-      }
-
-      // Always update SOP status to completed if at least some questions exist now
-      sop.status = 'completed';
-      sop.processedAt = new Date();
-      sop.mcqCount = finalBank ? finalBank.mcqs.length : 0;
-      await sop.save();
-
-      return NextResponse.json({
-        success: true,
-        message: result.mcqs.length > 0 
-          ? (existingBank ? 'Additional MCQs generated' : 'MCQ Bank generated') 
-          : 'No additional MCQs could be generated at this time',
-        count: result.mcqs.length,
-        total: finalBank ? finalBank.mcqs.length : 0,
-        mcqBank: finalBank,
-      }, { status: 201 });
-
-    } catch (error) {
-      // Only set to failed if we don't have any questions yet
-      const currentBank = await MCQBank.findOne({ sopId: sop._id });
-      if (!currentBank || currentBank.mcqs.length === 0) {
-        sop.status = 'failed';
-        await sop.save();
-      } else {
-        // If we already had questions, keep it as completed
-        sop.status = 'completed';
-        await sop.save();
-      }
-      throw error;
+      
+      // Ensure the queue is running
+      // Note: In a real production app, you might have a worker process. 
+      // Here we start it if it's not already running.
+      mcqQueue.start().catch(err => console.error('Error starting queue:', err));
     }
+
+    // Wait for the task to complete (either the one we added or the one already there)
+    await mcqQueue.waitForTask(sopId);
+
+    // Fetch the final state of the bank
+    const finalBank = await MCQBank.findOne({ sopId: sop._id });
+
+    if (!finalBank || finalBank.mcqs.length === 0) {
+      return NextResponse.json(
+        { error: 'AI failed to generate questions or task failed.' },
+        { status: 500 }
+      );
+    }
+
+    // Log the MCQ generation activity if userInfo is provided
+    if (userInfo) {
+      await logAction({
+        action: 'MCQ_GENERATION',
+        userId: userInfo.id,
+        username: userInfo.username,
+        userFullName: userInfo.name,
+        targetId: finalBank._id,
+        targetName: finalBank.sopIdentifier,
+        details: {
+          sopId: sopId,
+          newTotalQuestions: finalBank.totalQuestions,
+          targetCount: targetCount
+        },
+        request: request
+      });
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'MCQ generation complete',
+      total: finalBank.mcqs.length,
+      mcqBank: finalBank,
+    }, { status: 200 });
 
   } catch (error) {
     console.error('Error generating MCQs:', error);

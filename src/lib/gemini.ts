@@ -16,6 +16,11 @@ export const geminiModel = genAI.getGenerativeModel({
   }
 });
 
+// Global state to coordinate between multiple concurrent SOP processing tasks
+let globalOverloadUntil = 0;
+const GLOBAL_OVERLOAD_PAUSE = 60000; // Wait at least 60s on any 503/429 error
+
+
 export interface MCQGenerationRequest {
   sopContent: string;
   sopName: string;
@@ -235,6 +240,14 @@ async function generateSingleBatch(
 ): Promise<GeneratedMCQ[]> {
   const MAX_RETRIES = 5;
   
+  // Coordinated check for global API lockout
+  const now = Date.now();
+  if (now < globalOverloadUntil) {
+    const waitTime = globalOverloadUntil - now;
+    console.warn(`⏳ Global Gemini lockout active. Waiting ${Math.round(waitTime/1000)}s before starting batch ${batchIndex + 1}...`);
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
+  
   // Only send recent questions to prevent prompt bloat
   const safeExistingQuestions = request.existingQuestions?.slice(-150) || [];
   
@@ -265,6 +278,9 @@ ${forbiddenSection}
 4. Explanations must be concise (max 2 sentences).
 5. Output MUST be valid JSON matching the schema below.
 6. ❌ **FORBIDDEN**: Do NOT create questions that ask about section references (e.g., "In section 4.4.2, what is stated?", "What does section X.Y say?"). Questions must focus on actual content, procedures, and concepts, NOT on section numbers or references.
+7. 💎 **UNIQUENESS**: Each question MUST be distinct. Do NOT repeat the same concept with slight variations in this batch.
+8. 🧩 **DEEP COVERAGE**: Cover DIFFERENT parts of the provided SOP. If you've already covered the basics, go into specific details, parameters, tolerances, and "if-then" scenarios mentioned in the text.
+9. 🚀 **EXHAUSTIVE**: Be exhaustive. Find every possible unique piece of information to form a question.
 
 📋 **SCHEMA:**
 {
@@ -302,12 +318,13 @@ Return ONLY the JSON. No additional text before or after.
       console.error(`🚨 Gemini API Error in batch ${batchIndex + 1}:`, apiError);
       
       const errorMessage = apiError.message || '';
+      const status = apiError.status || (apiError.response ? apiError.response.status : null);
       
       if (errorMessage.includes('fetch failed') || errorMessage.includes('ETIMEDOUT') || errorMessage.includes('ECONNREFUSED')) {
         console.warn(`🌐 Network/Connection issue detected. API endpoint might be temporarily unreachable.`);
         throw new Error(`Connection error: ${errorMessage}`);
-      } else if (errorMessage.includes('503') || errorMessage.includes('overloaded') || errorMessage.includes('Service Unavailable')) {
-        console.warn(`🔥 AI Model is currently OVERLOADED (503). Need a long pause.`);
+      } else if (status === 503 || status === 429 || errorMessage.includes('503') || errorMessage.includes('429') || errorMessage.includes('overloaded') || errorMessage.includes('Service Unavailable') || errorMessage.includes('Too Many Requests')) {
+        console.warn(`🔥 AI Model is currently OVERLOADED or RATE LIMITED (${status || 'API Error'}). Need a long pause.`);
         throw new Error(`Overloaded error: ${errorMessage}`);
       } else if (errorMessage.includes('API key')) {
         throw new Error(`Authentication error: Invalid or missing API key.`);
@@ -395,7 +412,18 @@ Return ONLY the JSON. No additional text before or after.
       if (error.message.includes('Connection error')) {
         delay = 5000 * Math.pow(1.5, retryCount);
       } else if (error.message.includes('Overloaded error')) {
-        delay = 30000; // Wait a full 30 seconds if overloaded
+        // Update global lockout to coordinate other concurrent tasks
+        const nextLockout = Date.now() + 60000;
+        if (nextLockout > globalOverloadUntil) {
+          globalOverloadUntil = nextLockout;
+          console.warn(`🛑 Setting global Gemini lockout for 60s due to 503/429 error.`);
+        }
+
+        // Aggressive exponential backoff for overloads: 45s, 90s, 180s...
+        // Added 0-15s jitter to prevent "thundering herd" effect
+        const jitter = Math.random() * 15000;
+        delay = (45000 * Math.pow(2, retryCount)) + jitter;
+        delay = Math.min(delay, 300000); // Max 5 minutes wait
       } else {
         delay = Math.min(2000 * Math.pow(2, retryCount), 15000);
       }
@@ -427,69 +455,103 @@ export async function generateMCQsFromSOP(
     TOTAL_TARGET = currentCount + 50;
   }
 
-  const BATCH_SIZE = 10; // Keep at 10 to avoid output truncation - 20 causes AI to exceed token limits
+  const BATCH_SIZE = 20; // Increased to 20 for faster generation - Flash model can handle this
   const NEEDED = Math.max(0, TOTAL_TARGET - currentCount);
   const NUM_BATCHES = Math.ceil(NEEDED / BATCH_SIZE);
+  // Process batches serially (1 at a time) to ensure the next batch knows what the previous one generated
+  // This is critical for uniqueness and hitting the target count accurately
+  const PARALLEL_BATCHES = 1; 
 
   console.log(`🚀 Starting ${request.isBulk ? 'BULK' : 'REGEN'} generation for: ${request.sopName}`);
-  console.log(`📊 Current: ${currentCount} | Target: ${TOTAL_TARGET} | Needed: ${NEEDED} (${NUM_BATCHES} batches)`);
+  console.log(`📊 Current: ${currentCount} | Target: ${TOTAL_TARGET} | Needed: ${NEEDED} (${NUM_BATCHES} batches, ${PARALLEL_BATCHES} parallel)`);
   
   let allMCQs: GeneratedMCQ[] = [];
   let currentExisting = [...(request.existingQuestions || [])];
   let failedBatchesCount = 0;
   let successBatchesCount = 0;
-  const MAX_BATCH_ATTEMPTS = NUM_BATCHES * 2; // Allow up to double the expected batches to hit target
+  // Allow more attempts, especially for smaller targets to ensure we hit progress
+  const MAX_BATCH_ATTEMPTS = Math.max(10, NUM_BATCHES * 4); 
 
+  // Process batches in parallel for faster generation
   while (allMCQs.length < NEEDED && (failedBatchesCount + successBatchesCount) < MAX_BATCH_ATTEMPTS) {
-    const currentBatchIndex = failedBatchesCount + successBatchesCount;
     const remainingNeeded = NEEDED - allMCQs.length;
-    const nextBatchSize = Math.min(BATCH_SIZE, remainingNeeded);
     
-    console.log(`📡 Fetching Chunk ${successBatchesCount + 1} (Progress: ${allMCQs.length}/${NEEDED})...`);
+    // Determine how many parallel batches to launch
+    const batchesToLaunch = Math.min(
+      PARALLEL_BATCHES,
+      Math.ceil(remainingNeeded / BATCH_SIZE)
+    );
     
-    try {
-      const batch = await generateSingleBatch(
-        { ...request, existingQuestions: currentExisting },
-        nextBatchSize,
-        currentBatchIndex,
-        NUM_BATCHES // Pass the original NUM_BATCHES for context in logs
-      );
+    console.log(`📡 Launching ${batchesToLaunch} parallel batches (Progress: ${allMCQs.length}/${NEEDED})...`);
+    
+    // Create parallel batch promises
+    const batchPromises = [];
+    for (let i = 0; i < batchesToLaunch; i++) {
+      const currentBatchIndex = failedBatchesCount + successBatchesCount + i;
+      const batchSize = Math.min(BATCH_SIZE, remainingNeeded - (i * BATCH_SIZE));
       
-      // Check if batch failed (returned empty array)
-      if (batch.length === 0) {
-        console.warn(`⚠️ Chunk ${currentBatchIndex + 1} returned 0 MCQs. Retrying later if attempts allow...`);
-        failedBatchesCount++;
-        // Add a small delay after a failure
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        continue;
+      if (batchSize > 0) {
+        batchPromises.push(
+          generateSingleBatch(
+            { ...request, existingQuestions: currentExisting },
+            batchSize,
+            currentBatchIndex,
+            NUM_BATCHES
+          ).then(batch => ({ batch, batchIndex: currentBatchIndex }))
+        );
       }
-      
-      successBatchesCount++;
-      allMCQs = [...allMCQs, ...batch];
-      currentExisting = [...currentExisting, ...batch.map(m => m.question)];
-      
-      console.log(`✅ Chunk ${successBatchesCount} added (${batch.length} MCQs). Total so far: ${allMCQs.length}/${NEEDED}`);
-      
-      // Call the incremental save callback if provided
-      if (request.onBatchComplete) {
-        try {
-          console.log(`💾 Saving chunk ${successBatchesCount} to database...`);
-          await request.onBatchComplete(batch);
-          console.log(`✅ Chunk ${successBatchesCount} saved successfully`);
-        } catch (saveError) {
-          console.error(`⚠️ Database save error for chunk ${successBatchesCount}:`, saveError);
+    }
+    
+    // Wait for all parallel batches to complete
+    const results = await Promise.allSettled(batchPromises);
+    
+    // Process results
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        const { batch, batchIndex } = result.value;
+        
+        if (batch.length === 0) {
+          console.warn(`⚠️ Batch ${batchIndex + 1} returned 0 MCQs.`);
+          failedBatchesCount++;
+        } else {
+          // Internal duplicate filtering against current progress
+          const uniqueBatch = batch.filter(mcq => {
+            const qClean = mcq.question.replace(/^⭐\s*/, '').trim().toLowerCase();
+            return !currentExisting.some(ex => ex.replace(/^⭐\s*/, '').trim().toLowerCase() === qClean);
+          });
+
+          if (uniqueBatch.length === 0) {
+            console.warn(`⚠️ Batch ${batchIndex + 1} produced ${batch.length} MCQs, but all were duplicates. Retrying with different focus...`);
+            failedBatchesCount++;
+          } else {
+            successBatchesCount++;
+            allMCQs = [...allMCQs, ...uniqueBatch];
+            currentExisting = [...currentExisting, ...uniqueBatch.map(m => m.question)];
+            
+            console.log(`✅ Batch ${batchIndex + 1} completed (${uniqueBatch.length} new, unique MCQs). Progress: ${allMCQs.length}/${NEEDED}`);
+            
+            // Call the incremental save callback if provided with ONLY unique MCQs
+            if (request.onBatchComplete) {
+              try {
+                console.log(`💾 Saving ${uniqueBatch.length} unique MCQs from batch ${batchIndex + 1} to database...`);
+                await request.onBatchComplete(uniqueBatch);
+                console.log(`✅ Unique batch saved successfully`);
+              } catch (saveError) {
+                console.error(`⚠️ Database save error for batch ${batchIndex + 1}:`, saveError);
+              }
+            }
+          }
         }
+      } else {
+        console.error(`❌ Batch promise rejected:`, result.reason);
+        failedBatchesCount++;
       }
-      
-      // Add delay between batches to prevent rate limiting
-      if (allMCQs.length < NEEDED) {
-        console.log(`⏳ Waiting 3 seconds before next chunk...`);
-        await new Promise(resolve => setTimeout(resolve, 3000));
-      }
-    } catch (error) {
-      console.error(`❌ Unexpected error in chunk ${currentBatchIndex + 1}:`, error);
-      failedBatchesCount++;
-      continue;
+    }
+    
+    // Add a shorter delay between parallel batch waves
+    if (allMCQs.length < NEEDED) {
+      console.log(`⏳ Waiting 1 second before next wave...`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }
 

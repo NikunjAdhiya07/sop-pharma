@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
+import { logAction } from '@/lib/auditLogger';
 
 export async function POST(request: Request) {
   try {
@@ -36,6 +37,16 @@ export async function POST(request: Request) {
     // Update last login
     user.lastLogin = new Date();
     await user.save();
+
+    // Log the login activity
+    await logAction({
+      action: 'USER_LOGIN',
+      userId: user._id,
+      username: user.username,
+      userFullName: user.name,
+      details: { role: user.role },
+      request: request
+    });
 
     // Return user data (excluding password)
     return NextResponse.json({

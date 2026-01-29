@@ -3,6 +3,7 @@ import connectDB from '@/lib/mongodb';
 import MCQBank from '@/models/MCQBank';
 import MCQBankTestResult from '@/models/MCQBankTestResult';
 import User from '@/models/User';
+import { logAction } from '@/lib/auditLogger';
 
 // GET: Fetch available MCQ banks for testing
 export async function GET(request: NextRequest) {
@@ -225,6 +226,32 @@ export async function POST(request: NextRequest) {
     const totalScore = allResults.reduce((sum, r) => sum + r.score, 0);
     user.averageScore = Math.round(totalScore / allResults.length);
     await user.save();
+
+    // Log the exam submission
+    await logAction({
+      action: 'EXAM_SUBMISSION',
+      userId: userId,
+      username: user.username,
+      userFullName: user.name,
+      targetId: mcqBankId,
+      targetName: mcqBank.sopIdentifier,
+      details: {
+        testId: testResult._id,
+        score: score,
+        isPassed: isPassed,
+        correctAnswers: correctAnswers,
+        totalQuestions: totalQuestions,
+        timeTaken: timeTaken,
+        attemptNumber: attemptNumber,
+        averageScoreSoFar: user.averageScore,
+        marksPerQuestion: processedQuestions.map(q => ({
+          index: q.questionIndex,
+          isCorrect: q.isCorrect,
+          difficulty: q.difficulty
+        }))
+      },
+      request: request
+    });
 
     return NextResponse.json({
       success: true,

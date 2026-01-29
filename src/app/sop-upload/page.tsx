@@ -152,7 +152,10 @@ export default function SOPUploadPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ sopId: uploadedSOP.id }),
+        body: JSON.stringify({ 
+          sopId: uploadedSOP.id,
+          targetCount: 100
+        }),
       });
 
       const data = await response.json();

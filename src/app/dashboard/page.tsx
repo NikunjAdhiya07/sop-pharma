@@ -16,7 +16,8 @@ import {
   Shield,
   Activity,
   BarChart3,
-  Zap
+  Zap,
+  Calendar
 } from 'lucide-react';
 
 interface UserData {
@@ -30,6 +31,12 @@ export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({
+    totalSOPs: 0,
+    totalMCQBanks: 0,
+    totalQuestions: 0,
+    lastActivity: null as string | null
+  });
 
   useEffect(() => {
     // Check if user is logged in
@@ -39,9 +46,22 @@ export default function DashboardPage() {
       return;
     }
 
+    const fetchStats = async () => {
+      try {
+        const response = await fetch('/api/dashboard/stats');
+        const data = await response.json();
+        if (data.success) {
+          setStats(data.stats);
+        }
+      } catch (error) {
+        console.error('Error fetching stats:', error);
+      }
+    };
+
     try {
       const parsedUser = JSON.parse(userData);
       setUser(parsedUser);
+      fetchStats();
     } catch (error) {
       console.error('Error parsing user data:', error);
       router.push('/login');
@@ -49,6 +69,18 @@ export default function DashboardPage() {
       setLoading(false);
     }
   }, [router]);
+
+  const formatLastActivity = (dateStr: string | null) => {
+    if (!dateStr) return 'No activity';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+    if (diffInSeconds < 60) return 'Just now';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`;
+    return `${Math.floor(diffInSeconds / 86400)} days ago`;
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('user');
@@ -147,62 +179,70 @@ export default function DashboardPage() {
 
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-            <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-6 border border-white/20 hover:border-purple-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-purple-500/10 group">
-              <div className="flex items-center justify-between mb-4">
-                <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-3 rounded-xl shadow-lg group-hover:scale-110 transition-transform">
-                  <FileText className="h-7 w-7 text-white" />
+            <Link href="/files-manager" className="block">
+              <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-6 border border-white/20 hover:border-purple-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-purple-500/10 group cursor-pointer h-full">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-3 rounded-xl shadow-lg group-hover:scale-110 transition-transform">
+                    <FileText className="h-7 w-7 text-white" />
+                  </div>
+                  <div className="flex items-center space-x-1 text-green-400">
+                    <TrendingUp className="h-4 w-4" />
+                    <span className="text-xs font-semibold">+12%</span>
+                  </div>
                 </div>
-                <div className="flex items-center space-x-1 text-green-400">
-                  <TrendingUp className="h-4 w-4" />
-                  <span className="text-xs font-semibold">+12%</span>
-                </div>
+                <p className="text-gray-400 text-sm font-medium mb-1">Total SOPs</p>
+                <p className="text-4xl font-bold text-white mb-1">{stats.totalSOPs}</p>
+                <p className="text-xs text-gray-500">Active documents</p>
               </div>
-              <p className="text-gray-400 text-sm font-medium mb-1">Total SOPs</p>
-              <p className="text-4xl font-bold text-white mb-1">24</p>
-              <p className="text-xs text-gray-500">Active documents</p>
-            </div>
+            </Link>
 
-            <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-6 border border-white/20 hover:border-pink-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-pink-500/10 group">
-              <div className="flex items-center justify-between mb-4">
-                <div className="bg-gradient-to-br from-pink-500 to-pink-600 p-3 rounded-xl shadow-lg group-hover:scale-110 transition-transform">
-                  <BookOpen className="h-7 w-7 text-white" />
+            <Link href="/mcq-bank" className="block">
+              <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-6 border border-white/20 hover:border-pink-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-pink-500/10 group cursor-pointer h-full">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="bg-gradient-to-br from-pink-500 to-pink-600 p-3 rounded-xl shadow-lg group-hover:scale-110 transition-transform">
+                    <BookOpen className="h-7 w-7 text-white" />
+                  </div>
+                  <div className="flex items-center space-x-1 text-green-400">
+                    <TrendingUp className="h-4 w-4" />
+                    <span className="text-xs font-semibold">+8%</span>
+                  </div>
                 </div>
-                <div className="flex items-center space-x-1 text-green-400">
-                  <TrendingUp className="h-4 w-4" />
-                  <span className="text-xs font-semibold">+8%</span>
-                </div>
+                <p className="text-gray-400 text-sm font-medium mb-1">MCQ Banks</p>
+                <p className="text-4xl font-bold text-white mb-1">{stats.totalMCQBanks}</p>
+                <p className="text-xs text-gray-500">Generated banks</p>
               </div>
-              <p className="text-gray-400 text-sm font-medium mb-1">MCQ Banks</p>
-              <p className="text-4xl font-bold text-white mb-1">18</p>
-              <p className="text-xs text-gray-500">Generated banks</p>
-            </div>
+            </Link>
 
-            <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-6 border border-white/20 hover:border-emerald-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-emerald-500/10 group">
-              <div className="flex items-center justify-between mb-4">
-                <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-3 rounded-xl shadow-lg group-hover:scale-110 transition-transform">
-                  <ClipboardCheck className="h-7 w-7 text-white" />
+            <Link href="/mcq-bank" className="block">
+              <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-6 border border-white/20 hover:border-emerald-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-emerald-500/10 group cursor-pointer h-full">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-3 rounded-xl shadow-lg group-hover:scale-110 transition-transform">
+                    <ClipboardCheck className="h-7 w-7 text-white" />
+                  </div>
+                  <div className="flex items-center space-x-1 text-green-400">
+                    <TrendingUp className="h-4 w-4" />
+                    <span className="text-xs font-semibold">+24%</span>
+                  </div>
                 </div>
-                <div className="flex items-center space-x-1 text-green-400">
-                  <TrendingUp className="h-4 w-4" />
-                  <span className="text-xs font-semibold">+24%</span>
-                </div>
+                <p className="text-gray-400 text-sm font-medium mb-1">Total Questions</p>
+                <p className="text-4xl font-bold text-white mb-1">{stats.totalQuestions.toLocaleString()}</p>
+                <p className="text-xs text-gray-500">Ready to use</p>
               </div>
-              <p className="text-gray-400 text-sm font-medium mb-1">Total Questions</p>
-              <p className="text-4xl font-bold text-white mb-1">1,247</p>
-              <p className="text-xs text-gray-500">Ready to use</p>
-            </div>
+            </Link>
 
-            <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-6 border border-white/20 hover:border-blue-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/10 group">
-              <div className="flex items-center justify-between mb-4">
-                <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-3 rounded-xl shadow-lg group-hover:scale-110 transition-transform">
-                  <Activity className="h-7 w-7 text-white" />
+            <Link href="/mcq-bank" className="block">
+              <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-6 border border-white/20 hover:border-blue-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/10 group cursor-pointer h-full">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-3 rounded-xl shadow-lg group-hover:scale-110 transition-transform">
+                    <Activity className="h-7 w-7 text-white" />
+                  </div>
+                  <Clock className="h-5 w-5 text-gray-400" />
                 </div>
-                <Clock className="h-5 w-5 text-gray-400" />
+                <p className="text-gray-400 text-sm font-medium mb-1">Last Activity</p>
+                <p className="text-2xl font-bold text-white mb-1 truncate">{formatLastActivity(stats.lastActivity)}</p>
+                <p className="text-xs text-gray-500">MCQ generation</p>
               </div>
-              <p className="text-gray-400 text-sm font-medium mb-1">Last Activity</p>
-              <p className="text-2xl font-bold text-white mb-1">2 hours ago</p>
-              <p className="text-xs text-gray-500">MCQ generation</p>
-            </div>
+            </Link>
           </div>
 
           {/* Quick Actions */}
@@ -293,6 +333,62 @@ export default function DashboardPage() {
                     <li className="flex items-center">
                       <span className="w-2 h-2 bg-blue-400 rounded-full mr-3 group-hover:animate-pulse"></span>
                       <span className="text-sm">Review answers</span>
+                    </li>
+                  </ul>
+                </div>
+              </Link>
+
+              <Link href="/sop-scheduler">
+                <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20 hover:border-indigo-500 transition-all duration-300 transform hover:scale-[1.02] hover:shadow-2xl hover:shadow-indigo-500/20 cursor-pointer group h-full">
+                  <div className="flex items-center mb-6">
+                    <div className="bg-gradient-to-br from-indigo-600 to-purple-600 p-4 rounded-xl mr-4 group-hover:scale-110 transition-transform shadow-lg shadow-indigo-500/50">
+                      <Calendar className="h-8 w-8 text-white" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-white">SOP Scheduler</h2>
+                  </div>
+                  <p className="text-gray-300 text-base mb-6 leading-relaxed">
+                    Centralized training management. Track progress, monitor performance, and allocate tasks.
+                  </p>
+                  <ul className="space-y-3 text-gray-400">
+                    <li className="flex items-center">
+                      <span className="w-2 h-2 bg-indigo-400 rounded-full mr-3 group-hover:animate-pulse"></span>
+                      <span className="text-sm">Trainee Progress Tracking</span>
+                    </li>
+                    <li className="flex items-center">
+                      <span className="w-2 h-2 bg-indigo-400 rounded-full mr-3 group-hover:animate-pulse"></span>
+                      <span className="text-sm">Task Allocation</span>
+                    </li>
+                    <li className="flex items-center">
+                      <span className="w-2 h-2 bg-indigo-400 rounded-full mr-3 group-hover:animate-pulse"></span>
+                      <span className="text-sm">Performance Data Analytics</span>
+                    </li>
+                  </ul>
+                </div>
+              </Link>
+
+              <Link href="/test/specific">
+                <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20 hover:border-yellow-500 transition-all duration-300 transform hover:scale-[1.02] hover:shadow-2xl hover:shadow-yellow-500/20 cursor-pointer group h-full">
+                  <div className="flex items-center mb-6">
+                    <div className="bg-gradient-to-br from-yellow-600 to-orange-600 p-4 rounded-xl mr-4 group-hover:scale-110 transition-transform shadow-lg shadow-yellow-500/50">
+                      <Zap className="h-8 w-8 text-white" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-white">Specific Test</h2>
+                  </div>
+                  <p className="text-gray-300 text-base mb-6 leading-relaxed">
+                    Test yourself with instant feedback. See correct answers and explanations immediately after each choice.
+                  </p>
+                  <ul className="space-y-3 text-gray-400">
+                    <li className="flex items-center">
+                      <span className="w-2 h-2 bg-yellow-400 rounded-full mr-3 group-hover:animate-pulse"></span>
+                      <span className="text-sm">Instant feedback</span>
+                    </li>
+                    <li className="flex items-center">
+                      <span className="w-2 h-2 bg-yellow-400 rounded-full mr-3 group-hover:animate-pulse"></span>
+                      <span className="text-sm">Detailed explanations</span>
+                    </li>
+                    <li className="flex items-center">
+                      <span className="w-2 h-2 bg-yellow-400 rounded-full mr-3 group-hover:animate-pulse"></span>
+                      <span className="text-sm">Learn as you go</span>
                     </li>
                   </ul>
                 </div>

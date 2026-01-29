@@ -82,7 +82,9 @@ export default function MCQBankPage() {
         },
         body: JSON.stringify({
           sopId: sopId,
-          mcqBankId: bankId
+          mcqBankId: bankId,
+          targetCount: 100,
+          userInfo: JSON.parse(localStorage.getItem('user') || '{}')
         }),
       });
 
@@ -315,7 +317,7 @@ export default function MCQBankPage() {
                     ) : (
                       <>
                         <Plus className="h-4 w-4 mr-2" />
-                        Generate More (+50)
+                        Generate More (to 100)
                       </>
                     )}
                   </button>

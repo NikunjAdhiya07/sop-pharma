@@ -10,7 +10,8 @@ import {
   ArrowLeft,
   ChevronRight,
   ClipboardCheck,
-  Star
+  Star,
+  Zap
 } from 'lucide-react';
 
 const testTypes = [
@@ -63,6 +64,16 @@ const testTypes = [
     hoverBorder: 'hover:border-red-500',
     lightColor: 'text-red-400',
     path: '/test/kapa'
+  },
+  {
+    id: 'specific',
+    title: 'Specific Training Test',
+    description: 'Test yourself with instant feedback. See correct answers and explanations immediately after each choice.',
+    icon: Zap,
+    color: 'from-yellow-600 to-orange-600',
+    hoverBorder: 'hover:border-yellow-500',
+    lightColor: 'text-yellow-400',
+    path: '/test/specific'
   }
 ];
 

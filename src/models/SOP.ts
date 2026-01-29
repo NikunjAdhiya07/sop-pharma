@@ -16,6 +16,8 @@ export interface ISOP extends Document {
     pageCount?: number;
     wordCount?: number;
   };
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const SOPSchema = new Schema<ISOP>({

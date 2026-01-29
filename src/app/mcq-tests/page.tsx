@@ -17,6 +17,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   XCircle,
+  Zap,
 } from 'lucide-react';
 
 interface MCQBank {
@@ -165,6 +166,13 @@ export default function MCQTestsPage() {
               >
                 <ArrowLeft className="h-5 w-5" />
                 Dashboard
+              </button>
+              <button
+                onClick={() => router.push('/test/specific')}
+                className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl border border-blue-500/50 transition-all shadow-lg shadow-blue-500/20"
+              >
+                <Zap className="h-5 w-5" />
+                ⚡ Specific Test Center
               </button>
             </div>
           </div>

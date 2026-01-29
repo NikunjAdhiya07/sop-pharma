@@ -135,7 +135,7 @@ export default function FilesManagerPage() {
 
     // Confirm action
     const confirmed = window.confirm(
-      `This will generate approximately 50 MCQs from each of the ${files.length} uploaded file(s). This may take several minutes. Continue?`
+      `This will generate approximately 100 MCQs from each of the ${files.length} uploaded file(s). This may take several minutes. Continue?`
     );
 
     if (!confirmed) return;
@@ -184,7 +184,7 @@ export default function FilesManagerPage() {
 
                 if (progressData.completed + progressData.failed === progressData.total) {
                   // Generation complete
-                  const totalMCQs = progressData.completed * 50; // Approximate
+                  const totalMCQs = progressData.completed * 100; // Approximate
                   setSuccess(
                     `Bulk generation complete! Generated MCQs from ${progressData.completed} file(s). ` +
                     `${progressData.failed > 0 ? `${progressData.failed} file(s) failed.` : ''}`
@@ -383,7 +383,7 @@ export default function FilesManagerPage() {
             Bulk MCQ Generation
           </h2>
           <p className="text-gray-300 mb-6">
-            Generate approximately 50 MCQs from each uploaded file with full error checking and validation.
+            Generate approximately 100 MCQs from each uploaded file with full concurrent processing and validation.
           </p>
 
           {progress && (

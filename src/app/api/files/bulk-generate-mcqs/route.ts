@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
-import MCQBank from '@/models/MCQBank';
-import { generateMCQsFromSOP } from '@/lib/gemini';
+import { mcqQueue } from '@/lib/mcqQueue';
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,111 +20,47 @@ export async function POST(request: NextRequest) {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
-        let completed = 0;
-        let failed = 0;
-        const errors: Array<{ fileName: string; error: string }> = [];
+        // Add all SOPs to the global singleton queue
+        const tasks = sops.map(sop => ({
+          sopId: sop._id.toString(),
+          targetCount: 100,
+          priority: 1, // Normal priority for bulk
+        }));
 
-        for (const sop of sops) {
-          try {
-            // Send progress update
-            const progress = {
-              total: sops.length,
-              completed,
-              failed,
-              current: sop.name,
-              errors,
-            };
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify(progress)}\n\n`)
-            );
+        mcqQueue.addBulkTasks(tasks);
+        console.log(`📋 Added ${tasks.length} SOPs to the global concurrent processing queue`);
 
-            // Update SOP status to processing
-            sop.status = 'processing';
-            await sop.save();
-
-            // Check if MCQ bank already exists
-            let existingBank = await MCQBank.findOne({ sopId: sop._id });
-            let existingQuestions: string[] = [];
-
-            if (existingBank) {
-              existingQuestions = existingBank.mcqs.map(m => m.question);
-              console.log(`🔄 Regenerating MCQs for: ${sop.name}. Current count: ${existingQuestions.length}`);
-            }
-
-            // Generate MCQs using Gemini
-            const result = await generateMCQsFromSOP({
-              sopContent: sop.content,
-              sopName: sop.name,
-              sopIdentifier: sop.identifier,
-              existingQuestions: existingQuestions,
-            });
-
-            let mcqBank;
-            if (existingBank) {
-              // Append to existing bank
-              existingBank.mcqs = [...existingBank.mcqs, ...result.mcqs];
-              existingBank.totalQuestions = existingBank.mcqs.length;
-
-              // Recalculate distribution
-              existingBank.difficultyDistribution = {
-                easy: existingBank.mcqs.filter(m => m.difficulty === 'Easy').length,
-                medium: existingBank.mcqs.filter(m => m.difficulty === 'Medium').length,
-                hard: existingBank.mcqs.filter(m => m.difficulty === 'Hard').length,
-              };
-
-              await existingBank.save();
-              mcqBank = existingBank;
-              console.log(`✅ Appended ${result.mcqs.length} new questions to existing bank for ${sop.name}`);
-            } else {
-              // Create new MCQ Bank
-              mcqBank = await MCQBank.create({
-                sopId: sop._id,
-                sopName: sop.name,
-                sopIdentifier: sop.identifier,
-                department: sop.department,
-                mcqs: result.mcqs,
-                totalQuestions: result.mcqs.length,
-                difficultyDistribution: result.difficultyDistribution,
-                aiModel: result.aiModel,
-              });
-              console.log(`✅ Created NEW bank with ${result.mcqs.length} questions for ${sop.name}`);
-            }
-
-            // Update SOP status
-            sop.status = 'completed';
-            sop.processedAt = new Date();
-            sop.mcqCount = mcqBank.mcqs.length;
-            await sop.save();
-
-            completed++;
-
-          } catch (error) {
-            console.error(`Error generating MCQs for ${sop.name}:`, error);
-            
-            // Update SOP status to failed
-            sop.status = 'failed';
-            await sop.save();
-
-            failed++;
-            errors.push({
-              fileName: sop.name,
-              error: error instanceof Error ? error.message : 'Unknown error'
-            });
-          }
-        }
-
-        // Send final progress update
-        const finalProgress = {
-          total: sops.length,
-          completed,
-          failed,
-          current: '',
-          errors,
+        // Set up progress streaming using the singleton's progress
+        const sendProgress = () => {
+          const progress = mcqQueue.getProgress();
+          const streamData = {
+            total: progress.total,
+            completed: progress.completed,
+            failed: progress.failed,
+            inProgress: progress.inProgress,
+            current: progress.current.join(', '),
+            errors: progress.errors,
+          };
+          
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify(streamData)}\n\n`)
+          );
         };
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify(finalProgress)}\n\n`)
-        );
 
+        // Listen for progress updates
+        mcqQueue.onProgress(() => {
+          sendProgress();
+        });
+
+        // Start processing if not already running
+        const queuePromise = mcqQueue.start();
+
+        // Wait for ALL tasks in the queue to complete (or at least the ones we just added)
+        // For simplicity, we'll wait for the queue to finish its current workload
+        await queuePromise;
+
+        // Send final update
+        sendProgress();
         controller.close();
       },
     });

@@ -33,6 +33,8 @@ export interface IMCQBank extends Document {
     hard: number;
   };
   aiModel?: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const OptionVariantSchema = new Schema<IOptionVariant>({

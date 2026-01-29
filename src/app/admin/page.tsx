@@ -18,7 +18,12 @@ import {
   Activity,
   Shield,
   Search,
-  Filter
+  Filter,
+  History,
+  Info,
+  ChevronRight,
+  ChevronLeft,
+  Loader2
 } from 'lucide-react';
 
 interface User {
@@ -53,16 +58,37 @@ interface TestAssignment {
   assignedBy?: any;
 }
 
+interface AuditLog {
+  _id: string;
+  action: string;
+  userId: string;
+  username: string;
+  userFullName: string;
+  targetId?: string;
+  targetName?: string;
+  details: any;
+  ipAddress?: string;
+  userAgent?: string;
+  createdAt: string;
+}
+
 export default function AdminDashboard() {
   const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
   const [assignments, setAssignments] = useState<TestAssignment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'users' | 'assignments' | 'trainers'>('users');
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [showAssignTest, setShowAssignTest] = useState(false);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [userLogs, setUserLogs] = useState<AuditLog[]>([]);
+  const [userLogsLoading, setUserLogsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<'users' | 'assignments' | 'trainers' | 'audit'>('users');
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditPage, setAuditPage] = useState(1);
+  const [auditTotalPages, setAuditTotalPages] = useState(1);
+  const [auditFilter, setAuditFilter] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -87,6 +113,50 @@ export default function AdminDashboard() {
       setLoading(false);
     }
   };
+
+  const fetchAuditLogs = async (page = 1) => {
+    try {
+      setAuditLoading(true);
+      const res = await fetch(`/api/admin/audit-logs?page=${page}&limit=20${auditFilter ? `&action=${auditFilter}` : ''}`);
+      const data = await res.json();
+      if (data.success) {
+        setAuditLogs(data.logs);
+        setAuditTotalPages(data.pagination.totalPages);
+        setAuditPage(data.pagination.page);
+      }
+    } catch (error) {
+      console.error('Error fetching audit logs:', error);
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'audit') {
+      fetchAuditLogs(1);
+    }
+  }, [activeTab, auditFilter]);
+
+  const fetchUserLogs = async (userId: string) => {
+    try {
+      setUserLogsLoading(true);
+      const res = await fetch(`/api/admin/audit-logs?userId=${userId}&limit=10`);
+      const data = await res.json();
+      if (data.success) {
+        setUserLogs(data.logs);
+      }
+    } catch (error) {
+      console.error('Error fetching user logs:', error);
+    } finally {
+      setUserLogsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedUser) {
+      fetchUserLogs(selectedUser._id);
+    }
+  }, [selectedUser]);
 
   const trainerEligibleUsers = users.filter(u => u.isTrainerEligible);
 
@@ -290,6 +360,22 @@ export default function AdminDashboard() {
                     <span>Eligible Trainers ({trainerEligibleUsers.length})</span>
                   </span>
                   {activeTab === 'trainers' && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-purple-500 to-pink-500"></div>
+                  )}
+                </button>
+                <button
+                  onClick={() => setActiveTab('audit')}
+                  className={`px-8 py-4 font-semibold transition-all relative ${
+                    activeTab === 'audit'
+                      ? 'text-purple-300 bg-purple-500/20'
+                      : 'text-gray-400 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <span className="flex items-center space-x-2">
+                    <History className="h-5 w-5" />
+                    <span>Audit Logs</span>
+                  </span>
+                  {activeTab === 'audit' && (
                     <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-purple-500 to-pink-500"></div>
                   )}
                 </button>
@@ -571,6 +657,149 @@ export default function AdminDashboard() {
                   )}
                 </div>
               )}
+
+              {/* Audit Logs Tab */}
+              {activeTab === 'audit' && (
+                <div>
+                  <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-2xl font-bold text-white flex items-center">
+                      <History className="h-7 w-7 mr-3 text-purple-400" />
+                      System Audit Logs
+                    </h2>
+                    <div className="flex items-center gap-3">
+                      <select
+                        value={auditFilter}
+                        onChange={(e) => setAuditFilter(e.target.value)}
+                        className="bg-white/5 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-purple-500 transition-all text-sm"
+                      >
+                        <option value="" className="bg-slate-900">All Actions</option>
+                        <option value="EXAM_SUBMISSION" className="bg-slate-900">Exam Submission</option>
+                        <option value="EXAM_EVALUATION" className="bg-slate-900">Exam Evaluation</option>
+                        <option value="USER_LOGIN" className="bg-slate-900">User Login</option>
+                        <option value="MCQ_GENERATION" className="bg-slate-900">MCQ Generation</option>
+                      </select>
+                      <button 
+                        onClick={() => fetchAuditLogs(1)}
+                        className="p-2 bg-white/5 hover:bg-white/10 rounded-lg border border-white/20 transition-all"
+                        title="Refresh Logs"
+                      >
+                        <Activity className="w-5 h-5 text-purple-400" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {auditLoading && auditLogs.length === 0 ? (
+                    <div className="flex flex-col items-center py-20">
+                      <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                      <p className="text-gray-400">Loading audit logs...</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b border-white/10">
+                              <th className="px-4 py-4 text-left text-xs font-bold text-purple-300 uppercase tracking-wider">Timestamp</th>
+                              <th className="px-4 py-4 text-left text-xs font-bold text-purple-300 uppercase tracking-wider">User</th>
+                              <th className="px-4 py-4 text-left text-xs font-bold text-purple-300 uppercase tracking-wider">Action</th>
+                              <th className="px-4 py-4 text-left text-xs font-bold text-purple-300 uppercase tracking-wider">Target</th>
+                              <th className="px-4 py-4 text-left text-xs font-bold text-purple-300 uppercase tracking-wider">Details</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-white/5">
+                            {auditLogs.map((log) => (
+                              <tr key={log._id} className="hover:bg-white/5 transition-colors group">
+                                <td className="px-4 py-4 whitespace-nowrap">
+                                  <div className="text-sm text-white">
+                                    {new Date(log.createdAt).toLocaleDateString()}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {new Date(log.createdAt).toLocaleTimeString()}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-4">
+                                  <div className="text-sm font-semibold text-white">{log.userFullName}</div>
+                                  <div className="text-xs text-gray-500">@{log.username}</div>
+                                </td>
+                                <td className="px-4 py-4">
+                                  <span className={`px-2 py-1 rounded text-[10px] font-bold tracking-wider ${
+                                    log.action === 'EXAM_SUBMISSION' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' :
+                                    log.action === 'USER_LOGIN' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/50' :
+                                    log.action === 'MCQ_GENERATION' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/50' :
+                                    'bg-gray-500/20 text-gray-400 border border-gray-500/50'
+                                  }`}>
+                                    {log.action.replace('_', ' ')}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-4">
+                                  <div className="text-sm text-gray-300">{log.targetName || '-'}</div>
+                                  {log.ipAddress && <div className="text-[10px] text-gray-600">IP: {log.ipAddress}</div>}
+                                </td>
+                                <td className="px-4 py-4">
+                                  <div className="max-w-xs overflow-hidden">
+                                    {log.action === 'EXAM_SUBMISSION' && (
+                                      <div className="space-y-1">
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-xs text-gray-400">Score:</span>
+                                          <span className={`text-xs font-bold ${log.details.isPassed ? 'text-emerald-400' : 'text-red-400'}`}>
+                                            {log.details.score}%
+                                          </span>
+                                        </div>
+                                        <div className="text-[10px] text-gray-500">
+                                          {log.details.correctAnswers}/{log.details.totalQuestions} correct in {log.details.timeTaken}s
+                                        </div>
+                                        <div className="flex flex-wrap gap-1 mt-1">
+                                          {(log.details.marksPerQuestion || []).slice(0, 10).map((m: any, i: number) => (
+                                            <div key={i} className={`w-2 h-2 rounded-full ${m.isCorrect ? 'bg-emerald-500' : 'bg-red-500'}`} title={`Q${m.index}: ${m.difficulty}`}></div>
+                                          ))}
+                                          {(log.details.marksPerQuestion || []).length > 10 && <span className="text-[8px] text-gray-600">...</span>}
+                                        </div>
+                                      </div>
+                                    )}
+                                    {log.action === 'USER_LOGIN' && (
+                                      <div className="text-xs text-gray-400">
+                                        Role: <span className="text-blue-300">{log.details.role}</span>
+                                      </div>
+                                    )}
+                                    {log.action !== 'EXAM_SUBMISSION' && log.action !== 'USER_LOGIN' && (
+                                      <div className="text-xs text-gray-500 truncate">
+                                        {JSON.stringify(log.details)}
+                                      </div>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Pagination Controls */}
+                      <div className="flex items-center justify-between mt-6 pt-6 border-t border-white/10">
+                        <p className="text-sm text-gray-400">
+                          Showing Page <span className="text-white font-bold">{auditPage}</span> of <span className="text-white font-bold">{auditTotalPages}</span>
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => fetchAuditLogs(auditPage - 1)}
+                            disabled={auditPage === 1 || auditLoading}
+                            className="p-2 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed rounded-lg border border-white/20 transition-all text-white"
+                          >
+                            <ChevronLeft className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={() => fetchAuditLogs(auditPage + 1)}
+                            disabled={auditPage === auditTotalPages || auditLoading}
+                            className="p-2 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed rounded-lg border border-white/20 transition-all text-white"
+                          >
+                            <ChevronRight className="w-5 h-5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -691,6 +920,47 @@ export default function AdminDashboard() {
                   </div>
                 )}
               </div>
+
+              <div className="border-t border-white/10 pt-6 px-6 pb-10">
+                <h4 className="font-bold text-white text-xl mb-4 flex items-center">
+                  <History className="h-6 w-6 mr-2 text-purple-400" />
+                  Recent System Activities
+                </h4>
+                {userLogsLoading ? (
+                  <div className="flex justify-center py-10">
+                    <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
+                  </div>
+                ) : userLogs.length > 0 ? (
+                  <div className="space-y-4">
+                    {userLogs.map((log) => (
+                      <div key={log._id} className="bg-white/5 border border-white/10 rounded-xl p-4 hover:border-purple-500/30 transition-all">
+                        <div className="flex justify-between items-start mb-2">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wider ${
+                            log.action === 'EXAM_SUBMISSION' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' :
+                            log.action === 'USER_LOGIN' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/50' :
+                            'bg-gray-500/20 text-gray-400 border border-gray-500/50'
+                          }`}>
+                            {log.action.replace('_', ' ')}
+                          </span>
+                          <span className="text-[10px] text-gray-500">
+                            {new Date(log.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+                        <p className="text-sm text-white font-medium">{log.targetName || 'General Action'}</p>
+                        {log.action === 'EXAM_SUBMISSION' && (
+                          <div className="mt-2 text-xs flex items-center gap-4 text-gray-400">
+                            <span>Score: <span className={log.details.isPassed ? 'text-emerald-400' : 'text-red-400'}>{log.details.score}%</span></span>
+                            <span>Time: {log.details.timeTaken}s</span>
+                            <span>Attempt: {log.details.attemptNumber}</span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-gray-500 text-sm text-center py-10 italic">No recent activities found for this user.</p>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -732,6 +1002,7 @@ export default function AdminDashboard() {
                   department: formData.get('department'),
                   email: formData.get('email'),
                   allowedSections: allowedSections.length > 0 ? allowedSections : ['dashboard', 'mcq-tests'],
+                  creatorInfo: JSON.parse(localStorage.getItem('user') || '{}')
                 };
 
                 try {
