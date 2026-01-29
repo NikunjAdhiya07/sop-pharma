@@ -36,7 +36,7 @@ export async function POST() {
 
       // Reset SOP status
       const oldStatus = sop.status;
-      sop.status = 'pending';
+      sop.status = 'uploaded';
       sop.mcqCount = 0;
       sop.processedAt = undefined;
       await sop.save();
