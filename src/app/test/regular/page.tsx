@@ -212,7 +212,12 @@ export default function RegularTestPage() {
                         }`}
                       >
                         <div className="flex-1 min-w-0">
-                          <p className="text-white font-medium group-hover:text-emerald-300 transition-colors line-clamp-1">{bank.sopName}</p>
+                          <p 
+                            className="text-white font-medium group-hover:text-emerald-300 transition-colors line-clamp-1 uppercase"
+                            title={`${bank.sopIdentifier} - ${bank.sopName}`.toUpperCase()}
+                          >
+                            {bank.sopIdentifier} - {bank.sopName}
+                          </p>
                           <p className="text-gray-500 text-xs font-mono mt-1">{bank.sopIdentifier}</p>
                         </div>
                         <div className={`w-5 h-5 rounded border transition-all flex items-center justify-center ml-3 flex-shrink-0 ${

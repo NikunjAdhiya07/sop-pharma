@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { Search, Filter, Download, Eye, BookOpen, Award, Loader2, Plus, Trash2, FolderOpen, Upload } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Search, Filter, Download, Eye, BookOpen, Award, Loader2, Plus, Trash2, FolderOpen, Upload, ArrowLeft } from 'lucide-react';
+import PageHeader from '@/components/PageHeader';
 
 interface MCQ {
   aiIcon: string;
@@ -35,6 +36,10 @@ interface MCQBank {
 }
 
 export default function MCQBankPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const sopIdFromUrl = searchParams.get('sopId');
+
   const [mcqBanks, setMcqBanks] = useState<MCQBank[]>([]);
   const [loading, setLoading] = useState(true);
   const [generatingMore, setGeneratingMore] = useState<string | null>(null);
@@ -49,6 +54,16 @@ export default function MCQBankPage() {
   useEffect(() => {
     fetchMCQBanks();
   }, [currentPage]);
+
+  // Auto-select MCQ bank when sopId is in URL
+  useEffect(() => {
+    if (sopIdFromUrl && mcqBanks.length > 0) {
+      const matchingBank = mcqBanks.find(bank => bank.sopId === sopIdFromUrl);
+      if (matchingBank) {
+        setSelectedMCQBank(matchingBank);
+      }
+    }
+  }, [sopIdFromUrl, mcqBanks]);
 
   const fetchMCQBanks = async () => {
     try {
@@ -172,33 +187,57 @@ export default function MCQBankPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-8">
       <div className="max-w-7xl mx-auto">
+        {/* Navigation - only show if not viewing from SOP Library */}
+        {!sopIdFromUrl && <PageHeader />}
+
         {/* Header */}
         <div className="mb-12">
+          {/* Back button when viewing from SOP Library */}
+          {sopIdFromUrl && selectedMCQBank && (
+            <button
+              onClick={() => router.back()}
+              className="flex items-center gap-2 text-gray-300 hover:text-white mb-4 transition-colors"
+            >
+              <ArrowLeft className="h-5 w-5" />
+              Back to SOP Library
+            </button>
+          )}
+
           <div className="flex items-center justify-between mb-4">
             <div className="flex-1 text-center">
               <h1 className="text-5xl font-bold text-white mb-4 bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-600">
-                MCQ Question Bank
+                {sopIdFromUrl && selectedMCQBank ? (
+                  <>{selectedMCQBank.sopIdentifier} - {selectedMCQBank.sopName.toUpperCase()}</>
+                ) : (
+                  <>MCQ Question Bank</>
+                )}
               </h1>
               <p className="text-gray-300 text-lg">
-                Browse and manage your generated MCQ banks {totalBanks > 0 && `(${totalBanks} total)`}
+                {sopIdFromUrl && selectedMCQBank ? (
+                  <>{selectedMCQBank.sopIdentifier} - {selectedMCQBank.totalQuestions} questions available</>
+                ) : (
+                  <>Browse and manage your generated MCQ banks {totalBanks > 0 && `(${totalBanks} total)`}</>
+                )}
               </p>
             </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => window.location.href = '/files-manager'}
-                className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg whitespace-nowrap"
-              >
-                <FolderOpen className="h-5 w-5" />
-                Files Manager
-              </button>
-              <button
-                onClick={() => window.location.href = '/sop-upload'}
-                className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg whitespace-nowrap"
-              >
-                <Upload className="h-5 w-5" />
-                Upload SOP
-              </button>
-            </div>
+            {!sopIdFromUrl && (
+              <div className="flex gap-3">
+                <button
+                  onClick={() => window.location.href = '/files-manager'}
+                  className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg whitespace-nowrap"
+                >
+                  <FolderOpen className="h-5 w-5" />
+                  Files Manager
+                </button>
+                <button
+                  onClick={() => window.location.href = '/sop-upload'}
+                  className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg whitespace-nowrap"
+                >
+                  <Upload className="h-5 w-5" />
+                  Upload SOP
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -246,16 +285,19 @@ export default function MCQBankPage() {
                 key={bank._id}
                 className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 shadow-xl border border-white/20 hover:border-purple-500/50 transition-all duration-300 transform hover:scale-[1.02]"
               >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex-1">
-                    <h3 className="text-xl font-bold text-white mb-2">
-                      {bank.sopName}
+                <div className="flex items-start justify-between mb-4 gap-4">
+                  <div className="flex-1 min-w-0">
+                    <h3 
+                      className="text-sm font-bold text-white mb-2 leading-tight uppercase group-hover:text-purple-300 transition-colors line-clamp-2"
+                      title={`${bank.sopIdentifier} - ${bank.sopName}`.toUpperCase()}
+                    >
+                      {bank.sopIdentifier} - {bank.sopName}
                     </h3>
-                    <p className="text-gray-400 text-sm font-mono">
+                    <p className="text-gray-400 text-[10px] font-mono opacity-60">
                       {bank.sopIdentifier}
                     </p>
                   </div>
-                  <Award className="h-6 w-6 text-purple-400" />
+                  <Award className="h-5 w-5 text-purple-400 flex-shrink-0 mt-1" />
                 </div>
 
                 <div className="space-y-3 mb-6">
@@ -395,8 +437,8 @@ export default function MCQBankPage() {
               <div className="sticky top-0 bg-gradient-to-r from-purple-600 to-pink-600 p-6 rounded-t-2xl z-10">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h2 className="text-2xl font-bold text-white mb-1">
-                      {selectedMCQBank.sopName}
+                    <h2 className="text-xl font-bold text-white mb-2 uppercase">
+                      {selectedMCQBank.sopIdentifier} - {selectedMCQBank.sopName}
                     </h2>
                     <p className="text-purple-100 font-mono text-sm">
                       {selectedMCQBank.sopIdentifier}
