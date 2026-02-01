@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Upload, FileText, AlertCircle, CheckCircle2, Loader2, Library, FolderOpen } from 'lucide-react';
+import PageHeader from '@/components/PageHeader';
 
 interface UploadResponse {
   success: boolean;
@@ -177,6 +178,9 @@ export default function SOPUploadPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-8">
       <div className="max-w-4xl mx-auto">
+        {/* Navigation */}
+        <PageHeader />
+
         {/* Header with Navigation Button */}
         <div className="mb-12">
           <div className="flex items-start justify-between mb-4">

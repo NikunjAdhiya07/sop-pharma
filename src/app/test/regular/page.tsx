@@ -204,18 +204,19 @@ export default function RegularTestPage() {
                             setSelectedSopIds([...selectedSopIds, bank.sopId]);
                           }
                         }}
-                        className={`p-4 rounded-xl border cursor-pointer transition-all duration-300 flex items-center justify-between group ${
+                        title={bank.sopName} // Tooltip showing full name
+                        className={`p-4 rounded-xl border cursor-pointer transition-all duration-300 flex items-center justify-between group relative ${
                           selectedSopIds.includes(bank.sopId)
-                            ? 'bg-emerald-600/30 border-emerald-500 shadow-lg'
-                            : 'bg-white/5 border-white/10 hover:border-emerald-500/50'
+                            ? 'bg-emerald-600/30 border-emerald-500 shadow-lg scale-[1.02]'
+                            : 'bg-white/5 border-white/10 hover:border-emerald-500/50 hover:bg-emerald-500/10 hover:scale-[1.02]'
                         }`}
                       >
-                        <div>
+                        <div className="flex-1 min-w-0">
                           <p className="text-white font-medium group-hover:text-emerald-300 transition-colors line-clamp-1">{bank.sopName}</p>
                           <p className="text-gray-500 text-xs font-mono mt-1">{bank.sopIdentifier}</p>
                         </div>
-                        <div className={`w-5 h-5 rounded border transition-all flex items-center justify-center ${
-                           selectedSopIds.includes(bank.sopId) ? 'bg-emerald-500 border-emerald-500' : 'border-white/20'
+                        <div className={`w-5 h-5 rounded border transition-all flex items-center justify-center ml-3 flex-shrink-0 ${
+                           selectedSopIds.includes(bank.sopId) ? 'bg-emerald-500 border-emerald-500' : 'border-white/20 group-hover:border-emerald-500/50'
                         }`}>
                           {selectedSopIds.includes(bank.sopId) && <CheckCircle2 className="h-3.5 w-3.5 text-white" />}
                         </div>

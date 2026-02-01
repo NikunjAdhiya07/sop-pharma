@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import PageHeader from '@/components/PageHeader';
 import { 
   Users, 
   Calendar, 
@@ -248,6 +249,11 @@ export default function SOPScheduler() {
         </aside>
 
         <main className="flex-1 flex flex-col overflow-hidden">
+          {/* Navigation */}
+          <div className="px-8 pt-4">
+            <PageHeader />
+          </div>
+
           {/* Header */}
           <header className="h-20 border-b border-white/10 flex items-center justify-between px-8 bg-white/5 backdrop-blur-xl sticky top-0 z-50">
             <div className="flex items-center gap-4 flex-1 max-w-xl">
