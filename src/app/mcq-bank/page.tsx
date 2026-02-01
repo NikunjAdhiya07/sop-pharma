@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Search, Filter, Download, Eye, BookOpen, Award, Loader2, Plus, Trash2, FolderOpen, Upload, ArrowLeft } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
@@ -35,7 +35,7 @@ interface MCQBank {
   createdAt: string;
 }
 
-export default function MCQBankPage() {
+function MCQBankContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sopIdFromUrl = searchParams.get('sopId');
@@ -568,5 +568,17 @@ export default function MCQBankPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function MCQBankPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+        <Loader2 className="h-12 w-12 text-purple-400 animate-spin" />
+      </div>
+    }>
+      <MCQBankContent />
+    </Suspense>
   );
 }
