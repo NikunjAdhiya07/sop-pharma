@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
-import MCQTestResult from '@/models/MCQTestResult';
+import MCQBankTestResult from '@/models/MCQBankTestResult';
 import SOP from '@/models/SOP';
 
 export async function GET(request: Request) {
@@ -33,24 +33,20 @@ export async function GET(request: Request) {
 
     // Fetch test results with filters
     let testQuery: any = {};
-    if (sopId && sopId !== 'all') {
-      testQuery.sopIds = sopId;
-    }
     if (startDate || endDate) {
-      testQuery.createdAt = {};
-      if (startDate) testQuery.createdAt.$gte = new Date(startDate);
-      if (endDate) testQuery.createdAt.$lte = new Date(endDate);
+      testQuery.completedAt = {};
+      if (startDate) testQuery.completedAt.$gte = new Date(startDate);
+      if (endDate) testQuery.completedAt.$lte = new Date(endDate);
     }
 
-    const testResults = await MCQTestResult.find(testQuery)
+    const testResults = await MCQBankTestResult.find(testQuery)
       .populate('userId', 'name username department role')
-      .populate('sopIds', 'sopName sopIdentifier department')
       .lean();
 
     // Calculate SOP-wise statistics
     const sopStats = sops.map((sop: any) => {
       const sopTests = testResults.filter((test: any) => 
-        test.sopIds?.some((s: any) => s._id.toString() === sop._id.toString())
+        test.sopIdentifier === sop.identifier
       );
 
       const totalUsers = users.length;
