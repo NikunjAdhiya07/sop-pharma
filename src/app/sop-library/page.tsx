@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import PageHeader from '@/components/PageHeader';
+import SOPTreeView from '@/components/SOPTreeView';
 import { 
   Search, 
   Filter, 
@@ -15,7 +16,9 @@ import {
   ChevronRight,
   Upload,
   RefreshCw,
-  Eye
+  Eye,
+  FolderTree,
+  List
 } from 'lucide-react';
 
 interface VideoFile {
@@ -84,9 +87,14 @@ export default function SOPLibraryPage() {
   const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'name' | 'identifier' | 'completion' | 'recent'>('name');
   const [collapsedDepts, setCollapsedDepts] = useState<Set<string>>(new Set());
+  
+  // View mode: 'folder' or 'list' - default to folder
+  const [viewMode, setViewMode] = useState<'folder' | 'list'>('folder');
+  const [treeData, setTreeData] = useState<any[]>([]);
 
   useEffect(() => {
     fetchSOPLibrary();
+    fetchTreeData();
   }, [selectedDepartment]);
 
   // Collapse all departments by default when data is loaded
@@ -115,6 +123,19 @@ export default function SOPLibraryPage() {
       console.error('Error fetching SOP library:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchTreeData = async () => {
+    try {
+      const response = await fetch('/api/sop-library/tree');
+      const data = await response.json();
+
+      if (data.success) {
+        setTreeData(data.tree);
+      }
+    } catch (error) {
+      console.error('Error fetching tree data:', error);
     }
   };
 
@@ -222,6 +243,39 @@ export default function SOPLibraryPage() {
               </p>
             </div>
             <div className="flex gap-3">
+              {/* View Toggle */}
+              <div className="flex gap-2 bg-white/10 rounded-xl p-1">
+                <button
+                  onClick={() => setViewMode('folder')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all ${
+                    viewMode === 'folder'
+                      ? 'bg-purple-600 text-white shadow-lg'
+                      : 'text-gray-300 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <FolderTree className="h-4 w-4" />
+                  Folder View
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all ${
+                    viewMode === 'list'
+                      ? 'bg-purple-600 text-white shadow-lg'
+                      : 'text-gray-300 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <List className="h-4 w-4" />
+                  List View
+                </button>
+              </div>
+
+              <button
+                onClick={() => router.push('/sop-monitoring')}
+                className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg"
+              >
+                <Eye className="h-5 w-5" />
+                Go to SOP Monitoring
+              </button>
               <button
                 onClick={syncSOPLibrary}
                 disabled={syncing}
@@ -312,8 +366,19 @@ export default function SOPLibraryPage() {
           )}
         </div>
 
-        {/* SOP Library by Department */}
-        {Object.keys(filteredOrganized).length === 0 ? (
+        {/* Content Area - Conditional Rendering */}
+        {viewMode === 'folder' ? (
+          /* Folder View */
+          <SOPTreeView
+            tree={treeData}
+            searchTerm={searchTerm}
+            onViewSOP={(sop) => router.push(`/sop-library/${sop._id}`)}
+          />
+        ) : (
+          /* List View */
+          <>
+            {/* SOP Library by Department */}
+            {Object.keys(filteredOrganized).length === 0 ? (
           <div className="text-center py-16">
             <BookOpen className="h-16 w-16 text-gray-500 mx-auto mb-4" />
             <p className="text-gray-400 text-xl mb-4">No SOPs found</p>
@@ -454,6 +519,8 @@ export default function SOPLibraryPage() {
               </div>
             ))}
           </div>
+        )}
+          </>
         )}
       </div>
     </div>

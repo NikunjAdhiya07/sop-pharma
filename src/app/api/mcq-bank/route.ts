@@ -9,6 +9,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const sopId = searchParams.get('sopId');
     const difficulty = searchParams.get('difficulty');
+    const folderDepartment = searchParams.get('folderDepartment');
+    const folderSubcategory = searchParams.get('folderSubcategory');
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '10');
 
@@ -18,7 +20,16 @@ export async function GET(request: NextRequest) {
       query.sopId = sopId;
     }
 
-    // Fetch MCQ Banks
+    // Folder filtering
+    if (folderDepartment) {
+      query.folderDepartment = folderDepartment;
+    }
+    if (folderSubcategory) {
+      query.folderSubcategory = folderSubcategory;
+    }
+
+
+    // Fetch MCQ Banks with folder fields explicitly selected
     const mcqBanks = await MCQBank.find(query)
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
@@ -27,12 +38,21 @@ export async function GET(request: NextRequest) {
 
     const total = await MCQBank.countDocuments(query);
 
+    // Debug: Log folder field status
+    const organizedCount = mcqBanks.filter(b => b.folderDepartment && b.folderSubcategory).length;
+    console.log(`📊 Fetched ${mcqBanks.length} banks: ${organizedCount} organized, ${mcqBanks.length - organizedCount} unorganized`);
+    
+    if (mcqBanks.length > 0) {
+      const sample = mcqBanks[0];
+      console.log(`📝 Sample bank: ${sample.sopIdentifier}, folder: ${sample.folderDepartment}/${sample.folderSubcategory}`);
+    }
+
     // Filter by difficulty if specified
     let filteredMCQBanks = mcqBanks;
     if (difficulty && ['Easy', 'Medium', 'Hard'].includes(difficulty)) {
       filteredMCQBanks = mcqBanks.map(bank => ({
-        ...bank.toObject(),
-        mcqs: bank.mcqs.filter(mcq => mcq.difficulty === difficulty),
+        ...bank,
+        mcqs: bank.mcqs.filter((mcq: any) => mcq.difficulty === difficulty),
       }));
     }
 

@@ -245,15 +245,15 @@ export default function DashboardPage() {
             </Link>
           </div>
 
-          {/* Quick Actions */}
+          {/* Quick Actions - Essential Only */}
           <div className="mb-10">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-2xl font-bold text-white flex items-center">
-                <BarChart3 className="h-7 w-7 mr-3 text-purple-400" />
+                <Zap className="h-7 w-7 mr-3 text-purple-400" />
                 Quick Actions
               </h3>
             </div>
-            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid md:grid-cols-3 gap-6">
               <Link href="/sop-upload">
                 <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20 hover:border-purple-500 transition-all duration-300 transform hover:scale-[1.02] hover:shadow-2xl hover:shadow-purple-500/20 cursor-pointer group h-full">
                   <div className="flex items-center mb-6">
@@ -282,6 +282,34 @@ export default function DashboardPage() {
                 </div>
               </Link>
 
+              <Link href="/sop-library">
+                <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20 hover:border-blue-500 transition-all duration-300 transform hover:scale-[1.02] hover:shadow-2xl hover:shadow-blue-500/20 cursor-pointer group h-full">
+                  <div className="flex items-center mb-6">
+                    <div className="bg-gradient-to-br from-blue-600 to-cyan-600 p-4 rounded-xl mr-4 group-hover:scale-110 transition-transform shadow-lg shadow-blue-500/50">
+                      <FileText className="h-8 w-8 text-white" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-white">SOP Library</h2>
+                  </div>
+                  <p className="text-gray-300 text-base mb-6 leading-relaxed">
+                    Browse and manage your SOP documents. Access monitoring and tracking features.
+                  </p>
+                  <ul className="space-y-3 text-gray-400">
+                    <li className="flex items-center">
+                      <span className="w-2 h-2 bg-blue-400 rounded-full mr-3 group-hover:animate-pulse"></span>
+                      <span className="text-sm">View all SOPs</span>
+                    </li>
+                    <li className="flex items-center">
+                      <span className="w-2 h-2 bg-blue-400 rounded-full mr-3 group-hover:animate-pulse"></span>
+                      <span className="text-sm">Download documents</span>
+                    </li>
+                    <li className="flex items-center">
+                      <span className="w-2 h-2 bg-blue-400 rounded-full mr-3 group-hover:animate-pulse"></span>
+                      <span className="text-sm">SOP monitoring</span>
+                    </li>
+                  </ul>
+                </div>
+              </Link>
+
               <Link href="/mcq-bank">
                 <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20 hover:border-pink-500 transition-all duration-300 transform hover:scale-[1.02] hover:shadow-2xl hover:shadow-pink-500/20 cursor-pointer group h-full">
                   <div className="flex items-center mb-6">
@@ -305,118 +333,6 @@ export default function DashboardPage() {
                     <li className="flex items-center">
                       <span className="w-2 h-2 bg-pink-400 rounded-full mr-3 group-hover:animate-pulse"></span>
                       <span className="text-sm">Advanced filtering</span>
-                    </li>
-                  </ul>
-                </div>
-              </Link>
-
-              <Link href="/mcq-tests">
-                <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20 hover:border-blue-500 transition-all duration-300 transform hover:scale-[1.02] hover:shadow-2xl hover:shadow-blue-500/20 cursor-pointer group h-full">
-                  <div className="flex items-center mb-6">
-                    <div className="bg-gradient-to-br from-blue-600 to-cyan-600 p-4 rounded-xl mr-4 group-hover:scale-110 transition-transform shadow-lg shadow-blue-500/50">
-                      <ClipboardCheck className="h-8 w-8 text-white" />
-                    </div>
-                    <h2 className="text-2xl font-bold text-white">MCQ Tests</h2>
-                  </div>
-                  <p className="text-gray-300 text-base mb-6 leading-relaxed">
-                    Take tests from generated MCQ banks. Track your performance and review answers.
-                  </p>
-                  <ul className="space-y-3 text-gray-400">
-                    <li className="flex items-center">
-                      <span className="w-2 h-2 bg-blue-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                      <span className="text-sm">Attempt full tests</span>
-                    </li>
-                    <li className="flex items-center">
-                      <span className="w-2 h-2 bg-blue-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                      <span className="text-sm">Track scores</span>
-                    </li>
-                    <li className="flex items-center">
-                      <span className="w-2 h-2 bg-blue-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                      <span className="text-sm">Review answers</span>
-                    </li>
-                  </ul>
-                </div>
-              </Link>
-
-              <Link href="/sop-scheduler">
-                <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20 hover:border-indigo-500 transition-all duration-300 transform hover:scale-[1.02] hover:shadow-2xl hover:shadow-indigo-500/20 cursor-pointer group h-full">
-                  <div className="flex items-center mb-6">
-                    <div className="bg-gradient-to-br from-indigo-600 to-purple-600 p-4 rounded-xl mr-4 group-hover:scale-110 transition-transform shadow-lg shadow-indigo-500/50">
-                      <Calendar className="h-8 w-8 text-white" />
-                    </div>
-                    <h2 className="text-2xl font-bold text-white">SOP Scheduler</h2>
-                  </div>
-                  <p className="text-gray-300 text-base mb-6 leading-relaxed">
-                    Centralized training management. Track progress, monitor performance, and allocate tasks.
-                  </p>
-                  <ul className="space-y-3 text-gray-400">
-                    <li className="flex items-center">
-                      <span className="w-2 h-2 bg-indigo-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                      <span className="text-sm">Trainee Progress Tracking</span>
-                    </li>
-                    <li className="flex items-center">
-                      <span className="w-2 h-2 bg-indigo-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                      <span className="text-sm">Task Allocation</span>
-                    </li>
-                    <li className="flex items-center">
-                      <span className="w-2 h-2 bg-indigo-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                      <span className="text-sm">Performance Data Analytics</span>
-                    </li>
-                  </ul>
-                </div>
-              </Link>
-
-              <Link href="/test/specific">
-                <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20 hover:border-yellow-500 transition-all duration-300 transform hover:scale-[1.02] hover:shadow-2xl hover:shadow-yellow-500/20 cursor-pointer group h-full">
-                  <div className="flex items-center mb-6">
-                    <div className="bg-gradient-to-br from-yellow-600 to-orange-600 p-4 rounded-xl mr-4 group-hover:scale-110 transition-transform shadow-lg shadow-yellow-500/50">
-                      <Zap className="h-8 w-8 text-white" />
-                    </div>
-                    <h2 className="text-2xl font-bold text-white">Specific Test</h2>
-                  </div>
-                  <p className="text-gray-300 text-base mb-6 leading-relaxed">
-                    Test yourself with instant feedback. See correct answers and explanations immediately after each choice.
-                  </p>
-                  <ul className="space-y-3 text-gray-400">
-                    <li className="flex items-center">
-                      <span className="w-2 h-2 bg-yellow-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                      <span className="text-sm">Instant feedback</span>
-                    </li>
-                    <li className="flex items-center">
-                      <span className="w-2 h-2 bg-yellow-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                      <span className="text-sm">Detailed explanations</span>
-                    </li>
-                    <li className="flex items-center">
-                      <span className="w-2 h-2 bg-yellow-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                      <span className="text-sm">Learn as you go</span>
-                    </li>
-                  </ul>
-                </div>
-              </Link>
-
-              <Link href="/test">
-                <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20 hover:border-emerald-500 transition-all duration-300 transform hover:scale-[1.02] hover:shadow-2xl hover:shadow-emerald-500/20 cursor-pointer group h-full">
-                  <div className="flex items-center mb-6">
-                    <div className="bg-gradient-to-br from-emerald-600 to-teal-600 p-4 rounded-xl mr-4 group-hover:scale-110 transition-transform shadow-lg shadow-emerald-500/50">
-                      <ClipboardCheck className="h-8 w-8 text-white" />
-                    </div>
-                    <h2 className="text-2xl font-bold text-white">Test Center</h2>
-                  </div>
-                  <p className="text-gray-300 text-base mb-6 leading-relaxed">
-                    Access specialized testing modules including Interviews, Induction, and Regular Training.
-                  </p>
-                  <ul className="space-y-3 text-gray-400">
-                    <li className="flex items-center">
-                      <span className="w-2 h-2 bg-emerald-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                      <span className="text-sm">5+ Test Sections</span>
-                    </li>
-                    <li className="flex items-center">
-                      <span className="w-2 h-2 bg-emerald-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                      <span className="text-sm">Automated scoring</span>
-                    </li>
-                    <li className="flex items-center">
-                      <span className="w-2 h-2 bg-emerald-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                      <span className="text-sm">Detailed analytics</span>
                     </li>
                   </ul>
                 </div>

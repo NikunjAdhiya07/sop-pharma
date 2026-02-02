@@ -2,8 +2,9 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Search, Filter, Download, Eye, BookOpen, Award, Loader2, Plus, Trash2, FolderOpen, Upload, ArrowLeft } from 'lucide-react';
+import { Search, Filter, Download, Eye, BookOpen, Award, Loader2, Plus, Trash2, FolderOpen, Upload, ArrowLeft, Grid, List, ArrowUpDown, SortAsc, SortDesc } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
+import MCQTreeView from '@/components/MCQTreeView';
 
 interface MCQ {
   aiIcon: string;
@@ -50,10 +51,39 @@ function MCQBankContent() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalBanks, setTotalBanks] = useState(0);
+  
+  // Tree view state
+  const [viewMode, setViewMode] = useState<'grid' | 'tree'>('grid');
+  const [treeData, setTreeData] = useState<any>(null);
+  const [loadingTree, setLoadingTree] = useState(false);
+  
+  // Sort state
+  const [sortBy, setSortBy] = useState<'name' | 'questions' | 'date'>('name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
   useEffect(() => {
     fetchMCQBanks();
-  }, [currentPage]);
+    if (viewMode === 'tree') {
+      fetchTreeData();
+    }
+  }, [currentPage, viewMode]);
+
+  const fetchTreeData = async () => {
+    setLoadingTree(true);
+    try {
+      const response = await fetch('/api/mcq-bank/tree');
+      const data = await response.json();
+      
+      if (data.success) {
+        setTreeData(data);
+        console.log('📊 Tree data loaded:', data.stats);
+      }
+    } catch (error) {
+      console.error('Error fetching tree data:', error);
+    } finally {
+      setLoadingTree(false);
+    }
+  };
 
   // Auto-select MCQ bank when sopId is in URL
   useEffect(() => {
@@ -124,10 +154,42 @@ function MCQBankContent() {
     }
   };
 
-  const filteredMCQBanks = mcqBanks.filter(bank =>
-    bank.sopName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    bank.sopIdentifier.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Efficient search and filter function
+  const filteredAndSortedMCQBanks = (() => {
+    // First, filter by search term (case-insensitive)
+    const searchLower = searchTerm.toLowerCase().trim();
+    let filtered = mcqBanks;
+    
+    if (searchLower) {
+      filtered = mcqBanks.filter(bank => {
+        const nameMatch = bank.sopName.toLowerCase().includes(searchLower);
+        const identifierMatch = bank.sopIdentifier.toLowerCase().includes(searchLower);
+        const idMatch = bank.sopId.toLowerCase().includes(searchLower);
+        return nameMatch || identifierMatch || idMatch;
+      });
+    }
+    
+    // Then sort the filtered results
+    const sorted = [...filtered].sort((a, b) => {
+      let comparison = 0;
+      
+      switch (sortBy) {
+        case 'name':
+          comparison = a.sopName.localeCompare(b.sopName);
+          break;
+        case 'questions':
+          comparison = a.totalQuestions - b.totalQuestions;
+          break;
+        case 'date':
+          comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+          break;
+      }
+      
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+    
+    return sorted;
+  })();
 
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty) {
@@ -241,46 +303,161 @@ function MCQBankContent() {
           </div>
         </div>
 
-        {/* Search and Filter */}
+        {/* Search, Filter, and Sort */}
         <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 shadow-2xl border border-white/20 mb-8">
-          <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex flex-col gap-4">
+            {/* Search Bar */}
             <div className="flex-1 relative">
               <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search by SOP name or identifier..."
+                placeholder="Search by SOP name, identifier, or ID..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-12 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
               />
             </div>
-            <div className="flex gap-2">
-              {['All', 'Easy', 'Medium', 'Hard'].map((difficulty) => (
-                <button
-                  key={difficulty}
-                  onClick={() => setDifficultyFilter(difficulty)}
-                  className={`px-6 py-3 rounded-xl font-semibold transition-all ${
-                    difficultyFilter === difficulty
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-white/10 text-gray-300 hover:bg-white/20'
-                  }`}
-                >
-                  {difficulty}
-                </button>
-              ))}
+            
+            {/* Filters and Sort */}
+            <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+              {/* Difficulty Filters */}
+              <div className="flex gap-2 flex-wrap">
+                {['All', 'Easy', 'Medium', 'Hard'].map((difficulty) => (
+                  <button
+                    key={difficulty}
+                    onClick={() => setDifficultyFilter(difficulty)}
+                    className={`px-6 py-3 rounded-xl font-semibold transition-all ${
+                      difficultyFilter === difficulty
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-white/10 text-gray-300 hover:bg-white/20'
+                    }`}
+                  >
+                    {difficulty}
+                  </button>
+                ))}
+              </div>
+              
+              {/* Sort Options */}
+              <div className="flex gap-2 items-center">
+                <span className="text-gray-300 text-sm font-semibold">Sort by:</span>
+                <div className="flex gap-2">
+                  {[
+                    { value: 'name', label: 'Name' },
+                    { value: 'questions', label: 'Questions' },
+                    { value: 'date', label: 'Date' }
+                  ].map((sort) => (
+                    <button
+                      key={sort.value}
+                      onClick={() => {
+                        if (sortBy === sort.value) {
+                          setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                        } else {
+                          setSortBy(sort.value as 'name' | 'questions' | 'date');
+                          setSortOrder('asc');
+                        }
+                      }}
+                      className={`px-4 py-2 rounded-lg font-semibold transition-all flex items-center gap-2 ${
+                        sortBy === sort.value
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white/10 text-gray-300 hover:bg-white/20'
+                      }`}
+                    >
+                      {sort.label}
+                      {sortBy === sort.value && (
+                        sortOrder === 'asc' ? 
+                          <SortAsc className="h-4 w-4" /> : 
+                          <SortDesc className="h-4 w-4" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* MCQ Banks Grid */}
-        {filteredMCQBanks.length === 0 ? (
-          <div className="text-center py-16">
-            <BookOpen className="h-16 w-16 text-gray-500 mx-auto mb-4" />
-            <p className="text-gray-400 text-xl">No MCQ banks found</p>
+        {/* View Mode Toggle */}
+        {!sopIdFromUrl && (
+          <div className="flex justify-end mb-6">
+            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-1 border border-white/20 inline-flex">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+                  viewMode === 'grid'
+                    ? 'bg-purple-600 text-white'
+                    : 'text-gray-300 hover:text-white'
+                }`}
+              >
+                <Grid className="h-4 w-4" />
+                Grid View
+              </button>
+              <button
+                onClick={() => setViewMode('tree')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+                  viewMode === 'tree'
+                    ? 'bg-purple-600 text-white'
+                    : 'text-gray-300 hover:text-white'
+                }`}
+              >
+                <List className="h-4 w-4" />
+                Folder View
+              </button>
+            </div>
           </div>
+        )}
+
+        {/* Tree View */}
+        {viewMode === 'tree' && !sopIdFromUrl ? (
+          loadingTree ? (
+            <div className="text-center py-16">
+              <Loader2 className="h-12 w-12 text-purple-400 animate-spin mx-auto mb-4" />
+              <p className="text-gray-400 text-xl">Loading folder structure...</p>
+            </div>
+          ) : treeData ? (
+            <MCQTreeView
+              tree={treeData.tree}
+              unorganized={treeData.unorganized}
+              searchTerm={searchTerm}
+              onViewMCQs={(sopNode) => {
+                // Find the first MCQ bank for this SOP
+                if (sopNode.mcqBanks && sopNode.mcqBanks.length > 0) {
+                  setSelectedMCQBank(sopNode.mcqBanks[0]);
+                }
+              }}
+              onDownloadSOP={(sopNode) => {
+                // Open SOP file in new tab
+                if (sopNode.sopFileUrl) {
+                  window.open(sopNode.sopFileUrl, '_blank');
+                }
+              }}
+            />
+          ) : (
+            <div className="text-center py-16">
+              <BookOpen className="h-16 w-16 text-gray-500 mx-auto mb-4" />
+              <p className="text-gray-400 text-xl">No tree data available</p>
+            </div>
+          )
         ) : (
+          <>
+            {/* MCQ Banks Grid */}
+            {filteredAndSortedMCQBanks.length === 0 ? (
+              <div className="text-center py-16">
+                <BookOpen className="h-16 w-16 text-gray-500 mx-auto mb-4" />
+                <p className="text-gray-400 text-xl">
+                  {searchTerm ? 'No MCQ banks match your search' : 'No MCQ banks found'}
+                </p>
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm('')}
+                    className="mt-4 px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+                  >
+                    Clear Search
+                  </button>
+                )}
+              </div>
+            ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredMCQBanks.map((bank) => (
+            {filteredAndSortedMCQBanks.map((bank) => (
               <div
                 key={bank._id}
                 className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 shadow-xl border border-white/20 hover:border-purple-500/50 transition-all duration-300 transform hover:scale-[1.02]"
@@ -368,14 +545,19 @@ function MCQBankContent() {
             ))}
           </div>
         )}
+          </>
+        )}
 
         {/* Pagination and Summary */}
-        {filteredMCQBanks.length > 0 && (
+        {filteredAndSortedMCQBanks.length > 0 && (
           <div className="mt-8 bg-white/10 backdrop-blur-lg rounded-2xl p-6 shadow-2xl border border-white/20">
             <div className="flex items-center justify-between">
               <div className="text-gray-300">
-                Showing <span className="text-white font-semibold">{filteredMCQBanks.length}</span> of{' '}
+                Showing <span className="text-white font-semibold">{filteredAndSortedMCQBanks.length}</span> of{' '}
                 <span className="text-white font-semibold">{totalBanks}</span> MCQ Bank(s)
+                {searchTerm && (
+                  <span className="ml-2 text-purple-300">(filtered)</span>
+                )}
               </div>
               
               {totalPages > 1 && (

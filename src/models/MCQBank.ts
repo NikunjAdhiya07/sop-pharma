@@ -24,6 +24,8 @@ export interface IMCQBank extends Document {
   sopName: string;
   sopIdentifier: string;
   department: string;
+  folderDepartment?: string; // New: Hierarchical folder department (e.g., "QA", "PRODUCTION")
+  folderSubcategory?: string; // New: Subcategory code (e.g., "QAGE", "PRMA")
   mcqs: IMCQ[];
   generatedAt: Date;
   totalQuestions: number;
@@ -112,6 +114,16 @@ const MCQBankSchema = new Schema<IMCQBank>({
     required: true,
     default: 'General',
   },
+  folderDepartment: {
+    type: String,
+    required: false,
+    index: true,
+  },
+  folderSubcategory: {
+    type: String,
+    required: false,
+    index: true,
+  },
   mcqs: {
     type: [MCQSchema],
     required: true,
@@ -154,6 +166,9 @@ const MCQBankSchema = new Schema<IMCQBank>({
 MCQBankSchema.index({ sopId: 1 });
 MCQBankSchema.index({ sopIdentifier: 1 });
 MCQBankSchema.index({ department: 1 });
+MCQBankSchema.index({ folderDepartment: 1 });
+MCQBankSchema.index({ folderSubcategory: 1 });
+MCQBankSchema.index({ folderDepartment: 1, folderSubcategory: 1 });
 MCQBankSchema.index({ 'mcqs.difficulty': 1 });
 
 const MCQBank: Model<IMCQBank> = mongoose.models.MCQBank || mongoose.model<IMCQBank>('MCQBank', MCQBankSchema);
