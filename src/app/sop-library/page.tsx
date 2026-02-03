@@ -128,7 +128,12 @@ export default function SOPLibraryPage() {
 
   const fetchTreeData = async () => {
     try {
-      const response = await fetch('/api/sop-library/tree');
+      const params = new URLSearchParams();
+      if (selectedDepartment !== 'all') {
+        params.append('department', selectedDepartment);
+      }
+
+      const response = await fetch(`/api/sop-library/tree?${params}`);
       const data = await response.json();
 
       if (data.success) {

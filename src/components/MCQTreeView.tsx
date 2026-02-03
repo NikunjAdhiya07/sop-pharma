@@ -46,6 +46,7 @@ export default function MCQTreeView({ tree, unorganized, searchTerm = '', onView
   const [expandedDepts, setExpandedDepts] = useState<Set<string>>(new Set());
   const [expandedSubcats, setExpandedSubcats] = useState<Set<string>>(new Set());
   const [expandedSOPs, setExpandedSOPs] = useState<Set<string>>(new Set());
+  const [isUnorganizedExpanded, setIsUnorganizedExpanded] = useState(false);
   
   // Full-screen department view
   const [fullScreenDept, setFullScreenDept] = useState<DepartmentNode | null>(null);
@@ -548,19 +549,117 @@ export default function MCQTreeView({ tree, unorganized, searchTerm = '', onView
 
     {/* Unorganized Section */}
       {filteredUnorganized && filteredUnorganized.sops.length > 0 && (
-        <div className="bg-gradient-to-br from-orange-900/30 to-orange-800/20 rounded-2xl border border-orange-500/30 p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <Folder className="h-6 w-6 text-orange-400" />
-            <div>
-              <h3 className="text-xl font-bold text-white">Unorganized</h3>
-              <p className="text-sm text-gray-400">
-                {filteredUnorganized.totalSOPs} SOP{filteredUnorganized.totalSOPs !== 1 ? 's' : ''} • {filteredUnorganized.totalQuestions} Questions
-              </p>
+        <div className="bg-gradient-to-br from-orange-900/30 to-orange-800/20 rounded-2xl border border-orange-500/30 overflow-hidden">
+          {/* Unorganized Header - Clickable */}
+          <button
+            onClick={() => setIsUnorganizedExpanded(!isUnorganizedExpanded)}
+            className="w-full px-6 py-4 flex items-center justify-between hover:bg-white/5 transition-all group"
+          >
+            <div className="flex items-center gap-3">
+              {isUnorganizedExpanded ? (
+                <ChevronDown className="h-5 w-5 text-orange-400" />
+              ) : (
+                <ChevronRight className="h-5 w-5 text-orange-400" />
+              )}
+              {isUnorganizedExpanded ? (
+                <FolderOpen className="h-6 w-6 text-orange-400" />
+              ) : (
+                <Folder className="h-6 w-6 text-orange-400" />
+              )}
+              <div>
+                <h3 className="text-xl font-bold text-white group-hover:text-orange-300 transition-colors">Unorganized</h3>
+                <p className="text-sm text-gray-400">
+                  {filteredUnorganized.totalSOPs} SOP{filteredUnorganized.totalSOPs !== 1 ? 's' : ''} • {filteredUnorganized.totalQuestions} Questions
+                </p>
+              </div>
             </div>
+          </button>
+          
+          {/* Unorganized Description */}
+          <div className="px-6 pb-4">
+            <p className="text-sm text-orange-300">
+              These MCQ banks don't have corresponding SOP files in the system.
+            </p>
           </div>
-          <p className="text-sm text-orange-300">
-            These MCQ banks don't have corresponding SOP files in the system.
-          </p>
+
+          {/* Unorganized SOPs Grid */}
+          {isUnorganizedExpanded && (
+            <div className="px-6 pb-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {filteredUnorganized.sops.map((sop) => {
+                  const isSOPExpanded = expandedSOPs.has(sop.sopId);
+
+                  return (
+                    <div key={sop.sopId} className="bg-slate-800/50 rounded-lg border border-slate-600/30 overflow-hidden hover:border-orange-500/50 transition-all">
+                      {/* SOP Header */}
+                      <button
+                        onClick={() => toggleSOP(sop.sopId)}
+                        className="w-full px-3 py-2 flex items-center justify-between hover:bg-white/5 transition-all group"
+                        title={`${sop.sopCode} – ${sop.sopName}`}
+                      >
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          {isSOPExpanded ? (
+                            <ChevronDown className="h-3 w-3 text-orange-400 flex-shrink-0" />
+                          ) : (
+                            <ChevronRight className="h-3 w-3 text-orange-400 flex-shrink-0" />
+                          )}
+                          <FileText className="h-3 w-3 text-orange-400 flex-shrink-0" />
+                          <div className="text-left flex-1 min-w-0">
+                            <h5 className="text-xs font-semibold text-white group-hover:text-orange-300 transition-colors truncate">
+                              {sop.sopCode}
+                            </h5>
+                            <p className="text-[10px] text-gray-400 truncate">
+                              {sop.sopName}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="text-[10px] text-gray-400 bg-orange-900/20 px-2 py-0.5 rounded">
+                            {sop.totalQuestions} Q's
+                          </span>
+                        </div>
+                      </button>
+
+                      {/* SOP Details (MCQ Banks) */}
+                      {isSOPExpanded && (
+                        <div className="px-3 pb-2 space-y-1.5 bg-slate-900/30 border-t border-slate-600/30">
+                          {/* MCQ Banks */}
+                          {sop.mcqBanks.length > 0 ? (
+                            <div className="space-y-1.5">
+                              {sop.mcqBanks.map((bank, idx) => (
+                                <div key={bank._id || idx} className="flex items-center gap-2 p-2 bg-purple-900/20 rounded border border-purple-500/20">
+                                  <BookOpen className="h-3 w-3 text-purple-400 flex-shrink-0" />
+                                  <div className="flex-1 min-w-0">
+                                    <span className="text-[10px] text-gray-300 block">
+                                      MCQ Bank #{idx + 1}
+                                    </span>
+                                    <p className="text-[9px] text-gray-400">
+                                      {bank.totalQuestions} questions
+                                    </p>
+                                  </div>
+                                  <button
+                                    onClick={() => onViewMCQs(sop)}
+                                    className="px-2 py-0.5 bg-purple-600 hover:bg-purple-700 text-white text-[10px] rounded transition-colors flex items-center gap-1 flex-shrink-0"
+                                  >
+                                    <Eye className="h-2.5 w-2.5" />
+                                    View
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="p-2 bg-orange-900/20 rounded border border-orange-500/20 text-center">
+                              <p className="text-[10px] text-orange-300">No MCQs generated yet</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

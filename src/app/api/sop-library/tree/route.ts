@@ -2,12 +2,20 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import SOPLibrary from '@/models/SOPLibrary';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     await dbConnect();
 
+    // Get department filter from query params
+    const { searchParams } = new URL(request.url);
+    const departmentFilter = searchParams.get('department');
+
     // Fetch all SOP libraries
-    const sopLibraries = await SOPLibrary.find({})
+    const query = departmentFilter && departmentFilter !== 'all' 
+      ? { department: departmentFilter }
+      : {};
+    
+    const sopLibraries = await SOPLibrary.find(query)
       .populate('mcqBankId')
       .lean();
 

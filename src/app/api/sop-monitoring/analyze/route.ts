@@ -9,7 +9,16 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 export async function POST(req: NextRequest) {
   try {
     await connectDB();
-    const { threshold = 70 } = await req.json();
+    
+    // Handle empty request body
+    let threshold = 70;
+    try {
+      const body = await req.json();
+      threshold = body.threshold || 70;
+    } catch (e) {
+      // If no body or invalid JSON, use default threshold
+      threshold = 70;
+    }
 
     // Fetch all SOPs
     const sops = await SOPLibrary.find({});
