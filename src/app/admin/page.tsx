@@ -89,6 +89,11 @@ export default function AdminDashboard() {
   const [auditPage, setAuditPage] = useState(1);
   const [auditTotalPages, setAuditTotalPages] = useState(1);
   const [auditFilter, setAuditFilter] = useState('');
+  
+  // Drag state for modal
+  const [modalPosition, setModalPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     fetchData();
@@ -113,6 +118,42 @@ export default function AdminDashboard() {
       setLoading(false);
     }
   };
+  
+  // Drag handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    setDragStart({
+      x: e.clientX - modalPosition.x,
+      y: e.clientY - modalPosition.y,
+    });
+  };
+  
+  const handleMouseMove = (e: MouseEvent) => {
+    if (isDragging) {
+      setModalPosition({
+        x: e.clientX - dragStart.x,
+        y: e.clientY - dragStart.y,
+      });
+    }
+  };
+  
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+  
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    } else {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, dragStart]);
 
   const fetchAuditLogs = async (page = 1) => {
     try {
@@ -807,14 +848,27 @@ export default function AdminDashboard() {
 
       {/* User Details Modal */}
       {selectedUser && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-gradient-to-br from-slate-900 to-purple-900 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto border border-white/20">
-            <div className="p-6 border-b border-white/10 sticky top-0 bg-gradient-to-r from-purple-900/90 to-pink-900/90 backdrop-blur-xl z-10">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div 
+            className="bg-gradient-to-br from-slate-900 to-purple-900 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto border border-white/20"
+            style={{
+              transform: `translate(${modalPosition.x}px, ${modalPosition.y}px)`,
+              cursor: isDragging ? 'grabbing' : 'default',
+            }}
+          >
+            <div 
+              className="p-6 border-b border-white/10 sticky top-0 bg-gradient-to-r from-purple-900/90 to-pink-900/90 backdrop-blur-xl z-10 cursor-grab active:cursor-grabbing"
+              onMouseDown={handleMouseDown}
+            >
               <div className="flex items-center justify-between">
                 <h3 className="text-3xl font-bold text-white">{selectedUser.name}</h3>
                 <button
-                  onClick={() => setSelectedUser(null)}
+                  onClick={() => {
+                    setSelectedUser(null);
+                    setModalPosition({ x: 0, y: 0 });
+                  }}
                   className="text-gray-400 hover:text-white hover:bg-white/10 p-2 rounded-lg transition-all"
+                  onMouseDown={(e) => e.stopPropagation()}
                 >
                   <XCircle className="w-6 h-6" />
                 </button>

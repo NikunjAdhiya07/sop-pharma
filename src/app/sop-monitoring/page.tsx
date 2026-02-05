@@ -17,7 +17,8 @@ import {
   Layers,
   ArrowUpDown,
   Filter,
-  GitMerge
+  GitMerge,
+  History
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -44,8 +45,8 @@ interface SOP {
   daysToReview?: number;
 }
 
-type ViewType = 'needsReviewThisWeek' | 'expiringNext30Days' | 'expired' | 'missingDates' | 'all';
-type SortField = 'expiryDate' | 'reviewDate' | 'department' | 'owner' | 'priority';
+type ViewType = 'needsReviewThisWeek' | 'expiringNext30Days' | 'expired' | 'missingDates' | 'perfect' | 'all';
+type SortField = 'identifier' | 'name' | 'expiryDate' | 'reviewDate' | 'department' | 'owner' | 'priority';
 
 export default function SOPMonitoringPage() {
   const router = useRouter();
@@ -154,7 +155,13 @@ export default function SOPMonitoringPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sopId: selectedSOP._id,
-          ...editForm
+          ...editForm,
+          // User information for activity logging
+          userId: 'system_user', // TODO: Replace with actual user ID from auth
+          userName: 'System Administrator', // TODO: Replace with actual user name
+          userRole: 'Administrator', // TODO: Replace with actual user role
+          userDepartment: selectedSOP.department, // Use SOP's department
+          reason: 'Manual update via SOP Monitoring dashboard',
         })
       });
       
@@ -162,6 +169,13 @@ export default function SOPMonitoringPage() {
       if (result.success) {
         setShowEditModal(false);
         fetchMonitoringData();
+        
+        // Show success message with activity tracking info
+        if (result.activityLogged && result.changesTracked) {
+          console.log('✅ Activity logged successfully');
+          console.log('📝 Fields changed:', result.changesTracked.fieldsChanged);
+          console.log('📊 Changes:', result.changesTracked);
+        }
       } else {
         alert('Error: ' + result.error);
       }
@@ -190,6 +204,9 @@ export default function SOPMonitoringPage() {
       case 'missingDates':
         sops = data.sops.missingDates || [];
         break;
+      case 'perfect':
+        sops = data.sops.valid || [];
+        break;
       case 'all':
         sops = data.sops.all || [];
         break;
@@ -207,25 +224,47 @@ export default function SOPMonitoringPage() {
     
     // Apply sorting
     sops = [...sops].sort((a: SOP, b: SOP) => {
-      let aVal, bVal;
+      let aVal: any, bVal: any;
       
       switch (sortField) {
+        case 'identifier':
+          aVal = a.identifier || '';
+          bVal = b.identifier || '';
+          return sortAsc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+          
+        case 'name':
+          aVal = a.name || '';
+          bVal = b.name || '';
+          return sortAsc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+          
         case 'expiryDate':
-          aVal = a.expiryDate ? new Date(a.expiryDate).getTime() : Infinity;
-          bVal = b.expiryDate ? new Date(b.expiryDate).getTime() : Infinity;
+          // Put items without dates at the end
+          if (!a.expiryDate && !b.expiryDate) return 0;
+          if (!a.expiryDate) return 1;
+          if (!b.expiryDate) return -1;
+          aVal = new Date(a.expiryDate).getTime();
+          bVal = new Date(b.expiryDate).getTime();
           break;
+          
         case 'reviewDate':
-          aVal = a.reviewDate ? new Date(a.reviewDate).getTime() : Infinity;
-          bVal = b.reviewDate ? new Date(b.reviewDate).getTime() : Infinity;
+          // Put items without dates at the end
+          if (!a.reviewDate && !b.reviewDate) return 0;
+          if (!a.reviewDate) return 1;
+          if (!b.reviewDate) return -1;
+          aVal = new Date(a.reviewDate).getTime();
+          bVal = new Date(b.reviewDate).getTime();
           break;
+          
         case 'department':
           aVal = a.department || '';
           bVal = b.department || '';
           return sortAsc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+          
         case 'owner':
           aVal = a.owner || '';
           bVal = b.owner || '';
           return sortAsc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+          
         case 'priority':
         default:
           aVal = a.priority || 0;
@@ -257,15 +296,25 @@ export default function SOPMonitoringPage() {
         <PageHeader />
 
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-white mb-2">
-            SOP Monitoring & Compliance
-          </h1>
-          <p className="text-gray-300">Data-driven tracking - Focus on what needs action today</p>
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-4xl font-bold text-white mb-2">
+              SOP Monitoring & Compliance
+            </h1>
+            <p className="text-gray-300">Data-driven tracking - Focus on what needs action today</p>
+          </div>
+          
+          <button
+            onClick={() => router.push('/sop-monitoring/audit-logs')}
+            className="flex items-center gap-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-5 py-3 rounded-xl font-semibold transition-all transform hover:scale-105 shadow-lg shadow-purple-500/30"
+          >
+            <History className="w-5 h-5" />
+            Audit Logs
+          </button>
         </div>
 
         {/* Actionable Cards - What needs attention NOW */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
           {/* Review This Week - HIGHEST PRIORITY */}
           <button
             onClick={() => setActiveView('needsReviewThisWeek')}
@@ -333,6 +382,23 @@ export default function SOPMonitoringPage() {
             <h3 className="text-sm font-bold text-purple-400 uppercase tracking-wider">Missing Dates</h3>
             <p className="text-xs text-gray-400 mt-1">No review/expiry set</p>
           </button>
+
+          {/* Perfect - All Good! */}
+          <button
+            onClick={() => setActiveView('perfect')}
+            className={`p-6 rounded-2xl border-2 transition-all text-left ${
+              activeView === 'perfect'
+                ? 'bg-green-500/20 border-green-500 shadow-lg shadow-green-500/20'
+                : 'bg-white/5 border-green-500/30 hover:border-green-500/50 hover:bg-green-500/10'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <CheckCircle2 className="h-8 w-8 text-green-400" />
+              <span className="text-3xl font-black text-white">{data?.summary?.valid || 0}</span>
+            </div>
+            <h3 className="text-sm font-bold text-green-400 uppercase tracking-wider">Perfect</h3>
+            <p className="text-xs text-gray-400 mt-1">All dates valid & compliant</p>
+          </button>
         </div>
 
         {/* Department Overview */}
@@ -383,6 +449,7 @@ export default function SOPMonitoringPage() {
               {activeView === 'expiringNext30Days' && 'SOPs Expiring in Next 30 Days'}
               {activeView === 'expired' && 'Expired SOPs'}
               {activeView === 'missingDates' && 'SOPs with Missing Dates'}
+              {activeView === 'perfect' && 'Perfect SOPs - All Compliant'}
               {activeView === 'all' && 'All SOPs'}
               <span className="text-purple-300 text-lg font-normal">({currentSOPs.length})</span>
             </h2>
@@ -395,12 +462,12 @@ export default function SOPMonitoringPage() {
                 <select
                   value={filterDepartment}
                   onChange={(e) => setFilterDepartment(e.target.value)}
-                  className="bg-transparent text-white text-sm focus:outline-none cursor-pointer"
+                  className="bg-[#1a1f3a] text-white text-sm focus:outline-none cursor-pointer border border-purple-500/30 rounded px-2 py-1"
                   style={{ colorScheme: 'dark' }}
                 >
-                  <option value="">Quality Assurance</option>
+                  <option value="" className="bg-[#1a1f3a] text-white hover:bg-purple-700">All Departments</option>
                   {departments.map((dept: string) => (
-                    <option key={dept} value={dept}>{dept}</option>
+                    <option key={dept} value={dept} className="bg-[#1a1f3a] text-white hover:bg-purple-700">{dept}</option>
                   ))}
                 </select>
               </div>
@@ -411,31 +478,55 @@ export default function SOPMonitoringPage() {
                 <select
                   value={filterOwner}
                   onChange={(e) => setFilterOwner(e.target.value)}
-                  className="bg-transparent text-white text-sm focus:outline-none cursor-pointer"
+                  className="bg-[#1a1f3a] text-white text-sm focus:outline-none cursor-pointer border border-purple-500/30 rounded px-2 py-1"
                   style={{ colorScheme: 'dark' }}
                 >
-                  <option value="">All Owners</option>
+                  <option value="" className="bg-[#1a1f3a] text-white hover:bg-purple-700">All Owners</option>
                   {owners.map((owner: string) => (
-                    <option key={owner} value={owner}>{owner}</option>
+                    <option key={owner} value={owner} className="bg-[#1a1f3a] text-white hover:bg-purple-700">{owner}</option>
                   ))}
                 </select>
               </div>
 
-              <div className="flex items-center gap-2 px-4 py-2 bg-purple-800/30 border border-purple-500/30 rounded-lg ml-auto">
-                <ArrowUpDown className="h-4 w-4 text-purple-300" />
-                <span className="text-sm text-purple-200">Sort by:</span>
-                <select
-                  value={sortField}
-                  onChange={(e) => setSortField(e.target.value as SortField)}
-                  className="bg-transparent text-white text-sm focus:outline-none cursor-pointer"
-                  style={{ colorScheme: 'dark' }}
+              <div className="flex items-center gap-3 ml-auto">
+                {/* Sort Field Selector */}
+                <div className="flex items-center gap-2 px-4 py-2 bg-purple-800/30 border border-purple-500/30 rounded-lg">
+                  <ArrowUpDown className="h-4 w-4 text-purple-300" />
+                  <span className="text-sm text-purple-200">Sort by:</span>
+                  <select
+                    value={sortField}
+                    onChange={(e) => setSortField(e.target.value as SortField)}
+                    className="bg-transparent text-white text-sm focus:outline-none cursor-pointer"
+                    style={{ colorScheme: 'dark' }}
+                  >
+                    <option value="priority">Priority</option>
+                    <option value="identifier">SOP ID</option>
+                    <option value="name">Name</option>
+                    <option value="reviewDate">Review Date</option>
+                    <option value="expiryDate">Expiry Date</option>
+                    <option value="department">Department</option>
+                    <option value="owner">Owner</option>
+                  </select>
+                </div>
+
+                {/* Sort Direction Toggle */}
+                <button
+                  onClick={() => setSortAsc(!sortAsc)}
+                  className="flex items-center gap-2 px-4 py-2 bg-purple-800/30 border border-purple-500/30 rounded-lg hover:bg-purple-700/30 transition-all"
+                  title={sortAsc ? 'Ascending order' : 'Descending order'}
                 >
-                  <option value="priority">Priority ↓</option>
-                  <option value="expiryDate">Expiry Date</option>
-                  <option value="reviewDate">Review Date</option>
-                  <option value="department">Department</option>
-                  <option value="owner">Owner</option>
-                </select>
+                  {sortAsc ? (
+                    <>
+                      <span className="text-sm text-purple-200">A → Z</span>
+                      <span className="text-purple-300">↑</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-sm text-purple-200">Z → A</span>
+                      <span className="text-purple-300">↓</span>
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           </div>
@@ -447,7 +538,7 @@ export default function SOPMonitoringPage() {
               <div className="col-span-2">Name</div>
               <div className="col-span-2">Department & Owner</div>
               <div className="col-span-2">Process Area & Guideline</div>
-              <div className="col-span-2">Review Date</div>
+              <div className="col-span-2" title="Primary date used for expiry status">Review Date (Expiry) ⓘ</div>
               <div className="col-span-1">Expiry Date</div>
               <div className="col-span-1 text-right">Action</div>
             </div>
@@ -654,7 +745,7 @@ export default function SOPMonitoringPage() {
               <div className="p-8 space-y-5 max-h-[calc(90vh-200px)] overflow-y-auto">
                 <div className="grid grid-cols-2 gap-5">
                   <div>
-                    <label className="block text-white font-semibold mb-2 text-sm">Review Date *</label>
+                    <label className="block text-white font-semibold mb-2 text-sm">Review Date * (Primary Expiry)</label>
                     <input
                       type="date"
                       value={editForm.reviewDate}
@@ -665,7 +756,7 @@ export default function SOPMonitoringPage() {
                   </div>
 
                   <div>
-                    <label className="block text-white font-semibold mb-2 text-sm">Expiry Date *</label>
+                    <label className="block text-white font-semibold mb-2 text-sm">Expiry Date * (Optional)</label>
                     <input
                       type="date"
                       value={editForm.expiryDate}
@@ -674,6 +765,13 @@ export default function SOPMonitoringPage() {
                       style={{ colorScheme: 'dark' }}
                     />
                   </div>
+                </div>
+                
+                {/* Helpful Note */}
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+                  <p className="text-blue-200 text-sm">
+                    <span className="font-semibold">ℹ️ Note:</span> The <strong>Review Date</strong> from your SOP document is used as the primary expiry date for monitoring. SOPs are marked as expired when the Review Date has passed.
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-5">

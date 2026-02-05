@@ -87,6 +87,12 @@ export function getSubcategoryName(code: string): string {
     // Engineering and Maintenance
     'MAGE': 'Maintenance',
     'PREG': 'Engineering',
+    
+    // Personnel
+    'PEGE': 'Personnel General',
+    
+    // Annexure (typically under QA)
+    'ANNE': 'Annexure',
   };
 
   return nameMap[code] || code;
@@ -131,6 +137,12 @@ export function getDepartmentForSubcategory(code: string): string {
     // Engineering and Maintenance
     'MAGE': 'Engineering and Maintenance',
     'PREG': 'Engineering and Maintenance',
+    
+    // Personnel
+    'PEGE': 'Personnel',
+    
+    // Annexure
+    'ANNE': 'QA',  // Annexures typically fall under QA
   };
 
   return subcategoryToDepartment[code] || 'QA'; // Default to QA if unknown
@@ -296,6 +308,17 @@ export function buildMCQTreeStructure(
  * Get tree structure as a flat array for easier rendering
  */
 export function getTreeAsArray(tree: MCQTreeStructure) {
+  // Define the official department order
+  const DEPARTMENT_ORDER = [
+    'QA',
+    'QC',
+    'Microbiology',
+    'Production',
+    'Store',
+    'Engineering and Maintenance',
+    'Personnel'
+  ];
+
   const result: any[] = [];
 
   tree.departments.forEach((dept, deptName) => {
@@ -322,8 +345,29 @@ export function getTreeAsArray(tree: MCQTreeStructure) {
 
       deptNode.subcategories.push(subcatNode);
     });
+    
+    // Sort subcategories by code
+    deptNode.subcategories.sort((a, b) => a.code.localeCompare(b.code));
 
     result.push(deptNode);
+  });
+
+  // Sort departments by official order
+  result.sort((a, b) => {
+    const indexA = DEPARTMENT_ORDER.indexOf(a.name);
+    const indexB = DEPARTMENT_ORDER.indexOf(b.name);
+    
+    // If both are in the official order, sort by position
+    if (indexA !== -1 && indexB !== -1) {
+      return indexA - indexB;
+    }
+    
+    // If only one is in the official order, it comes first
+    if (indexA !== -1) return -1;
+    if (indexB !== -1) return 1;
+    
+    // If neither is in the official order, sort alphabetically
+    return a.name.localeCompare(b.name);
   });
 
   return result;

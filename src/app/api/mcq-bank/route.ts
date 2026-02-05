@@ -12,7 +12,8 @@ export async function GET(request: NextRequest) {
     const folderDepartment = searchParams.get('folderDepartment');
     const folderSubcategory = searchParams.get('folderSubcategory');
     const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '10');
+    const limit = Math.min(parseInt(searchParams.get('limit') || '10'), 100); // Cap at 100 to prevent timeouts
+    const summary = searchParams.get('summary') === 'true'; // Option to fetch summary only
 
     let query: any = {};
 
@@ -28,13 +29,36 @@ export async function GET(request: NextRequest) {
       query.folderSubcategory = folderSubcategory;
     }
 
+    // If summary mode, only fetch essential fields
+    if (summary) {
+      const mcqBanks = await MCQBank.find(query)
+        .select('sopId sopIdentifier sopName folderDepartment folderSubcategory createdAt')
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean();
+
+      const total = await MCQBank.countDocuments(query);
+
+      return NextResponse.json({
+        success: true,
+        mcqBanks,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      });
+    }
 
     // Fetch MCQ Banks with folder fields explicitly selected
     const mcqBanks = await MCQBank.find(query)
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
-      .lean();
+      .lean()
+      .maxTimeMS(30000); // 30 second timeout
 
     const total = await MCQBank.countDocuments(query);
 

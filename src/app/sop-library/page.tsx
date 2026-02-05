@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import PageHeader from '@/components/PageHeader';
-import SOPTreeView from '@/components/SOPTreeView';
+import SOPLibraryTreeView from '@/components/SOPLibraryTreeView';
+import FolderUploadModal from '@/components/FolderUploadModal';
 import { 
   Search, 
   Filter, 
@@ -18,7 +19,8 @@ import {
   RefreshCw,
   Eye,
   FolderTree,
-  List
+  List,
+  FolderUp
 } from 'lucide-react';
 
 interface VideoFile {
@@ -74,6 +76,9 @@ interface SOPLibrary {
     views: number;
     totalMCQs: number;
   };
+  folderPath?: string;
+  parentFolder?: string;
+  subfolderLevel?: number;
 }
 
 export default function SOPLibraryPage() {
@@ -91,6 +96,9 @@ export default function SOPLibraryPage() {
   // View mode: 'folder' or 'list' - default to folder
   const [viewMode, setViewMode] = useState<'folder' | 'list'>('folder');
   const [treeData, setTreeData] = useState<any[]>([]);
+  
+  // Folder upload modal state
+  const [showFolderUpload, setShowFolderUpload] = useState(false);
 
   useEffect(() => {
     fetchSOPLibrary();
@@ -143,6 +151,7 @@ export default function SOPLibraryPage() {
       console.error('Error fetching tree data:', error);
     }
   };
+
 
   const syncSOPLibrary = async () => {
     setSyncing(true);
@@ -275,11 +284,25 @@ export default function SOPLibraryPage() {
               </div>
 
               <button
+                onClick={() => router.push('/master-sop')}
+                className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg"
+              >
+                <FolderTree className="h-5 w-5" />
+                Master SOP
+              </button>
+              <button
                 onClick={() => router.push('/sop-monitoring')}
                 className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg"
               >
                 <Eye className="h-5 w-5" />
-                Go to SOP Monitoring
+                SOP Monitoring
+              </button>
+              <button
+                onClick={() => setShowFolderUpload(true)}
+                className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg"
+              >
+                <FolderUp className="h-5 w-5" />
+                Upload Folder
               </button>
               <button
                 onClick={syncSOPLibrary}
@@ -374,7 +397,7 @@ export default function SOPLibraryPage() {
         {/* Content Area - Conditional Rendering */}
         {viewMode === 'folder' ? (
           /* Folder View */
-          <SOPTreeView
+          <SOPLibraryTreeView
             tree={treeData}
             searchTerm={searchTerm}
             onViewSOP={(sop) => router.push(`/sop-library/${sop._id}`)}
@@ -528,6 +551,16 @@ export default function SOPLibraryPage() {
           </>
         )}
       </div>
+      
+      {/* Folder Upload Modal */}
+      <FolderUploadModal
+        isOpen={showFolderUpload}
+        onClose={() => setShowFolderUpload(false)}
+        onSuccess={() => {
+          fetchSOPLibrary();
+          fetchTreeData();
+        }}
+      />
     </div>
   );
 }

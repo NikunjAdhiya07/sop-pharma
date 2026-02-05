@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch all MCQ Banks
     const mcqBanks = await MCQBank.find({})
-      .select('_id sopId sopName sopIdentifier department totalQuestions mcqs')
+      .select('_id sopId sopName sopIdentifier department totalQuestions')
       .lean();
 
     console.log(`📊 Building tree from ${sops.length} SOPs and ${mcqBanks.length} MCQ banks`);

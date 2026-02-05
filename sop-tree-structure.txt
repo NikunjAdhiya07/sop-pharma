@@ -1,0 +1,50 @@
+﻿=== SOP LIBRARY TREE ===
+
+Department: QA
+  Total SOPs: 138
+  Subcategories:
+    - ANNE: ANNE (1 SOPs)
+    - PEGE: PEGE (24 SOPs)
+    - QAGE: General (113 SOPs)
+
+Department: QC
+  Total SOPs: 42
+  Subcategories:
+    - QAIC: Instrument Calibration (2 SOPs)
+    - QAIO: Instrument Operation (36 SOPs)
+    - QCGE: General (4 SOPs)
+
+Department: Microbiology
+  Total SOPs: 58
+  Subcategories:
+    - QAMI: Microbiology (52 SOPs)
+    - QCMI: Microbiology (6 SOPs)
+
+Department: Production
+  Total SOPs: 106
+  Subcategories:
+    - PRAA: Aseptic Area (14 SOPs)
+    - PRCL: Cleaning (14 SOPs)
+    - PRED: Eye Drops (13 SOPs)
+    - PREO: Eye Ointment (4 SOPs)
+    - PREP: External Preparation (8 SOPs)
+    - PRGE: General (31 SOPs)
+    - PRMA: Manufacturing (9 SOPs)
+    - PRPA: Packing (13 SOPs)
+
+Department: Store
+  Total SOPs: 45
+  Subcategories:
+    - BSGE: BSR (2 SOPs)
+    - STCL: Store Cleaning (6 SOPs)
+    - STGE: Store General (13 SOPs)
+    - STOP: Store Operation (10 SOPs)
+    - STPA: Store Packing Material (6 SOPs)
+    - STRM: Store Raw Material (8 SOPs)
+
+Department: Engineering and Maintenance
+  Total SOPs: 36
+  Subcategories:
+    - MAGE: Maintenance (11 SOPs)
+    - PREG: Engineering (25 SOPs)
+

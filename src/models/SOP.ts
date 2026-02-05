@@ -24,6 +24,12 @@ export interface ISOP extends Document {
   lastReviewedBy?: string; // Who last reviewed this SOP
   remarks?: string; // General notes about the SOP
   
+  // Folder Hierarchy Fields (for bulk folder upload)
+  folderPath?: string; // Full path from department root (e.g., "QA/Calibration/Instruments")
+  parentFolder?: string; // Immediate parent folder name
+  subfolderLevel?: number; // Depth in folder hierarchy (0 = department root)
+  originalFileName?: string; // Original DOCX filename before processing
+  
   // Legacy Compliance Tracking (keeping for backward compatibility)
   validityPeriod?: number; // in months (e.g., 12, 24, 36)
   complianceStatus?: 'compliant' | 'partial' | 'non-compliant' | 'pending';
@@ -122,6 +128,24 @@ const SOPSchema = new Schema<ISOP>({
     type: String,
   },
   
+  // Folder Hierarchy Fields
+  folderPath: {
+    type: String,
+    trim: true,
+  },
+  parentFolder: {
+    type: String,
+    trim: true,
+  },
+  subfolderLevel: {
+    type: Number,
+    default: 0,
+  },
+  originalFileName: {
+    type: String,
+    trim: true,
+  },
+  
   // Legacy Expiry and Compliance Tracking
   expiryDate: {
     type: Date,
@@ -158,6 +182,9 @@ const SOPSchema = new Schema<ISOP>({
 SOPSchema.index({ identifier: 1 });
 SOPSchema.index({ status: 1 });
 SOPSchema.index({ uploadedAt: -1 });
+SOPSchema.index({ folderPath: 1 });
+SOPSchema.index({ parentFolder: 1 });
+SOPSchema.index({ department: 1, folderPath: 1 });
 
 const SOP: Model<ISOP> = mongoose.models.SOP || mongoose.model<ISOP>('SOP', SOPSchema);
 

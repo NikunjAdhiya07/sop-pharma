@@ -158,16 +158,13 @@ function detectDepartment(filename: string, content: string): string {
   const text = (filename + ' ' + content.substring(0, 500)).toLowerCase();
 
   const departmentKeywords = {
-    'Quality Assurance (QA)': ['quality assurance', 'qa ', 'qms', 'audit', 'compliance'],
-    'Quality Control (QC)': ['quality control', 'qc ', 'testing', 'analysis', 'laboratory'],
-    'Production': ['production', 'manufacturing', 'batch', 'process'],
-    'Maintenance / Engineering': ['maintenance', 'engineering', 'equipment', 'calibration'],
-    'Research & Development (R&D)': ['research', 'development', 'r&d', 'formulation'],
-    'Human Resources (HR)': ['human resources', 'hr ', 'personnel', 'training'],
-    'Information Technology (IT)': ['information technology', 'it ', 'software', 'system'],
-    'Warehouse / Logistics': ['warehouse', 'logistics', 'storage', 'inventory'],
-    'Regulatory Affairs': ['regulatory', 'registration', 'submission'],
-    'EHS': ['ehs', 'safety', 'environment', 'health'],
+    'QA': ['qa', 'quality assurance', 'qaic', 'qaio', 'qcge', 'instrument calibration', 'instrument operation', 'audit', 'compliance', 'deviation', 'capa'],
+    'QC': ['qc', 'quality control', 'testing', 'analysis', 'laboratory', 'sampling', 'specification'],
+    'Microbiology': ['microbiology', 'qami', 'qcmi', 'sterility', 'bioburden', 'environmental monitoring', 'aseptic'],
+    'Production': ['production', 'praa', 'prcl', 'pred', 'preo', 'prep', 'prge', 'prma', 'prpa', 'manufacturing', 'aseptic area', 'eye drops', 'eye ointment', 'external preparation', 'packing'],
+    'Store': ['store', 'bsge', 'stcl', 'stge', 'stop', 'stpa', 'strm', 'warehouse', 'storage', 'inventory', 'raw material', 'packing material'],
+    'Engineering and Maintenance': ['engineering', 'maintenance', 'equipment', 'calibration', 'preventive', 'hvac', 'utilities'],
+    'Personnel': ['personnel', 'human resources', 'hr', 'training', 'recruitment', 'employee', 'staff'],
   };
 
   for (const [dept, keywords] of Object.entries(departmentKeywords)) {
@@ -176,5 +173,5 @@ function detectDepartment(filename: string, content: string): string {
     }
   }
 
-  return 'General';
+  return 'QA';
 }

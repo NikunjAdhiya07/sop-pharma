@@ -96,6 +96,12 @@ export async function POST(request: NextRequest) {
 
     const fileUrl = `/uploads/sops/${fileName}`;
 
+    // Extract dates and metadata from content
+    console.log('📅 Extracting dates from document...');
+    const { extractDatesFromContent } = await import('@/lib/dateExtractor');
+    const extractedDates = extractDatesFromContent(parsed.content);
+    console.log('✅ Dates extracted:', extractedDates);
+
     // Create SOP record
     console.log('💾 Creating SOP record in database...');
     const sop = await SOP.create({
@@ -106,6 +112,11 @@ export async function POST(request: NextRequest) {
       fileType,
       content: parsed.content,
       status: 'uploaded',
+      // Add extracted dates
+      effectiveDate: extractedDates.effectiveDate,
+      reviewDate: extractedDates.reviewDate,
+      expiryDate: extractedDates.expiryDate,
+      version: extractedDates.version,
       metadata: {
         fileSize: buffer.length,
         pageCount: parsed.metadata.pageCount,

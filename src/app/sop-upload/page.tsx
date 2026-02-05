@@ -22,21 +22,17 @@ export default function SOPUploadPage() {
   const [file, setFile] = useState<File | null>(null);
   const [sopName, setSopName] = useState('');
   const [sopIdentifier, setSopIdentifier] = useState('');
-  const [department, setDepartment] = useState('Quality Assurance');
+  const [department, setDepartment] = useState('QA');
   const [uploading, setUploading] = useState(false);
 
   const departments = [
-    'Quality Assurance (QA)',
-    'Quality Control (QC)',
+    'QA',
+    'QC',
+    'Microbiology',
     'Production',
-    'Maintenance / Engineering',
-    'Research & Development (R&D)',
-    'Human Resources (HR)',
-    'Information Technology (IT)',
-    'Warehouse / Logistics',
-    'Regulatory Affairs',
-    'EHS',
-    'General'
+    'Store',
+    'Engineering and Maintenance',
+    'Personnel'
   ];
   const [generating, setGenerating] = useState(false);
   const [uploadedSOP, setUploadedSOP] = useState<UploadResponse['sop'] | null>(null);

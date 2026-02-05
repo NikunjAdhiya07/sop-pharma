@@ -73,14 +73,43 @@ export async function parsePDF(buffer: Buffer): Promise<ParsedDocument> {
 }
 
 /**
- * Parse DOCX file and extract text content
+ * Parse DOCX file and extract text content including headers and tables
  */
 export async function parseDOCX(buffer: Buffer): Promise<ParsedDocument> {
   try {
-    const result = await mammoth.extractRawText({ buffer });
+    // First, try to extract using raw XML (includes headers!)
+    let content = '';
+    try {
+      const { extractAllDOCXContent } = await import('./docxHeaderExtractor');
+      content = await extractAllDOCXContent(buffer);
+      console.log('✅ Extracted content using XML parser (includes headers)');
+    } catch (xmlError) {
+      console.log('⚠️ XML extraction failed, falling back to mammoth');
+      
+      // Fallback to mammoth
+      const htmlResult = await mammoth.convertToHtml({ buffer });
+      let htmlText = htmlResult.value
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/p>/gi, '\n')
+        .replace(/<\/tr>/gi, '\n')
+        .replace(/<\/td>/gi, ' ')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/ \n /g, '\n')
+        .trim();
+      
+      const rawResult = await mammoth.extractRawText({ buffer });
+      content = htmlText + '\n\n' + rawResult.value;
+    }
     
-    const content = result.value.trim();
-    const wordCount = content.split(/\s+/).length;
+    content = content.trim();
+    const wordCount = content.split(/\s+/).filter(w => w.length > 0).length;
+    
+    console.log('📄 DOCX extraction complete:');
+    console.log('  - Total length:', content.length);
+    console.log('  - Word count:', wordCount);
+    console.log('  - First 500 chars:', content.substring(0, 500));
     
     return {
       content,

@@ -1,0 +1,76 @@
+﻿=== MCQ BANK ===
+
+QA (138 SOPs):
+  - Annexure (1 SOPs)
+  - Personnel General (24 SOPs)
+  - General (113 SOPs)
+
+QC (42 SOPs):
+  - Instrument Calibration (2 SOPs)
+  - Instrument Operation (36 SOPs)
+  - General (4 SOPs)
+
+Microbiology (61 SOPs):
+  - Microbiology (53 SOPs)
+  - Microbiology (8 SOPs)
+
+Production (106 SOPs):
+  - Aseptic Area (14 SOPs)
+  - Cleaning (14 SOPs)
+  - Eye Drops (13 SOPs)
+  - Eye Ointment (4 SOPs)
+  - External Preparation (8 SOPs)
+  - General (31 SOPs)
+  - Manufacturing (9 SOPs)
+  - Packing (13 SOPs)
+
+Store (45 SOPs):
+  - BSR (2 SOPs)
+  - Store Cleaning (6 SOPs)
+  - Store General (13 SOPs)
+  - Store Operation (10 SOPs)
+  - Store Packing Material (6 SOPs)
+  - Store Raw Material (8 SOPs)
+
+Engineering and Maintenance (36 SOPs):
+  - Maintenance (11 SOPs)
+  - Engineering (25 SOPs)
+
+=== SOP LIBRARY ===
+
+QA (138 SOPs):
+  - Annexure (1 SOPs)
+  - Personnel General (24 SOPs)
+  - General (113 SOPs)
+
+QC (42 SOPs):
+  - Instrument Calibration (2 SOPs)
+  - Instrument Operation (36 SOPs)
+  - General (4 SOPs)
+
+Microbiology (58 SOPs):
+  - Microbiology (52 SOPs)
+  - Microbiology (6 SOPs)
+
+Production (106 SOPs):
+  - Aseptic Area (14 SOPs)
+  - Cleaning (14 SOPs)
+  - Eye Drops (13 SOPs)
+  - Eye Ointment (4 SOPs)
+  - External Preparation (8 SOPs)
+  - General (31 SOPs)
+  - Manufacturing (9 SOPs)
+  - Packing (13 SOPs)
+
+Store (45 SOPs):
+  - BSR (2 SOPs)
+  - Store Cleaning (6 SOPs)
+  - Store General (13 SOPs)
+  - Store Operation (10 SOPs)
+  - Store Packing Material (6 SOPs)
+  - Store Raw Material (8 SOPs)
+
+Engineering and Maintenance (36 SOPs):
+  - Maintenance (11 SOPs)
+  - Engineering (25 SOPs)
+

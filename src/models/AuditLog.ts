@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IAuditLog extends Document {
-  action: 'EXAM_SUBMISSION' | 'EXAM_EVALUATION' | 'EXAM_START' | 'MCQ_GENERATION' | 'USER_LOGIN';
+  action: 'EXAM_SUBMISSION' | 'EXAM_EVALUATION' | 'EXAM_START' | 'MCQ_GENERATION' | 'USER_LOGIN' | 'FOLDER_UPLOAD';
   userId: mongoose.Types.ObjectId;
   username: string;
   userFullName: string;
@@ -18,7 +18,7 @@ const AuditLogSchema = new Schema<IAuditLog>({
   action: {
     type: String,
     required: true,
-    enum: ['EXAM_SUBMISSION', 'EXAM_EVALUATION', 'EXAM_START', 'MCQ_GENERATION', 'USER_LOGIN'],
+    enum: ['EXAM_SUBMISSION', 'EXAM_EVALUATION', 'EXAM_START', 'MCQ_GENERATION', 'USER_LOGIN', 'FOLDER_UPLOAD'],
     index: true,
   },
   userId: {

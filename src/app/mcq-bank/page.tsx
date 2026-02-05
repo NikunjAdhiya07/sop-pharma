@@ -90,15 +90,15 @@ function MCQBankContent() {
     if (sopIdFromUrl && mcqBanks.length > 0) {
       const matchingBank = mcqBanks.find(bank => bank.sopId === sopIdFromUrl);
       if (matchingBank) {
-        setSelectedMCQBank(matchingBank);
+        fetchFullBankDetails(matchingBank);
       }
     }
   }, [sopIdFromUrl, mcqBanks]);
 
   const fetchMCQBanks = async () => {
     try {
-      // Fetch all MCQ banks with a high limit to show everything
-      const response = await fetch(`/api/mcq-bank?limit=1000&page=${currentPage}`);
+      // Fetch MCQ banks with summary mode to avoid timeouts but allow client-side filtering
+      const response = await fetch(`/api/mcq-bank?limit=1000&page=${currentPage}&summary=true`);
       const data = await response.json();
       
       if (data.success) {
@@ -110,6 +110,35 @@ function MCQBankContent() {
       }
     } catch (error) {
       console.error('Error fetching MCQ banks:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchFullBankDetails = async (bank: MCQBank) => {
+    // If questions are already loaded, just select it
+    if (bank.mcqs && bank.mcqs.length > 0) {
+      setSelectedMCQBank(bank);
+      return;
+    }
+
+    // Otherwise fetch the full details
+    try {
+      setLoading(true);
+      // We can use the existing API but filter by ID if we had an ID filter, 
+      // or filter by sopId since that's unique per bank usually. 
+      // Actually the current API supports sopId filtering.
+      const response = await fetch(`/api/mcq-bank?sopId=${bank.sopId}&limit=1`);
+      const data = await response.json();
+
+      if (data.success && data.mcqBanks.length > 0) {
+        setSelectedMCQBank(data.mcqBanks[0]);
+      } else {
+        alert('Failed to load questions for this bank');
+      }
+    } catch (error) {
+      console.error('Error fetching full bank details:', error);
+      alert('Error loading questions');
     } finally {
       setLoading(false);
     }
@@ -421,7 +450,7 @@ function MCQBankContent() {
               onViewMCQs={(sopNode) => {
                 // Find the first MCQ bank for this SOP
                 if (sopNode.mcqBanks && sopNode.mcqBanks.length > 0) {
-                  setSelectedMCQBank(sopNode.mcqBanks[0]);
+                  fetchFullBankDetails(sopNode.mcqBanks[0]);
                 }
               }}
               onDownloadSOP={(sopNode) => {
@@ -502,7 +531,7 @@ function MCQBankContent() {
                 <div className="flex flex-col gap-2">
                   <div className="flex gap-2">
                     <button
-                      onClick={() => setSelectedMCQBank(bank)}
+                      onClick={() => fetchFullBankDetails(bank)}
                       className="flex-1 py-2 px-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all flex items-center justify-center"
                     >
                       <Eye className="h-4 w-4 mr-2" />

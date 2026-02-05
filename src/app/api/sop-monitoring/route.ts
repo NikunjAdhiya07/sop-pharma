@@ -1,51 +1,74 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
-import SOP from '@/models/SOP';
+import MasterSOPRepository from '@/models/MasterSOPRepository';
 import MergeSuggestion from '@/models/MergeSuggestion';
 
 // Helper function to compute SOP status dynamically
+// IMPORTANT: Review Date from SOP documents is treated as the Expiry Date
 function computeSOPStatus(sop: any) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   
-  const expiryDate = sop.expiryDate ? new Date(sop.expiryDate) : null;
-  const reviewDate = sop.reviewDate ? new Date(sop.reviewDate) : null;
+  // Extract dates from metadata if available, otherwise use top-level fields
+  const effectiveDateField = sop.metadata?.effectiveDate || sop.effectiveDate;
+  const reviewDateField = sop.metadata?.reviewDate || sop.reviewDate;
+  const expiryDateField = sop.metadata?.expiryDate || sop.expiryDate;
+  const versionField = sop.metadata?.version || sop.version || '1.0';
   
-  // Calculate days to expiry
+  // Review Date is the primary expiry date for SOPs
+  const reviewDate = reviewDateField ? new Date(reviewDateField) : null;
+  const expiryDate = expiryDateField ? new Date(expiryDateField) : null;
+  
+  // Use reviewDate as the primary expiry date, fallback to expiryDate if reviewDate is not set
+  const effectiveExpiryDate = reviewDate || expiryDate;
+  
+  // Calculate days to expiry (based on review date)
   let daysToExpiry = null;
-  if (expiryDate) {
-    const diffTime = expiryDate.getTime() - today.getTime();
+  if (effectiveExpiryDate) {
+    const diffTime = effectiveExpiryDate.getTime() - today.getTime();
     daysToExpiry = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   }
   
-  // Calculate days to review
-  let daysToReview = null;
-  if (reviewDate) {
-    const diffTime = reviewDate.getTime() - today.getTime();
-    daysToReview = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  }
+  // Calculate days to review (same as expiry in most cases)
+  let daysToReview = daysToExpiry;
   
   // Determine status based on dates
   let status = 'valid';
   let priority = 0; // Higher = more urgent
   
-  // Check expiry first (highest priority)
-  if (expiryDate && expiryDate < today) {
+  // Check if SOP has expired (review date has passed)
+  if (effectiveExpiryDate && effectiveExpiryDate < today) {
     status = 'expired';
     priority = 100;
-  } else if (reviewDate && reviewDate <= today) {
+  } else if (effectiveExpiryDate && daysToExpiry !== null && daysToExpiry <= 7) {
+    // Review needed this week (within 7 days)
     status = 'needsReview';
     priority = 90;
-  } else if (expiryDate && daysToExpiry !== null && daysToExpiry <= 30) {
+  } else if (effectiveExpiryDate && daysToExpiry !== null && daysToExpiry <= 30) {
+    // Expiring soon (within 30 days)
     status = 'expiringSoon';
     priority = 80;
-  } else if (!expiryDate && !reviewDate) {
+  } else if (!effectiveExpiryDate) {
+    // Missing review/expiry date
     status = 'missingDates';
     priority = 70;
   }
   
   return {
     ...sop,
+    // Map MasterSOPRepository fields to SOP Monitoring expected fields
+    _id: sop._id,
+    name: sop.sopName,
+    identifier: sop.sopIdentifier,
+    department: sop.department,
+    processArea: sop.processArea,
+    owner: sop.owner,
+    version: versionField,
+    effectiveDate: effectiveDateField,
+    reviewDate: reviewDateField,
+    expiryDate: expiryDateField,
+    guidelineReference: sop.guidelineReference,
+    remarks: sop.remarks,
     computedStatus: status,
     priority,
     daysToExpiry,
@@ -57,8 +80,8 @@ export async function GET(req: NextRequest) {
   try {
     await connectDB();
 
-    // Fetch all SOPs
-    const allSops = await SOP.find({}).lean();
+    // Fetch all SOPs from Master SOP Repository
+    const allSops = await MasterSOPRepository.find({}).lean();
     
     // Compute status for each SOP
     const sopsWithStatus = allSops.map(computeSOPStatus);
@@ -75,21 +98,24 @@ export async function GET(req: NextRequest) {
     
     // Get actionable insights
     const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const nextWeek = new Date(today);
     nextWeek.setDate(today.getDate() + 7);
     
     const needsReviewThisWeek = sopsWithStatus.filter(s => {
-      if (!s.reviewDate) return false;
-      const reviewDate = new Date(s.reviewDate);
-      return reviewDate >= today && reviewDate <= nextWeek;
+      const effectiveDate = s.reviewDate || s.expiryDate;
+      if (!effectiveDate) return false;
+      const dateObj = new Date(effectiveDate);
+      return dateObj >= today && dateObj <= nextWeek;
     });
     
     const expiringNext30Days = sopsWithStatus.filter(s => {
-      if (!s.expiryDate) return false;
-      const expiryDate = new Date(s.expiryDate);
+      const effectiveDate = s.reviewDate || s.expiryDate;
+      if (!effectiveDate) return false;
+      const dateObj = new Date(effectiveDate);
       const thirtyDaysFromNow = new Date(today);
       thirtyDaysFromNow.setDate(today.getDate() + 30);
-      return expiryDate >= today && expiryDate <= thirtyDaysFromNow;
+      return dateObj >= today && dateObj <= thirtyDaysFromNow;
     });
     
     // Department breakdown (auto-grouped)

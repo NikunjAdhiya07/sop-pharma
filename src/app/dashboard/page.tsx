@@ -17,7 +17,8 @@ import {
   Activity,
   BarChart3,
   Zap,
-  Calendar
+  Calendar,
+  Database
 } from 'lucide-react';
 
 interface UserData {
@@ -253,7 +254,7 @@ export default function DashboardPage() {
                 Quick Actions
               </h3>
             </div>
-            <div className="grid md:grid-cols-3 gap-6">
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
               <Link href="/sop-upload">
                 <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20 hover:border-purple-500 transition-all duration-300 transform hover:scale-[1.02] hover:shadow-2xl hover:shadow-purple-500/20 cursor-pointer group h-full">
                   <div className="flex items-center mb-6">
@@ -310,6 +311,34 @@ export default function DashboardPage() {
                 </div>
               </Link>
 
+              <Link href="/sop-compliance-sync">
+                <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20 hover:border-green-500 transition-all duration-300 transform hover:scale-[1.02] hover:shadow-2xl hover:shadow-green-500/20 cursor-pointer group h-full">
+                  <div className="flex items-center mb-6">
+                    <div className="bg-gradient-to-br from-green-600 to-emerald-600 p-4 rounded-xl mr-4 group-hover:scale-110 transition-transform shadow-lg shadow-green-500/50">
+                      <Database className="h-8 w-8 text-white" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-white">SOP Compliance Sync</h2>
+                  </div>
+                  <p className="text-gray-300 text-base mb-6 leading-relaxed">
+                    Upload department files to sync SOP compliance dates and track review schedules.
+                  </p>
+                  <ul className="space-y-3 text-gray-400">
+                    <li className="flex items-center">
+                      <span className="w-2 h-2 bg-green-400 rounded-full mr-3 group-hover:animate-pulse"></span>
+                      <span className="text-sm">Auto date extraction</span>
+                    </li>
+                    <li className="flex items-center">
+                      <span className="w-2 h-2 bg-green-400 rounded-full mr-3 group-hover:animate-pulse"></span>
+                      <span className="text-sm">Smart SOP matching</span>
+                    </li>
+                    <li className="flex items-center">
+                      <span className="w-2 h-2 bg-green-400 rounded-full mr-3 group-hover:animate-pulse"></span>
+                      <span className="text-sm">Instant monitoring sync</span>
+                    </li>
+                  </ul>
+                </div>
+              </Link>
+
               <Link href="/mcq-bank">
                 <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20 hover:border-pink-500 transition-all duration-300 transform hover:scale-[1.02] hover:shadow-2xl hover:shadow-pink-500/20 cursor-pointer group h-full">
                   <div className="flex items-center mb-6">
@@ -333,6 +362,34 @@ export default function DashboardPage() {
                     <li className="flex items-center">
                       <span className="w-2 h-2 bg-pink-400 rounded-full mr-3 group-hover:animate-pulse"></span>
                       <span className="text-sm">Advanced filtering</span>
+                    </li>
+                  </ul>
+                </div>
+              </Link>
+
+              <Link href="/sop-date-sync">
+                <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20 hover:border-orange-500 transition-all duration-300 transform hover:scale-[1.02] hover:shadow-2xl hover:shadow-orange-500/20 cursor-pointer group h-full">
+                  <div className="flex items-center mb-6">
+                    <div className="bg-gradient-to-br from-orange-600 to-amber-600 p-4 rounded-xl mr-4 group-hover:scale-110 transition-transform shadow-lg shadow-orange-500/50">
+                      <Calendar className="h-8 w-8 text-white" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-white">Date Sync</h2>
+                  </div>
+                  <p className="text-gray-300 text-base mb-6 leading-relaxed">
+                    Upload SOP folders to extract dates and sync with monitoring automatically.
+                  </p>
+                  <ul className="space-y-3 text-gray-400">
+                    <li className="flex items-center">
+                      <span className="w-2 h-2 bg-orange-400 rounded-full mr-3 group-hover:animate-pulse"></span>
+                      <span className="text-sm">Auto date extraction</span>
+                    </li>
+                    <li className="flex items-center">
+                      <span className="w-2 h-2 bg-orange-400 rounded-full mr-3 group-hover:animate-pulse"></span>
+                      <span className="text-sm">Bulk folder upload</span>
+                    </li>
+                    <li className="flex items-center">
+                      <span className="w-2 h-2 bg-orange-400 rounded-full mr-3 group-hover:animate-pulse"></span>
+                      <span className="text-sm">Monitoring sync</span>
                     </li>
                   </ul>
                 </div>

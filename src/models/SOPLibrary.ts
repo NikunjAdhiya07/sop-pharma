@@ -53,6 +53,12 @@ export interface ISOPLibrary extends Document {
   complianceNotes?: string;
   expiryDate?: Date;
   lastReviewDate?: Date;
+  
+  // Folder Hierarchy Fields (mirrored from SOP)
+  folderPath?: string;
+  parentFolder?: string;
+  subfolderLevel?: number;
+  
   createdAt: Date;
   updatedAt: Date;
 }
@@ -230,6 +236,20 @@ const SOPLibrarySchema = new Schema<ISOPLibrary>({
     type: Date,
     default: Date.now,
   },
+  
+  // Folder Hierarchy Fields
+  folderPath: {
+    type: String,
+    trim: true,
+  },
+  parentFolder: {
+    type: String,
+    trim: true,
+  },
+  subfolderLevel: {
+    type: Number,
+    default: 0,
+  },
 }, {
   timestamps: true,
 });
@@ -240,6 +260,8 @@ SOPLibrarySchema.index({ sopIdentifier: 1 });
 SOPLibrarySchema.index({ department: 1 });
 SOPLibrarySchema.index({ departmentCode: 1 });
 SOPLibrarySchema.index({ mcqBankId: 1 });
+SOPLibrarySchema.index({ folderPath: 1 });
+SOPLibrarySchema.index({ department: 1, folderPath: 1 });
 
 // Pre-save hook to calculate completion status
 SOPLibrarySchema.pre('save', function(next) {
