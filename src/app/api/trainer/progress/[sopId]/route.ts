@@ -6,7 +6,7 @@ import { getServerSession } from 'next-auth';
 
 export async function GET(
   request: Request,
-  { params }: { params: { sopId: string } }
+  { params }: { params: Promise<{ sopId: string }> }
 ) {
   try {
     const session = await getServerSession();
@@ -33,7 +33,7 @@ export async function GET(
     // We look for TestResults where `questions` contain this SOP's identifier.
     // Use aggregate for performance if large data
     
-    const { sopId } = params;
+    const { sopId } = await params;
 
     // Fetch results
     const results = await TestResult.find({
