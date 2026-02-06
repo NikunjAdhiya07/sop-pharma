@@ -34,7 +34,7 @@ export async function POST(request: Request) {
         resourceTitle = video ? video.title : 'Unknown Video';
     } else if (resourceType === 'sop') {
         const sop = await SOP.findById(resourceId);
-        resourceTitle = sop ? sop.title : 'Unknown SOP';
+        resourceTitle = sop ? sop.name : 'Unknown SOP';
     }
 
     // Create Log Entry
