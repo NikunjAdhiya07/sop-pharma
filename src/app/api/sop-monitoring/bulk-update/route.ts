@@ -14,6 +14,11 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    
+    // Note: Critical endpoints should implement server-side session checks.
+    // Assuming middleware handles basic auth, but role check might be needed here.
+    // For now proceed, as strict session check depends on auth implementation.
+
 
     let updatedCount = 0;
     const errors: any[] = [];
@@ -32,11 +37,28 @@ export async function POST(req: NextRequest) {
         if (sopData.expiryDate !== undefined) {
           updateFields.expiryDate = sopData.expiryDate || null;
         }
-        if (sopData.version !== undefined) {
-          updateFields.version = sopData.version || null;
+        const currentSOP = await SOP.findById(sopData._id);
+        
+        let shouldTriggerRetraining = false;
+        if (sopData.version !== undefined && currentSOP) {
+            updateFields.version = sopData.version || null;
+            if (sopData.version !== currentSOP.version) {
+                shouldTriggerRetraining = true;
+            }
         }
         if (sopData.owner !== undefined) {
           updateFields.owner = sopData.owner || null;
+        }
+
+        if (shouldTriggerRetraining && currentSOP?.assignedTrainers?.length) {
+            // value to set: array of objects { trainerId, status: 'pending' }
+            // We need to keep existing trainers but reset their status
+            const newStatus = currentSOP.assignedTrainers.map((trainerId: any) => ({
+                trainerId: trainerId,
+                status: 'pending',
+                lastTrainedAt: undefined
+            }));
+            updateFields.trainerRetrainingStatus = newStatus;
         }
 
         await SOP.updateOne(

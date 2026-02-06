@@ -1,6 +1,7 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import SOPLibrary from '@/models/SOPLibrary';
+import { performSOPLibrarySync } from '@/lib/sopLibrarySync';
 import { 
   extractSubcategoryFromIdentifier, 
   getSubcategoryName, 
@@ -18,9 +19,21 @@ const DEPARTMENT_ORDER = [
   'Personnel'
 ];
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
     await dbConnect();
+
+    // Check if we have any library entries
+    const count = await SOPLibrary.countDocuments();
+    
+    // If empty, trigger a blocking sync to ensure data is there
+    if (count === 0) {
+      console.log('📚 SOP Library is empty, triggering initial sync...');
+      await performSOPLibrarySync();
+    } else {
+      // Otherwise trigger a background sync to keep things fresh
+      performSOPLibrarySync().catch(err => console.error('Auto-sync error:', err));
+    }
 
     // Get department filter from query params
     const { searchParams } = new URL(request.url);

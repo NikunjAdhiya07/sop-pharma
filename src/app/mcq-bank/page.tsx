@@ -27,8 +27,8 @@ interface MCQBank {
   sopName: string;
   sopIdentifier: string;
   mcqs: MCQ[];
-  totalQuestions: number;
-  difficultyDistribution: {
+  totalQuestions?: number;
+  difficultyDistribution?: {
     easy: number;
     medium: number;
     hard: number;
@@ -207,7 +207,7 @@ function MCQBankContent() {
           comparison = a.sopName.localeCompare(b.sopName);
           break;
         case 'questions':
-          comparison = a.totalQuestions - b.totalQuestions;
+          comparison = (a.totalQuestions || 0) - (b.totalQuestions || 0);
           break;
         case 'date':
           comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
@@ -509,21 +509,21 @@ function MCQBankContent() {
                 <div className="space-y-3 mb-6">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-300">Total Questions:</span>
-                    <span className="text-white font-bold">{bank.totalQuestions}</span>
+                    <span className="text-white font-bold">{bank.totalQuestions || 0}</span>
                   </div>
                   
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-green-300 text-sm">Easy:</span>
-                      <span className="text-white font-semibold">{bank.difficultyDistribution.easy}</span>
+                      <span className="text-white font-semibold">{bank.difficultyDistribution?.easy || 0}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-yellow-300 text-sm">Medium:</span>
-                      <span className="text-white font-semibold">{bank.difficultyDistribution.medium}</span>
+                      <span className="text-white font-semibold">{bank.difficultyDistribution?.medium || 0}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-red-300 text-sm">Hard:</span>
-                      <span className="text-white font-semibold">{bank.difficultyDistribution.hard}</span>
+                      <span className="text-white font-semibold">{bank.difficultyDistribution?.hard || 0}</span>
                     </div>
                   </div>
                 </div>

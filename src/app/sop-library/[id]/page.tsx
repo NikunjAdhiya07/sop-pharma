@@ -14,8 +14,10 @@ import {
   ArrowLeft,
   Play,
   Eye,
-  X
+  X,
+  Printer
 } from 'lucide-react';
+import { watermarkSOP } from '@/lib/pdfWatermark';
 
 interface VideoFile {
   fileName: string;
@@ -103,6 +105,63 @@ export default function SOPDetailPage({ params }: { params: Promise<{ id: string
   const [loadingMCQs, setLoadingMCQs] = useState(false);
   const [selectedMCQ, setSelectedMCQ] = useState<{mcq: MCQ, index: number} | null>(null);
   const [difficultyFilter, setDifficultyFilter] = useState<string>('All');
+  const [printing, setPrinting] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{name: string, role: string} | null>(null);
+
+  useEffect(() => {
+     // Hydrate user from local storage
+     const storedUser = localStorage.getItem('user');
+     if (storedUser) {
+         setCurrentUser(JSON.parse(storedUser));
+     }
+  }, []);
+
+  const handlePrintControlledCopy = async () => {
+    if (!sopLibrary || !sopLibrary.sopDocuments[0]) return;
+    
+    setPrinting(true);
+    try {
+      const doc = sopLibrary.sopDocuments[0];
+      // Only PDF supported for watermark right now
+      if (doc.fileType !== 'pdf') {
+          alert('Controlled printing is currently only supported for PDF files. Please convert DOCX to PDF.');
+          return;
+      }
+
+      // Fetch the file
+      const response = await fetch(doc.filePath);
+      const blob = await response.blob();
+      const buffer = await blob.arrayBuffer();
+
+      // Apply Watermark
+      const watermarkedPdf = await watermarkSOP(buffer, {
+          userName: currentUser?.name || 'Unknown User',
+          department: sopLibrary.department,
+          sopVersion: '1.0', // TODO: Get actual version from SOP model
+          printDate: new Date().toLocaleString()
+      });
+
+      // Create Blob URL
+      const watermarkedBlob = new Blob([watermarkedPdf as any], { type: 'application/pdf' });
+      const url = URL.createObjectURL(watermarkedBlob);
+
+      // Open in new window to print
+      const printWindow = window.open(url);
+      if (printWindow) {
+          printWindow.onload = () => {
+              // printWindow.print(); // Auto-trigger print if desired
+          };
+      } else {
+          alert('Pop-up blocked. Please allow pop-ups to print.');
+      }
+
+    } catch (error) {
+        console.error('Print failed:', error);
+        alert('Failed to generate controlled copy.');
+    } finally {
+        setPrinting(false);
+    }
+  };
   
   const videoInputRef = useRef<HTMLInputElement>(null);
   const slideInputRef = useRef<HTMLInputElement>(null);
@@ -487,23 +546,38 @@ export default function SOPDetailPage({ params }: { params: Promise<{ id: string
                 {sopLibrary.sopDocuments.length}
               </span>
             </div>
-            <button
-              onClick={() => docInputRef.current?.click()}
-              disabled={uploading}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all disabled:opacity-50"
-            >
-              {uploading && uploadType === 'document' ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Uploading...
-                </>
-              ) : (
-                <>
-                  <Upload className="h-4 w-4" />
-                  Upload Document
-                </>
-              )}
-            </button>
+            <div className="flex gap-2">
+                <button
+                    onClick={handlePrintControlledCopy}
+                    disabled={printing || sopLibrary.sopDocuments.length === 0}
+                    className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded-lg transition-all disabled:opacity-50"
+                    title="Print Controlled Copy"
+                >
+                    {printing ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                        <Printer className="h-4 w-4" />
+                    )}
+                    Print Copy
+                </button>
+                <button
+                  onClick={() => docInputRef.current?.click()}
+                  disabled={uploading}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all disabled:opacity-50"
+                >
+                  {uploading && uploadType === 'document' ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-4 w-4" />
+                      Upload Document
+                    </>
+                  )}
+                </button>
+            </div>
             <input
               ref={docInputRef}
               type="file"

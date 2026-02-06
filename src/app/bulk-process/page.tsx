@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   FolderOpen, 
@@ -31,6 +31,23 @@ export default function BulkProcessPage() {
   const [progress, setProgress] = useState<ProcessProgress | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    const userData = localStorage.getItem('user');
+    if (!userData) {
+      router.push('/login');
+      return;
+    }
+
+    try {
+      const user = JSON.parse(userData);
+      if (user.role !== 'admin' && user.role !== 'qa-head' && user.role !== 'trainer') {
+        router.push('/dashboard');
+      }
+    } catch (e) {
+      router.push('/login');
+    }
+  }, [router]);
 
   const handleBulkProcess = async () => {
     const confirmed = window.confirm(

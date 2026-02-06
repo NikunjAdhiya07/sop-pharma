@@ -4,6 +4,9 @@ import SOP from '@/models/SOP';
 import { parseDocument, validateDocumentContent } from '@/lib/documentParser';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
+import crypto from 'crypto';
+import User from '@/models/User';
+import { Notification } from '@/models/Notification';
 
 export async function POST(request: NextRequest) {
   console.log('📤 Upload API called');
@@ -19,12 +22,14 @@ export async function POST(request: NextRequest) {
     const sopName = formData.get('sopName') as string;
     const sopIdentifier = formData.get('sopIdentifier') as string;
     const department = formData.get('department') as string || 'General';
+    const overwrite = formData.get('overwrite') === 'true';
 
     console.log('📝 Form data received:', {
       hasFile: !!file,
       fileName: file?.name,
       sopName,
-      sopIdentifier
+      sopIdentifier,
+      overwrite
     });
 
     // Validation
@@ -67,6 +72,46 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(bytes);
     console.log('✅ Buffer created, size:', buffer.length, 'bytes');
 
+    // Calculate Checksum
+    const checksum = crypto.createHash('sha256').update(buffer).digest('hex');
+    console.log('🔐 File Checksum:', checksum);
+
+    // Duplicate Check
+    if (!overwrite) {
+      console.log('🔍 Checking for duplicates...');
+      const duplicateSOP = await SOP.findOne({
+        $or: [
+          { identifier: sopIdentifier },
+          { name: sopName },
+          { checksum: checksum }
+        ]
+      });
+
+      if (duplicateSOP) {
+        let duplicateReason = 'unknown';
+        if (duplicateSOP.identifier === sopIdentifier) duplicateReason = 'identifier';
+        else if (duplicateSOP.name === sopName) duplicateReason = 'name';
+        else if (duplicateSOP.checksum === checksum) duplicateReason = 'content';
+
+        console.log(`⚠️ Duplicate found: ${duplicateReason} matches SOP ${duplicateSOP.identifier}`);
+
+        return NextResponse.json(
+          {
+            error: 'Duplicate SOP detected',
+            type: duplicateReason,
+            existingSOP: {
+              id: duplicateSOP._id,
+              name: duplicateSOP.name,
+              identifier: duplicateSOP.identifier,
+              uploadedAt: duplicateSOP.uploadedAt
+            }
+          },
+          { status: 409 }
+        );
+      }
+      console.log('✅ No duplicates found');
+    }
+
     // Parse document
     console.log('📖 Parsing document...');
     const parsed = await parseDocument(buffer, fileType);
@@ -86,15 +131,21 @@ export async function POST(request: NextRequest) {
 
     // Save file to disk
     console.log('💾 Saving file to disk...');
-    const uploadsDir = path.join(process.cwd(), 'uploads', 'sops');
+    // Save file to disk
+    console.log('💾 Saving file to disk...');
+    
+    // Sanitize department name for folder
+    const sanitizedDept = department.replace(/[^a-zA-Z0-9-_]/g, '_');
+    const uploadsDir = path.join(process.cwd(), 'uploads', 'sops', sanitizedDept);
+    
     await mkdir(uploadsDir, { recursive: true });
 
     const fileName = `${sopIdentifier}_${Date.now()}.${fileExtension}`;
     const filePath = path.join(uploadsDir, fileName);
     await writeFile(filePath, buffer);
-    console.log('✅ File saved:', fileName);
+    console.log('✅ File saved:', fileName, 'in', sanitizedDept);
 
-    const fileUrl = `/uploads/sops/${fileName}`;
+    const fileUrl = `/uploads/sops/${sanitizedDept}/${fileName}`;
 
     // Extract dates and metadata from content
     console.log('📅 Extracting dates from document...');
@@ -102,28 +153,88 @@ export async function POST(request: NextRequest) {
     const extractedDates = extractDatesFromContent(parsed.content);
     console.log('✅ Dates extracted:', extractedDates);
 
-    // Create SOP record
-    console.log('💾 Creating SOP record in database...');
-    const sop = await SOP.create({
-      name: sopName,
-      identifier: sopIdentifier,
-      department: department,
-      fileUrl,
-      fileType,
-      content: parsed.content,
-      status: 'uploaded',
-      // Add extracted dates
-      effectiveDate: extractedDates.effectiveDate,
-      reviewDate: extractedDates.reviewDate,
-      expiryDate: extractedDates.expiryDate,
-      version: extractedDates.version,
-      metadata: {
-        fileSize: buffer.length,
-        pageCount: parsed.metadata.pageCount,
-        wordCount: parsed.metadata.wordCount,
-      },
-    });
-    console.log('✅ SOP created with ID:', sop._id);
+    // Create or Update SOP record
+    console.log(`💾 ${overwrite ? 'Updating' : 'Creating'} SOP record in database...`);
+    
+    let sop;
+    if (overwrite) {
+      // Find and update existing SOP by identifier or name to preserve history
+      // Prioritize identifier match
+      sop = await SOP.findOneAndUpdate(
+        { 
+           $or: [
+             { identifier: sopIdentifier },
+             { name: sopName }
+           ]
+        },
+        {
+          name: sopName,
+          identifier: sopIdentifier,
+          department: department,
+          fileUrl,
+          fileType,
+          content: parsed.content,
+          checksum: checksum,
+          status: 'uploaded',
+          effectiveDate: extractedDates.effectiveDate,
+          reviewDate: extractedDates.reviewDate,
+          expiryDate: extractedDates.expiryDate,
+          version: extractedDates.version,
+          metadata: {
+            fileSize: buffer.length,
+            pageCount: parsed.metadata.pageCount,
+            wordCount: parsed.metadata.wordCount,
+          },
+          updatedAt: new Date()
+        },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+      );
+    } else {
+      sop = await SOP.create({
+        name: sopName,
+        identifier: sopIdentifier,
+        department: department,
+        fileUrl,
+        fileType,
+        content: parsed.content,
+        checksum: checksum,
+        status: 'uploaded',
+        effectiveDate: extractedDates.effectiveDate,
+        reviewDate: extractedDates.reviewDate,
+        expiryDate: extractedDates.expiryDate,
+        version: extractedDates.version,
+        metadata: {
+          fileSize: buffer.length,
+          pageCount: parsed.metadata.pageCount,
+          wordCount: parsed.metadata.wordCount,
+        },
+      });
+    }
+
+    // Trigger Notifications on Overwrite (Update)
+    if (overwrite && sop) {
+      try {
+          // Notify users in the same department
+          const usersInDept = await User.find({ department: department });
+          if (usersInDept.length > 0) {
+              const notifications = usersInDept.map(user => ({
+                  recipient: user._id,
+                  type: 'update',
+                  title: 'SOP Updated',
+                  message: `SOP "${sopName}" (${sopIdentifier}) has been updated. Please review the changes.`,
+                  link: `/sop-library/${sop._id}`,
+                  read: false,
+                  createdAt: new Date()
+              }));
+              await Notification.insertMany(notifications);
+              console.log(`🔔 Sent update notifications to ${usersInDept.length} users in ${department}`);
+          }
+      } catch (error) {
+          console.error('Failed to send notifications:', error);
+      }
+    }
+
+    console.log('✅ SOP saved with ID:', sop._id);
 
     const response = {
       success: true,

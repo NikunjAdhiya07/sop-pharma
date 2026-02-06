@@ -3,6 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import TestAssignment from '@/models/TestAssignment';
 import User from '@/models/User';
 import SOP from '@/models/SOP';
+import { Notification } from '@/models/Notification';
 
 export async function GET() {
   try {
@@ -72,6 +73,21 @@ export async function POST(request: Request) {
     await User.findByIdAndUpdate(userId, {
       $inc: { testsAssigned: 1 },
     });
+
+    // Create Notification
+    try {
+      await Notification.create({
+        recipient: userId,
+        type: 'assignment',
+        title: 'New Test Assigned',
+        message: `You have been assigned a new test: "${testName}". Please complete it by ${deadline ? new Date(deadline).toLocaleDateString() : 'the deadline'}.`,
+        link: '/mcq-tests', // Assuming this is where tests are listed
+        read: false,
+        createdAt: new Date()
+      });
+    } catch (notifError) {
+      console.error('Failed to create assignment notification:', notifError);
+    }
 
     const populatedAssignment = await TestAssignment.findById(assignment._id)
       .populate('userId', 'name username employeeId department')

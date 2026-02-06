@@ -136,7 +136,7 @@ export default function SOPScheduler() {
     router.push('/login');
   };
 
-  const isSupervisor = currentUser?.role === 'admin' || currentUser?.role === 'trainer';
+  const isSupervisor = currentUser?.role === 'admin' || currentUser?.role === 'trainer' || currentUser?.role === 'qa-head';
 
   const filteredTrainees = useMemo(() => {
     return trainees.filter(t => 

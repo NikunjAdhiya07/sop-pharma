@@ -7,6 +7,7 @@ export interface ISOP extends Document {
   fileUrl: string;
   fileType: 'pdf' | 'docx';
   content: string;
+  checksum?: string; // SHA-256 hash
   uploadedAt: Date;
   processedAt?: Date;
   status: 'uploaded' | 'processing' | 'completed' | 'failed';
@@ -42,6 +43,15 @@ export interface ISOP extends Document {
     pageCount?: number;
     wordCount?: number;
   };
+  
+  // Trainer & Retraining Logic
+  assignedTrainers?: mongoose.Types.ObjectId[]; // List of User IDs (Trainers)
+  trainerRetrainingStatus?: {
+    trainerId: mongoose.Types.ObjectId;
+    status: 'pending' | 'completed';
+    lastTrainedAt?: Date;
+  }[];
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -75,6 +85,10 @@ const SOPSchema = new Schema<ISOP>({
   content: {
     type: String,
     required: true,
+  },
+  checksum: {
+    type: String,
+    trim: true,
   },
   uploadedAt: {
     type: Date,
@@ -174,6 +188,17 @@ const SOPSchema = new Schema<ISOP>({
     pageCount: Number,
     wordCount: Number,
   },
+  
+  // Trainer & Retraining Logic
+  assignedTrainers: [{
+    type: Schema.Types.ObjectId,
+    ref: 'User',
+  }],
+  trainerRetrainingStatus: [{
+    trainerId: { type: Schema.Types.ObjectId, ref: 'User' },
+    status: { type: String, enum: ['pending', 'completed'], default: 'pending' },
+    lastTrainedAt: Date
+  }],
 }, {
   timestamps: true,
 });
@@ -185,6 +210,7 @@ SOPSchema.index({ uploadedAt: -1 });
 SOPSchema.index({ folderPath: 1 });
 SOPSchema.index({ parentFolder: 1 });
 SOPSchema.index({ department: 1, folderPath: 1 });
+SOPSchema.index({ checksum: 1 });
 
 const SOP: Model<ISOP> = mongoose.models.SOP || mongoose.model<ISOP>('SOP', SOPSchema);
 

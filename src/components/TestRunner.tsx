@@ -40,7 +40,7 @@ interface MCQ {
 
 interface TestRunnerProps {
   questions: MCQ[];
-  onComplete?: (score: number, total: number) => void;
+  onComplete?: (score: number, total: number, answers?: any[], timeTaken?: number) => void;
   onExit: () => void;
   title: string;
 }
@@ -163,10 +163,29 @@ export default function TestRunner({ questions, onComplete, onExit, title }: Tes
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
     } else {
-      setTestEndTime(Date.now());
+      const endTime = Date.now();
+      setTestEndTime(endTime);
       setCurrentStep('results');
       const score = calculateScore();
-      if (onComplete) onComplete(score, questions.length);
+      
+      const timeTaken = Math.floor((endTime - testStartTime) / 1000);
+      
+      // Prepare detailed answers for submission
+      const detailedAnswers = questions.map((q, idx) => ({
+        questionId: q._id || `q_${idx}`,
+        question: q.question,
+        selectedAnswer: userAnswers[idx] || '',
+        correctAnswer: q.correctAnswer,
+        isCorrect: userAnswers[idx] === q.correctAnswer,
+        sopName: q.sopName,
+        sopIdentifier: q.sopIdentifier,
+        sopId: q.sopId || q._id // Fallback
+      }));
+
+      if (onComplete) {
+         // @ts-ignore - Extending the callback signature dynamically
+         onComplete(score, questions.length, detailedAnswers, timeTaken);
+      }
     }
   };
 

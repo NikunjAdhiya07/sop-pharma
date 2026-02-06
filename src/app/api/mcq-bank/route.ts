@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     const folderDepartment = searchParams.get('folderDepartment');
     const folderSubcategory = searchParams.get('folderSubcategory');
     const page = parseInt(searchParams.get('page') || '1');
-    const limit = Math.min(parseInt(searchParams.get('limit') || '10'), 100); // Cap at 100 to prevent timeouts
+    const limit = Math.min(parseInt(searchParams.get('limit') || '10'), 1000); // Allow up to 1000 results
     const summary = searchParams.get('summary') === 'true'; // Option to fetch summary only
 
     let query: any = {};
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     // If summary mode, only fetch essential fields
     if (summary) {
       const mcqBanks = await MCQBank.find(query)
-        .select('sopId sopIdentifier sopName folderDepartment folderSubcategory createdAt')
+        .select('sopId sopIdentifier sopName folderDepartment folderSubcategory totalQuestions difficultyDistribution createdAt')
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)

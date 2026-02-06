@@ -112,11 +112,16 @@ export default function SOPLibraryPage() {
     }
   }, [departments]);
 
-  const fetchSOPLibrary = async () => {
+  const fetchSOPLibrary = async (isAuto = false) => {
     try {
       const params = new URLSearchParams();
       if (selectedDepartment !== 'all') {
         params.append('department', selectedDepartment);
+      }
+      
+      // If we are already fetching after a manual sync, skip the background sync trigger
+      if (isAuto) {
+        params.append('skipSync', 'true');
       }
 
       const response = await fetch(`/api/sop-library?${params}`);
@@ -130,7 +135,7 @@ export default function SOPLibraryPage() {
     } catch (error) {
       console.error('Error fetching SOP library:', error);
     } finally {
-      setLoading(false);
+      if (!isAuto) setLoading(false);
     }
   };
 
@@ -164,13 +169,14 @@ export default function SOPLibraryPage() {
 
       if (data.success) {
         alert(`Sync completed!\nProcessed: ${data.stats.sopProcessed}\nCreated: ${data.stats.sopLibraryCreated}\nUpdated: ${data.stats.sopLibraryUpdated}`);
-        await fetchSOPLibrary();
-      } else {
-        alert('Sync failed: ' + data.error);
+        // Refresh all data
+        await Promise.all([
+          fetchSOPLibrary(true),
+          fetchTreeData()
+        ]);
       }
     } catch (error) {
       console.error('Error syncing SOP library:', error);
-      alert('An error occurred during sync');
     } finally {
       setSyncing(false);
     }
@@ -308,6 +314,7 @@ export default function SOPLibraryPage() {
                 onClick={syncSOPLibrary}
                 disabled={syncing}
                 className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg disabled:opacity-50"
+                title="SOP library is automatically synced, but you can force a refresh here"
               >
                 {syncing ? (
                   <>
@@ -317,7 +324,7 @@ export default function SOPLibraryPage() {
                 ) : (
                   <>
                     <RefreshCw className="h-5 w-5" />
-                    Sync Library
+                    {sopLibraries.length > 0 ? 'Sync Now' : 'Initialize Library'}
                   </>
                 )}
               </button>

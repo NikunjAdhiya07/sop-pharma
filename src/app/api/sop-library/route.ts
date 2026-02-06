@@ -3,6 +3,7 @@ import connectDB from '@/lib/mongodb';
 import SOPLibrary from '@/models/SOPLibrary';
 import MCQBank from '@/models/MCQBank';
 import { organizeFolderStructure } from '@/lib/sopLibraryHelper';
+import { performSOPLibrarySync } from '@/lib/sopLibrarySync';
 
 // GET - Fetch SOP Library entries
 export async function GET(request: NextRequest) {
@@ -16,6 +17,18 @@ export async function GET(request: NextRequest) {
     const hasVideos = searchParams.get('hasVideos');
     const hasSlides = searchParams.get('hasSlides');
     const hasMCQs = searchParams.get('hasMCQs');
+    const skipSync = searchParams.get('skipSync') === 'true';
+
+    // Trigger sync check
+    if (!id && !skipSync) {
+      const count = await SOPLibrary.countDocuments();
+      if (count === 0) {
+        console.log('📚 SOP Library is empty, triggering initial sync...');
+        await performSOPLibrarySync();
+      } else {
+        performSOPLibrarySync().catch(err => console.error('Auto-sync error:', err));
+      }
+    }
 
     // If ID is provided, fetch single entry
     if (id) {

@@ -43,7 +43,7 @@ export interface MCQTreeStructure {
  * Examples: "QAMI64-00" → "QAMI", "PRMA45-02" → "PRMA", "MAGE04-05" → "MAGE"
  */
 export function extractSubcategoryFromIdentifier(identifier: string): string {
-  const match = identifier.toUpperCase().trim().match(/^([A-Z]{4})/);
+  const match = identifier.toUpperCase().trim().match(/^([A-Z]{2,4})/);
   return match ? match[1] : 'OTHER';
 }
 

@@ -4,7 +4,7 @@ export interface IUser extends mongoose.Document {
   username: string;
   password: string;
   name: string;
-  role: 'admin' | 'user' | 'trainer';
+  role: 'admin' | 'user' | 'trainer' | 'qa-head';
   employeeId?: string;
   department?: string;
   email?: string;
@@ -15,6 +15,12 @@ export interface IUser extends mongoose.Document {
   allowedSections: string[]; // Sections/modules the user can access
   createdAt: Date;
   lastLogin?: Date;
+  trainingStage: 'induction' | 'active' | 'certified';
+  inductionProgress: {
+    videosWatched: mongoose.Types.ObjectId[];
+    sopsRead: mongoose.Types.ObjectId[];
+    completed: boolean;
+  };
 }
 
 const UserSchema = new mongoose.Schema<IUser>({
@@ -36,7 +42,7 @@ const UserSchema = new mongoose.Schema<IUser>({
   },
   role: {
     type: String,
-    enum: ['admin', 'user', 'trainer'],
+    enum: ['admin', 'user', 'trainer', 'qa-head'],
     default: 'user',
   },
   employeeId: {
@@ -88,6 +94,16 @@ const UserSchema = new mongoose.Schema<IUser>({
   lastLogin: {
     type: Date,
   },
+  trainingStage: {
+    type: String,
+    enum: ['induction', 'active', 'certified'],
+    default: 'active', // Default to active for existing users/manual creation, unless specified
+  },
+  inductionProgress: {
+    videosWatched: [{ type: mongoose.Schema.Types.ObjectId, ref: 'VideoResource' }],
+    sopsRead: [{ type: mongoose.Schema.Types.ObjectId, ref: 'SOP' }],
+    completed: { type: Boolean, default: false }
+  }
 });
 
 export default mongoose.models.User || mongoose.model<IUser>('User', UserSchema);

@@ -38,6 +38,8 @@ export default function SOPUploadPage() {
   const [uploadedSOP, setUploadedSOP] = useState<UploadResponse['sop'] | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [duplicateWarning, setDuplicateWarning] = useState(false);
+  const [duplicateSOP, setDuplicateSOP] = useState<{ type: string, existingSOP: any } | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -75,8 +77,8 @@ export default function SOPUploadPage() {
     }
   };
 
-  const handleUpload = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleUpload = async (e?: React.FormEvent, overwrite = false) => {
+    if (e) e.preventDefault();
     
     if (!file || !sopName || !sopIdentifier) {
       setError('Please fill in all fields');
@@ -93,6 +95,9 @@ export default function SOPUploadPage() {
       formData.append('sopName', sopName);
       formData.append('sopIdentifier', sopIdentifier);
       formData.append('department', department);
+      if (overwrite) {
+        formData.append('overwrite', 'true');
+      }
 
       const response = await fetch('/api/sop/upload', {
         method: 'POST',
@@ -102,8 +107,21 @@ export default function SOPUploadPage() {
       const data = await response.json();
 
       if (!response.ok) {
+        if (response.status === 409) {
+            setDuplicateSOP({
+                type: data.type,
+                existingSOP: data.existingSOP
+            });
+            setDuplicateWarning(true);
+            setUploading(false); // Stop loading state
+            return; 
+        }
         throw new Error(data.error || 'Upload failed');
       }
+
+      // If successful (and maybe was a retry), clear duplicate warning
+      setDuplicateWarning(false);
+      setDuplicateSOP(null);
 
       setUploadedSOP(data.sop);
       setSuccess('SOP uploaded successfully! You can now generate MCQs.');
@@ -417,6 +435,62 @@ export default function SOPUploadPage() {
             </div>
           </div>
         </div>
+        {/* Duplicate Warning Modal */}
+        {duplicateWarning && duplicateSOP && (
+           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-slate-900 border border-red-500/50 rounded-2xl max-w-lg w-full p-8 shadow-2xl relative">
+                  <div className="flex items-start mb-6">
+                      <div className="bg-red-500/20 p-3 rounded-full mr-4">
+                          <AlertCircle className="h-8 w-8 text-red-500" />
+                      </div>
+                      <div>
+                          <h3 className="text-2xl font-bold text-white mb-2">Duplicate SOP Detected</h3>
+                          <p className="text-gray-300">
+                             A similar SOP already exists in the system. 
+                          </p>
+                      </div>
+                  </div>
+
+                  <div className="bg-slate-800 rounded-xl p-4 mb-6 border border-white/10">
+                      <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm text-gray-400">Conflict Type:</span>
+                          <span className="text-sm font-bold text-red-400 uppercase">{duplicateSOP.type} Match</span>
+                      </div>
+                      <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm text-gray-400">Existing Identifier:</span>
+                          <span className="text-sm font-mono text-white">{duplicateSOP.existingSOP.identifier}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-400">Existing Name:</span>
+                          <span className="text-sm text-white">{duplicateSOP.existingSOP.name}</span>
+                      </div>
+                  </div>
+
+                  <p className="text-gray-300 mb-8 leading-relaxed">
+                      Do you want to <span className="font-bold text-white">overwrite</span> the existing SOP record? 
+                      This will update the file content, version history, and compliance dates, but preserve the ID.
+                  </p>
+
+                  <div className="flex gap-4">
+                      <button 
+                         onClick={() => {
+                             setDuplicateWarning(false);
+                             setDuplicateSOP(null);
+                         }}
+                         className="flex-1 py-3 px-4 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded-xl transition-colors"
+                      >
+                         Cancel
+                      </button>
+                      <button 
+                         onClick={() => handleUpload(undefined, true)}
+                         className="flex-1 py-3 px-4 bg-red-600 hover:bg-red-500 text-white font-semibold rounded-xl transition-colors shadow-lg shadow-red-500/20"
+                      >
+                         Overwrite & Update
+                      </button>
+                  </div>
+              </div>
+           </div>
+        )}
       </div>
     </div>
   );
