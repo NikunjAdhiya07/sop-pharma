@@ -18,6 +18,7 @@ import {
   Printer
 } from 'lucide-react';
 import { watermarkSOP } from '@/lib/pdfWatermark';
+import { cleanSOPName } from '@/lib/sopLibraryHelper';
 
 interface VideoFile {
   fileName: string;
@@ -334,32 +335,23 @@ export default function SOPDetailPage({ params }: { params: Promise<{ id: string
             Back to Library
           </button>
 
-          <div className="bg-gradient-to-r from-purple-600 to-pink-600 rounded-2xl p-8 shadow-2xl">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <h1 className="text-3xl font-bold text-white mb-2 uppercase">
-                  {sopLibrary.sopIdentifier} - {sopLibrary.sopName}
-                </h1>
-                <p className="text-purple-100 font-mono text-lg mb-4">{sopLibrary.sopIdentifier}</p>
-                <div className="flex items-center gap-4">
-                  <span className="px-4 py-2 bg-white/20 rounded-lg text-white font-semibold">
-                    {sopLibrary.department}
-                  </span>
-                  <span className="text-white text-2xl font-bold">
-                    {sopLibrary.completionStatus.percentage}% Complete
-                  </span>
-                </div>
-              </div>
-              {sopLibrary.completionStatus.hasMCQs && (
-                <button
-                  onClick={() => router.push(`/mcq-tests?sopId=${sopLibrary.sopId}`)}
-                  className="px-6 py-3 bg-white text-purple-600 font-bold rounded-xl hover:bg-gray-100 transition-all flex items-center gap-2"
-                >
-                  <Brain className="h-5 w-5" />
-                  Take Test ({sopLibrary.metadata.totalMCQs} MCQs)
-                </button>
-              )}
+          {/* Minimal Header */}
+          <div className="flex items-center justify-between py-6 border-b border-white/10 mb-8">
+            <div className="flex-1 pr-8">
+              <h1 className="text-2xl font-bold text-white leading-tight">
+                <span className="text-purple-400 mr-3 font-mono">{sopLibrary.sopIdentifier}</span>
+                {cleanSOPName(sopLibrary.sopName, sopLibrary.sopIdentifier)}
+              </h1>
             </div>
+            {sopLibrary.completionStatus.hasMCQs && (
+              <button
+                onClick={() => router.push(`/mcq-tests?sopId=${sopLibrary.sopId}`)}
+                className="flex-shrink-0 px-6 py-2.5 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
+              >
+                <Brain className="h-4 w-4" />
+                Take Test
+              </button>
+            )}
           </div>
         </div>
 

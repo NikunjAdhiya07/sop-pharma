@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Home } from 'lucide-react';
-import NotificationBell from './NotificationBell';
+// import NotificationBell from './NotificationBell';
 
 interface PageHeaderProps {
   showBack?: boolean;
@@ -62,7 +62,7 @@ export default function PageHeader({
           </button>
         )}
         <div className="ml-auto">
-            <NotificationBell />
+            {/* <NotificationBell /> */}
         </div>
       </div>
 

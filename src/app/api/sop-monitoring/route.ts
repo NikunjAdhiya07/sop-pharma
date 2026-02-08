@@ -3,6 +3,28 @@ import connectDB from '@/lib/mongodb';
 import MasterSOPRepository from '@/models/MasterSOPRepository';
 import MergeSuggestion from '@/models/MergeSuggestion';
 
+// Helper function to clean SOP name from folder path
+function cleanSOPName(rawName: string, identifier: string): string {
+  // If the name contains folder path separators, extract the last meaningful segment
+  if (rawName.includes('/')) {
+    const segments = rawName.split('/').filter(s => s.trim());
+    // Get the last segment which should be the actual SOP name
+    const lastSegment = segments[segments.length - 1] || rawName;
+    rawName = lastSegment;
+  }
+  
+  // Remove identifier prefix with underscore (e.g., "QAGE43-06_GOOD LABORATORY PRACTICE" -> "GOOD LABORATORY PRACTICE")
+  let cleanedName = rawName
+    .replace(new RegExp(`^${identifier}[_\\-\\s]*`, 'i'), '')
+    .trim();
+  
+  // Replace underscores with spaces
+  cleanedName = cleanedName.replace(/_/g, ' ');
+  
+  // If nothing left, use original
+  return cleanedName || rawName;
+}
+
 // Helper function to compute SOP status dynamically
 // IMPORTANT: Review Date from SOP documents is treated as the Expiry Date
 function computeSOPStatus(sop: any) {
@@ -54,11 +76,14 @@ function computeSOPStatus(sop: any) {
     priority = 70;
   }
   
+  // Clean the SOP name
+  const cleanedName = cleanSOPName(sop.sopName || '', sop.sopIdentifier || '');
+  
   return {
     ...sop,
     // Map MasterSOPRepository fields to SOP Monitoring expected fields
     _id: sop._id,
-    name: sop.sopName,
+    name: cleanedName,
     identifier: sop.sopIdentifier,
     department: sop.department,
     processArea: sop.processArea,

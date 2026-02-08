@@ -4,6 +4,59 @@ import SOP from '@/models/SOP';
 import MCQBank from '@/models/MCQBank';
 import { extractDepartmentFromIdentifier } from '@/lib/sopLibraryHelper';
 
+/**
+ * Check if an SOP should be excluded from the library
+ * - Excludes annexure files, temp files, and non-primary SOP files
+ */
+function shouldExcludeSOP(sop: any): boolean {
+  const identifier = (sop.identifier || '').toLowerCase();
+  const name = (sop.name || '').toLowerCase();
+  
+  // Exclude temp files (start with ~$)
+  if (name.startsWith('~$') || identifier.startsWith('~$')) {
+    return true;
+  }
+  
+  // Exclude annexure files
+  if (identifier.includes('annexure') || name.includes('annexure')) {
+    return true;
+  }
+  
+  // Exclude files that don't have a proper SOP identifier pattern
+  // Valid patterns: QAGE01-10, QCMI50-00, PRMA01-02, etc.
+  const validIdentifierPattern = /^[A-Z]{2,4}\d{2,3}-\d{2}$/i;
+  if (!validIdentifierPattern.test(sop.identifier)) {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Clean the SOP name - just use the identifier as the name
+ * This ensures consistent naming across all views
+ */
+function cleanSOPName(sop: any): string {
+  // The identifier (e.g., QAGE01-10) should be the primary name
+  // If original name contains meaningful info after identifier, keep it
+  const identifier = sop.identifier || '';
+  const originalName = sop.name || '';
+  
+  // If the name is just the identifier or garbage, use identifier
+  if (!originalName || originalName === identifier || 
+      originalName.includes('---') || originalName.includes('ANNEXURE')) {
+    return identifier;
+  }
+  
+  // If name starts with identifier, return as-is
+  if (originalName.toUpperCase().startsWith(identifier.toUpperCase())) {
+    return originalName;
+  }
+  
+  // Otherwise, format as "IDENTIFIER - NAME"
+  return `${identifier} - ${originalName}`;
+}
+
 export async function performSOPLibrarySync() {
   await connectDB();
 
@@ -11,15 +64,20 @@ export async function performSOPLibrarySync() {
     sopProcessed: 0,
     sopLibraryCreated: 0,
     sopLibraryUpdated: 0,
+    skipped: 0,
     errors: 0,
   };
 
   // Fetch all SOPs (not just completed ones, to show progress)
-  const sops = await SOP.find({ 
+  const allSops = await SOP.find({ 
     status: { $in: ['completed', 'uploaded', 'processing'] } 
   }).lean();
   
-  console.log(`🔍 Sync: Found ${sops.length} SOPs to process`);
+  // Filter out annexures, temp files, and non-primary SOPs
+  const sops = allSops.filter(sop => !shouldExcludeSOP(sop));
+  stats.skipped = allSops.length - sops.length;
+  
+  console.log(`🔍 Sync: Found ${allSops.length} total SOPs, processing ${sops.length} (skipped ${stats.skipped} non-primary files)`);
   
   // Fetch all existing SOP Library entries
   const existingSOPLibraries = await SOPLibrary.find({}).lean();
@@ -46,17 +104,20 @@ export async function performSOPLibrarySync() {
       const mcqBank = mcqBankMap.get(sop._id.toString());
       const existingSopLibrary = sopLibraryMap.get(sop.identifier);
 
+      // Get the cleaned SOP name
+      const sopName = cleanSOPName(sop);
+      
       if (existingSopLibrary) {
         // Check if we actually need to update
         const needsUpdate = 
-          existingSopLibrary.sopName !== sop.name ||
+          existingSopLibrary.sopName !== sopName ||
           existingSopLibrary.department !== departmentName ||
           (mcqBank && !existingSopLibrary.mcqBankId) ||
           existingSopLibrary.folderPath !== sop.folderPath;
 
         if (needsUpdate) {
           const updateDoc: any = {
-            sopName: sop.name,
+            sopName: sopName,
             department: departmentName,
             departmentCode: departmentCode,
             folderPath: sop.folderPath,
@@ -83,7 +144,7 @@ export async function performSOPLibrarySync() {
           insertOne: {
             document: {
               sopId: sop._id,
-              sopName: sop.name,
+              sopName: sopName,
               sopIdentifier: sop.identifier,
               department: departmentName,
               departmentCode: departmentCode,

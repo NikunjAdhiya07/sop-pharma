@@ -1,10 +1,20 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import PageHeader from '@/components/PageHeader';
 import SOPLibraryTreeView from '@/components/SOPLibraryTreeView';
 import FolderUploadModal from '@/components/FolderUploadModal';
+import {
+  getCachedTree,
+  setCachedTree,
+  getCachedList,
+  setCachedList,
+  invalidateSOPLibraryCache,
+  isCacheValid,
+  isFirstLoad,
+  getCacheTTLRemaining
+} from '@/lib/sopLibraryCache';
 import { 
   Search, 
   Filter, 
@@ -20,7 +30,8 @@ import {
   Eye,
   FolderTree,
   List,
-  FolderUp
+  FolderUp,
+  Clock
 } from 'lucide-react';
 
 interface VideoFile {
@@ -56,7 +67,7 @@ interface MCQBank {
 
 interface SOPLibrary {
   _id: string;
-  sopId: string;
+  sopId: any;
   sopName: string;
   sopIdentifier: string;
   department: string;
@@ -82,11 +93,14 @@ interface SOPLibrary {
 }
 
 export default function SOPLibraryPage() {
+
+
   const router = useRouter();
   const [sopLibraries, setSopLibraries] = useState<SOPLibrary[]>([]);
   const [organized, setOrganized] = useState<Record<string, SOPLibrary[]>>({});
   const [departments, setDepartments] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Start with loading = false; we'll set it to true only if cache is empty
+  const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
@@ -99,8 +113,65 @@ export default function SOPLibraryPage() {
   
   // Folder upload modal state
   const [showFolderUpload, setShowFolderUpload] = useState(false);
+  
+  // Cache status
+  const [isUsingCache, setIsUsingCache] = useState(false);
+  const [cacheAge, setCacheAge] = useState(0);
+  const initialLoadDone = useRef(false);
+
+  // Status colors matching SOP Monitoring exactly
+  const getSOPStatus = (sop: SOPLibrary) => {
+    const details = typeof sop.sopId === 'object' ? sop.sopId : null;
+    if (!details?.reviewDate) return null;
+
+    const reviewDate = new Date(details.reviewDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diffTime = reviewDate.getTime() - today.getTime();
+    const daysToReview = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    // Matching SOP Monitoring colors exactly
+    if (daysToReview < 0) {
+      // Expired - Yellow (matching SOP Monitoring)
+      return { label: 'Expired', color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30', icon: '⚠️' };
+    }
+    if (daysToReview <= 7) {
+      // Review This Week - Red (highest priority)
+      return { label: 'Review Due', color: 'bg-red-500/20 text-red-400 border-red-500/30', icon: '🔴' };
+    }
+    if (daysToReview <= 30) {
+      // Expiring Soon - Orange
+      return { label: 'Expiring Soon', color: 'bg-orange-500/20 text-orange-400 border-orange-500/30', icon: '⏳' };
+    }
+    // Compliant - Green
+    return { label: 'Compliant', color: 'bg-green-500/20 text-green-400 border-green-500/30', icon: '✅' };
+  };
 
   useEffect(() => {
+    const deptKey = selectedDepartment || 'all';
+    
+    // Check if cache has data - if so, load instantly without showing spinner
+    const cachedTree = getCachedTree(deptKey);
+    const cachedList = getCachedList(deptKey);
+    
+    if (cachedTree && cachedList && isCacheValid()) {
+      // Use cached data instantly - no loading spinner
+      setTreeData(cachedTree.tree);
+      setSopLibraries(cachedList.sopLibraries);
+      setOrganized(cachedList.organized);
+      setDepartments(cachedList.departments);
+      setIsUsingCache(true);
+      setCacheAge(getCacheTTLRemaining());
+      setLoading(false);
+      initialLoadDone.current = true;
+      return; // Don't fetch from server
+    }
+    
+    // No valid cache - show loading and fetch
+    if (!initialLoadDone.current) {
+      setLoading(true);
+    }
+    
     fetchSOPLibrary();
     fetchTreeData();
   }, [selectedDepartment]);
@@ -112,7 +183,23 @@ export default function SOPLibraryPage() {
     }
   }, [departments]);
 
-  const fetchSOPLibrary = async (isAuto = false) => {
+  const fetchSOPLibrary = async (isAuto = false, forceRefresh = false) => {
+    const deptKey = selectedDepartment || 'all';
+    
+    // Check cache first (unless forcing refresh)
+    if (!forceRefresh) {
+      const cached = getCachedList(deptKey);
+      if (cached && isCacheValid()) {
+        setSopLibraries(cached.sopLibraries);
+        setOrganized(cached.organized);
+        setDepartments(cached.departments);
+        setIsUsingCache(true);
+        setCacheAge(getCacheTTLRemaining());
+        setLoading(false);
+        return; // Use cached data, no network request
+      }
+    }
+    
     try {
       const params = new URLSearchParams();
       if (selectedDepartment !== 'all') {
@@ -124,36 +211,81 @@ export default function SOPLibraryPage() {
         params.append('skipSync', 'true');
       }
 
-      const response = await fetch(`/api/sop-library?${params}`);
+      const response = await fetch(`/api/sop-library?${params.toString()}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
 
       if (data.success) {
-        setSopLibraries(data.sopLibraries);
-        setOrganized(data.organized);
-        setDepartments(data.departments);
+        setSopLibraries(data.sopLibraries || []);
+        setOrganized(data.organized || {});
+        setDepartments(data.departments || []);
+        
+        // Cache the fresh data
+        setCachedList({
+          sopLibraries: data.sopLibraries || [],
+          organized: data.organized || {},
+          departments: data.departments || []
+        }, deptKey);
+        setIsUsingCache(false);
+      } else {
+        console.error('API returned success: false', data);
       }
     } catch (error) {
-      console.error('Error fetching SOP library:', error);
+      console.error('Error fetching SOP library list:', error);
+      // Don't clear data on error if we have some
     } finally {
-      if (!isAuto) setLoading(false);
+      if (!isAuto) {
+        setLoading(false);
+        initialLoadDone.current = true;
+      }
     }
   };
 
-  const fetchTreeData = async () => {
+  const fetchTreeData = async (forceRefresh = false) => {
+    const deptKey = selectedDepartment || 'all';
+    
+    // Check cache first (unless forcing refresh)
+    if (!forceRefresh) {
+      const cached = getCachedTree(deptKey);
+      if (cached && isCacheValid()) {
+        setTreeData(cached.tree);
+        setIsUsingCache(true);
+        setCacheAge(getCacheTTLRemaining());
+        return; // Use cached data, no network request
+      }
+    }
+    
     try {
       const params = new URLSearchParams();
       if (selectedDepartment !== 'all') {
         params.append('department', selectedDepartment);
       }
 
-      const response = await fetch(`/api/sop-library/tree?${params}`);
+      const response = await fetch(`/api/sop-library/tree?${params.toString()}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const data = await response.json();
 
       if (data.success) {
-        setTreeData(data.tree);
+        setTreeData(data.tree || []);
+        
+        // Cache the fresh data
+        setCachedTree({ tree: data.tree || [], stats: data.stats }, deptKey);
+        setIsUsingCache(false);
+        initialLoadDone.current = true;
+      } else {
+        console.error('Tree API returned success: false', data);
       }
     } catch (error) {
       console.error('Error fetching tree data:', error);
+      // Optional: User notification or toast here
     }
   };
 
@@ -161,6 +293,9 @@ export default function SOPLibraryPage() {
   const syncSOPLibrary = async () => {
     setSyncing(true);
     try {
+      // Invalidate cache before syncing
+      invalidateSOPLibraryCache();
+      
       const response = await fetch('/api/sop-library/sync', {
         method: 'POST',
       });
@@ -169,10 +304,10 @@ export default function SOPLibraryPage() {
 
       if (data.success) {
         alert(`Sync completed!\nProcessed: ${data.stats.sopProcessed}\nCreated: ${data.stats.sopLibraryCreated}\nUpdated: ${data.stats.sopLibraryUpdated}`);
-        // Refresh all data
+        // Refresh all data (force refresh, bypass cache)
         await Promise.all([
-          fetchSOPLibrary(true),
-          fetchTreeData()
+          fetchSOPLibrary(true, true),
+          fetchTreeData(true)
         ]);
       }
     } catch (error) {
@@ -180,6 +315,17 @@ export default function SOPLibraryPage() {
     } finally {
       setSyncing(false);
     }
+  };
+  
+  // Force refresh handler (manual refresh button)
+  const handleForceRefresh = async () => {
+    setLoading(true);
+    invalidateSOPLibraryCache();
+    await Promise.all([
+      fetchSOPLibrary(false, true),
+      fetchTreeData(true)
+    ]);
+    setLoading(false);
   };
 
   const toggleDepartment = (dept: string) => {
@@ -310,24 +456,6 @@ export default function SOPLibraryPage() {
                 <FolderUp className="h-5 w-5" />
                 Upload Folder
               </button>
-              <button
-                onClick={syncSOPLibrary}
-                disabled={syncing}
-                className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg disabled:opacity-50"
-                title="SOP library is automatically synced, but you can force a refresh here"
-              >
-                {syncing ? (
-                  <>
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                    Syncing...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="h-5 w-5" />
-                    {sopLibraries.length > 0 ? 'Sync Now' : 'Initialize Library'}
-                  </>
-                )}
-              </button>
             </div>
           </div>
         </div>
@@ -417,12 +545,7 @@ export default function SOPLibraryPage() {
           <div className="text-center py-16">
             <BookOpen className="h-16 w-16 text-gray-500 mx-auto mb-4" />
             <p className="text-gray-400 text-xl mb-4">No SOPs found</p>
-            <button
-              onClick={syncSOPLibrary}
-              className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all"
-            >
-              Sync Library to Get Started
-            </button>
+            <p className="text-gray-500">Loading SOP Library data...</p>
           </div>
         ) : (
           <div className="space-y-6">
@@ -439,7 +562,23 @@ export default function SOPLibraryPage() {
                     ) : (
                       <ChevronDown className="h-6 w-6 text-purple-400" />
                     )}
-                    <h2 className="text-2xl font-bold text-white">{department}</h2>
+                    {(() => {
+                         const getDeptColor = (name: string) => {
+                          const lowerName = name.toLowerCase();
+                          if (lowerName.includes('qa')) return 'text-purple-400';
+                          if (lowerName.includes('qc')) return 'text-blue-400';
+                          if (lowerName.includes('production')) return 'text-emerald-400';
+                          if (lowerName.includes('microbiology')) return 'text-orange-400';
+                          if (lowerName.includes('engineering')) return 'text-cyan-400';
+                          if (lowerName.includes('store')) return 'text-yellow-400';
+                          if (lowerName.includes('personnel') || lowerName.includes('hr')) return 'text-pink-400';
+                          return 'text-white';
+                        };
+                        return (
+                             <h2 className={`text-2xl font-bold ${getDeptColor(department)}`}>{department}</h2>
+                        );
+                    })()}
+                   
                     <span className="px-3 py-1 bg-purple-500/20 text-purple-300 rounded-full text-sm font-semibold">
                       {sops.length} SOP{sops.length !== 1 ? 's' : ''}
                     </span>
@@ -449,23 +588,42 @@ export default function SOPLibraryPage() {
                 {/* SOP Cards */}
                 {!collapsedDepts.has(department) && (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6 pt-0">
-                    {sops.map((sop) => (
+                    {sops.map((sop) => {
+                      const status = getSOPStatus(sop);
+                      return (
                       <div
                         key={sop._id}
-                        className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-lg rounded-xl p-6 shadow-xl border border-white/10 hover:border-purple-500/50 transition-all duration-300 transform hover:scale-[1.02] cursor-pointer"
+                        className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-lg rounded-xl p-6 shadow-xl border border-white/10 hover:border-purple-500/50 transition-all duration-300 transform hover:scale-[1.03] hover:shadow-2xl hover:shadow-purple-500/20 hover:bg-[#1E2338] cursor-pointer"
                         onClick={() => router.push(`/sop-library/${sop._id}`)}
                       >
                         {/* SOP Header */}
                         <div className="mb-4">
                           <div className="flex items-start justify-between mb-2">
-                            <h3 className="text-lg font-bold text-white flex-1 pr-2">
-                              {sop.sopName}
-                            </h3>
+                             <div className="flex-1 pr-2">
+                                <span className="text-lg font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-pink-300 block mb-1">
+                                    {sop.sopIdentifier}
+                                </span>
+                                <h3 className="text-lg font-bold text-white mb-2">
+                                  {(() => {
+                                    let cleanName = sop.sopName || sop.sopIdentifier;
+                                    if (cleanName.toUpperCase().startsWith(sop.sopIdentifier.toUpperCase())) {
+                                      cleanName = cleanName.substring(sop.sopIdentifier.length).replace(/^[\s\-:\.]+/, '').trim();
+                                    }
+                                    return cleanName || sop.sopIdentifier;
+                                  })()}
+                                </h3>
+                                
+                                {/* Status Badge */}
+                                {status && (
+                                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold border ${status.color}`}>
+                                    {status.icon} {status.label}
+                                  </span>
+                                )}
+                             </div>
                             <span className={`text-2xl font-bold ${getCompletionColor(sop.completionStatus.percentage)}`}>
                               {sop.completionStatus.percentage}%
                             </span>
                           </div>
-                          <p className="text-gray-400 text-sm font-mono">{sop.sopIdentifier}</p>
                         </div>
 
                         {/* Resource Icons */}
@@ -536,7 +694,7 @@ export default function SOPLibraryPage() {
                             onClick={(e) => {
                               e.stopPropagation();
                               if (sop.completionStatus.hasMCQs) {
-                                router.push(`/mcq-tests?sopId=${sop.sopId}`);
+                                router.push(`/mcq-tests?sopId=${sop.sopId._id || sop.sopId}`);
                               }
                             }}
                             disabled={!sop.completionStatus.hasMCQs}
@@ -548,7 +706,7 @@ export default function SOPLibraryPage() {
                           </button>
                         </div>
                       </div>
-                    ))}
+                    );})}
                   </div>
                 )}
               </div>
@@ -564,8 +722,10 @@ export default function SOPLibraryPage() {
         isOpen={showFolderUpload}
         onClose={() => setShowFolderUpload(false)}
         onSuccess={() => {
-          fetchSOPLibrary();
-          fetchTreeData();
+          // Invalidate cache on new upload
+          invalidateSOPLibraryCache();
+          fetchSOPLibrary(false, true);
+          fetchTreeData(true);
         }}
       />
     </div>

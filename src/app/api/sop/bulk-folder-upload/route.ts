@@ -6,6 +6,7 @@ import SOPLibrary from '@/models/SOPLibrary';
 import MasterSOPRepository from '@/models/MasterSOPRepository';
 import { extractTextFromDOCX } from '@/lib/docxExtractor';
 import { extractDatesFromContent } from '@/lib/dateExtractor';
+import { extractTitleFromFolderPath } from '@/lib/sopLibraryHelper';
 import { extractSOPIdFromFilename, isValidSOPIdentifier } from '@/lib/sopIdExtractor';
 import { saveFileToFolder, parseFolderPath } from '@/lib/fileStorage';
 import AuditLog from '@/models/AuditLog';
@@ -230,9 +231,9 @@ export async function POST(request: NextRequest) {
             // Parse folder path info
             const folderInfo = parseFolderPath(folderPath);
 
-            // Generate SOP name from filename
-            const nameWithoutExt = file.name.replace(/\.(pdf|docx|doc)$/i, '');
-            const sopName = nameWithoutExt.toUpperCase();
+            // Generate SOP name from folder path structure
+            // The folder structure has the full title: "QAGE01-10 - STANDARD OPERATING PROCEDURE FOR SOP"
+            const sopName = extractTitleFromFolderPath(folderPath, sopIdentifier);
 
             // Save file to mirrored folder structure
             const savedFilePath = await saveFileToFolder(buffer, folderPath, file.name);

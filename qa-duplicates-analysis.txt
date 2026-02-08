@@ -1,0 +1,60 @@
+Connected to MongoDB
+
+========== SOP Library (Source of Truth) ==========
+Total QA entries in SOPLibrary: 202
+Unique valid SOP identifiers in SOPLibrary: 202
+
+========== MCQ Banks ==========
+Total QA entries in MCQBank: 200
+  - Valid identifier MCQ Banks: 196
+  - Invalid/garbage identifier MCQ Banks: 1
+  - Annexure MCQ Banks: 3
+
+========== Duplicate Analysis ==========
+Total duplicate valid MCQ Banks: 0
+
+========== Invalid Banks that are Duplicates of Valid Ones ==========
+
+Invalid banks that are duplicates: 0
+Truly invalid banks (no valid counterpart): 1
+
+========== SOP Collection ==========
+Total QA entries in SOP: 197
+  - Valid identifier SOPs: 101
+  - Invalid/garbage identifier SOPs: 19
+  - Annexure SOPs: 77
+
+  DUPLICATE SOP: QCMI03-00 has 2 entries
+Total duplicate valid SOPs: 1
+
+========== SUMMARY ==========
+SOPLibrary QA count: 202 (202 unique valid)
+MCQBank QA count: 200
+  - Should be (unique valid only): 196
+  - Extra from duplicates: 0
+  - Extra from invalid/garbage: 1
+  - Extra from annexures: 3
+SOP QA count: 197
+  - Should be (unique valid only): 100
+  - Extra from duplicates: 1
+  - Extra from invalid/garbage: 19
+  - Extra from annexures: 77
+
+========== ITEMS TO DELETE ==========
+MCQ Banks to delete:
+  - 1 invalid/garbage identifier entries
+  - 3 annexure entries
+  - 0 duplicate entries
+
+SOPs to delete:
+  - 19 invalid/garbage identifier entries
+  - 77 annexure entries
+  - 1 duplicate entries
+
+========== MCQ Bank IDs to Delete (Invalid/Garbage) ==========
+  69800c36a4416dd67201c048: QAMI34
+
+========== MCQ Bank IDs to Delete (Annexures) ==========
+  6970c6e25153ffae144cf333: QAGE74-03
+  697734d7f11d5aac7dda8777: QAGE83-05
+  697b6a03bf6cd303da4a2ded: ANNEXURE-I

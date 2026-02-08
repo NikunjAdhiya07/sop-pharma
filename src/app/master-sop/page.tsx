@@ -329,7 +329,7 @@ export default function MasterSOPPage() {
                       </tr>
                     ) : (
                       filteredSOPs.map((sop) => (
-                        <tr key={sop._id} className="hover:bg-white/5 transition-colors">
+                        <tr key={sop._id} className="hover:bg-purple-900/20 transition-all duration-200 border-b border-white/5 hover:border-purple-500/30">
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
                               <FileText className="h-5 w-5 text-green-400" />

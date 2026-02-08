@@ -15,12 +15,12 @@ import {
   Clock,
   Shield,
   Activity,
-  BarChart3,
   Zap,
   Calendar,
-  Database
+  Database,
+  ArrowRight
 } from 'lucide-react';
-import NotificationBell from '@/components/NotificationBell';
+// NotificationBell removed as per requirement
 
 interface UserData {
   id: string;
@@ -148,37 +148,34 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div className="flex items-center space-x-3">
-                <NotificationBell userId={user.id} />
+              <div className="flex items-center space-x-4">
                 
-                <div className="flex items-center space-x-3 bg-white/10 rounded-xl px-4 py-2.5 border border-white/20 hover:border-purple-400/50 transition-all">
-                  <div className="bg-gradient-to-br from-purple-500 to-pink-500 p-2 rounded-lg shadow-lg">
-                    <User className="h-5 w-5 text-white" />
+                <div className="flex items-center space-x-3 bg-white/5 rounded-full px-4 py-2 border border-white/10 hover:border-purple-400/30 transition-all">
+                  <div className="bg-purple-500/20 p-1.5 rounded-full">
+                    <User className="h-4 w-4 text-purple-300" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-white">{user.name}</p>
-                    <p className="text-xs text-gray-400 flex items-center">
-                      <Shield className="h-3 w-3 mr-1" />
-                      {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+                    <p className="text-sm font-medium text-white">{user.name}</p>
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">
+                      {user.role}
                     </p>
                   </div>
                 </div>
 
                 {(user.role === 'admin' || user.role === 'qa-head') && (
                   <Link href="/admin">
-                    <button className="flex items-center space-x-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 hover:from-purple-500/30 hover:to-pink-500/30 text-purple-200 px-4 py-2.5 rounded-xl border border-purple-500/50 transition-all transform hover:scale-105 hover:shadow-lg hover:shadow-purple-500/20">
+                    <button className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-full transition-colors" title="Admin Panel">
                       <Shield className="h-5 w-5" />
-                      <span className="font-medium">Admin Panel</span>
                     </button>
                   </Link>
                 )}
 
                 <button
                   onClick={handleLogout}
-                  className="flex items-center space-x-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 px-4 py-2.5 rounded-xl border border-red-500/50 transition-all transform hover:scale-105 hover:shadow-lg hover:shadow-red-500/20"
+                  className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-full transition-colors"
+                  title="Logout"
                 >
                   <LogOut className="h-5 w-5" />
-                  <span className="font-medium">Logout</span>
                 </button>
               </div>
             </div>
@@ -200,71 +197,69 @@ export default function DashboardPage() {
           </div>
 
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-            <Link href="/files-manager" className="block">
-              <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-6 border border-white/20 hover:border-purple-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-purple-500/10 group cursor-pointer h-full">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-3 rounded-xl shadow-lg group-hover:scale-110 transition-transform">
-                    <FileText className="h-7 w-7 text-white" />
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+            {[
+              { 
+                label: 'Total SOPs', 
+                value: stats.totalSOPs, 
+                sub: 'Active Documents', 
+                icon: FileText, 
+                color: 'blue',
+                link: '/files-manager'
+              },
+              { 
+                label: 'MCQ Banks', 
+                value: stats.totalMCQBanks, 
+                sub: 'Generated Sets', 
+                icon: BookOpen, 
+                color: 'purple',
+                link: '/mcq-bank' 
+              },
+              { 
+                label: 'Total Questions', 
+                value: stats.totalQuestions.toLocaleString(), 
+                sub: 'Ready to Deploy', 
+                icon: ClipboardCheck, 
+                color: 'emerald',
+                link: '/mcq-bank' 
+              },
+              { 
+                label: 'Last Activity', 
+                value: formatLastActivity(stats.lastActivity), 
+                sub: 'System Update', 
+                icon: Activity, 
+                color: 'pink',
+                link: '/mcq-bank',
+                isText: true
+              },
+            ].map((stat, idx) => (
+              <Link href={stat.link} key={idx} className="block h-full">
+                <div className={`
+                  group relative h-full bg-slate-800/40 backdrop-blur-md rounded-2xl p-6 
+                  border border-white/5 hover:border-${stat.color}-500/30 
+                  transition-all duration-300 hover:bg-slate-800/60 hover:shadow-lg hover:shadow-${stat.color}-500/10
+                `}>
+                  <div className="flex items-start justify-between mb-4">
+                    <div className={`p-3 rounded-xl bg-${stat.color}-500/10 text-${stat.color}-400 group-hover:bg-${stat.color}-500/20 transition-colors`}>
+                      <stat.icon className="h-6 w-6" />
+                    </div>
+                    {/* Placeholder Graph/Indicator */}
+                    <div className="flex items-center text-emerald-400 text-xs font-medium bg-emerald-500/10 px-2 py-1 rounded-full">
+                      <TrendingUp className="h-3 w-3 mr-1" />
+                      active
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-1 text-green-400">
-                    <TrendingUp className="h-4 w-4" />
-                    <span className="text-xs font-semibold">+12%</span>
+                  <div>
+                    <h3 className={`text-3xl font-bold text-white mb-1 ${stat.isText ? 'text-xl' : ''}`}>
+                      {stat.value}
+                    </h3>
+                    <p className="text-sm text-gray-400 font-medium">{stat.label}</p>
+                    <p className="text-xs text-gray-500 mt-1">{stat.sub}</p>
                   </div>
                 </div>
-                <p className="text-gray-400 text-sm font-medium mb-1">Total SOPs</p>
-                <p className="text-4xl font-bold text-white mb-1">{stats.totalSOPs}</p>
-                <p className="text-xs text-gray-500">Active documents</p>
-              </div>
-            </Link>
-
-            <Link href="/mcq-bank" className="block">
-              <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-6 border border-white/20 hover:border-pink-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-pink-500/10 group cursor-pointer h-full">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="bg-gradient-to-br from-pink-500 to-pink-600 p-3 rounded-xl shadow-lg group-hover:scale-110 transition-transform">
-                    <BookOpen className="h-7 w-7 text-white" />
-                  </div>
-                  <div className="flex items-center space-x-1 text-green-400">
-                    <TrendingUp className="h-4 w-4" />
-                    <span className="text-xs font-semibold">+8%</span>
-                  </div>
-                </div>
-                <p className="text-gray-400 text-sm font-medium mb-1">MCQ Banks</p>
-                <p className="text-4xl font-bold text-white mb-1">{stats.totalMCQBanks}</p>
-                <p className="text-xs text-gray-500">Generated banks</p>
-              </div>
-            </Link>
-
-            <Link href="/mcq-bank" className="block">
-              <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-6 border border-white/20 hover:border-emerald-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-emerald-500/10 group cursor-pointer h-full">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-3 rounded-xl shadow-lg group-hover:scale-110 transition-transform">
-                    <ClipboardCheck className="h-7 w-7 text-white" />
-                  </div>
-                  <div className="flex items-center space-x-1 text-green-400">
-                    <TrendingUp className="h-4 w-4" />
-                    <span className="text-xs font-semibold">+24%</span>
-                  </div>
-                </div>
-                <p className="text-gray-400 text-sm font-medium mb-1">Total Questions</p>
-                <p className="text-4xl font-bold text-white mb-1">{stats.totalQuestions.toLocaleString()}</p>
-                <p className="text-xs text-gray-500">Ready to use</p>
-              </div>
-            </Link>
-
-            <Link href="/mcq-bank" className="block">
-              <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-6 border border-white/20 hover:border-blue-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/10 group cursor-pointer h-full">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-3 rounded-xl shadow-lg group-hover:scale-110 transition-transform">
-                    <Activity className="h-7 w-7 text-white" />
-                  </div>
-                  <Clock className="h-5 w-5 text-gray-400" />
-                </div>
-                <p className="text-gray-400 text-sm font-medium mb-1">Last Activity</p>
-                <p className="text-2xl font-bold text-white mb-1 truncate">{formatLastActivity(stats.lastActivity)}</p>
-                <p className="text-xs text-gray-500">MCQ generation</p>
-              </div>
-            </Link>
+              </Link>
+            ))}
           </div>
 
           {/* Quick Actions - Essential Only (Restricted to Admin/Trainer) */}
@@ -276,144 +271,64 @@ export default function DashboardPage() {
                   Quick Actions
                 </h3>
               </div>
-              <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <Link href="/sop-upload">
-                  <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20 hover:border-purple-500 transition-all duration-300 transform hover:scale-[1.02] hover:shadow-2xl hover:shadow-purple-500/20 cursor-pointer group h-full">
-                    <div className="flex items-center mb-6">
-                      <div className="bg-gradient-to-br from-purple-600 to-pink-600 p-4 rounded-xl mr-4 group-hover:scale-110 transition-transform shadow-lg shadow-purple-500/50">
-                        <Upload className="h-8 w-8 text-white" />
-                      </div>
-                      <h2 className="text-2xl font-bold text-white">Upload SOP</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                {/* 1. Upload SOP */}
+                <Link href="/sop-upload" className="block group h-full">
+                  <div className="h-full bg-gradient-to-b from-slate-800 to-slate-900 rounded-2xl p-8 border border-white/10 hover:border-purple-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-purple-500/10 flex flex-col items-start relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-32 bg-purple-500/5 rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:bg-purple-500/10"></div>
+                    
+                    <div className="bg-purple-500/10 p-4 rounded-xl mb-6 group-hover:scale-110 transition-transform duration-300 border border-purple-500/20">
+                      <Upload className="h-8 w-8 text-purple-400" />
                     </div>
-                    <p className="text-gray-300 text-base mb-6 leading-relaxed">
-                      Upload your SOP documents and let AI generate comprehensive MCQ banks automatically.
+                    
+                    <h3 className="text-2xl font-bold text-white mb-3">Upload SOP</h3>
+                    <p className="text-gray-400 text-sm leading-relaxed mb-8 flex-grow">
+                      Upload PDF/DOCX files. AI automatically processes them into learning modules.
                     </p>
-                    <ul className="space-y-3 text-gray-400">
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-purple-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                        <span className="text-sm">PDF & DOCX support</span>
-                      </li>
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-purple-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                        <span className="text-sm">AI-powered generation</span>
-                      </li>
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-purple-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                        <span className="text-sm">Instant processing</span>
-                      </li>
-                    </ul>
+                    
+                    <div className="flex items-center text-purple-400 font-semibold group-hover:translate-x-2 transition-transform">
+                      Start Upload <ArrowRight className="ml-2 h-4 w-4" />
+                    </div>
                   </div>
                 </Link>
 
-                <Link href="/sop-library">
-                  <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20 hover:border-blue-500 transition-all duration-300 transform hover:scale-[1.02] hover:shadow-2xl hover:shadow-blue-500/20 cursor-pointer group h-full">
-                    <div className="flex items-center mb-6">
-                      <div className="bg-gradient-to-br from-blue-600 to-cyan-600 p-4 rounded-xl mr-4 group-hover:scale-110 transition-transform shadow-lg shadow-blue-500/50">
-                        <FileText className="h-8 w-8 text-white" />
-                      </div>
-                      <h2 className="text-2xl font-bold text-white">SOP Library</h2>
+                {/* 2. SOP Library */}
+                <Link href="/sop-library" className="block group h-full">
+                   <div className="h-full bg-gradient-to-b from-slate-800 to-slate-900 rounded-2xl p-8 border border-white/10 hover:border-blue-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-blue-500/10 flex flex-col items-start relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-32 bg-blue-500/5 rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:bg-blue-500/10"></div>
+                    
+                    <div className="bg-blue-500/10 p-4 rounded-xl mb-6 group-hover:scale-110 transition-transform duration-300 border border-blue-500/20">
+                      <FileText className="h-8 w-8 text-blue-400" />
                     </div>
-                    <p className="text-gray-300 text-base mb-6 leading-relaxed">
-                      Browse and manage your SOP documents. Access monitoring and tracking features.
+                    
+                    <h3 className="text-2xl font-bold text-white mb-3">SOP Library</h3>
+                    <p className="text-gray-400 text-sm leading-relaxed mb-8 flex-grow">
+                      Access your SOPs, view analytics, and manage compliance status.
                     </p>
-                    <ul className="space-y-3 text-gray-400">
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-blue-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                        <span className="text-sm">View all SOPs</span>
-                      </li>
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-blue-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                        <span className="text-sm">Download documents</span>
-                      </li>
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-blue-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                        <span className="text-sm">SOP monitoring</span>
-                      </li>
-                    </ul>
+                    
+                    <div className="flex items-center text-blue-400 font-semibold group-hover:translate-x-2 transition-transform">
+                      Browse Library <ArrowRight className="ml-2 h-4 w-4" />
+                    </div>
                   </div>
                 </Link>
 
-                <Link href="/sop-compliance-sync">
-                  <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20 hover:border-green-500 transition-all duration-300 transform hover:scale-[1.02] hover:shadow-2xl hover:shadow-green-500/20 cursor-pointer group h-full">
-                    <div className="flex items-center mb-6">
-                      <div className="bg-gradient-to-br from-green-600 to-emerald-600 p-4 rounded-xl mr-4 group-hover:scale-110 transition-transform shadow-lg shadow-green-500/50">
-                        <Database className="h-8 w-8 text-white" />
-                      </div>
-                      <h2 className="text-2xl font-bold text-white">SOP Compliance Sync</h2>
+                {/* 3. MCQ Bank */}
+                <Link href="/mcq-bank" className="block group h-full">
+                   <div className="h-full bg-gradient-to-b from-slate-800 to-slate-900 rounded-2xl p-8 border border-white/10 hover:border-pink-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-pink-500/10 flex flex-col items-start relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-32 bg-pink-500/5 rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:bg-pink-500/10"></div>
+                    
+                    <div className="bg-pink-500/10 p-4 rounded-xl mb-6 group-hover:scale-110 transition-transform duration-300 border border-pink-500/20">
+                      <BookOpen className="h-8 w-8 text-pink-400" />
                     </div>
-                    <p className="text-gray-300 text-base mb-6 leading-relaxed">
-                      Upload department files to sync SOP compliance dates and track review schedules.
+                    
+                    <h3 className="text-2xl font-bold text-white mb-3">MCQ Bank</h3>
+                    <p className="text-gray-400 text-sm leading-relaxed mb-8 flex-grow">
+                      Review, edit, and export generated MCQ assessments for training.
                     </p>
-                    <ul className="space-y-3 text-gray-400">
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-green-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                        <span className="text-sm">Auto date extraction</span>
-                      </li>
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-green-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                        <span className="text-sm">Smart SOP matching</span>
-                      </li>
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-green-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                        <span className="text-sm">Instant monitoring sync</span>
-                      </li>
-                    </ul>
-                  </div>
-                </Link>
-
-                <Link href="/mcq-bank">
-                  <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20 hover:border-pink-500 transition-all duration-300 transform hover:scale-[1.02] hover:shadow-2xl hover:shadow-pink-500/20 cursor-pointer group h-full">
-                    <div className="flex items-center mb-6">
-                      <div className="bg-gradient-to-br from-pink-600 to-purple-600 p-4 rounded-xl mr-4 group-hover:scale-110 transition-transform shadow-lg shadow-pink-500/50">
-                        <BookOpen className="h-8 w-8 text-white" />
-                      </div>
-                      <h2 className="text-2xl font-bold text-white">MCQ Bank</h2>
+                    
+                    <div className="flex items-center text-pink-400 font-semibold group-hover:translate-x-2 transition-transform">
+                      View Bank <ArrowRight className="ml-2 h-4 w-4" />
                     </div>
-                    <p className="text-gray-300 text-base mb-6 leading-relaxed">
-                      Browse, filter, and export your generated MCQ banks. All questions are ready for use.
-                    </p>
-                    <ul className="space-y-3 text-gray-400">
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-pink-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                        <span className="text-sm">View all MCQ banks</span>
-                      </li>
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-pink-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                        <span className="text-sm">Export to JSON</span>
-                      </li>
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-pink-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                        <span className="text-sm">Advanced filtering</span>
-                      </li>
-                    </ul>
-                  </div>
-                </Link>
-
-                <Link href="/sop-date-sync">
-                  <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20 hover:border-orange-500 transition-all duration-300 transform hover:scale-[1.02] hover:shadow-2xl hover:shadow-orange-500/20 cursor-pointer group h-full">
-                    <div className="flex items-center mb-6">
-                      <div className="bg-gradient-to-br from-orange-600 to-amber-600 p-4 rounded-xl mr-4 group-hover:scale-110 transition-transform shadow-lg shadow-orange-500/50">
-                        <Calendar className="h-8 w-8 text-white" />
-                      </div>
-                      <h2 className="text-2xl font-bold text-white">Date Sync</h2>
-                    </div>
-                    <p className="text-gray-300 text-base mb-6 leading-relaxed">
-                      Upload SOP folders to extract dates and sync with monitoring automatically.
-                    </p>
-                    <ul className="space-y-3 text-gray-400">
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-orange-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                        <span className="text-sm">Auto date extraction</span>
-                      </li>
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-orange-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                        <span className="text-sm">Bulk folder upload</span>
-                      </li>
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-orange-400 rounded-full mr-3 group-hover:animate-pulse"></span>
-                        <span className="text-sm">Monitoring sync</span>
-                      </li>
-                    </ul>
                   </div>
                 </Link>
               </div>

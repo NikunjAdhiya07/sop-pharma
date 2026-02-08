@@ -46,7 +46,7 @@ interface SOP {
 }
 
 type ViewType = 'needsReviewThisWeek' | 'expiringNext30Days' | 'expired' | 'missingDates' | 'perfect' | 'all';
-type SortField = 'identifier' | 'name' | 'expiryDate' | 'reviewDate' | 'department' | 'owner' | 'priority';
+type SortField = 'identifier' | 'name' | 'expiryDate' | 'reviewDate' | 'department' | 'owner' | 'priority' | 'processArea';
 
 export default function SOPMonitoringPage() {
   const router = useRouter();
@@ -187,39 +187,131 @@ export default function SOPMonitoringPage() {
     }
   };
 
-  const getCurrentSOPs = () => {
-    if (!data?.sops) return [];
+  const getFilteredSOPs = () => {
+    if (!data?.sops?.all) return [];
     
-    let sops = [];
-    switch (activeView) {
-      case 'needsReviewThisWeek':
-        sops = data.sops.needsReviewThisWeek || [];
-        break;
-      case 'expiringNext30Days':
-        sops = data.sops.expiringNext30Days || [];
-        break;
-      case 'expired':
-        sops = data.sops.expired || [];
-        break;
-      case 'missingDates':
-        sops = data.sops.missingDates || [];
-        break;
-      case 'perfect':
-        sops = data.sops.valid || [];
-        break;
-      case 'all':
-        sops = data.sops.all || [];
-        break;
-      default:
-        sops = [];
-    }
+    let filtered = data.sops.all;
     
     // Apply filters
     if (filterDepartment) {
-      sops = sops.filter((s: SOP) => s.department === filterDepartment);
+      filtered = filtered.filter((s: SOP) => s.department === filterDepartment);
     }
     if (filterOwner) {
-      sops = sops.filter((s: SOP) => s.owner === filterOwner);
+      filtered = filtered.filter((s: SOP) => s.owner === filterOwner);
+    }
+    
+    return filtered;
+  };
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortField(field);
+      setSortAsc(true);
+    }
+  };
+
+  // Determine color based on department name
+  const getDeptColor = (name: string) => {
+    const lowerName = name.toLowerCase();
+    if (lowerName.includes('qa')) return 'text-purple-400';
+    if (lowerName.includes('qc')) return 'text-blue-400';
+    if (lowerName.includes('production')) return 'text-emerald-400'; // Distinct Green for Production
+    if (lowerName.includes('microbiology')) return 'text-orange-400'; // Orange for Microbiology
+    if (lowerName.includes('engineering')) return 'text-cyan-400';
+    if (lowerName.includes('store')) return 'text-yellow-400';
+    if (lowerName.includes('personnel') || lowerName.includes('hr')) return 'text-pink-400';
+    return 'text-white';
+  };
+
+  const handleBackgroundClick = (e: React.MouseEvent) => {
+    // Check if the click was on an interactive element or its children
+    const target = e.target as HTMLElement;
+    const isInteractive = target.closest('button') || 
+                          target.closest('a') || 
+                          target.closest('select') || 
+                          target.closest('input') || 
+                          target.closest('[role="button"]') ||
+                          target.closest('#sop-list'); // Don't reset if clicking inside the list table
+    
+    if (!isInteractive && (activeView !== 'all' || filterDepartment || filterOwner)) {
+      setActiveView('all');
+      setFilterDepartment('');
+      setFilterOwner('');
+    }
+  };
+
+  const filteredAllSOPs = getFilteredSOPs();
+
+  // Compute stats based on current filters
+  const currentStats = {
+    valid: filteredAllSOPs.filter((s: SOP) => s.computedStatus === 'valid').length,
+    expired: filteredAllSOPs.filter((s: SOP) => s.computedStatus === 'expired').length,
+    missingDates: filteredAllSOPs.filter((s: SOP) => s.computedStatus === 'missingDates').length,
+    needsReviewThisWeek: filteredAllSOPs.filter((s: SOP) => {
+      const effectiveDate = s.reviewDate || s.expiryDate;
+      if (!effectiveDate) return false;
+      const dateObj = new Date(effectiveDate);
+      const today = new Date();
+      today.setHours(0,0,0,0);
+      const nextWeek = new Date(today);
+      nextWeek.setDate(today.getDate() + 7);
+      return dateObj >= today && dateObj <= nextWeek;
+    }).length,
+    expiringNext30Days: filteredAllSOPs.filter((s: SOP) => {
+      const effectiveDate = s.reviewDate || s.expiryDate;
+      if (!effectiveDate) return false;
+      const dateObj = new Date(effectiveDate);
+      const today = new Date();
+      today.setHours(0,0,0,0);
+      const thirtyDaysFromNow = new Date(today);
+      thirtyDaysFromNow.setDate(today.getDate() + 30);
+      return dateObj >= today && dateObj <= thirtyDaysFromNow;
+    }).length
+  };
+
+  const getCurrentSOPs = () => {
+    let sops = [];
+    // Filter from the already filtered pool `filteredAllSOPs` based on view
+    switch (activeView) {
+      case 'needsReviewThisWeek':
+        sops = filteredAllSOPs.filter((s: SOP) => {
+          const effectiveDate = s.reviewDate || s.expiryDate;
+          if (!effectiveDate) return false;
+          const dateObj = new Date(effectiveDate);
+          const today = new Date();
+          today.setHours(0,0,0,0);
+          const nextWeek = new Date(today);
+          nextWeek.setDate(today.getDate() + 7);
+          return dateObj >= today && dateObj <= nextWeek;
+        });
+        break;
+      case 'expiringNext30Days':
+        sops = filteredAllSOPs.filter((s: SOP) => {
+          const effectiveDate = s.reviewDate || s.expiryDate;
+          if (!effectiveDate) return false;
+          const dateObj = new Date(effectiveDate);
+          const today = new Date();
+          today.setHours(0,0,0,0);
+          const thirtyDaysFromNow = new Date(today);
+          thirtyDaysFromNow.setDate(today.getDate() + 30);
+          return dateObj >= today && dateObj <= thirtyDaysFromNow;
+        });
+        break;
+      case 'expired':
+        sops = filteredAllSOPs.filter((s: SOP) => s.computedStatus === 'expired');
+        break;
+      case 'missingDates':
+        sops = filteredAllSOPs.filter((s: SOP) => s.computedStatus === 'missingDates');
+        break;
+      case 'perfect':
+        sops = filteredAllSOPs.filter((s: SOP) => s.computedStatus === 'valid');
+        break;
+      case 'all':
+      default:
+        sops = filteredAllSOPs;
+        break;
     }
     
     // Apply sorting
@@ -266,6 +358,15 @@ export default function SOPMonitoringPage() {
           return sortAsc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
           
         case 'priority':
+          aVal = a.priority || 0;
+          bVal = b.priority || 0;
+          break;
+
+        case 'processArea':
+          aVal = a.processArea || '';
+          bVal = b.processArea || '';
+          return sortAsc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+
         default:
           aVal = a.priority || 0;
           bVal = b.priority || 0;
@@ -278,6 +379,10 @@ export default function SOPMonitoringPage() {
     return sops;
   };
 
+  const currentSOPs = getCurrentSOPs();
+  const departments = data?.departmentStats?.map((d: any) => d.name) || [];
+  const owners = data?.ownerStats?.map((o: any) => o.name) || [];
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
@@ -286,12 +391,11 @@ export default function SOPMonitoringPage() {
     );
   }
 
-  const currentSOPs = getCurrentSOPs();
-  const departments = data?.departmentStats?.map((d: any) => d.name) || [];
-  const owners = data?.ownerStats?.map((o: any) => o.name) || [];
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-8">
+    <div 
+      className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-8"
+      onClick={handleBackgroundClick}
+    >
       <div className="max-w-7xl mx-auto">
         <PageHeader />
 
@@ -326,7 +430,7 @@ export default function SOPMonitoringPage() {
           >
             <div className="flex items-center justify-between mb-3">
               <Calendar className="h-8 w-8 text-red-400" />
-              <span className="text-3xl font-black text-white">{data?.actionable?.needsReviewThisWeek || 0}</span>
+              <span className="text-3xl font-black text-white">{currentStats.needsReviewThisWeek}</span>
             </div>
             <h3 className="text-sm font-bold text-red-400 uppercase tracking-wider">Review This Week</h3>
             <p className="text-xs text-gray-400 mt-1">Needs immediate attention</p>
@@ -343,7 +447,7 @@ export default function SOPMonitoringPage() {
           >
             <div className="flex items-center justify-between mb-3">
               <Clock className="h-8 w-8 text-orange-400" />
-              <span className="text-3xl font-black text-white">{data?.actionable?.expiringNext30Days || 0}</span>
+              <span className="text-3xl font-black text-white">{currentStats.expiringNext30Days}</span>
             </div>
             <h3 className="text-sm font-bold text-orange-400 uppercase tracking-wider">Expiring Soon</h3>
             <p className="text-xs text-gray-400 mt-1">Within next 30 days</p>
@@ -360,7 +464,7 @@ export default function SOPMonitoringPage() {
           >
             <div className="flex items-center justify-between mb-3">
               <AlertTriangle className="h-8 w-8 text-yellow-400" />
-              <span className="text-3xl font-black text-white">{data?.actionable?.expired || 0}</span>
+              <span className="text-3xl font-black text-white">{currentStats.expired}</span>
             </div>
             <h3 className="text-sm font-bold text-yellow-400 uppercase tracking-wider">Expired</h3>
             <p className="text-xs text-gray-400 mt-1">Past expiry date</p>
@@ -377,7 +481,7 @@ export default function SOPMonitoringPage() {
           >
             <div className="flex items-center justify-between mb-3">
               <FileQuestion className="h-8 w-8 text-purple-400" />
-              <span className="text-3xl font-black text-white">{data?.actionable?.missingDates || 0}</span>
+              <span className="text-3xl font-black text-white">{currentStats.missingDates}</span>
             </div>
             <h3 className="text-sm font-bold text-purple-400 uppercase tracking-wider">Missing Dates</h3>
             <p className="text-xs text-gray-400 mt-1">No review/expiry set</p>
@@ -394,7 +498,7 @@ export default function SOPMonitoringPage() {
           >
             <div className="flex items-center justify-between mb-3">
               <CheckCircle2 className="h-8 w-8 text-green-400" />
-              <span className="text-3xl font-black text-white">{data?.summary?.valid || 0}</span>
+              <span className="text-3xl font-black text-white">{currentStats.valid}</span>
             </div>
             <h3 className="text-sm font-bold text-green-400 uppercase tracking-wider">Perfect</h3>
             <p className="text-xs text-gray-400 mt-1">All dates valid & compliant</p>
@@ -409,39 +513,59 @@ export default function SOPMonitoringPage() {
               Department Overview
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {data.departmentStats.map((dept: any) => (
-                <div key={dept.name} className="bg-white/5 border border-white/10 rounded-xl p-4">
-                  <h3 className="font-bold text-white mb-2">{dept.name}</h3>
-                  <div className="space-y-1 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Total:</span>
-                      <span className="text-white font-semibold">{dept.total}</span>
+              {data.departmentStats.map((dept: any) => {
+                const headerColor = getDeptColor(dept.name);
+                const presentDates = dept.total - dept.missingDates;
+
+                return (
+                  <button 
+                    key={dept.name} 
+                    onClick={() => {
+                      const newFilter = dept.name === filterDepartment ? '' : dept.name;
+                      setFilterDepartment(newFilter);
+                      if (newFilter) {
+                        setActiveView('all');
+                      }
+                      // Scroll to list
+                      document.getElementById('sop-list')?.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                    className={`bg-white/5 border ${filterDepartment === dept.name ? 'border-purple-500 bg-purple-500/10' : 'border-white/10'} rounded-xl p-4 hover:bg-white/10 transition-all text-left w-full group`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className={`font-bold text-lg ${headerColor} group-hover:brightness-125 transition-all`}>{dept.name}</h3>
+                      {filterDepartment === dept.name && <CheckCircle2 className="h-4 w-4 text-purple-400" />}
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-red-400">Needs Review:</span>
-                      <span className="text-red-400 font-semibold">{dept.needsReview}</span>
+                    
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Total:</span>
+                        <span className="text-white font-semibold">{dept.total}</span>
+                      </div>
+                      
+                      <div className="flex justify-between">
+                         <span className="text-purple-400">Missing Dates:</span>
+                         <span className="text-purple-400 font-semibold">{dept.missingDates}</span>
+                      </div>
+                      
+                      <div className="flex justify-between">
+                        <span className="text-green-400">Present Dates:</span>
+                        <span className="text-green-400 font-semibold">{presentDates}</span>
+                      </div>
+
+                      <div className="flex justify-between">
+                        <span className="text-red-400">Expired:</span>
+                        <span className="text-red-400 font-semibold">{dept.expired}</span>
+                      </div>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-yellow-400">Expired:</span>
-                      <span className="text-yellow-400 font-semibold">{dept.expired}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-orange-400">Expiring Soon:</span>
-                      <span className="text-orange-400 font-semibold">{dept.expiringSoon}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-purple-400">Missing Dates:</span>
-                      <span className="text-purple-400 font-semibold">{dept.missingDates}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
 
         {/* SOP List - Beautiful Card Design */}
-        <div className="bg-gradient-to-br from-purple-900/20 via-indigo-900/20 to-purple-900/20 backdrop-blur-xl border-2 border-purple-500/30 rounded-3xl overflow-hidden shadow-[0_0_60px_rgba(168,85,247,0.3)]">
+        <div id="sop-list" className="bg-gradient-to-br from-purple-900/20 via-indigo-900/20 to-purple-900/20 backdrop-blur-xl border-2 border-purple-500/30 rounded-3xl overflow-hidden shadow-[0_0_60px_rgba(168,85,247,0.3)]">
           {/* Header */}
           <div className="px-8 py-6 bg-gradient-to-r from-purple-900/40 to-indigo-900/40 border-b border-purple-500/20">
             <h2 className="text-2xl font-bold text-white flex items-center gap-3">
@@ -534,154 +658,141 @@ export default function SOPMonitoringPage() {
           {/* Table Header */}
           <div className="px-8 py-4 bg-purple-900/20 border-b border-purple-500/20">
             <div className="grid grid-cols-12 gap-4 text-sm font-semibold text-purple-200">
-              <div className="col-span-2">SOP ID</div>
-              <div className="col-span-2">Name</div>
-              <div className="col-span-2">Department & Owner</div>
-              <div className="col-span-2">Process Area & Guideline</div>
-              <div className="col-span-2" title="Primary date used for expiry status">Review Date (Expiry) ⓘ</div>
-              <div className="col-span-1">Expiry Date</div>
-              <div className="col-span-1 text-right">Action</div>
+              <div 
+                className="col-span-5 cursor-pointer hover:text-white flex items-center gap-2 transition-colors select-none"
+                onClick={() => handleSort('identifier')}
+              >
+                SOP Details
+                {sortField === 'identifier' && (
+                  <ArrowUpDown className="h-3 w-3 text-purple-400" />
+                )}
+              </div>
+              <div 
+                className="col-span-3 cursor-pointer hover:text-white flex items-center gap-2 transition-colors select-none"
+                onClick={() => handleSort('department')}
+              >
+                Department & Owner
+                {sortField === 'department' && (
+                  <ArrowUpDown className="h-3 w-3 text-purple-400" />
+                )}
+              </div>
+              <div 
+                className="col-span-2 cursor-pointer hover:text-white flex items-center gap-2 transition-colors select-none"
+                onClick={() => handleSort('reviewDate')}
+                title="Primary date used for expiry status"
+              >
+                Review Date (Expiry) ⓘ
+                {sortField === 'reviewDate' && (
+                  <ArrowUpDown className="h-3 w-3 text-purple-400" />
+                )}
+              </div>
+              <div className="col-span-2 text-right">Action</div>
             </div>
           </div>
 
+
           {/* Table Body */}
-          <div className="divide-y divide-purple-500/10">
+          <div className="space-y-2 p-2">
             {currentSOPs.length === 0 ? (
               <div className="p-16 text-center">
                 <CheckCircle2 className="h-20 w-20 text-green-500/30 mx-auto mb-4" />
                 <p className="text-gray-400 text-xl">No SOPs in this category</p>
               </div>
             ) : (
-              currentSOPs.map((sop: SOP) => (
-                <div 
-                  key={sop._id} 
-                  className="px-8 py-6 hover:bg-purple-800/10 transition-all group bg-gradient-to-r from-transparent via-purple-900/5 to-transparent"
-                >
-                  <div className="grid grid-cols-12 gap-4 items-start">
-                    {/* SOP ID & Version */}
-                    <div className="col-span-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-white font-bold text-sm">{sop.identifier}</span>
-                        {sop.version && (
-                          <span className="px-2 py-0.5 bg-purple-500/30 border border-purple-400/40 rounded-md text-purple-200 text-xs font-bold">
-                            v{sop.version}
-                          </span>
+              currentSOPs.map((sop: SOP) => {
+                // Ensure name doesn't repeat identifier
+                const cleanName = sop.name.replace(sop.identifier, '').replace(/^[-\s:\.]+/, '').trim();
+                const displayName = cleanName || sop.name; // Fallback if replace results in empty
+
+                return (
+                  <div 
+                    key={sop._id} 
+                    className="px-6 py-5 rounded-xl border border-white/5 bg-white/5 hover:bg-[#1E2338] hover:border-purple-500/30 transition-all duration-300 transform hover:scale-[1.01] hover:shadow-lg hover:shadow-purple-500/20 group"
+                  >
+                    <div className="grid grid-cols-12 gap-4 items-start">
+                      {/* SOP ID & Name Combined */}
+                      <div className="col-span-5">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2">
+                             <span className="text-lg font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-pink-300 tracking-wide">
+                               {sop.identifier}
+                             </span>
+                             {sop.version && (
+                               <span className="px-2 py-0.5 bg-purple-500/30 border border-purple-400/40 rounded-md text-purple-200 text-[10px] font-bold uppercase tracking-wider">
+                                 v{sop.version}
+                               </span>
+                             )}
+                          </div>
+                          <p className="text-white font-medium text-sm leading-snug">{displayName}</p>
+                        </div>
+                      </div>
+
+                      {/* Department & Owner */}
+                      <div className="col-span-3 space-y-1 pt-1">
+                        <div className="flex items-center gap-2">
+                          <Building2 className={`h-3.5 w-3.5 ${getDeptColor(sop.department)}`} />
+                          <span className={`${getDeptColor(sop.department)} text-xs font-bold shadow-black drop-shadow-sm`}>{sop.department}</span>
+                        </div>
+                        {sop.owner && (
+                          <div className="flex items-center gap-2">
+                            <User className="h-3.5 w-3.5 text-purple-300" />
+                            <span className="text-purple-100 text-xs">{sop.owner}</span>
+                          </div>
                         )}
                       </div>
-                    </div>
 
-                    {/* Name */}
-                    <div className="col-span-2">
-                      <p className="text-white font-medium text-sm leading-tight">{sop.name}</p>
-                    </div>
-
-                    {/* Department & Owner */}
-                    <div className="col-span-2 space-y-1">
-                      <div className="flex items-center gap-2">
-                        <Building2 className="h-3.5 w-3.5 text-purple-300" />
-                        <span className="text-purple-100 text-xs">{sop.department}</span>
+                      {/* Review Date */}
+                      <div className="col-span-2 pt-1">
+                        {sop.reviewDate ? (
+                          <div className="space-y-1">
+                            <p className="text-white text-sm font-medium">
+                              {format(new Date(sop.reviewDate), 'MMM dd, yyyy')}
+                            </p>
+                            {sop.daysToReview !== null && sop.daysToReview !== undefined && (
+                              <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-bold ${
+                                sop.daysToReview < 0 
+                                  ? 'bg-red-500/20 text-red-300 border border-red-500/30' 
+                                  : sop.daysToReview <= 2
+                                  ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30'
+                                  : sop.daysToReview <= 7
+                                  ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
+                                  : 'bg-green-500/20 text-green-300 border border-green-500/30'
+                              }`}>
+                                {sop.daysToReview < 0 
+                                  ? `overdue by ${Math.abs(sop.daysToReview)} day${Math.abs(sop.daysToReview) !== 1 ? 's' : ''}` 
+                                  : `${sop.daysToReview} day${sop.daysToReview !== 1 ? 's' : ''} left`}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-gray-500 text-xs">Not set</span>
+                        )}
                       </div>
-                      {sop.owner && (
-                        <div className="flex items-center gap-2">
-                          <User className="h-3.5 w-3.5 text-purple-300" />
-                          <span className="text-purple-100 text-xs">{sop.owner}</span>
-                        </div>
-                      )}
+
+                      {/* Action Button */}
+                      <div className="col-span-2 flex justify-end items-center h-full">
+                        <button
+                          onClick={() => handleOpenEditModal(sop)}
+                          className="px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-700 hover:to-purple-600 text-white rounded-lg text-sm font-semibold transition-all flex items-center gap-2 shadow-lg shadow-purple-500/30 opacity-0 group-hover:opacity-100 transform translate-x-2 group-hover:translate-x-0"
+                        >
+                          <Edit className="h-3.5 w-3.5" />
+                          Edit
+                        </button>
+                      </div>
                     </div>
 
-                    {/* Process Area & Guideline */}
-                    <div className="col-span-2 space-y-1">
-                      {sop.processArea && (
-                        <div className="flex items-center gap-2">
-                          <Layers className="h-3.5 w-3.5 text-purple-300" />
-                          <span className="text-purple-100 text-xs">{sop.processArea}</span>
-                        </div>
-                      )}
-                      {sop.guidelineReference && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-purple-300 text-xs">📄</span>
-                          <span className="text-purple-100 text-xs">{sop.guidelineReference}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Review Date */}
-                    <div className="col-span-2">
-                      {sop.reviewDate ? (
-                        <div className="space-y-1">
-                          <p className="text-white text-sm font-medium">
-                            {format(new Date(sop.reviewDate), 'MMM dd, yyyy')}
-                          </p>
-                          {sop.daysToReview !== null && sop.daysToReview !== undefined && (
-                            <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-bold ${
-                              sop.daysToReview < 0 
-                                ? 'bg-red-500/20 text-red-300 border border-red-500/30' 
-                                : sop.daysToReview <= 2
-                                ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30'
-                                : sop.daysToReview <= 7
-                                ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
-                                : 'bg-green-500/20 text-green-300 border border-green-500/30'
-                            }`}>
-                              {sop.daysToReview < 0 
-                                ? `overdue by ${Math.abs(sop.daysToReview)} day${Math.abs(sop.daysToReview) !== 1 ? 's' : ''}` 
-                                : `${sop.daysToReview} day${sop.daysToReview !== 1 ? 's' : ''} left`}
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-gray-500 text-xs">Not set</span>
-                      )}
-                    </div>
-
-                    {/* Expiry Date */}
-                    <div className="col-span-1">
-                      {sop.expiryDate ? (
-                        <div className="space-y-1">
-                          <p className="text-white text-sm font-medium">
-                            {format(new Date(sop.expiryDate), 'MMM dd, yyyy')}
-                          </p>
-                          {sop.daysToExpiry !== null && sop.daysToExpiry !== undefined && (
-                            <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-bold ${
-                              sop.daysToExpiry < 0 
-                                ? 'bg-red-500/20 text-red-300 border border-red-500/30' 
-                                : sop.daysToExpiry <= 30
-                                ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
-                                : 'bg-green-500/20 text-green-300 border border-green-500/30'
-                            }`}>
-                              ({sop.daysToExpiry < 0 
-                                ? `${Math.abs(sop.daysToExpiry)} days` 
-                                : `${sop.daysToExpiry} days`})
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-gray-500 text-xs">Not set</span>
-                      )}
-                    </div>
-
-                    {/* Action Button */}
-                    <div className="col-span-1 flex justify-end">
-                      <button
-                        onClick={() => handleOpenEditModal(sop)}
-                        className="px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-700 hover:to-purple-600 text-white rounded-lg text-sm font-semibold transition-all flex items-center gap-2 shadow-lg shadow-purple-500/30 opacity-0 group-hover:opacity-100"
-                      >
-                        <Edit className="h-3.5 w-3.5" />
-                        Edit
-                      </button>
-                    </div>
+                    {/* Remarks Row (if exists) */}
+                    {sop.remarks && (
+                      <div className="mt-3 flex items-start gap-2 px-4 py-2 bg-cyan-500/10 border border-cyan-500/20 rounded-lg mx-1">
+                        <span className="text-cyan-400 text-xs">ℹ️</span>
+                        <p className="text-cyan-200 text-xs flex-1">
+                          <span className="font-semibold">Remarks:</span> {sop.remarks}
+                        </p>
+                      </div>
+                    )}
                   </div>
-
-                  {/* Remarks Row (if exists) */}
-                  {sop.remarks && (
-                    <div className="mt-3 flex items-start gap-2 px-4 py-2 bg-cyan-500/10 border border-cyan-500/20 rounded-lg">
-                      <span className="text-cyan-400 text-xs">ℹ️</span>
-                      <p className="text-cyan-200 text-xs flex-1">
-                        <span className="font-semibold">Remarks:</span> {sop.remarks}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

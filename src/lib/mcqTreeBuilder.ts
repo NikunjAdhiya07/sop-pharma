@@ -224,11 +224,29 @@ export function buildMCQTreeStructure(
     mcqBanksBySopId.get(sopId)!.push(bank);
   });
 
+  // Also create a map by identifier for fallback matching
+  const mcqBanksByIdentifier = new Map<string, IMCQBank[]>();
+  mcqBanks.forEach(bank => {
+    const identifier = bank.sopIdentifier?.toUpperCase().trim();
+    if (identifier) {
+      if (!mcqBanksByIdentifier.has(identifier)) {
+        mcqBanksByIdentifier.set(identifier, []);
+      }
+      mcqBanksByIdentifier.get(identifier)!.push(bank);
+    }
+  });
+
   // Process each SOP
   sops.forEach(sop => {
     const sopId = sop._id.toString();
+    const sopIdentifier = sop.identifier?.toUpperCase().trim();
     const subcategoryCode = extractSubcategoryFromIdentifier(sop.identifier);
-    const sopMCQBanks = mcqBanksBySopId.get(sopId) || [];
+    
+    // Try to get MCQ banks by sopId first, then fallback to identifier
+    let sopMCQBanks = mcqBanksBySopId.get(sopId) || [];
+    if (sopMCQBanks.length === 0 && sopIdentifier) {
+      sopMCQBanks = mcqBanksByIdentifier.get(sopIdentifier) || [];
+    }
     const totalQuestions = sopMCQBanks.reduce((sum, bank) => sum + bank.totalQuestions, 0);
 
     const sopNode: SOPNode = {

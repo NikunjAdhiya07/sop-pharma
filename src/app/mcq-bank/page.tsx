@@ -489,7 +489,7 @@ function MCQBankContent() {
             {filteredAndSortedMCQBanks.map((bank) => (
               <div
                 key={bank._id}
-                className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 shadow-xl border border-white/20 hover:border-purple-500/50 transition-all duration-300 transform hover:scale-[1.02]"
+                className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 shadow-xl border border-white/20 hover:border-purple-500/50 transition-all duration-300 transform hover:scale-[1.03] hover:shadow-2xl hover:shadow-purple-500/20 hover:bg-[#1E2338]"
               >
                 <div className="flex items-start justify-between mb-4 gap-4">
                   <div className="flex-1 min-w-0">

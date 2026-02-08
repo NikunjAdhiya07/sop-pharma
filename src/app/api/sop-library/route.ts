@@ -50,17 +50,31 @@ export async function GET(request: NextRequest) {
     }
 
     // Build query
-    const query: any = {};
+    const query: any = {
+      // Exclude invalid identifiers - only include proper SOP codes
+      sopIdentifier: { $regex: /^[A-Z]{2,4}\d{2,3}-\d{2}$/i },
+      // Exclude annexures
+      sopName: { $not: /annexure/i },
+    };
 
     if (department && department !== 'all') {
       query.department = department;
     }
 
     if (search) {
-      query.$or = [
-        { sopName: { $regex: search, $options: 'i' } },
-        { sopIdentifier: { $regex: search, $options: 'i' } },
+      query.$and = [
+        { sopIdentifier: { $regex: /^[A-Z]{2,4}\d{2,3}-\d{2}$/i } },
+        { sopName: { $not: /annexure/i } },
+        {
+          $or: [
+            { sopName: { $regex: search, $options: 'i' } },
+            { sopIdentifier: { $regex: search, $options: 'i' } },
+          ]
+        }
       ];
+      // Remove the base filters since we're using $and
+      delete query.sopIdentifier;
+      delete query.sopName;
     }
 
     if (hasVideos === 'true') {
@@ -77,6 +91,7 @@ export async function GET(request: NextRequest) {
 
     const sopLibraries = await SOPLibrary.find(query)
       .populate('mcqBankId', 'totalQuestions difficultyDistribution')
+      .populate('sopId', 'reviewDate expiryDate version')
       .sort({ department: 1, sopIdentifier: 1 });
 
     // Organize by department
@@ -91,6 +106,11 @@ export async function GET(request: NextRequest) {
       organized,
       departments,
       total: sopLibraries.length,
+    }, {
+      headers: {
+        // Browser cache for 60s, use stale data for up to 5 mins while revalidating
+        'Cache-Control': 'private, max-age=60, stale-while-revalidate=300',
+      }
     });
   } catch (error: any) {
     console.error('Error fetching SOP library:', error);

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import SOPLibrary from '@/models/SOPLibrary';
+import SOP from '@/models/SOP';
+import MasterSOPRepository from '@/models/MasterSOPRepository';
 import { performSOPLibrarySync } from '@/lib/sopLibrarySync';
 import { 
   extractSubcategoryFromIdentifier, 
@@ -39,12 +41,67 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const departmentFilter = searchParams.get('department');
 
+    // Valid SOP identifier pattern: QAGE01-10, QCMI50-00, PRMA01-02, etc.
+    const validIdentifierPattern = /^[A-Z]{2,4}\d{2,3}-\d{2}$/i;
+
     // Fetch all SOP libraries (no filter by department field - we'll organize by subcategory code)
-    const sopLibraries = await SOPLibrary.find({})
+    const allSopLibraries = await SOPLibrary.find({})
       .populate('mcqBankId')
+      .populate({
+         path: 'sopId',
+         select: 'reviewDate expiryDate version'
+      })
       .lean();
 
-    console.log(`📚 Building SOP Library tree from ${sopLibraries.length} SOPs`);
+    // Fetch Master SOP Repository data for cross-referencing (this is the source of truth for SOP Monitoring)
+    const masterRepoData = await MasterSOPRepository.find({}, {
+      sopIdentifier: 1,
+      'metadata.reviewDate': 1,
+      'metadata.expiryDate': 1,
+      'metadata.version': 1
+    }).lean();
+
+    // Create lookup map for master repo data by identifier
+    const masterRepoMap = new Map<string, any>();
+    masterRepoData.forEach((item: any) => {
+      if (item.sopIdentifier) {
+        masterRepoMap.set(item.sopIdentifier.toUpperCase(), item);
+      }
+    });
+
+    console.log(`📚 Cross-referencing with ${masterRepoData.length} Master SOP Repository entries`);
+
+    // Filter out annexures, temp files, and invalid identifiers
+    const sopLibraries = allSopLibraries.filter((sop: any) => {
+      const identifier = (sop.sopIdentifier || '').toLowerCase();
+      const name = (sop.sopName || '').toLowerCase();
+      
+      // Exclude temp files
+      if (name.startsWith('~$') || identifier.startsWith('~$')) return false;
+      
+      // Exclude annexures
+      if (identifier.includes('annexure') || name.includes('annexure')) return false;
+      
+      // Exclude invalid identifiers
+      if (!validIdentifierPattern.test(sop.sopIdentifier)) return false;
+      
+      return true;
+    });
+
+    // Enhance each SOP with master repo data for consistent status calculation
+    sopLibraries.forEach((sop: any) => {
+      const masterData = masterRepoMap.get(sop.sopIdentifier?.toUpperCase());
+      if (masterData?.metadata) {
+        // Attach master repo dates (these are the source of truth for SOP Monitoring)
+        sop.masterRepoData = {
+          reviewDate: masterData.metadata.reviewDate,
+          expiryDate: masterData.metadata.expiryDate,
+          version: masterData.metadata.version
+        };
+      }
+    });
+
+    console.log(`📚 Building SOP Library tree from ${sopLibraries.length} valid SOPs (filtered ${allSopLibraries.length - sopLibraries.length} invalid entries)`);
 
     // Define types for better type safety
     interface SubcategoryNode {
@@ -174,6 +231,11 @@ export async function GET(request: NextRequest) {
         totalDepartments: tree.length,
         totalSOPs: sopLibraries.length,
         totalSubcategories: tree.reduce((acc, dept) => acc + dept.subcategories.length, 0)
+      }
+    }, {
+      headers: {
+        // Browser cache for 60s, use stale data for up to 5 mins while revalidating
+        'Cache-Control': 'private, max-age=60, stale-while-revalidate=300',
       }
     });
   } catch (error) {

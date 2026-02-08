@@ -153,7 +153,7 @@ export default function SOPTreeView({ tree, searchTerm = '', onViewDocument, onD
       {/* Departments Grid - 3 columns */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {tree.map((dept) => (
-          <div key={dept.name} className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 hover:border-green-500/50 transition-all duration-300 transform hover:scale-[1.02] shadow-xl overflow-hidden cursor-pointer">
+          <div key={dept.name} className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 hover:border-green-500/50 transition-all duration-300 transform hover:scale-[1.03] hover:shadow-2xl hover:shadow-green-500/20 shadow-xl overflow-hidden cursor-pointer">
             {/* Department Header - Click to open full screen */}
             <button
               onClick={() => setFullScreenDept(dept)}
@@ -228,7 +228,7 @@ export default function SOPTreeView({ tree, searchTerm = '', onViewDocument, onD
                    const isSubcatExpanded = expandedSubcategories.has(subcatKey);
 
                    return (
-                     <div key={subcatKey} className="bg-gradient-to-br from-green-900/20 to-green-800/10 rounded-xl border border-green-500/20 overflow-hidden">
+                     <div key={subcatKey} className="bg-gradient-to-br from-green-900/20 to-green-800/10 rounded-xl border border-green-500/20 overflow-hidden hover:border-green-500/40 transition-all duration-300 hover:shadow-lg hover:shadow-green-500/10">
                        {/* Subcategory Header */}
                        <button
                          onClick={() => toggleSubcategory(subcatKey)}
@@ -272,7 +272,7 @@ export default function SOPTreeView({ tree, searchTerm = '', onViewDocument, onD
                                       {(folder.sops || []).map((sop) => {
                                         const isSOPExpanded = expandedSOPs.has(sop._id);
                                         return (
-                                          <div key={sop._id} className="bg-slate-800/50 rounded-lg border border-slate-600/30 overflow-hidden hover:border-green-500/50 transition-all">
+                                          <div key={sop._id} className="bg-slate-800/50 rounded-lg border border-slate-600/30 overflow-hidden hover:border-green-500/50 transition-all duration-300 transform hover:scale-[1.02] hover:shadow-lg hover:shadow-green-500/10 hover:bg-slate-800/80">
                                             {/* SOP Header - Compact */}
                                             <button
                                               onClick={() => toggleSOP(sop._id)}
