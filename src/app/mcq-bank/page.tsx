@@ -121,8 +121,14 @@ function MCQBankContent() {
   const fetchFullBankDetails = async (bank: MCQBank) => {
     // Always fetch latest from DB when opening modal to ensure persistence
     try {
-      // Use cached questions if available for instant load
-      if (bank.mcqs && bank.mcqs.length > 0) {
+      // Check if we have FULL question data (not just partial status flags)
+      // Partial data from tree view only has isChecked/isReviewed, not question/options
+      const hasFullData = bank.mcqs && 
+                         bank.mcqs.length > 0 && 
+                         bank.mcqs[0].question && 
+                         bank.mcqs[0].options;
+      
+      if (hasFullData) {
         setSelectedMCQBank(bank);
         return;
       }
