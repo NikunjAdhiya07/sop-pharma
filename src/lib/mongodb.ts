@@ -29,8 +29,9 @@ async function connectDB(): Promise<typeof mongoose> {
   if (!cached.promise) {
     const opts = {
       bufferCommands: false,
-      serverSelectionTimeoutMS: 10000, // 10 second timeout
-      socketTimeoutMS: 45000, // 45 second socket timeout
+      serverSelectionTimeoutMS: 120000, // 2 minutes
+      socketTimeoutMS: 300000, // 5 minutes
+      connectTimeoutMS: 120000, // 2 minutes
     };
 
     cached.promise = (async () => {

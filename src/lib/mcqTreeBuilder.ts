@@ -12,6 +12,8 @@ export interface SOPNode {
   sopFileType: 'pdf' | 'docx';
   mcqBanks: IMCQBank[];
   totalQuestions: number;
+  checkedCount: number;
+  reviewedCount: number;
 }
 
 export interface SubcategoryNode {
@@ -248,6 +250,8 @@ export function buildMCQTreeStructure(
       sopMCQBanks = mcqBanksByIdentifier.get(sopIdentifier) || [];
     }
     const totalQuestions = sopMCQBanks.reduce((sum, bank) => sum + bank.totalQuestions, 0);
+    const checkedCount = sopMCQBanks.reduce((sum, bank) => sum + (bank.mcqs?.filter(q => q.isChecked).length || 0), 0);
+    const reviewedCount = sopMCQBanks.reduce((sum, bank) => sum + (bank.mcqs?.filter(q => q.isReviewed).length || 0), 0);
 
     const sopNode: SOPNode = {
       sopId,
@@ -257,6 +261,8 @@ export function buildMCQTreeStructure(
       sopFileType: sop.fileType,
       mcqBanks: sopMCQBanks,
       totalQuestions,
+      checkedCount,
+      reviewedCount,
     };
 
     // Determine correct department from subcategory code
@@ -311,6 +317,8 @@ export function buildMCQTreeStructure(
         sopFileType: 'pdf',
         mcqBanks: [bank],
         totalQuestions: bank.totalQuestions,
+        checkedCount: bank.mcqs?.filter(q => q.isChecked).length || 0,
+        reviewedCount: bank.mcqs?.filter(q => q.isReviewed).length || 0,
       };
 
       tree.unorganized.sops.push(sopNode);

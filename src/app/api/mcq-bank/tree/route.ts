@@ -13,9 +13,9 @@ export async function GET(request: NextRequest) {
       .select('_id name identifier department fileUrl fileType')
       .lean();
 
-    // Fetch all MCQ Banks
+    // Fetch all MCQ Banks with status fields
     const mcqBanks = await MCQBank.find({})
-      .select('_id sopId sopName sopIdentifier department totalQuestions')
+      .select('_id sopId sopName sopIdentifier department totalQuestions mcqs.isChecked mcqs.isReviewed')
       .lean();
 
     console.log(`📊 Building tree from ${sops.length} SOPs and ${mcqBanks.length} MCQ banks`);

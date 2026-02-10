@@ -17,6 +17,8 @@ export interface IMCQ {
   explanation: string;
   sopReference: string;
   optionVariants: IOptionVariant[];
+  isChecked?: boolean;
+  isReviewed?: boolean;
 }
 
 export interface IMCQBank extends Document {
@@ -92,6 +94,14 @@ const MCQSchema = new Schema<IMCQ>({
   optionVariants: {
     type: [OptionVariantSchema],
     default: [],
+  },
+  isChecked: {
+    type: Boolean,
+    default: false,
+  },
+  isReviewed: {
+    type: Boolean,
+    default: false,
   },
 }, { _id: false });
 
@@ -171,6 +181,10 @@ MCQBankSchema.index({ folderSubcategory: 1 });
 MCQBankSchema.index({ folderDepartment: 1, folderSubcategory: 1 });
 MCQBankSchema.index({ 'mcqs.difficulty': 1 });
 
-const MCQBank: Model<IMCQBank> = mongoose.models.MCQBank || mongoose.model<IMCQBank>('MCQBank', MCQBankSchema);
+// Delete cached model to ensure schema changes are picked up (e.g. isChecked, isReviewed)
+if (mongoose.models.MCQBank) {
+  delete mongoose.models.MCQBank;
+}
+const MCQBank: Model<IMCQBank> = mongoose.model<IMCQBank>('MCQBank', MCQBankSchema);
 
 export default MCQBank;

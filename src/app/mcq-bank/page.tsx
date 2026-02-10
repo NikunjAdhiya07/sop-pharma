@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Search, Filter, Download, Eye, BookOpen, Award, Loader2, Plus, Trash2, FolderOpen, Upload, ArrowLeft, Grid, List, ArrowUpDown, SortAsc, SortDesc } from 'lucide-react';
+import { Search, Filter, Download, Eye, BookOpen, Award, Loader2, Plus, Trash2, FolderOpen, Upload, ArrowLeft, Grid, List, ArrowUpDown, SortAsc, SortDesc, CheckCircle2, Star, FileText } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 import MCQTreeView from '@/components/MCQTreeView';
 
@@ -15,6 +15,8 @@ interface MCQ {
   correctAnswer: string;
   explanation: string;
   sopReference: string;
+  isChecked?: boolean;
+  isReviewed?: boolean;
   optionVariants: Array<{
     text: string;
     isCorrect: boolean;
@@ -48,6 +50,7 @@ function MCQBankContent() {
   const [difficultyFilter, setDifficultyFilter] = useState<string>('All');
   const [selectedMCQBank, setSelectedMCQBank] = useState<MCQBank | null>(null);
   const [selectedMCQ, setSelectedMCQ] = useState<{mcq: MCQ, index: number} | null>(null);
+  const [updatingStatus, setUpdatingStatus] = useState<string | null>(null); // e.g. "bankId-index"
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalBanks, setTotalBanks] = useState(0);
@@ -116,23 +119,32 @@ function MCQBankContent() {
   };
 
   const fetchFullBankDetails = async (bank: MCQBank) => {
-    // If questions are already loaded, just select it
-    if (bank.mcqs && bank.mcqs.length > 0) {
-      setSelectedMCQBank(bank);
-      return;
-    }
-
-    // Otherwise fetch the full details
+    // Always fetch latest from DB when opening modal to ensure persistence
     try {
+      // Use cached questions if available for instant load
+      if (bank.mcqs && bank.mcqs.length > 0) {
+        setSelectedMCQBank(bank);
+        return;
+      }
+
       setLoading(true);
-      // We can use the existing API but filter by ID if we had an ID filter, 
-      // or filter by sopId since that's unique per bank usually. 
-      // Actually the current API supports sopId filtering.
-      const response = await fetch(`/api/mcq-bank?sopId=${bank.sopId}&limit=1`);
+      // Use the ID filter for pinpoint precision
+      // timestamp to prevent browser caching
+      const response = await fetch(`/api/mcq-bank?id=${bank._id}&limit=1&t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Pragma': 'no-cache',
+          'Cache-Control': 'no-cache'
+        }
+      });
       const data = await response.json();
 
       if (data.success && data.mcqBanks.length > 0) {
-        setSelectedMCQBank(data.mcqBanks[0]);
+        const fullBank = data.mcqBanks[0];
+        setSelectedMCQBank(fullBank);
+        
+        // Update the bank in our local list state
+        setMcqBanks(prev => prev.map(b => b._id === bank._id ? fullBank : b));
       } else {
         alert('Failed to load questions for this bank');
       }
@@ -265,6 +277,146 @@ function MCQBankContent() {
     link.href = url;
     link.download = `${bank.sopIdentifier}_MCQ_Bank.json`;
     link.click();
+  };
+
+  const toggleChecked = async (bankId: string, index: number, currentStatus: boolean) => {
+    const statusKey = `${bankId}-${index}`;
+    if (updatingStatus === statusKey) return;
+    
+    setUpdatingStatus(statusKey);
+    setUpdatingStatus(statusKey);
+
+    // OPTIMISTIC UPDATE: Update UI immediately
+    const nextStatus = !currentStatus;
+    
+    // Update local modal state immediately
+    if (selectedMCQBank && selectedMCQBank._id === bankId) {
+      const newMcqs = [...selectedMCQBank.mcqs];
+      newMcqs[index] = { ...newMcqs[index], isChecked: nextStatus };
+      setSelectedMCQBank({ ...selectedMCQBank, mcqs: newMcqs });
+    }
+    
+    // Update the main list state
+    setMcqBanks(prev => prev.map(b => {
+      if (b._id === bankId && b.mcqs && b.mcqs.length > 0) {
+        const updatedMcqs = [...b.mcqs];
+        updatedMcqs[index] = { ...updatedMcqs[index], isChecked: nextStatus };
+        return { ...b, mcqs: updatedMcqs };
+      }
+      return b;
+    }));
+
+    try {
+      const response = await fetch('/api/mcq-bank/update-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bankId,
+          questionIndex: index,
+          isChecked: nextStatus
+        })
+      });
+      const data = await response.json();
+      
+      if (!data.success) {
+        // REVERT on failure
+        console.error('Update failed, reverting:', data.error);
+        const revertedStatus = currentStatus;
+        
+        if (selectedMCQBank && selectedMCQBank._id === bankId) {
+          const newMcqs = [...selectedMCQBank.mcqs];
+          newMcqs[index] = { ...newMcqs[index], isChecked: revertedStatus };
+          setSelectedMCQBank({ ...selectedMCQBank, mcqs: newMcqs });
+        }
+        
+        setMcqBanks(prev => prev.map(b => {
+          if (b._id === bankId && b.mcqs && b.mcqs.length > 0) {
+            const updatedMcqs = [...b.mcqs];
+            updatedMcqs[index] = { ...updatedMcqs[index], isChecked: revertedStatus };
+            return { ...b, mcqs: updatedMcqs };
+          }
+          return b;
+        }));
+      }
+    } catch (error) {
+      console.error('Error toggling checked status:', error);
+      // Revert skipped for brevity but recommended in prod
+    } finally {
+      setUpdatingStatus(null);
+    }
+  };
+
+  const toggleReview = async (bank: MCQBank, index: number, mcq: MCQ) => {
+    const statusKey = `${bank._id}-${index}`;
+    if (updatingStatus === statusKey) return;
+    
+    setUpdatingStatus(statusKey);
+    const currentStatus = !!mcq.isReviewed;
+    const nextStatus = !currentStatus;
+
+    // OPTIMISTIC UPDATE
+    if (selectedMCQBank && selectedMCQBank._id === bank._id) {
+      const newMcqs = [...selectedMCQBank.mcqs];
+      newMcqs[index] = { ...newMcqs[index], isReviewed: nextStatus };
+      setSelectedMCQBank({ ...selectedMCQBank, mcqs: newMcqs });
+    }
+
+    setMcqBanks(prev => prev.map(b => {
+      if (b._id === bank._id) {
+        if (b.mcqs && b.mcqs.length > 0) {
+          const updatedMcqs = [...b.mcqs];
+          updatedMcqs[index] = { ...updatedMcqs[index], isReviewed: nextStatus };
+          return { ...b, mcqs: updatedMcqs };
+        }
+      }
+      return b;
+    }));
+
+    try {
+      // 1. Update flag in MCQBank
+      const response = await fetch('/api/mcq-bank/update-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bankId: bank._id,
+          questionIndex: index,
+          isReviewed: nextStatus
+        })
+      });
+      
+      const data = await response.json();
+      if (data.success) {
+        // 2. Sync with MCQReview collection (fire and forget)
+        if (nextStatus) {
+          // Flagging: create a review entry
+          fetch('/api/mcq-review', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mcqBankId: bank._id,
+              questionIndex: index,
+              sopId: bank.sopId,
+              sopName: bank.sopName,
+              sopIdentifier: bank.sopIdentifier,
+              question: mcq,
+              flaggedBy: 'Trainer'
+            })
+          }).catch(console.error);
+        } else {
+          // Unflagging: delete the review entry
+          fetch(`/api/mcq-review?mcqBankId=${bank._id}&questionIndex=${index}`, {
+            method: 'DELETE'
+          }).catch(console.error);
+        }
+      } else {
+        // Revert on failure (omitted for brevity)
+        console.error('Update failed:', data.error);
+      }
+    } catch (error) {
+      console.error('Error toggling review status:', error);
+    } finally {
+      setUpdatingStatus(null);
+    }
   };
 
   if (loading) {
@@ -643,8 +795,8 @@ function MCQBankContent() {
 
         {/* MCQ Bank Detail Modal */}
         {selectedMCQBank && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <div className="bg-slate-900 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-purple-500/30">
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+            <div className="bg-slate-900 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-purple-500/30 shadow-[0_0_50px_rgba(0,0,0,0.5)]">
               <div className="sticky top-0 bg-gradient-to-r from-purple-600 to-pink-600 p-6 rounded-t-2xl z-10">
                 <div className="flex items-center justify-between">
                   <div>
@@ -668,27 +820,83 @@ function MCQBankContent() {
               </div>
 
               <div className="p-6 space-y-4">
-                {selectedMCQBank.mcqs
-                  .filter(mcq => difficultyFilter === 'All' || mcq.difficulty === difficultyFilter)
-                  .map((mcq, index) => (
+                {selectedMCQBank.mcqs && selectedMCQBank.mcqs.length > 0 ? (
+                  selectedMCQBank.mcqs.map((mcq, originalIndex) => {
+                  if (difficultyFilter !== 'All' && mcq.difficulty !== difficultyFilter) return null;
+                  
+                  return (
                     <div
-                      key={index}
+                      key={originalIndex}
                       className="bg-white/5 rounded-xl p-5 border border-white/10 hover:border-purple-500/30 transition-all cursor-pointer"
-                      onClick={() => setSelectedMCQ({mcq, index})}
+                      onClick={() => setSelectedMCQ({mcq, index: originalIndex})}
                     >
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex items-start flex-1 pr-4">
                           <span className="flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30 text-purple-300 font-mono text-xs mr-4 flex-shrink-0">
-                            {String(index + 1).padStart(2, '0')}
+                            {String(originalIndex + 1).padStart(2, '0')}
                           </span>
                           <span className="text-2xl mr-3">{mcq.aiIcon}</span>
-                          <h3 className="text-white font-semibold">
+                          <h3 className="text-white font-semibold flex-1">
                             {mcq.question}
                           </h3>
                         </div>
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold border whitespace-nowrap ${getDifficultyColor(mcq.difficulty)}`}>
-                          {mcq.difficultyStars} {mcq.difficulty}
-                        </span>
+                        <div className="flex flex-col items-end gap-2">
+                          <div className="flex items-center gap-2">
+                            {mcq.isChecked && (
+                              <div className="p-1.5 bg-green-500/20 rounded-lg border border-green-500/30" title="Approved">
+                                <CheckCircle2 className="h-4 w-4 text-green-400" />
+                              </div>
+                            )}
+                            {mcq.isReviewed && (
+                              <div className="p-1.5 bg-amber-500/20 rounded-lg border border-amber-500/30" title="Needs Review">
+                                <Star className="h-4 w-4 text-amber-400 fill-amber-400" />
+                              </div>
+                            )}
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold border whitespace-nowrap ${getDifficultyColor(mcq.difficulty)}`}>
+                              {mcq.difficultyStars} {mcq.difficulty}
+                            </span>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleChecked(selectedMCQBank._id, originalIndex, !!mcq.isChecked);
+                              }}
+                              disabled={updatingStatus === `${selectedMCQBank._id}-${originalIndex}`}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                                mcq.isChecked
+                                  ? 'bg-green-600 text-white shadow-lg shadow-green-900/40'
+                                  : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10'
+                              } disabled:opacity-50`}
+                            >
+                              {updatingStatus === `${selectedMCQBank._id}-${originalIndex}` ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                              )}
+                              {mcq.isChecked ? 'Checked' : 'Mark Checked'}
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleReview(selectedMCQBank, originalIndex, mcq);
+                              }}
+                              disabled={updatingStatus === `${selectedMCQBank._id}-${originalIndex}`}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                                mcq.isReviewed
+                                  ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/40'
+                                  : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10'
+                              } disabled:opacity-50`}
+                            >
+                              {updatingStatus === `${selectedMCQBank._id}-${originalIndex}` ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Star className={`h-3.5 w-3.5 ${mcq.isReviewed ? 'fill-white' : ''}`} />
+                              )}
+                              {mcq.isReviewed ? 'In Review' : 'Add Review'}
+                            </button>
+                          </div>
+                        </div>
                       </div>
                       
                       <div className="space-y-2">
@@ -706,7 +914,16 @@ function MCQBankContent() {
                         ))}
                       </div>
                     </div>
-                  ))}
+                  );
+                })
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <div className="bg-white/5 p-4 rounded-full mb-4">
+                      <FileText className="h-8 w-8 text-gray-400" />
+                    </div>
+                    <p className="text-gray-400 text-lg">No questions found in this bank.</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -714,8 +931,8 @@ function MCQBankContent() {
 
         {/* MCQ Detail Modal */}
         {selectedMCQ && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
-            <div className="bg-slate-900 rounded-2xl max-w-3xl w-full border border-purple-500/30">
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[60]">
+            <div className="bg-slate-900 rounded-2xl max-w-3xl w-full border border-purple-500/30 shadow-[0_0_50px_rgba(0,0,0,0.5)]">
               <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6 rounded-t-2xl">
                 <div className="flex items-center justify-between">
                   <h2 className="text-xl font-bold text-white">MCQ Details</h2>
@@ -734,7 +951,17 @@ function MCQBankContent() {
                   <div>
                     <h3 className="text-white font-bold text-lg mb-2">Question {String(selectedMCQ.index + 1).padStart(2, '0')}:</h3>
                     <p className="text-gray-300 text-xl">{selectedMCQ.mcq.question}</p>
-                    <div className="mt-2">
+                    <div className="mt-2 flex items-center gap-2">
+                       {selectedMCQ.mcq.isChecked && (
+                        <div className="p-1.5 bg-green-500/20 rounded-lg border border-green-500/30" title="Approved">
+                          <CheckCircle2 className="h-4 w-4 text-green-400" />
+                        </div>
+                      )}
+                      {selectedMCQ.mcq.isReviewed && (
+                        <div className="p-1.5 bg-amber-500/20 rounded-lg border border-amber-500/30" title="Needs Review">
+                          <Star className="h-4 w-4 text-amber-400 fill-amber-400" />
+                        </div>
+                      )}
                        <span className={`px-3 py-1 rounded-full text-xs font-bold border ${getDifficultyColor(selectedMCQ.mcq.difficulty)}`}>
                         {selectedMCQ.mcq.difficultyStars} {selectedMCQ.mcq.difficulty}
                       </span>

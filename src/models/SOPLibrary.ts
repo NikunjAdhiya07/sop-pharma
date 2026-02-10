@@ -3,6 +3,7 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 export interface IVideoFile {
   fileName: string;
   filePath: string;
+  storageType?: 'local' | 'bunny';
   title?: string;
   description?: string;
   duration?: number;
@@ -13,6 +14,7 @@ export interface IVideoFile {
 export interface ISlideFile {
   fileName: string;
   filePath: string;
+  storageType?: 'local' | 'bunny';
   title?: string;
   fileType: 'pdf' | 'ppt' | 'pptx';
   uploadedAt: Date;
@@ -22,6 +24,7 @@ export interface ISlideFile {
 export interface ISOPDocument {
   fileName: string;
   filePath: string;
+  storageType?: 'local' | 'bunny';
   fileType: 'pdf' | 'docx';
   uploadedAt: Date;
   fileSize: number;
@@ -72,6 +75,11 @@ const VideoFileSchema = new Schema<IVideoFile>({
     type: String,
     required: true,
   },
+  storageType: {
+    type: String,
+    enum: ['local', 'bunny'],
+    default: 'local',
+  },
   title: {
     type: String,
   },
@@ -100,6 +108,11 @@ const SlideFileSchema = new Schema<ISlideFile>({
     type: String,
     required: true,
   },
+  storageType: {
+    type: String,
+    enum: ['local', 'bunny'],
+    default: 'local',
+  },
   title: {
     type: String,
   },
@@ -126,6 +139,11 @@ const SOPDocumentSchema = new Schema<ISOPDocument>({
   filePath: {
     type: String,
     required: true,
+  },
+  storageType: {
+    type: String,
+    enum: ['local', 'bunny'],
+    default: 'local',
   },
   fileType: {
     type: String,

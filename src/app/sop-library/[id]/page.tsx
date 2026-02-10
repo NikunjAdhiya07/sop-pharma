@@ -23,6 +23,7 @@ import { cleanSOPName } from '@/lib/sopLibraryHelper';
 interface VideoFile {
   fileName: string;
   filePath: string;
+  storageType?: 'local' | 'bunny';
   title?: string;
   description?: string;
   uploadedAt: string;
@@ -32,6 +33,7 @@ interface VideoFile {
 interface SlideFile {
   fileName: string;
   filePath: string;
+  storageType?: 'local' | 'bunny';
   title?: string;
   fileType: 'pdf' | 'ppt' | 'pptx';
   uploadedAt: string;
@@ -41,6 +43,7 @@ interface SlideFile {
 interface SOPDocument {
   fileName: string;
   filePath: string;
+  storageType?: 'local' | 'bunny';
   fileType: 'pdf' | 'docx';
   uploadedAt: string;
   fileSize: number;
@@ -108,6 +111,14 @@ export default function SOPDetailPage({ params }: { params: Promise<{ id: string
   const [difficultyFilter, setDifficultyFilter] = useState<string>('All');
   const [printing, setPrinting] = useState(false);
   const [currentUser, setCurrentUser] = useState<{name: string, role: string} | null>(null);
+  
+  // Video Player Modal State
+  const [showVideoPlayer, setShowVideoPlayer] = useState(false);
+  const [currentVideo, setCurrentVideo] = useState<VideoFile | null>(null);
+  
+  // Document Viewer Modal State
+  const [showDocViewer, setShowDocViewer] = useState(false);
+  const [currentDoc, setCurrentDoc] = useState<SOPDocument | null>(null);
 
   useEffect(() => {
      // Hydrate user from local storage
@@ -417,17 +428,18 @@ export default function SOPDetailPage({ params }: { params: Promise<{ id: string
                     </button>
                   </div>
                   <div className="flex gap-2">
-                    <a
-                      href={`/api/files?path=${encodeURIComponent(video.filePath)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      onClick={() => {
+                        setCurrentVideo(video);
+                        setShowVideoPlayer(true);
+                      }}
                       className="flex-1 py-2 px-4 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition-all flex items-center justify-center gap-2"
                     >
                       <Play className="h-4 w-4" />
                       Play
-                    </a>
+                    </button>
                     <a
-                      href={`/api/files?path=${encodeURIComponent(video.filePath)}`}
+                      href={`/api/files?path=${encodeURIComponent(video.filePath)}${video.storageType === 'bunny' ? '&storage=bunny' : ''}`}
                       download
                       className="py-2 px-4 bg-white/10 text-white font-semibold rounded-lg hover:bg-white/20 transition-all"
                     >
@@ -830,6 +842,116 @@ export default function SOPDetailPage({ params }: { params: Promise<{ id: string
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Video Player Modal */}
+      {showVideoPlayer && currentVideo && (
+        <div className="fixed inset-0 bg-black/95 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="relative w-full max-w-5xl">
+            <button
+              onClick={() => {
+                setShowVideoPlayer(false);
+                setCurrentVideo(null);
+              }}
+              className="absolute -top-12 right-0 p-2 text-white hover:bg-white/10 rounded-lg transition-colors z-10"
+            >
+              <X className="h-6 w-6" />
+            </button>
+            
+            <div className="bg-slate-900 rounded-2xl overflow-hidden shadow-2xl">
+              <div className="p-4 border-b border-white/10">
+                <h3 className="text-xl font-bold text-white">{currentVideo.title || currentVideo.fileName}</h3>
+                <p className="text-sm text-gray-400">{sopLibrary?.sopIdentifier} - Training Video</p>
+              </div>
+              
+              <div className="aspect-video bg-black">
+                <video
+                  controls
+                  autoPlay
+                  className="w-full h-full"
+                  src={`/api/files?path=${encodeURIComponent(currentVideo.filePath)}${currentVideo.storageType === 'bunny' ? '&storage=bunny' : ''}`}
+                >
+                  Your browser does not support the video tag.
+                </video>
+              </div>
+              
+              <div className="p-4 flex justify-between items-center bg-slate-800/50">
+                <span className="text-gray-400 text-sm">
+                  {formatFileSize(currentVideo.fileSize)} • Uploaded: {formatDate(currentVideo.uploadedAt)}
+                </span>
+                <a
+                  href={`/api/files?path=${encodeURIComponent(currentVideo.filePath)}${currentVideo.storageType === 'bunny' ? '&storage=bunny' : ''}`}
+                  download
+                  className="px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition-all flex items-center gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Download
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Document Viewer Modal */}
+      {showDocViewer && currentDoc && (
+        <div className="fixed inset-0 bg-black/95 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="relative w-full max-w-5xl h-[90vh] flex flex-col">
+            <button
+              onClick={() => {
+                setShowDocViewer(false);
+                setCurrentDoc(null);
+              }}
+              className="absolute -top-12 right-0 p-2 text-white hover:bg-white/10 rounded-lg transition-colors z-10"
+            >
+              <X className="h-6 w-6" />
+            </button>
+            
+            <div className="bg-slate-900 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-full">
+              <div className="p-4 border-b border-white/10 flex justify-between items-center">
+                <div>
+                  <h3 className="text-xl font-bold text-white">{currentDoc.fileName}</h3>
+                  <p className="text-sm text-gray-400">{sopLibrary?.sopIdentifier} - SOP Document</p>
+                </div>
+                <a
+                  href={`/api/files?path=${encodeURIComponent(currentDoc.filePath)}${currentDoc.storageType === 'bunny' ? '&storage=bunny' : ''}`}
+                  download
+                  className="px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition-all flex items-center gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Download
+                </a>
+              </div>
+              
+              <div className="flex-1 bg-white overflow-hidden">
+                {currentDoc.fileType === 'pdf' ? (
+                  <iframe
+                    src={`/api/files?path=${encodeURIComponent(currentDoc.filePath)}${currentDoc.storageType === 'bunny' ? '&storage=bunny' : ''}`}
+                    className="w-full h-full"
+                    title="PDF Viewer"
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full bg-slate-800">
+                    <BookOpen className="h-16 w-16 text-gray-500 mb-4" />
+                    <p className="text-white text-lg mb-2">Document Preview</p>
+                    <p className="text-gray-400 text-sm mb-6 text-center max-w-md">
+                      DOCX files cannot be previewed directly in the browser. 
+                      Please download to view the full document.
+                    </p>
+                    <a
+                      href={`/api/files?path=${encodeURIComponent(currentDoc.filePath)}${currentDoc.storageType === 'bunny' ? '&storage=bunny' : ''}`}
+                      download
+                      className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all flex items-center gap-2"
+                    >
+                      <Download className="h-5 w-5" />
+                      Download Document
+                    </a>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

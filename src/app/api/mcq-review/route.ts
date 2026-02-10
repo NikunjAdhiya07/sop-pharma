@@ -92,6 +92,12 @@ export async function POST(request: NextRequest) {
       flaggedAt: new Date(),
     });
 
+    // Update isReviewed flag in MCQBank
+    await MCQBank.findByIdAndUpdate(
+      mcqBankId,
+      { $set: { [`mcqs.${questionIndex}.isReviewed`]: true } }
+    );
+
     return NextResponse.json({
       success: true,
       review,
@@ -184,15 +190,24 @@ export async function DELETE(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const reviewId = searchParams.get('reviewId');
+    const mcqBankId = searchParams.get('mcqBankId');
+    const questionIndex = searchParams.get('questionIndex');
 
-    if (!reviewId) {
+    let deletedReview;
+
+    if (reviewId) {
+      deletedReview = await MCQReview.findByIdAndDelete(reviewId);
+    } else if (mcqBankId && questionIndex !== null) {
+      deletedReview = await MCQReview.findOneAndDelete({
+        originalMcqBankId: mcqBankId,
+        originalQuestionIndex: parseInt(questionIndex as string)
+      });
+    } else {
       return NextResponse.json(
-        { success: false, error: 'Review ID is required' },
+        { success: false, error: 'Review ID or MCQ Bank info is required' },
         { status: 400 }
       );
     }
-
-    const deletedReview = await MCQReview.findByIdAndDelete(reviewId);
 
     if (!deletedReview) {
       return NextResponse.json(
@@ -200,6 +215,12 @@ export async function DELETE(request: NextRequest) {
         { status: 404 }
       );
     }
+
+    // Update isReviewed flag in MCQBank
+    await MCQBank.findByIdAndUpdate(
+      deletedReview.originalMcqBankId,
+      { $set: { [`mcqs.${deletedReview.originalQuestionIndex}.isReviewed`]: false } }
+    );
 
     return NextResponse.json({
       success: true,

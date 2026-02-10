@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ChevronRight, ChevronDown, Folder, FolderOpen, FileText, BookOpen, Download, Eye, SortAsc, SortDesc } from 'lucide-react';
+import { ChevronRight, ChevronDown, Folder, FolderOpen, FileText, BookOpen, Download, Eye, SortAsc, SortDesc, Star } from 'lucide-react';
+import Link from 'next/link';
 
 // Helper function to clean SOP name from folder path
 function cleanSOPName(rawName: string, identifier: string): string {
@@ -128,6 +129,8 @@ interface SOPNode {
   sopFileType: 'pdf' | 'docx';
   mcqBanks: any[];
   totalQuestions: number;
+  checkedCount?: number;
+  reviewedCount?: number;
 }
 
 interface SubcategoryNode {
@@ -440,9 +443,9 @@ export default function MCQTreeView({ tree, unorganized, searchTerm = '', onView
     {fullScreenDept && (() => {
       const theme = getDeptTheme(fullScreenDept.name);
       return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
         <div 
-          className={`bg-[#0f111a] rounded-3xl border ${theme.border} w-full max-w-[90vw] h-[90vh] overflow-hidden shadow-2xl flex flex-col`}
+          className={`bg-[#0f111a] rounded-3xl border ${theme.border} w-full max-w-[90vw] h-[90vh] overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)] flex flex-col`}
           style={{
             transform: `translate(${modalPosition.x}px, ${modalPosition.y}px)`,
             transition: isDragging ? 'none' : 'transform 0.2s ease-out'
@@ -454,7 +457,7 @@ export default function MCQTreeView({ tree, unorganized, searchTerm = '', onView
             onMouseDown={handleMouseDown}
           >
             <div className="flex items-center gap-5">
-              <div className="p-3 bg-white/10 rounded-2xl backdrop-blur-md border border-white/10">
+              <div className="p-3 bg-white/10 rounded-2xl border border-white/10">
                 <FolderOpen className={`h-8 w-8 ${theme.text} text-white`} />
               </div>
               <div>
@@ -466,12 +469,26 @@ export default function MCQTreeView({ tree, unorganized, searchTerm = '', onView
                 </div>
               </div>
             </div>
-            <button
-              onClick={() => setFullScreenDept(null)}
-              className="p-3 hover:bg-white/10 rounded-full transition-colors border border-transparent hover:border-white/10"
-            >
-              <ChevronDown className="h-6 w-6 text-white rotate-180" />
-            </button>
+            <div className="flex items-center gap-3">
+              {/* Review Center Button */}
+              <Link href="/mcq-review">
+                <button
+                  className="flex items-center gap-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-500 text-white rounded-xl transition-all shadow-lg hover:shadow-yellow-500/20 font-semibold text-sm"
+                  title="Go to Review Center"
+                >
+                  <Star className="h-4 w-4" />
+                  Review Center
+                </button>
+              </Link>
+              
+              {/* Close Button */}
+              <button
+                onClick={() => setFullScreenDept(null)}
+                className="p-3 hover:bg-white/10 rounded-full transition-colors border border-transparent hover:border-white/10"
+              >
+                <ChevronDown className="h-6 w-6 text-white rotate-180" />
+              </button>
+            </div>
           </div>
 
           {/* Sort Controls */}
@@ -607,8 +624,24 @@ export default function MCQTreeView({ tree, unorganized, searchTerm = '', onView
                                         ? 'bg-green-500/10 text-green-400 border-green-500/20 group-hover:bg-green-500/20 group-hover:border-green-500/40' 
                                         : 'bg-gray-800 text-gray-500 border-gray-700 group-hover:border-gray-600'
                                       }`}>
-                                      {sop.totalQuestions > 0 ? `${sop.totalQuestions} Qs` : 'No Qs'}
-                                    </span>
+                                        {sop.totalQuestions > 0 ? `${sop.totalQuestions} Qs` : 'No Qs'}
+                                      </span>
+                                      
+                                      {/* Checked Count Badge */}
+                                      {sop.checkedCount && sop.checkedCount > 0 ? (
+                                        <span className="text-[10px] uppercase tracking-wider font-bold px-2.5 py-1 rounded-md border border-green-500/30 bg-green-500/20 text-green-400 shadow-[0_0_10px_rgba(34,197,94,0.1)] flex items-center gap-1">
+                                          <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></div>
+                                          {sop.checkedCount} Checked
+                                        </span>
+                                      ) : null}
+
+                                      {/* Reviewed Count Badge */}
+                                      {sop.reviewedCount && sop.reviewedCount > 0 ? (
+                                        <span className="text-[10px] uppercase tracking-wider font-bold px-2.5 py-1 rounded-md border border-yellow-500/30 bg-yellow-500/20 text-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.1)] flex items-center gap-1">
+                                          <div className="w-1.5 h-1.5 rounded-full bg-yellow-400"></div>
+                                          {sop.reviewedCount} Reviewed
+                                        </span>
+                                      ) : null}
                                   </div>
                                   
                                   {/* SOP Name */}
@@ -653,7 +686,28 @@ export default function MCQTreeView({ tree, unorganized, searchTerm = '', onView
                                             </div>
                                             <div>
                                               <span className="text-xs font-semibold text-gray-200 block">Bank Set #{idx + 1}</span>
-                                              <span className="text-[10px] text-gray-400">{bank.totalQuestions} questions • Generated with AI</span>
+                                              <div className="flex items-center gap-2 mt-0.5">
+                                                <span className="text-[10px] text-gray-400">{bank.totalQuestions} questions</span>
+                                                {(() => {
+                                                  const checkedCount = bank.mcqs?.filter((q: any) => q?.isChecked).length || 0;
+                                                  const reviewedCount = bank.mcqs?.filter((q: any) => q?.isReviewed).length || 0;
+                                                  console.log(`Bank ${idx + 1}: mcqs length=${bank.mcqs?.length}, checked=${checkedCount}, reviewed=${reviewedCount}`);
+                                                  return (
+                                                    <>
+                                                      {checkedCount > 0 && (
+                                                        <span className="text-[10px] text-green-400 font-medium bg-green-900/40 px-1.5 py-0.5 rounded border border-green-500/30">
+                                                          {checkedCount} Checked
+                                                        </span>
+                                                      )}
+                                                      {reviewedCount > 0 && (
+                                                        <span className="text-[10px] text-yellow-400 font-medium bg-yellow-900/40 px-1.5 py-0.5 rounded border border-yellow-500/30">
+                                                          {reviewedCount} Reviewed
+                                                        </span>
+                                                      )}
+                                                    </>
+                                                  );
+                                                })()}
+                                              </div>
                                             </div>
                                           </div>
                                           

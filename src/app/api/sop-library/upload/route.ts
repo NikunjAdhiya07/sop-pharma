@@ -5,6 +5,16 @@ import { existsSync } from 'fs';
 import connectDB from '@/lib/mongodb';
 import SOPLibrary from '@/models/SOPLibrary';
 import { generateFilePath, validateFileType, getAllowedExtensions } from '@/lib/sopLibraryHelper';
+import { uploadToBunny, generateBunnyPath } from '@/lib/bunnyStorage';
+
+// Check if Bunny Storage is configured
+const isBunnyConfigured = () => {
+  return Boolean(
+    process.env.BUNNY_STORAGE_ZONE_NAME &&
+    process.env.BUNNY_API_KEY &&
+    process.env.BUNNY_CDN_HOSTNAME
+  );
+};
 
 // POST - Upload files (videos, slides, or documents)
 export async function POST(request: NextRequest) {
@@ -16,6 +26,8 @@ export async function POST(request: NextRequest) {
     const fileType = formData.get('fileType') as 'video' | 'slide' | 'document';
     const title = formData.get('title') as string | null;
     const description = formData.get('description') as string | null;
+    // Option to force local storage even if Bunny is configured
+    const forceLocal = formData.get('forceLocal') === 'true';
 
     if (!sopLibraryId || !fileType) {
       return NextResponse.json(
@@ -35,6 +47,9 @@ export async function POST(request: NextRequest) {
 
     // Get allowed extensions
     const allowedExtensions = getAllowedExtensions(fileType);
+
+    // Determine storage type
+    const useBunny = !forceLocal && isBunnyConfigured();
 
     // Process uploaded files
     const uploadedFiles: any[] = [];
@@ -59,25 +74,60 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Generate file path
-      const filePath = generateFilePath(
-        sopLibrary.sopIdentifier,
-        sopLibrary.departmentCode,
-        fileType,
-        file.name
-      );
-
-      // Create directory if it doesn't exist
-      const dirPath = join(process.cwd(), filePath.substring(0, filePath.lastIndexOf('/')));
-      if (!existsSync(dirPath)) {
-        await mkdir(dirPath, { recursive: true });
-      }
-
-      // Save file
       const bytes = await file.arrayBuffer();
       const buffer = Buffer.from(bytes);
-      const fullPath = join(process.cwd(), filePath);
-      await writeFile(fullPath, buffer);
+      
+      let filePath: string;
+      let storageType: 'local' | 'bunny' = 'local';
+
+      if (useBunny) {
+        // Upload to Bunny Storage
+        const bunnyPath = generateBunnyPath(
+          sopLibrary.sopIdentifier,
+          fileType,
+          file.name
+        );
+        
+        const bunnyUrl = await uploadToBunny(buffer, bunnyPath);
+        
+        if (bunnyUrl) {
+          filePath = `bunny://${bunnyPath}`; // Store as bunny:// URI
+          storageType = 'bunny';
+        } else {
+          // Fallback to local storage if Bunny upload fails
+          console.warn(`Bunny upload failed for ${file.name}, falling back to local storage`);
+          filePath = generateFilePath(
+            sopLibrary.sopIdentifier,
+            sopLibrary.departmentCode,
+            fileType,
+            file.name
+          );
+          
+          const dirPath = join(process.cwd(), filePath.substring(0, filePath.lastIndexOf('/')));
+          if (!existsSync(dirPath)) {
+            await mkdir(dirPath, { recursive: true });
+          }
+          await writeFile(join(process.cwd(), filePath), buffer);
+        }
+      } else {
+        // Local storage
+        filePath = generateFilePath(
+          sopLibrary.sopIdentifier,
+          sopLibrary.departmentCode,
+          fileType,
+          file.name
+        );
+
+        // Create directory if it doesn't exist
+        const dirPath = join(process.cwd(), filePath.substring(0, filePath.lastIndexOf('/')));
+        if (!existsSync(dirPath)) {
+          await mkdir(dirPath, { recursive: true });
+        }
+
+        // Save file locally
+        const fullPath = join(process.cwd(), filePath);
+        await writeFile(fullPath, buffer);
+      }
 
       // Get file extension
       const fileExtension = file.name.split('.').pop()?.toLowerCase() || '';
@@ -86,6 +136,7 @@ export async function POST(request: NextRequest) {
       const fileMetadata: any = {
         fileName: file.name,
         filePath: filePath,
+        storageType: storageType,
         uploadedAt: new Date(),
         fileSize: file.size,
       };
@@ -106,6 +157,7 @@ export async function POST(request: NextRequest) {
       uploadedFiles.push({
         fileName: file.name,
         filePath: filePath,
+        storageType: storageType,
         fileSize: file.size,
       });
     }
@@ -153,18 +205,42 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Remove file from array
+    // Find the file to determine storage type
+    let fileToDelete: any = null;
     if (fileType === 'video') {
-      sopLibrary.videos = sopLibrary.videos.filter(v => v.filePath !== filePath);
+      fileToDelete = sopLibrary.videos.find((v: any) => v.filePath === filePath);
+      sopLibrary.videos = sopLibrary.videos.filter((v: any) => v.filePath !== filePath);
     } else if (fileType === 'slide') {
-      sopLibrary.slides = sopLibrary.slides.filter(s => s.filePath !== filePath);
+      fileToDelete = sopLibrary.slides.find((s: any) => s.filePath === filePath);
+      sopLibrary.slides = sopLibrary.slides.filter((s: any) => s.filePath !== filePath);
     } else if (fileType === 'document') {
-      sopLibrary.sopDocuments = sopLibrary.sopDocuments.filter(d => d.filePath !== filePath);
+      fileToDelete = sopLibrary.sopDocuments.find((d: any) => d.filePath === filePath);
+      sopLibrary.sopDocuments = sopLibrary.sopDocuments.filter((d: any) => d.filePath !== filePath);
     }
 
     await sopLibrary.save();
 
-    // TODO: Delete physical file from filesystem
+    // Delete physical file based on storage type
+    if (fileToDelete) {
+      const storageType = fileToDelete.storageType || 'local';
+      
+      if (storageType === 'bunny') {
+        // Delete from Bunny Storage
+        const { deleteFromBunny } = await import('@/lib/bunnyStorage');
+        await deleteFromBunny(filePath);
+      } else {
+        // Delete local file
+        try {
+          const { unlink } = await import('fs/promises');
+          const fullPath = join(process.cwd(), filePath);
+          if (existsSync(fullPath)) {
+            await unlink(fullPath);
+          }
+        } catch (err) {
+          console.warn('Could not delete local file:', filePath, err);
+        }
+      }
+    }
 
     return NextResponse.json({
       success: true,

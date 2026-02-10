@@ -1,19 +1,52 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import MCQBank from '@/models/MCQBank';
+import mongoose from 'mongoose';
 
 export async function GET(request: NextRequest) {
   try {
     await connectDB();
 
     const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
     const sopId = searchParams.get('sopId');
     const difficulty = searchParams.get('difficulty');
     const folderDepartment = searchParams.get('folderDepartment');
     const folderSubcategory = searchParams.get('folderSubcategory');
     const page = parseInt(searchParams.get('page') || '1');
-    const limit = Math.min(parseInt(searchParams.get('limit') || '10'), 1000); // Allow up to 1000 results
-    const summary = searchParams.get('summary') === 'true'; // Option to fetch summary only
+    const limit = Math.min(parseInt(searchParams.get('limit') || '10'), 1000);
+    const summary = searchParams.get('summary') === 'true';
+
+    // When fetching by specific ID, use native MongoDB driver
+    // to bypass Mongoose schema filtering that strips isChecked/isReviewed
+    if (id) {
+      const db = mongoose.connection.db;
+      if (!db) {
+        return NextResponse.json({ error: 'Database not connected' }, { status: 500 });
+      }
+      const collection = db.collection('mcqbanks');
+      const objectId = new mongoose.Types.ObjectId(id);
+      const bank = await collection.findOne({ _id: objectId });
+
+      if (!bank) {
+        return NextResponse.json({
+          success: true,
+          mcqBanks: [],
+          pagination: { page: 1, limit: 1, total: 0, totalPages: 0 },
+        });
+      }
+
+      // Log status for debugging
+      const checkedCount = bank.mcqs?.filter((m: any) => m.isChecked).length || 0;
+      const reviewedCount = bank.mcqs?.filter((m: any) => m.isReviewed).length || 0;
+      console.log(`📋 Fetched bank ${bank.sopIdentifier} via native driver: ${checkedCount} checked, ${reviewedCount} reviewed out of ${bank.mcqs?.length || 0} questions`);
+
+      return NextResponse.json({
+        success: true,
+        mcqBanks: [bank],
+        pagination: { page: 1, limit: 1, total: 1, totalPages: 1 },
+      });
+    }
 
     let query: any = {};
 
@@ -58,7 +91,7 @@ export async function GET(request: NextRequest) {
       .skip((page - 1) * limit)
       .limit(limit)
       .lean()
-      .maxTimeMS(30000); // 30 second timeout
+      .maxTimeMS(30000);
 
     const total = await MCQBank.countDocuments(query);
 

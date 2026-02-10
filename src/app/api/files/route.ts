@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
+import { isBunnyPath, getBunnyCdnUrl, extractBunnyPath, checkBunnyFileExists } from '@/lib/bunnyStorage';
 
-// GET - Serve uploaded files
+// GET - Serve uploaded files (supports local and Bunny Storage)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const filePath = searchParams.get('path');
+    const storageType = searchParams.get('storage') || 'auto'; // 'local', 'bunny', or 'auto'
 
     if (!filePath) {
       return NextResponse.json(
@@ -16,6 +18,37 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Determine storage type
+    const useBunny = 
+      storageType === 'bunny' || 
+      (storageType === 'auto' && isBunnyPath(filePath));
+
+    if (useBunny) {
+      // Handle Bunny Storage file
+      const bunnyPath = extractBunnyPath(filePath);
+      const cdnUrl = getBunnyCdnUrl(bunnyPath);
+
+      if (!cdnUrl) {
+        return NextResponse.json(
+          { success: false, error: 'Bunny CDN not configured' },
+          { status: 500 }
+        );
+      }
+
+      // Check if file exists (optional, can skip for performance)
+      const exists = await checkBunnyFileExists(bunnyPath);
+      if (!exists) {
+        return NextResponse.json(
+          { success: false, error: 'File not found in Bunny Storage' },
+          { status: 404 }
+        );
+      }
+
+      // Redirect to CDN URL for optimal performance
+      return NextResponse.redirect(cdnUrl, 302);
+    }
+
+    // Handle local file (existing logic)
     // Security: Prevent directory traversal
     if (filePath.includes('..') || filePath.startsWith('/')) {
       return NextResponse.json(

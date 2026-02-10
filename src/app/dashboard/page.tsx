@@ -271,7 +271,7 @@ export default function DashboardPage() {
                   Quick Actions
                 </h3>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                 {/* 1. Upload SOP */}
                 <Link href="/sop-upload" className="block group h-full">
                   <div className="h-full bg-gradient-to-b from-slate-800 to-slate-900 rounded-2xl p-8 border border-white/10 hover:border-purple-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-purple-500/10 flex flex-col items-start relative overflow-hidden">
@@ -328,6 +328,26 @@ export default function DashboardPage() {
                     
                     <div className="flex items-center text-pink-400 font-semibold group-hover:translate-x-2 transition-transform">
                       View Bank <ArrowRight className="ml-2 h-4 w-4" />
+                    </div>
+                  </div>
+                </Link>
+
+                {/* 4. Compliance Engine */}
+                <Link href="/compliance" className="block group h-full">
+                   <div className="h-full bg-gradient-to-b from-slate-800 to-slate-900 rounded-2xl p-8 border border-white/10 hover:border-emerald-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-emerald-500/10 flex flex-col items-start relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-32 bg-emerald-500/5 rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:bg-emerald-500/10"></div>
+                    
+                    <div className="bg-emerald-500/10 p-4 rounded-xl mb-6 group-hover:scale-110 transition-transform duration-300 border border-emerald-500/20">
+                      <Shield className="h-8 w-8 text-emerald-400" />
+                    </div>
+                    
+                    <h3 className="text-2xl font-bold text-white mb-3">Compliance Engine</h3>
+                    <p className="text-gray-400 text-sm leading-relaxed mb-8 flex-grow">
+                      AI-powered guideline OCR and SOP compliance analysis with detailed reports.
+                    </p>
+                    
+                    <div className="flex items-center text-emerald-400 font-semibold group-hover:translate-x-2 transition-transform">
+                      Analyze Compliance <ArrowRight className="ml-2 h-4 w-4" />
                     </div>
                   </div>
                 </Link>

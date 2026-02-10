@@ -9,7 +9,8 @@
     "lint": "next lint",
     "cleanup:mcq-sections": "tsx scripts/cleanup-section-reference-mcqs.ts",
     "test:section-patterns": "tsx scripts/test-section-patterns.ts",
-    "create-user": "tsx scripts/create-test-user.ts"
+    "create-user": "tsx scripts/create-test-user.ts",
+    "create-compliance-indexes": "tsx scripts/create-compliance-indexes.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
@@ -26,10 +27,11 @@
     "next": "^16.1.6",
     "next-auth": "^4.24.13",
     "pdf-lib": "^1.17.1",
-    "pdf-parse": "^1.1.1",
+    "pdf-parse": "^1.1.4",
     "pizzip": "^3.2.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "tesseract.js": "^7.0.0",
     "uuid": "^13.0.0",
     "xml2js": "^0.6.2"
   },
