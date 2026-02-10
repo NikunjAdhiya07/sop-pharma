@@ -13,6 +13,7 @@ export interface IUser extends mongoose.Document {
   testsAssigned: number;
   averageScore: number;
   allowedSections: string[]; // Sections/modules the user can access
+  allowedDepartments: string[]; // Departments the user can access (e.g., ['QA', 'QC'])
   createdAt: Date;
   lastLogin?: Date;
   trainingStage: 'induction' | 'active' | 'certified';
@@ -85,6 +86,17 @@ const UserSchema = new mongoose.Schema<IUser>({
       } else {
         return ['dashboard', 'mcq-tests', 'sop-scheduler'];
       }
+    },
+  },
+  allowedDepartments: {
+    type: [String],
+    default: function() {
+      // Admin and QA Head get all departments by default
+      if (this.role === 'admin' || this.role === 'qa-head') {
+        return ['QA', 'QC', 'Microbiology', 'Production', 'Store', 'Engineering and Maintenance', 'Personnel'];
+      }
+      // Regular users get department based on their assigned department
+      return this.department ? [this.department] : [];
     },
   },
   createdAt: {

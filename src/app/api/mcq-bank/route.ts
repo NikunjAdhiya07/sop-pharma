@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import MCQBank from '@/models/MCQBank';
 import mongoose from 'mongoose';
+import { getServerSession } from 'next-auth';
+import { logAccess, getClientIP, getUserAgent } from '@/lib/accessLogger';
 
 export async function GET(request: NextRequest) {
   try {
@@ -40,6 +42,30 @@ export async function GET(request: NextRequest) {
       const checkedCount = bank.mcqs?.filter((m: any) => m.isChecked).length || 0;
       const reviewedCount = bank.mcqs?.filter((m: any) => m.isReviewed).length || 0;
       console.log(`📋 Fetched bank ${bank.sopIdentifier} via native driver: ${checkedCount} checked, ${reviewedCount} reviewed out of ${bank.mcqs?.length || 0} questions`);
+
+      // Log access
+      try {
+        const session: any = await getServerSession();
+        if (session?.user) {
+          await logAccess({
+            userId: session.user.id || session.user._id,
+            username: session.user.username || session.user.name,
+            userEmail: session.user.email,
+            resourceType: 'mcq-bank',
+            resourceId: id,
+            resourceName: bank.sopIdentifier || bank.sopName,
+            action: 'view',
+            ipAddress: getClientIP(request.headers),
+            userAgent: getUserAgent(request.headers),
+            metadata: {
+              mcqBankName: bank.sopName,
+              questionsViewed: bank.mcqs?.length || 0,
+            },
+          });
+        }
+      } catch (logError) {
+        console.error('Error logging access:', logError);
+      }
 
       return NextResponse.json({
         success: true,

@@ -2,9 +2,10 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Search, Filter, Download, Eye, BookOpen, Award, Loader2, Plus, Trash2, FolderOpen, Upload, ArrowLeft, Grid, List, ArrowUpDown, SortAsc, SortDesc, CheckCircle2, Star, FileText } from 'lucide-react';
+import { Search, Filter, Download, Eye, BookOpen, Award, Loader2, Plus, Trash2, FolderOpen, Upload, ArrowLeft, Grid, List, ArrowUpDown, SortAsc, SortDesc, CheckCircle2, Star, FileText, RefreshCw } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 import MCQTreeView from '@/components/MCQTreeView';
+import { useCopyProtection, CopyProtected } from '@/lib/copyProtection';
 
 interface MCQ {
   aiIcon: string;
@@ -56,13 +57,16 @@ function MCQBankContent() {
   const [totalBanks, setTotalBanks] = useState(0);
   
   // Tree view state
-  const [viewMode, setViewMode] = useState<'grid' | 'tree'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'tree'>('tree');
   const [treeData, setTreeData] = useState<any>(null);
   const [loadingTree, setLoadingTree] = useState(false);
   
   // Sort state
   const [sortBy, setSortBy] = useState<'name' | 'questions' | 'date'>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  // Apply copy protection to prevent copying/downloading questions
+  useCopyProtection();
 
   useEffect(() => {
     fetchMCQBanks();
@@ -71,15 +75,46 @@ function MCQBankContent() {
     }
   }, [currentPage, viewMode]);
 
-  const fetchTreeData = async () => {
+  const fetchTreeData = async (forceRefresh = false) => {
     setLoadingTree(true);
     try {
+      // Cache key includes a version number for easy invalidation
+      const CACHE_KEY = 'mcq-tree-cache-v1';
+      const CACHE_TIMESTAMP_KEY = 'mcq-tree-cache-timestamp';
+      const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
+
+      // Check cache first (unless force refresh)
+      if (!forceRefresh) {
+        const cachedData = localStorage.getItem(CACHE_KEY);
+        const cacheTimestamp = localStorage.getItem(CACHE_TIMESTAMP_KEY);
+        
+        if (cachedData && cacheTimestamp) {
+          const age = Date.now() - parseInt(cacheTimestamp);
+          if (age < CACHE_DURATION) {
+            const parsed = JSON.parse(cachedData);
+            setTreeData(parsed);
+            console.log('📦 Using cached tree data (age:', Math.floor(age / 1000), 'seconds)');
+            setLoadingTree(false);
+            return;
+          }
+        }
+      }
+
+      // Fetch fresh data
       const response = await fetch('/api/mcq-bank/tree');
       const data = await response.json();
       
       if (data.success) {
         setTreeData(data);
-        console.log('📊 Tree data loaded:', data.stats);
+        
+        // Cache the data
+        localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+        localStorage.setItem(CACHE_TIMESTAMP_KEY, Date.now().toString());
+        
+        console.log('📊 Tree data loaded and cached:', data.stats);
+        if (data.userAccess?.isRestricted) {
+          console.log('🔒 Department access restricted to:', data.userAccess.allowedDepartments);
+        }
       }
     } catch (error) {
       console.error('Error fetching tree data:', error);
@@ -471,6 +506,15 @@ function MCQBankContent() {
             </div>
             {!sopIdFromUrl && (
               <div className="flex gap-3">
+                <button
+                  onClick={() => fetchTreeData(true)}
+                  disabled={loadingTree}
+                  className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                  title="Refresh MCQ Bank data and clear cache"
+                >
+                  <RefreshCw className={`h-5 w-5 ${loadingTree ? 'animate-spin' : ''}`} />
+                  {loadingTree ? 'Refreshing...' : 'Refresh'}
+                </button>
                 <button
                   onClick={() => window.location.href = '/files-manager'}
                   className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg whitespace-nowrap"

@@ -25,6 +25,7 @@ import {
   ChevronLeft,
   Loader2
 } from 'lucide-react';
+import DepartmentAccessManager from '@/components/DepartmentAccessManager';
 
 interface User {
   _id: string;
@@ -39,6 +40,7 @@ interface User {
   completionRate: number;
   averageScore: number;
   isTrainerEligible: boolean;
+  allowedDepartments?: string[];
   recentTests?: any[];
   recentResults?: any[];
 }
@@ -94,6 +96,7 @@ export default function AdminDashboard() {
   const [modalPosition, setModalPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [managingDepartmentAccess, setManagingDepartmentAccess] = useState<User | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -530,6 +533,14 @@ export default function AdminDashboard() {
                                   title="Delete User"
                                 >
                                   <Trash2 className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => setManagingDepartmentAccess(user)}
+                                  className="px-3 py-1.5 text-sm text-green-300 hover:bg-green-500/20 rounded-lg font-medium transition-all border border-green-500/50 hover:border-green-400"
+                                  title="Manage Department Access"
+                                >
+                                  <Shield className="w-4 h-4 inline mr-1" />
+                                  Access
                                 </button>
                                 <button
                                   onClick={() => setSelectedUser(user)}
@@ -1452,6 +1463,15 @@ export default function AdminDashboard() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Department Access Manager Modal */}
+      {managingDepartmentAccess && (
+        <DepartmentAccessManager
+          user={managingDepartmentAccess}
+          onClose={() => setManagingDepartmentAccess(null)}
+          onUpdate={fetchData}
+        />
       )}
     </div>
   );
