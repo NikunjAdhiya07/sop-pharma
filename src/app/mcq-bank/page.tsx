@@ -900,18 +900,24 @@ function MCQBankContent() {
                       </div>
                       
                       <div className="space-y-2">
-                        {mcq.options.map((option, optIndex) => (
-                          <div
-                            key={optIndex}
-                            className={`p-3 rounded-lg ${
-                              option === mcq.correctAnswer
-                                ? 'bg-green-500/20 border border-green-500/50'
-                                : 'bg-white/5 border border-white/10'
-                            }`}
-                          >
-                            <span className="text-gray-300">{option}</span>
+                        {mcq.options && mcq.options.length > 0 ? (
+                          mcq.options.map((option, optIndex) => (
+                            <div
+                              key={optIndex}
+                              className={`p-3 rounded-lg ${
+                                option === mcq.correctAnswer
+                                  ? 'bg-green-500/20 border border-green-500/50'
+                                  : 'bg-white/5 border border-white/10'
+                              }`}
+                            >
+                              <span className="text-gray-300">{option}</span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                            <span className="text-red-400 text-sm">No options available</span>
                           </div>
-                        ))}
+                        )}
                       </div>
                     </div>
                   );
