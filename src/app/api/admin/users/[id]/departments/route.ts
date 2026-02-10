@@ -5,8 +5,9 @@ import User from '@/models/User';
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
     const session = await getServerSession() as any;
     
@@ -50,7 +51,7 @@ export async function PUT(
     }
 
     const user = await User.findByIdAndUpdate(
-      params.id,
+      id,
       { allowedDepartments },
       { new: true, runValidators: true }
     ).select('-password');
