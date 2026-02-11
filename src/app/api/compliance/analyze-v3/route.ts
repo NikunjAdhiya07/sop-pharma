@@ -102,6 +102,23 @@ export async function POST(request: NextRequest) {
       }, { status: 401 });
     }
     
+    // Check Gemini API key early — don't waste time analyzing 30+ clauses that will all fail
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+    if (!geminiKey) {
+      console.error('❌ GEMINI_API_KEY is not set in environment variables');
+      return NextResponse.json({
+        success: false,
+        error: 'AI API key not configured',
+        userMessage: 'The Gemini AI API key is not configured. Please add GEMINI_API_KEY to your .env.local file and restart the server.',
+        analysisExplanation: 'Analysis cannot proceed because the AI service (Google Gemini) API key is missing. Please contact your administrator.',
+        nextSteps: [
+          'Add GEMINI_API_KEY=your-api-key to the .env.local file',
+          'Restart the development server',
+          'Try the analysis again',
+        ],
+      }, { status: 500 });
+    }
+    
     jobId = `job-v3-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     console.log(`✅ Job ID: ${jobId}`);
     
@@ -457,35 +474,52 @@ export async function POST(request: NextRequest) {
       guidelinesUsed: Array.from(guidelinesUsedMap.values()),
       
       overallScore: scoreResult.overallScore ?? 0,
-      complianceStatus: scoreResult.complianceStatus,
+      // Map engine status to valid ComplianceReport enum values
+      complianceStatus: (['Fully Compliant', 'Partially Compliant', 'Non-Compliant', 'Analysis Pending', 'Analysis Failed'].includes(scoreResult.complianceStatus)
+        ? scoreResult.complianceStatus
+        : 'Analysis Failed'),
       compliancePercentage: scoreResult.compliancePercentage ?? 0,
-      scoreBreakdown: scoreResult.scoreBreakdown,
+      scoreBreakdown: {
+        totalChecks: scoreResult.scoreBreakdown.totalApplicableClauses || 0,
+        compliantCount: scoreResult.scoreBreakdown.compliantCount || 0,
+        partialCount: scoreResult.scoreBreakdown.partialCount || 0,
+        nonCompliantCount: scoreResult.scoreBreakdown.nonCompliantCount || 0,
+        notApplicableCount: scoreResult.scoreBreakdown.notApplicableCount || 0,
+        skippedCount: scoreResult.scoreBreakdown.skippedCount || 0,
+      },
       
-      // Store V3 findings (they're compatible with the schema)
-      findings: findings.map(f => ({
-        guidelineId: f.guidelineId,
-        guidelineName: f.guidelineName,
-        folderName: f.folderName,
-        pdfName: f.pdfName,
-        clauseNumber: f.clauseNumber,
-        clauseTitle: f.clauseTitle,
-        clauseText: f.clauseText,
-        complianceLevel: f.complianceLevel === 'unable-to-determine' ? 'partial' : f.complianceLevel,
-        matchConfidence: f.matchConfidence,
-        sopSectionAffected: `${f.sopSectionNumber} - ${f.sopSectionTitle}`,
-        mismatchExplanation: f.specificGap,
-        suggestedAction: f.suggestedAction,
-        sopTextSnippet: f.sopTextSnippet,
-        highlightedIssue: f.specificGap,
-        issueSeverity: f.issueSeverity,
-        issueType: f.issueType,
-        guidelineRequirement: f.guidelineRequirement,
-        suggestedText: f.suggestedText,
-        estimatedEffort: f.estimatedEffort,
-        priority: f.priority,
-        analyzedAt: f.analyzedAt,
-        aiModelUsed: f.aiModelUsed,
-      })),
+      // Store V3 findings - map to ComplianceReport schema enum values
+      findings: findings.map(f => {
+        // Map V3 complianceLevel to schema-valid values
+        const validLevels = ['compliant', 'partial', 'non-compliant', 'not-applicable', 'analysis-failed'];
+        let mappedLevel = f.complianceLevel === 'unable-to-determine' ? 'analysis-failed' : f.complianceLevel;
+        if (!validLevels.includes(mappedLevel)) mappedLevel = 'analysis-failed';
+
+        return {
+          guidelineId: f.guidelineId,
+          guidelineName: f.guidelineName,
+          folderName: f.folderName || 'Unknown',
+          pdfName: f.pdfName || 'Unknown',
+          clauseNumber: f.clauseNumber || 'N/A',
+          clauseTitle: f.clauseTitle || 'Unknown Clause',
+          clauseText: f.clauseText || 'No clause text available',
+          complianceLevel: mappedLevel,
+          matchConfidence: f.matchConfidence,
+          sopSectionAffected: `${f.sopSectionNumber || 'N/A'} - ${f.sopSectionTitle || 'Unknown'}`,
+          mismatchExplanation: f.specificGap || 'No explanation available',
+          suggestedAction: f.suggestedAction || 'Manual review required',
+          sopTextSnippet: f.sopTextSnippet || 'No SOP text available for this clause.',
+          highlightedIssue: f.specificGap || 'No specific issue identified',
+          issueSeverity: f.issueSeverity,
+          issueType: f.issueType,
+          guidelineRequirement: f.guidelineRequirement || 'See guideline clause text',
+          suggestedText: f.suggestedText || 'Manual review required - consult guideline for specific text.',
+          estimatedEffort: f.estimatedEffort,
+          priority: f.priority,
+          analyzedAt: f.analyzedAt,
+          aiModelUsed: f.aiModelUsed,
+        };
+      }),
       
       dataIntegrity: {
         sopDataFetched: true,

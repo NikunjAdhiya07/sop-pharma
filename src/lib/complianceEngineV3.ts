@@ -15,7 +15,12 @@ import mongoose from 'mongoose';
  * 6. Transparent Reasoning - No misleading results
  */
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+// Validate API key early
+const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+if (!GEMINI_KEY) {
+  console.warn('⚠️ GEMINI_API_KEY is not set in environment variables. AI analysis will fail.');
+}
+const genAI = new GoogleGenerativeAI(GEMINI_KEY);
 
 // ═══════════════════════════════════════════════════════════════════════
 // TYPES & INTERFACES
@@ -539,6 +544,10 @@ export async function analyzeClauseWithPrecision(
 OUTPUT ONLY VALID JSON:`;
 
   try {
+    // Check API key before making the call
+    if (!GEMINI_KEY) {
+      throw new Error('GEMINI_API_KEY is not configured. Please set the GEMINI_API_KEY environment variable in your .env.local file.');
+    }
     const model = genAI.getGenerativeModel({ model: aiModel });
     const result = await model.generateContent(prompt);
     const responseText = result.response.text();
@@ -570,7 +579,7 @@ OUTPUT ONLY VALID JSON:`;
       regulatoryReference: clause.regulatoryReference || `${clause.guidelineType} ${clause.clauseNumber}`,
       sopSectionNumber: parsed.sopSectionNumber || 'N/A',
       sopSectionTitle: parsed.sopSectionTitle || 'Not Addressed',
-      sopTextSnippet: parsed.sopTextSnippet || '',
+      sopTextSnippet: parsed.sopTextSnippet || 'No specific SOP text identified for this clause.',
       complianceLevel,
       matchConfidence: Math.min(100, Math.max(0, parsed.matchConfidence || 50)),
       issueType: normalizeIssueType(parsed.issueType),
@@ -579,7 +588,7 @@ OUTPUT ONLY VALID JSON:`;
       guidelineRequirement: parsed.guidelineRequirement || clause.clauseText.substring(0, 200),
       sopCurrentState: parsed.sopCurrentState || 'Not determined',
       suggestedAction: parsed.suggestedAction || 'Review required',
-      suggestedText: parsed.suggestedText || '',
+      suggestedText: parsed.suggestedText || 'Review and update this section to address the guideline requirement.',
       estimatedEffort: normalizeEstimatedEffort(parsed.estimatedEffort),
       priority: Math.min(5, Math.max(1, parsed.priority || 3)),
       analyzedAt: new Date(),
@@ -602,7 +611,7 @@ OUTPUT ONLY VALID JSON:`;
       regulatoryReference: `${clause.guidelineType} ${clause.clauseNumber}`,
       sopSectionNumber: 'N/A',
       sopSectionTitle: 'Analysis Failed',
-      sopTextSnippet: '',
+      sopTextSnippet: 'Unable to extract - AI analysis failed. Manual review required.',
       complianceLevel: 'unable-to-determine',
       matchConfidence: 0,
       issueType: 'not-applicable',
@@ -611,7 +620,7 @@ OUTPUT ONLY VALID JSON:`;
       guidelineRequirement: clause.clauseText.substring(0, 200),
       sopCurrentState: 'Unable to determine',
       suggestedAction: 'Manual review required',
-      suggestedText: '',
+      suggestedText: 'Manual review required - AI analysis was unable to generate suggested text.',
       estimatedEffort: 'medium',
       priority: 3,
       analyzedAt: new Date(),
@@ -685,7 +694,7 @@ export function calculateIntelligentScore(
     return {
       overallScore: null,
       compliancePercentage: null,
-      complianceStatus: 'ANALYSIS_INCOMPLETE',
+      complianceStatus: 'Analysis Failed',
       scoreBreakdown,
     };
   }
@@ -697,7 +706,7 @@ export function calculateIntelligentScore(
     return {
       overallScore: null,
       compliancePercentage: null,
-      complianceStatus: 'NO_APPLICABLE_GUIDELINES',
+      complianceStatus: 'Analysis Pending',
       scoreBreakdown,
     };
   }

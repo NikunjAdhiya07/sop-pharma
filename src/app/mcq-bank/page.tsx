@@ -988,37 +988,37 @@ function MCQBankContent() {
         {/* MCQ Detail Modal */}
         {selectedMCQ && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[60]">
-            <div className="bg-slate-900 rounded-2xl max-w-3xl w-full border border-purple-500/30 shadow-[0_0_50px_rgba(0,0,0,0.5)]">
-              <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6 rounded-t-2xl">
+            <div className="bg-slate-900 rounded-2xl max-w-3xl w-full max-h-[85vh] flex flex-col border border-purple-500/30 shadow-[0_0_50px_rgba(0,0,0,0.5)]">
+              <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-4 rounded-t-2xl flex-shrink-0">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-bold text-white">MCQ Details</h2>
+                  <h2 className="text-lg font-bold text-white">MCQ Details</h2>
                   <button
                     onClick={() => setSelectedMCQ(null)}
-                    className="text-white hover:text-gray-200 text-2xl font-bold"
+                    className="text-white hover:text-gray-200 text-2xl font-bold leading-none w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/20 transition-colors"
                   >
                     ×
                   </button>
                 </div>
               </div>
 
-              <div className="p-6 space-y-6">
+              <div className="p-5 space-y-4 overflow-y-auto flex-1">
                  <div className="flex items-start">
-                  <span className="text-4xl mr-4">{selectedMCQ.mcq.aiIcon}</span>
+                  <span className="text-3xl mr-3 flex-shrink-0">{selectedMCQ.mcq.aiIcon}</span>
                   <div>
-                    <h3 className="text-white font-bold text-lg mb-2">Question {String(selectedMCQ.index + 1).padStart(2, '0')}:</h3>
-                    <p className="text-gray-300 text-xl">{selectedMCQ.mcq.question}</p>
+                    <h3 className="text-white font-bold text-base mb-1">Question {String(selectedMCQ.index + 1).padStart(2, '0')}:</h3>
+                    <p className="text-gray-300 text-base">{selectedMCQ.mcq.question}</p>
                     <div className="mt-2 flex items-center gap-2">
                        {selectedMCQ.mcq.isChecked && (
-                        <div className="p-1.5 bg-green-500/20 rounded-lg border border-green-500/30" title="Approved">
-                          <CheckCircle2 className="h-4 w-4 text-green-400" />
+                        <div className="p-1 bg-green-500/20 rounded-lg border border-green-500/30" title="Approved">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-green-400" />
                         </div>
                       )}
                       {selectedMCQ.mcq.isReviewed && (
-                        <div className="p-1.5 bg-amber-500/20 rounded-lg border border-amber-500/30" title="Needs Review">
-                          <Star className="h-4 w-4 text-amber-400 fill-amber-400" />
+                        <div className="p-1 bg-amber-500/20 rounded-lg border border-amber-500/30" title="Needs Review">
+                          <Star className="h-3.5 w-3.5 text-amber-400 fill-amber-400" />
                         </div>
                       )}
-                       <span className={`px-3 py-1 rounded-full text-xs font-bold border ${getDifficultyColor(selectedMCQ.mcq.difficulty)}`}>
+                       <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${getDifficultyColor(selectedMCQ.mcq.difficulty)}`}>
                         {selectedMCQ.mcq.difficultyStars} {selectedMCQ.mcq.difficulty}
                       </span>
                     </div>
@@ -1026,34 +1026,34 @@ function MCQBankContent() {
                 </div>
 
                 <div>
-                  <h3 className="text-white font-bold mb-3">Options:</h3>
-                  <div className="space-y-2">
+                  <h3 className="text-white font-bold mb-2 text-sm">Options:</h3>
+                  <div className="space-y-1.5">
                     {selectedMCQ.mcq.options.map((option, index) => (
                       <div
                         key={index}
-                        className={`p-4 rounded-lg ${
+                        className={`p-3 rounded-lg ${
                           option === selectedMCQ.mcq.correctAnswer
                             ? 'bg-green-500/20 border-2 border-green-500'
                             : 'bg-white/5 border border-white/10'
                         }`}
                       >
-                        <span className="text-gray-300">{option}</span>
+                        <span className="text-gray-300 text-sm">{option}</span>
                       </div>
                     ))}
                   </div>
                 </div>
 
                 <div>
-                  <h3 className="text-white font-bold mb-2">Explanation:</h3>
-                  <p className="text-gray-300 bg-white/5 p-4 rounded-lg">
+                  <h3 className="text-white font-bold mb-1 text-sm">Explanation:</h3>
+                  <p className="text-gray-300 bg-white/5 p-3 rounded-lg text-sm">
                     {selectedMCQ.mcq.explanation}
                   </p>
                 </div>
 
                 <div>
-                  <h3 className="text-white font-bold mb-2">SOP Reference:</h3>
-                  <p className="text-gray-400 bg-white/5 p-4 rounded-lg italic text-sm">
-                    "{selectedMCQ.mcq.sopReference}"
+                  <h3 className="text-white font-bold mb-1 text-sm">SOP Reference:</h3>
+                  <p className="text-gray-400 bg-white/5 p-3 rounded-lg italic text-xs">
+                    &quot;{selectedMCQ.mcq.sopReference}&quot;
                   </p>
                 </div>
               </div>
