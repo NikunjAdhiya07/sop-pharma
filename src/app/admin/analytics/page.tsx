@@ -20,6 +20,7 @@ import {
   XCircle,
   BarChart3
 } from 'lucide-react';
+import { formatSOPDisplayName } from '@/lib/sopLibraryHelper';
 
 interface SOPStat {
   sopId: string;
@@ -265,7 +266,7 @@ export default function AdminAnalyticsDashboard() {
                 <option value="all" className="bg-slate-800">All SOPs</option>
                 {data?.filters.sops.map(sop => (
                   <option key={sop._id} value={sop._id} className="bg-slate-800">
-                    {sop.sopIdentifier} - {sop.sopName}
+                    {formatSOPDisplayName(sop.sopName, sop.sopIdentifier)}
                   </option>
                 ))}
               </select>

@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
         let newName: string;
         if (extractedTitle) {
           // Format: IDENTIFIER - Title
-          newName = `${identifier} - ${extractedTitle}`;
+          newName = `${identifier}_${extractedTitle.toUpperCase()}`;
           stats.titlesExtracted++;
         } else {
           // Fallback: Just use identifier with a generic title
@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
           sopName = sopName.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
           
           if (sopName && sopName.length > 3) {
-            newName = `${identifier} - ${sopName}`;
+            newName = `${identifier}_${sopName.toUpperCase()}`;
           } else {
             newName = identifier;
           }

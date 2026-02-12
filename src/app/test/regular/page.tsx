@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import QuestionBasisSelection from '@/components/QuestionBasisSelection';
 import TestRunner from '@/components/TestRunner';
+import { formatSOPDisplayName } from '@/lib/sopLibraryHelper';
 
 interface MCQBank {
   _id: string;
@@ -214,9 +215,9 @@ export default function RegularTestPage() {
                         <div className="flex-1 min-w-0">
                           <p 
                             className="text-white font-medium group-hover:text-emerald-300 transition-colors line-clamp-1 uppercase"
-                            title={`${bank.sopIdentifier} - ${bank.sopName}`.toUpperCase()}
+                            title={formatSOPDisplayName(bank.sopName, bank.sopIdentifier)}
                           >
-                            {bank.sopIdentifier} - {bank.sopName}
+                            {formatSOPDisplayName(bank.sopName, bank.sopIdentifier)}
                           </p>
                           <p className="text-gray-500 text-xs font-mono mt-1">{bank.sopIdentifier}</p>
                         </div>

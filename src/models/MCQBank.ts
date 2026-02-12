@@ -19,6 +19,7 @@ export interface IMCQ {
   optionVariants: IOptionVariant[];
   isChecked?: boolean;
   isReviewed?: boolean;
+  isSimilar?: boolean; // Flag for questions with detected similarities
 }
 
 export interface IMCQBank extends Document {
@@ -100,6 +101,10 @@ const MCQSchema = new Schema<IMCQ>({
     default: false,
   },
   isReviewed: {
+    type: Boolean,
+    default: false,
+  },
+  isSimilar: {
     type: Boolean,
     default: false,
   },

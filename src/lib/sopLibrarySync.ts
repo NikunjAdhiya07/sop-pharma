@@ -33,13 +33,11 @@ function shouldExcludeSOP(sop: any): boolean {
 }
 
 /**
- * Clean the SOP name - just use the identifier as the name
+ * Clean the SOP name - format as IDENTIFIER_TITLE
  * This ensures consistent naming across all views
  */
 function cleanSOPName(sop: any): string {
-  // The identifier (e.g., QAGE01-10) should be the primary name
-  // If original name contains meaningful info after identifier, keep it
-  const identifier = sop.identifier || '';
+  const identifier = (sop.identifier || '').toUpperCase();
   const originalName = sop.name || '';
   
   // If the name is just the identifier or garbage, use identifier
@@ -48,13 +46,17 @@ function cleanSOPName(sop: any): string {
     return identifier;
   }
   
-  // If name starts with identifier, return as-is
-  if (originalName.toUpperCase().startsWith(identifier.toUpperCase())) {
-    return originalName;
+  // If name starts with identifier, extract title and reformat
+  if (originalName.toUpperCase().startsWith(identifier)) {
+    const rest = originalName.substring(identifier.length).replace(/^[\s\-_:\.]+/, '').trim();
+    if (rest) {
+      return `${identifier}_${rest.replace(/_/g, ' ').replace(/\s+/g, ' ').trim().toUpperCase()}`;
+    }
+    return identifier;
   }
   
-  // Otherwise, format as "IDENTIFIER - NAME"
-  return `${identifier} - ${originalName}`;
+  // Otherwise, format as "IDENTIFIER_NAME"
+  return `${identifier}_${originalName.replace(/_/g, ' ').replace(/\s+/g, ' ').trim().toUpperCase()}`;
 }
 
 export async function performSOPLibrarySync() {

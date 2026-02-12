@@ -7,7 +7,7 @@ export async function POST(request: NextRequest) {
     await connectDB();
 
     const body = await request.json();
-    const { bankId, questionIndex, isChecked, isReviewed } = body;
+    const { bankId, questionIndex, isChecked, isReviewed, isSimilar } = body;
 
     if (!bankId || questionIndex === undefined) {
       return NextResponse.json(
@@ -22,6 +22,9 @@ export async function POST(request: NextRequest) {
     }
     if (isReviewed !== undefined) {
       updateQuery[`mcqs.${questionIndex}.isReviewed`] = isReviewed;
+    }
+    if (isSimilar !== undefined) {
+      updateQuery[`mcqs.${questionIndex}.isSimilar`] = isSimilar;
     }
 
     if (Object.keys(updateQuery).length === 0) {

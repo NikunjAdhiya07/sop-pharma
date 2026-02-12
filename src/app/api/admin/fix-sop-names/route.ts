@@ -85,13 +85,13 @@ export async function POST(request: NextRequest) {
       if (lib.folderPath) {
         const extractedTitle = extractTitleFromFolderPath(lib.folderPath, identifier);
         // Only use extracted title if it has more than just the identifier
-        if (extractedTitle && extractedTitle.includes(' - ')) {
+        if (extractedTitle && (extractedTitle.includes('_') || extractedTitle.includes(' - '))) {
           cleanName = extractedTitle;
         }
       }
       
       // If no title from folderPath, fall back to cleaning the current name
-      if (!cleanName.includes(' - ') || cleanName === currentName) {
+      if ((!cleanName.includes('_') && !cleanName.includes(' - ')) || cleanName === currentName) {
         // If contains path separators, extract the last meaningful segment
         if (currentName.includes('/')) {
           const parts = currentName.split('/');
@@ -110,8 +110,8 @@ export async function POST(request: NextRequest) {
         if (!cleanName || cleanName.includes('---') || cleanName.toUpperCase().includes('ANNEXURE')) {
           cleanName = identifier.toUpperCase();
         } else {
-          // Format as "IDENTIFIER - TITLE"
-          cleanName = `${identifier.toUpperCase()} - ${cleanName.toUpperCase()}`;
+          // Format as "IDENTIFIER_TITLE"
+          cleanName = `${identifier.toUpperCase()}_${cleanName.toUpperCase()}`;
         }
       }
       
@@ -157,20 +157,20 @@ export async function POST(request: NextRequest) {
       
       if (folderPath) {
         const extractedTitle = extractTitleFromFolderPath(folderPath, identifier);
-        if (extractedTitle && extractedTitle.includes(' - ')) {
+        if (extractedTitle && (extractedTitle.includes('_') || extractedTitle.includes(' - '))) {
           cleanName = extractedTitle;
         }
       }
       
       // If no title from folderPath, fall back to cleaning current name
-      if (!cleanName.includes(' - ') || cleanName === currentName) {
+      if ((!cleanName.includes('_') && !cleanName.includes(' - ')) || cleanName === currentName) {
         if (!currentName || 
             currentName.includes('---') || 
             currentName.includes('/') ||
             currentName.toUpperCase().includes('ANNEXURE')) {
           cleanName = identifier.toUpperCase();
         } else if (!currentName.toUpperCase().startsWith(identifier.toUpperCase())) {
-          cleanName = `${identifier.toUpperCase()} - ${currentName.toUpperCase()}`;
+          cleanName = `${identifier.toUpperCase()}_${currentName.replace(/_/g, ' ').replace(/\s+/g, ' ').trim().toUpperCase()}`;
         }
       }
       
@@ -202,20 +202,20 @@ export async function POST(request: NextRequest) {
       
       if (folderPath) {
         const extractedTitle = extractTitleFromFolderPath(folderPath, identifier);
-        if (extractedTitle && extractedTitle.includes(' - ')) {
+        if (extractedTitle && (extractedTitle.includes('_') || extractedTitle.includes(' - '))) {
           cleanName = extractedTitle;
         }
       }
       
       // If no title from folderPath, fall back to cleaning current name
-      if (!cleanName.includes(' - ') || cleanName === currentName) {
+      if ((!cleanName.includes('_') && !cleanName.includes(' - ')) || cleanName === currentName) {
         if (!currentName || 
             currentName.includes('---') || 
             currentName.includes('/') ||
             currentName.toUpperCase().includes('ANNEXURE')) {
           cleanName = identifier.toUpperCase();
         } else if (!currentName.toUpperCase().startsWith(identifier.toUpperCase())) {
-          cleanName = `${identifier.toUpperCase()} - ${currentName.toUpperCase()}`;
+          cleanName = `${identifier.toUpperCase()}_${currentName.replace(/_/g, ' ').replace(/\s+/g, ' ').trim().toUpperCase()}`;
         }
       }
       

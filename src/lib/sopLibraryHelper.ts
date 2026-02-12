@@ -62,11 +62,11 @@ export const DEPARTMENT_MAP: Record<string, string> = {
  *   Department / Subcategory / {IDENTIFIER} - {TITLE} / {IDENTIFIER} / {IDENTIFIER}.docx
  * 
  * This function looks for a folder matching pattern "{IDENTIFIER} - {TITLE}"
- * and extracts the full name including the title portion.
+ * and extracts the full name in format: IDENTIFIER_TITLE
  * 
  * @param folderPath - The folder path (e.g., "1. QA/QAGE - GENERAL/QAGE01-10 - STANDARD OPERATING PROCEDURE FOR SOP/QAGE01-10")
  * @param identifier - The SOP identifier (e.g., "QAGE01-10")
- * @returns The full SOP title or just the identifier if no title found
+ * @returns The full SOP title in IDENTIFIER_TITLE format
  */
 export function extractTitleFromFolderPath(folderPath: string, identifier: string): string {
   if (!folderPath || !identifier) {
@@ -89,7 +89,7 @@ export function extractTitleFromFolderPath(folderPath: string, identifier: strin
       const titlePart = part.substring(identifier.length).replace(/^[\s\-]+/, '').trim();
       
       if (titlePart) {
-        return `${identifier.toUpperCase()} - ${titlePart.toUpperCase()}`;
+        return `${identifier.toUpperCase()}_${titlePart.toUpperCase()}`;
       }
     }
     
@@ -103,7 +103,7 @@ export function extractTitleFromFolderPath(folderPath: string, identifier: strin
       if (matchIndex >= 0) {
         const afterIdentifier = part.substring(matchIndex + identifier.length).replace(/^[\s\-]+/, '').trim();
         if (afterIdentifier) {
-          return `${identifier.toUpperCase()} - ${afterIdentifier.toUpperCase()}`;
+          return `${identifier.toUpperCase()}_${afterIdentifier.toUpperCase()}`;
         }
       }
     }
@@ -164,7 +164,7 @@ export function extractDepartmentFromIdentifier(identifier: string): {
  * Removes path components, identifier duplicates, and formats consistently
  * @param sopName - The raw SOP name from the database
  * @param identifier - The SOP identifier (e.g., "QAGE01-10")
- * @returns Clean name ready for display
+ * @returns Clean title portion only (without identifier prefix)
  */
 export function cleanSOPName(sopName: string, identifier: string): string {
   let name = sopName || '';
@@ -189,6 +189,73 @@ export function cleanSOPName(sopName: string, identifier: string): string {
   }
   
   return name;
+}
+
+/**
+ * Formats an SOP name for display across the system.
+ * Returns the clean format: IDENTIFIER_TITLE
+ * 
+ * This is the SINGLE SOURCE OF TRUTH for SOP name formatting.
+ * Use this function everywhere SOP names are displayed.
+ * 
+ * Examples:
+ *   formatSOPDisplayName("7. PERSONNEL/PEGE03-05 - .../PEGE03-05_PROCEDURE FOR PERSONNEL", "PEGE03-05")
+ *   → "PEGE03-05_PROCEDURE FOR PERSONNEL"
+ * 
+ *   formatSOPDisplayName("QAGE01-10 - STANDARD OPERATING PROCEDURE FOR SOP", "QAGE01-10")
+ *   → "QAGE01-10_STANDARD OPERATING PROCEDURE FOR SOP"
+ * 
+ * @param sopName - The raw SOP name (may contain paths, old formats, etc.)
+ * @param identifier - The SOP identifier (e.g., "PEGE03-05")
+ * @returns Clean formatted name: IDENTIFIER_TITLE
+ */
+export function formatSOPDisplayName(sopName: string, identifier: string): string {
+  if (!identifier) return sopName || '';
+  
+  const id = identifier.toUpperCase();
+  let name = sopName || '';
+  
+  // Step 1: Strip path components — take the last meaningful segment
+  if (name.includes('/')) {
+    const parts = name.split('/').filter(p => p.trim().length > 0);
+    // Find the last segment that contains the identifier, or just use the last segment
+    const identifierSegment = parts.reverse().find(p => p.toUpperCase().includes(id));
+    name = identifierSegment || parts[0] || id;
+  }
+  
+  // Step 2: If name already has the IDENTIFIER_TITLE format, normalize and return
+  const nameUpper = name.toUpperCase().trim();
+  if (nameUpper.startsWith(id + '_')) {
+    const titlePart = name.substring(id.length + 1).replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+    if (titlePart) {
+      return `${id}_${titlePart.toUpperCase()}`;
+    }
+  }
+  
+  // Step 3: If name has "IDENTIFIER - TITLE" format, convert to underscore
+  if (nameUpper.startsWith(id + ' - ') || nameUpper.startsWith(id + '- ') || nameUpper.startsWith(id + ' -')) {
+    const titlePart = name.substring(name.indexOf('-', id.length) + 1).trim();
+    if (titlePart) {
+      return `${id}_${titlePart.toUpperCase()}`;
+    }
+  }
+  
+  // Step 4: If name starts with identifier followed by any separator, extract title
+  if (nameUpper.startsWith(id)) {
+    const rest = name.substring(id.length).replace(/^[\s\-_:\.]+/, '').trim();
+    if (rest) {
+      return `${id}_${rest.replace(/_/g, ' ').replace(/\s+/g, ' ').trim().toUpperCase()}`;
+    }
+    return id;
+  }
+  
+  // Step 5: Name doesn't start with identifier — prepend it
+  const cleanedName = name.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+  if (cleanedName && cleanedName.toUpperCase() !== id) {
+    return `${id}_${cleanedName.toUpperCase()}`;
+  }
+  
+  return id;
 }
 
 /**

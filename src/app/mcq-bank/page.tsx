@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Search, Filter, Download, Eye, BookOpen, Award, Loader2, Plus, Trash2, FolderOpen, Upload, ArrowLeft, Grid, List, ArrowUpDown, SortAsc, SortDesc, CheckCircle2, Star, FileText, RefreshCw } from 'lucide-react';
+import { Search, Filter, Download, Eye, BookOpen, Award, Loader2, Plus, Trash2, FolderOpen, Upload, ArrowLeft, Grid, List, ArrowUpDown, SortAsc, SortDesc, CheckCircle2, Star, FileText, RefreshCw, Copy, AlertCircle } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 import MCQTreeView from '@/components/MCQTreeView';
 import { useCopyProtection, CopyProtected } from '@/lib/copyProtection';
+import { formatSOPDisplayName, cleanSOPName } from '@/lib/sopLibraryHelper';
 
 interface MCQ {
   aiIcon: string;
@@ -18,6 +19,7 @@ interface MCQ {
   sopReference: string;
   isChecked?: boolean;
   isReviewed?: boolean;
+  isSimilar?: boolean;
   optionVariants: Array<{
     text: string;
     isCorrect: boolean;
@@ -29,6 +31,7 @@ interface MCQBank {
   sopId: string;
   sopName: string;
   sopIdentifier: string;
+  department?: string;
   mcqs: MCQ[];
   totalQuestions?: number;
   difficultyDistribution?: {
@@ -56,13 +59,54 @@ function MCQBankContent() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalBanks, setTotalBanks] = useState(0);
   
-  // Tree view state
+  // Recycled Questions State
+  const [activeTab, setActiveTab] = useState<'active' | 'recycled'>('active');
+  const [recycledQuestions, setRecycledQuestions] = useState<any[]>([]);
+  const [loadingRecycled, setLoadingRecycled] = useState(false);
+
+  // Expansion State (Lifted from MCQTreeView for persistence)
+  const loadExpansionState = useCallback((key: string): Set<string> => {
+    if (typeof window === 'undefined') return new Set<string>();
+    try {
+      const saved = localStorage.getItem(key);
+      return saved ? new Set<string>(JSON.parse(saved)) : new Set<string>();
+    } catch {
+      return new Set<string>();
+    }
+  }, []);
+
+  const saveExpansionState = useCallback((key: string, state: Set<string>) => {
+    if (typeof window === 'undefined') return;
+    try {
+      const arr = Array.from(state);
+      localStorage.setItem(key, JSON.stringify(arr));
+    } catch {
+      // Ignore localStorage errors
+    }
+  }, []);
+
+  const [expandedDepts, setExpandedDepts] = useState<Set<string>>(() => loadExpansionState('mcq-tree-expanded-depts'));
+  const [expandedSubcats, setExpandedSubcats] = useState<Set<string>>(() => loadExpansionState('mcq-tree-expanded-subcats'));
+  const [expandedSOPs, setExpandedSOPs] = useState<Set<string>>(() => loadExpansionState('mcq-tree-expanded-sops'));
+
+  // Save expansion state whenever it changes
+  useEffect(() => {
+    saveExpansionState('mcq-tree-expanded-depts', expandedDepts);
+  }, [expandedDepts, saveExpansionState]);
+
+  useEffect(() => {
+    saveExpansionState('mcq-tree-expanded-subcats', expandedSubcats);
+  }, [expandedSubcats, saveExpansionState]);
+
+  useEffect(() => {
+    saveExpansionState('mcq-tree-expanded-sops', expandedSOPs);
+  }, [expandedSOPs, saveExpansionState]);
   const [viewMode, setViewMode] = useState<'grid' | 'tree'>('tree');
   const [treeData, setTreeData] = useState<any>(null);
   const [loadingTree, setLoadingTree] = useState(false);
   
   // Sort state
-  const [sortBy, setSortBy] = useState<'name' | 'questions' | 'date'>('name');
+  const [sortBy, setSortBy] = useState<'name' | 'questions' | 'date' | 'identifier'>('identifier');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
   // Apply copy protection to prevent copying/downloading questions
@@ -76,8 +120,10 @@ function MCQBankContent() {
   }, [currentPage, viewMode]);
 
   const fetchTreeData = async (forceRefresh = false) => {
-    setLoadingTree(true);
     try {
+      // Only show full loading state if we don't have data yet
+      if (!treeData) setLoadingTree(true);
+      
       // Cache key includes a version number for easy invalidation
       const CACHE_KEY = 'mcq-tree-cache-v1';
       const CACHE_TIMESTAMP_KEY = 'mcq-tree-cache-timestamp';
@@ -165,6 +211,7 @@ function MCQBankContent() {
       
       if (hasFullData) {
         setSelectedMCQBank(bank);
+        setActiveTab('active'); // Reset to active tab when opening modal
         return;
       }
 
@@ -183,6 +230,7 @@ function MCQBankContent() {
       if (data.success && data.mcqBanks.length > 0) {
         const fullBank = data.mcqBanks[0];
         setSelectedMCQBank(fullBank);
+        setActiveTab('active'); // Reset to active tab
         
         // Update the bank in our local list state
         setMcqBanks(prev => prev.map(b => b._id === bank._id ? fullBank : b));
@@ -236,6 +284,95 @@ function MCQBankContent() {
     }
   };
 
+  const fetchRecycledQuestions = async (sopId: string) => {
+    try {
+      setLoadingRecycled(true);
+      // Add timestamp to prevent caching
+      // Assuming sopId is valid ObjectId string
+      const response = await fetch(`/api/mcq-bank/eliminated?sopId=${sopId}&limit=50&t=${Date.now()}`, {
+        headers: { 'Cache-Control': 'no-cache' }
+      });
+      const data = await response.json();
+      
+      if (data.success) {
+        setRecycledQuestions(data.questions);
+      }
+    } catch (error) {
+      console.error('Error fetching recycled questions:', error);
+    } finally {
+      setLoadingRecycled(false);
+    }
+  };
+
+  const handleReplaceQuestion = async (bankId: string, index: number, sopId: string) => {
+    if (!confirm('Replace this question? The active question will be moved to the Recycled section.')) {
+      return;
+    }
+
+    try {
+      setUpdatingStatus(`${bankId}-${index}`);
+      
+      // 1. Delete the question (this archives it to EliminatedQuestions)
+      // Get user info from localStorage
+      const userInfo = localStorage.getItem('user');
+      const headers: HeadersInit = {};
+      if (userInfo) {
+        headers['x-user-info'] = userInfo;
+      }
+      
+      const deleteResponse = await fetch(`/api/mcq-bank/delete-question?bankId=${bankId}&index=${index}`, {
+        method: 'DELETE',
+        headers,
+      });
+      
+      const deleteData = await deleteResponse.json();
+      
+      if (!deleteData.success) {
+        alert(`Failed to delete question: ${deleteData.error}`);
+        setUpdatingStatus(null);
+        return;
+      }
+
+      // 2. Generate Replacement
+      // Since we just deleted one, we want to insert a new one at the same index
+      // Using existing endpoint for generation. 
+      // Note: generate-replacement endpoint expects mcqBankId, sopId, questionIndex
+      const genResponse = await fetch('/api/mcq-bank/generate-replacement', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mcqBankId: bankId,
+          sopId: sopId,
+          questionIndex: index,
+        }),
+      });
+
+      const genData = await genResponse.json();
+
+      if (genData.success) {
+        alert('Question replaced successfully!');
+        // Refresh the current bank details to show new question
+        // We need to refetch the whole bank
+        if (selectedMCQBank) {
+           // Create a temp object to pass ID
+           fetchFullBankDetails({ ...selectedMCQBank, _id: bankId });
+        }
+      } else {
+        alert('Question deleted but failed to generate replacement. Please try manually adding a question.');
+        if (selectedMCQBank) {
+           fetchFullBankDetails({ ...selectedMCQBank, _id: bankId });
+        }
+      }
+
+    } catch (error) {
+      console.error('Error replacing question:', error);
+      alert('Failed to replace question');
+    } finally {
+      setUpdatingStatus(null);
+    }
+  };
+
+
   // Efficient search and filter function
   const filteredAndSortedMCQBanks = (() => {
     // First, filter by search term (case-insensitive)
@@ -251,13 +388,24 @@ function MCQBankContent() {
       });
     }
     
+    // Helper for natural sorting (deals with numbers in strings correctly)
+    const naturalCompare = (a: string, b: string) => {
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+    };
+
     // Then sort the filtered results
     const sorted = [...filtered].sort((a, b) => {
       let comparison = 0;
       
       switch (sortBy) {
+        case 'identifier':
+          comparison = naturalCompare(a.sopIdentifier, b.sopIdentifier);
+          break;
         case 'name':
-          comparison = a.sopName.localeCompare(b.sopName);
+          // Clean the names of identifier prefixes before comparing for a true "Name" sort
+          const cleanA = cleanSOPName(a.sopName, a.sopIdentifier);
+          const cleanB = cleanSOPName(b.sopName, b.sopIdentifier);
+          comparison = cleanA.localeCompare(cleanB, undefined, { sensitivity: 'base' });
           break;
         case 'questions':
           comparison = (a.totalQuestions || 0) - (b.totalQuestions || 0);
@@ -460,6 +608,116 @@ function MCQBankContent() {
     }
   };
 
+  const toggleSimilar = async (bank: MCQBank, index: number, mcq: MCQ) => {
+    const statusKey = `${bank._id}-${index}`;
+    if (updatingStatus === statusKey) return;
+    
+    setUpdatingStatus(statusKey);
+    const currentStatus = !!mcq.isSimilar;
+    const nextStatus = !currentStatus;
+
+    // OPTIMISTIC UPDATE
+    if (selectedMCQBank && selectedMCQBank._id === bank._id) {
+      const newMcqs = [...selectedMCQBank.mcqs];
+      newMcqs[index] = { ...newMcqs[index], isSimilar: nextStatus };
+      setSelectedMCQBank({ ...selectedMCQBank, mcqs: newMcqs });
+    }
+
+    setMcqBanks(prev => prev.map(b => {
+      if (b._id === bank._id) {
+        if (b.mcqs && b.mcqs.length > 0) {
+          const updatedMcqs = [...b.mcqs];
+          updatedMcqs[index] = { ...updatedMcqs[index], isSimilar: nextStatus };
+          return { ...b, mcqs: updatedMcqs };
+        }
+      }
+      return b;
+    }));
+
+    try {
+      // 1. Update flag in MCQBank
+      const response = await fetch('/api/mcq-bank/update-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bankId: bank._id,
+          questionIndex: index,
+          isSimilar: nextStatus
+        })
+      });
+      
+      const data = await response.json();
+      if (data.success) {
+        // 2. Create/Delete similarity record
+        if (nextStatus) {
+          // AUTO-DETECT SIMILAR QUESTIONS
+          // Trigger similarity detection for this specific MCQ bank
+          const detectResponse = await fetch('/api/similar-questions/detect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mcqBankId: bank._id,
+              sopId: bank.sopId,
+              threshold: 30, // Lowered to 30 for better detection
+              targetQuestionIndex: index, // Only detect for this specific question
+            })
+          });
+
+          const detectData = await detectResponse.json();
+          
+          if (detectData.success && detectData.flaggedCount > 0) {
+            console.log(`Auto-detected ${detectData.flaggedCount} similar question(s) for Q${index + 1}`);
+          } else {
+            // If no similar questions found, create a standalone record
+            await fetch('/api/similar-questions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                sopId: bank.sopId,
+                sopName: bank.sopName,
+                sopIdentifier: bank.sopIdentifier,
+                department: bank.department || 'General',
+                primaryQuestion: {
+                  mcqBankId: bank._id,
+                  questionIndex: index,
+                  question: mcq,
+                },
+                similarQuestions: [],
+                flaggedBy: 'Manual'
+              })
+            });
+          }
+        } else {
+          // Unflagging: delete the similarity entry
+          // Find and delete the similarity record for this question
+          fetch(`/api/similar-questions?mcqBankId=${bank._id}&questionIndex=${index}`, {
+            method: 'DELETE'
+          }).catch(console.error);
+        }
+      } else {
+        // Revert on failure
+        console.error('Update failed:', data.error);
+        if (selectedMCQBank && selectedMCQBank._id === bank._id) {
+          const newMcqs = [...selectedMCQBank.mcqs];
+          newMcqs[index] = { ...newMcqs[index], isSimilar: currentStatus };
+          setSelectedMCQBank({ ...selectedMCQBank, mcqs: newMcqs });
+        }
+        setMcqBanks(prev => prev.map(b => {
+          if (b._id === bank._id && b.mcqs && b.mcqs.length > 0) {
+            const updatedMcqs = [...b.mcqs];
+            updatedMcqs[index] = { ...updatedMcqs[index], isSimilar: currentStatus };
+            return { ...b, mcqs: updatedMcqs };
+          }
+          return b;
+        }));
+      }
+    } catch (error) {
+      console.error('Error toggling similar status:', error);
+    } finally {
+      setUpdatingStatus(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
@@ -491,7 +749,7 @@ function MCQBankContent() {
             <div className="flex-1 text-center">
               <h1 className="text-5xl font-bold text-white mb-4 bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-600">
                 {sopIdFromUrl && selectedMCQBank ? (
-                  <>{selectedMCQBank.sopIdentifier} - {selectedMCQBank.sopName.toUpperCase()}</>
+                  <>{formatSOPDisplayName(selectedMCQBank.sopName, selectedMCQBank.sopIdentifier)}</>
                 ) : (
                   <>MCQ Question Bank</>
                 )}
@@ -514,6 +772,14 @@ function MCQBankContent() {
                 >
                   <RefreshCw className={`h-5 w-5 ${loadingTree ? 'animate-spin' : ''}`} />
                   {loadingTree ? 'Refreshing...' : 'Refresh'}
+                </button>
+                <button
+                  onClick={() => window.location.href = '/similar-questions'}
+                  className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-orange-600 to-red-600 text-white font-semibold rounded-xl hover:from-orange-700 hover:to-red-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg whitespace-nowrap"
+                  title="Review similar/duplicate questions"
+                >
+                  <Copy className="h-5 w-5" />
+                  Similar Questions
                 </button>
                 <button
                   onClick={() => window.location.href = '/files-manager'}
@@ -573,6 +839,7 @@ function MCQBankContent() {
                 <span className="text-gray-300 text-sm font-semibold">Sort by:</span>
                 <div className="flex gap-2">
                   {[
+                    { value: 'identifier', label: 'ID' },
                     { value: 'name', label: 'Name' },
                     { value: 'questions', label: 'Questions' },
                     { value: 'date', label: 'Date' }
@@ -583,7 +850,7 @@ function MCQBankContent() {
                         if (sortBy === sort.value) {
                           setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
                         } else {
-                          setSortBy(sort.value as 'name' | 'questions' | 'date');
+                          setSortBy(sort.value as 'name' | 'questions' | 'date' | 'identifier');
                           setSortOrder('asc');
                         }
                       }}
@@ -646,9 +913,16 @@ function MCQBankContent() {
             </div>
           ) : treeData ? (
             <MCQTreeView
+              key="mcq-tree-view-stable" 
               tree={treeData.tree}
               unorganized={treeData.unorganized}
               searchTerm={searchTerm}
+              expandedDepts={expandedDepts}
+              setExpandedDepts={setExpandedDepts}
+              expandedSubcats={expandedSubcats}
+              setExpandedSubcats={setExpandedSubcats}
+              expandedSOPs={expandedSOPs}
+              setExpandedSOPs={setExpandedSOPs}
               onViewMCQs={(sopNode) => {
                 // Find the first MCQ bank for this SOP
                 if (sopNode.mcqBanks && sopNode.mcqBanks.length > 0) {
@@ -697,9 +971,9 @@ function MCQBankContent() {
                   <div className="flex-1 min-w-0">
                     <h3 
                       className="text-sm font-bold text-white mb-2 leading-tight uppercase group-hover:text-purple-300 transition-colors line-clamp-2"
-                      title={`${bank.sopIdentifier} - ${bank.sopName}`.toUpperCase()}
+                      title={formatSOPDisplayName(bank.sopName, bank.sopIdentifier)}
                     >
-                      {bank.sopIdentifier} - {bank.sopName}
+                      {formatSOPDisplayName(bank.sopName, bank.sopIdentifier)}
                     </h3>
                     <p className="text-gray-400 text-[10px] font-mono opacity-60">
                       {bank.sopIdentifier}
@@ -851,11 +1125,24 @@ function MCQBankContent() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h2 className="text-xl font-bold text-white mb-2 uppercase">
-                      {selectedMCQBank.sopIdentifier} - {selectedMCQBank.sopName}
+                      {formatSOPDisplayName(selectedMCQBank.sopName, selectedMCQBank.sopIdentifier)}
                     </h2>
                     <p className="text-purple-100 font-mono text-sm">
                       {selectedMCQBank.sopIdentifier}
                     </p>
+                    <div className="flex bg-black/20 rounded-lg p-1 mt-4 gap-1 w-fit">
+                      <button 
+                        onClick={() => setActiveTab('active')}
+                        className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'active' ? 'bg-white text-purple-600 shadow-sm' : 'text-purple-100 hover:bg-white/10'}`}
+                      >Active Questions</button>
+                      <button 
+                        onClick={() => {
+                          setActiveTab('recycled');
+                          if (selectedMCQBank?.sopId) fetchRecycledQuestions(selectedMCQBank.sopId);
+                        }}
+                        className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'recycled' ? 'bg-white text-purple-600 shadow-sm' : 'text-purple-100 hover:bg-white/10'}`}
+                      >Recycled ({recycledQuestions.length > 0 ? recycledQuestions.length : ''})</button>
+                    </div>
                   </div>
                   <div className="flex items-center gap-4">
 
@@ -870,7 +1157,7 @@ function MCQBankContent() {
               </div>
 
               <div className="p-6 space-y-4">
-                {selectedMCQBank.mcqs && selectedMCQBank.mcqs.length > 0 ? (
+                {activeTab === 'active' ? (selectedMCQBank.mcqs && selectedMCQBank.mcqs.length > 0 ? (
                   selectedMCQBank.mcqs.map((mcq, originalIndex) => {
                   if (difficultyFilter !== 'All' && mcq.difficulty !== difficultyFilter) return null;
                   
@@ -892,6 +1179,11 @@ function MCQBankContent() {
                         </div>
                         <div className="flex flex-col items-end gap-2">
                           <div className="flex items-center gap-2">
+                            {mcq.isSimilar && (
+                              <div className="p-1.5 bg-orange-500/20 rounded-lg border border-orange-500/30" title="Has Similar Questions">
+                                <Copy className="h-4 w-4 text-orange-400" />
+                              </div>
+                            )}
                             {mcq.isChecked && (
                               <div className="p-1.5 bg-green-500/20 rounded-lg border border-green-500/30" title="Approved">
                                 <CheckCircle2 className="h-4 w-4 text-green-400" />
@@ -907,6 +1199,25 @@ function MCQBankContent() {
                             </span>
                           </div>
                           <div className="flex gap-2">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleSimilar(selectedMCQBank, originalIndex, mcq);
+                              }}
+                              disabled={updatingStatus === `${selectedMCQBank._id}-${originalIndex}`}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                                mcq.isSimilar
+                                  ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/40'
+                                  : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10'
+                              } disabled:opacity-50`}
+                            >
+                              {updatingStatus === `${selectedMCQBank._id}-${originalIndex}` ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Copy className="h-3.5 w-3.5" />
+                              )}
+                              {mcq.isSimilar ? 'Similar' : 'Mark Similar'}
+                            </button>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -979,6 +1290,58 @@ function MCQBankContent() {
                     </div>
                     <p className="text-gray-400 text-lg">No questions found in this bank.</p>
                   </div>
+                )) : (
+                  <div className="space-y-4">
+                    {loadingRecycled ? (
+                      <div className="flex justify-center py-12">
+                        <Loader2 className="h-8 w-8 animate-spin text-purple-500" />
+                      </div>
+                    ) : recycledQuestions.length > 0 ? (
+                      recycledQuestions.map((elim, i) => (
+                        <div key={i} className="bg-white/5 rounded-xl p-5 border border-red-500/20 opacity-75">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-start flex-1 pr-4">
+                              <span className="flex items-center justify-center min-w-[2rem] h-8 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 font-mono text-xs mr-4 flex-shrink-0 px-2">
+                                {typeof (elim as any).originalQuestionIndex === 'number' ? `Q${(elim as any).originalQuestionIndex + 1}` : 
+                                 typeof (elim as any).originalIndex === 'number' ? `Q${(elim as any).originalIndex + 1}` : 
+                                 <Trash2 className="h-4 w-4" />}
+                              </span>
+                              <div className="flex-1">
+                                <h3 className="text-gray-400 font-semibold mb-1 line-through">{elim.question.question}</h3>
+                                <div className="flex flex-wrap gap-2 mb-2">
+                                  <span className="text-xs px-2 py-0.5 rounded bg-red-900/30 text-red-300 border border-red-500/20">
+                                    Eliminated: {new Date(elim.eliminatedAt).toLocaleDateString()} at {new Date(elim.eliminatedAt).toLocaleTimeString()}
+                                  </span>
+                                  {(elim as any).eliminatedBy && (elim as any).eliminatedBy !== 'Unknown User' && (
+                                    <span className="text-xs px-2 py-0.5 rounded bg-purple-900/30 text-purple-300 border border-purple-500/20">
+                                      Deleted by: {(elim as any).eliminatedBy}
+                                    </span>
+                                  )}
+                                  <span className="text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-300 border border-gray-600">
+                                    {elim.eliminationReason === 'manual' ? 'Manually Deleted' : elim.eliminationReason}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="space-y-2 mt-4 pl-12 border-l-2 border-red-500/10 ml-4">
+                            {elim.question.options?.map((opt: string, idx: number) => (
+                              <div key={idx} className={`text-sm p-2 rounded ${opt === elim.question.correctAnswer ? 'bg-green-900/10 text-green-400 border border-green-500/20' : 'text-gray-500 bg-white/5'}`}>
+                                {opt} {opt === elim.question.correctAnswer && '✓'}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-16">
+                        <div className="bg-white/5 p-4 rounded-full mb-4 inline-block">
+                          <Trash2 className="h-8 w-8 text-gray-500" />
+                        </div>
+                        <p className="text-gray-400">No recycled questions found.</p>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -1008,6 +1371,11 @@ function MCQBankContent() {
                     <h3 className="text-white font-bold text-base mb-1">Question {String(selectedMCQ.index + 1).padStart(2, '0')}:</h3>
                     <p className="text-gray-300 text-base">{selectedMCQ.mcq.question}</p>
                     <div className="mt-2 flex items-center gap-2">
+                       {selectedMCQ.mcq.isSimilar && (
+                        <div className="p-1 bg-orange-500/20 rounded-lg border border-orange-500/30" title="Has Similar Questions">
+                          <Copy className="h-3.5 w-3.5 text-orange-400" />
+                        </div>
+                      )}
                        {selectedMCQ.mcq.isChecked && (
                         <div className="p-1 bg-green-500/20 rounded-lg border border-green-500/30" title="Approved">
                           <CheckCircle2 className="h-3.5 w-3.5 text-green-400" />
@@ -1054,6 +1422,35 @@ function MCQBankContent() {
                   <h3 className="text-white font-bold mb-1 text-sm">SOP Reference:</h3>
                   <p className="text-gray-400 bg-white/5 p-3 rounded-lg italic text-xs">
                     &quot;{selectedMCQ.mcq.sopReference}&quot;
+                  </p>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="pt-4 border-t border-white/10">
+                  <button
+                    onClick={async () => {
+                      if (selectedMCQBank) {
+                        await handleReplaceQuestion(selectedMCQBank._id, selectedMCQ.index, selectedMCQBank.sopId);
+                        setSelectedMCQ(null); // Close detail modal after replacement
+                      }
+                    }}
+                    disabled={updatingStatus === `${selectedMCQBank?._id}-${selectedMCQ.index}`}
+                    className="w-full px-4 py-3 bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white rounded-lg font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+                  >
+                    {updatingStatus === `${selectedMCQBank?._id}-${selectedMCQ.index}` ? (
+                      <>
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        Replacing Question...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="h-5 w-5" />
+                        Delete & Regenerate Question
+                      </>
+                    )}
+                  </button>
+                  <p className="text-xs text-gray-400 mt-2 text-center">
+                    This will delete the current question and generate a new one. The deleted question will be moved to the Recycled section.
                   </p>
                 </div>
               </div>

@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { ChevronRight, ChevronDown, Folder, FolderOpen, FileText, Download, Eye, Calendar } from 'lucide-react';
+import { formatSOPDisplayName } from '@/lib/sopLibraryHelper';
 
 interface SOPDocument {
   _id: string;
@@ -277,7 +278,7 @@ export default function SOPTreeView({ tree, searchTerm = '', onViewDocument, onD
                                             <button
                                               onClick={() => toggleSOP(sop._id)}
                                               className="w-full px-3 py-2 flex items-center justify-between hover:bg-white/5 transition-all group"
-                                              title={`${sop.sopIdentifier} – ${sop.sopName}`}
+                                              title={formatSOPDisplayName(sop.sopName, sop.sopIdentifier)}
                                             >
                                               <div className="flex items-center gap-2 flex-1 min-w-0">
                                                 {isSOPExpanded ? (

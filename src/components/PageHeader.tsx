@@ -1,12 +1,13 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Home } from 'lucide-react';
+import { ArrowLeft, Home, BookOpen } from 'lucide-react';
 // import NotificationBell from './NotificationBell';
 
 interface PageHeaderProps {
   showBack?: boolean;
   showHome?: boolean;
+  showMCQBank?: boolean;
   backUrl?: string;
   className?: string;
   title?: string;
@@ -17,6 +18,7 @@ interface PageHeaderProps {
 export default function PageHeader({ 
   showBack = true, 
   showHome = true, 
+  showMCQBank = false,
   backUrl,
   className = '',
   title,
@@ -37,7 +39,11 @@ export default function PageHeader({
     router.push('/dashboard');
   };
 
-  if (!showBack && !showHome) return null;
+  const handleMCQBank = () => {
+    router.push('/mcq-bank');
+  };
+
+  if (!showBack && !showHome && !showMCQBank) return null;
 
   return (
     <div className={`mb-6 ${className}`}>
@@ -59,6 +65,16 @@ export default function PageHeader({
           >
             <Home className="h-4 w-4" />
             <span className="font-semibold">Home</span>
+          </button>
+        )}
+
+        {showMCQBank && (
+          <button
+            onClick={handleMCQBank}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg transition-all shadow-lg"
+          >
+            <BookOpen className="h-4 w-4" />
+            <span className="font-semibold">MCQ Bank</span>
           </button>
         )}
         <div className="ml-auto">

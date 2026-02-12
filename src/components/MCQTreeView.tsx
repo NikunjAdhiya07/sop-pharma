@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ChevronRight, ChevronDown, Folder, FolderOpen, FileText, BookOpen, Download, Eye, SortAsc, SortDesc, Star } from 'lucide-react';
 import Link from 'next/link';
 
@@ -131,6 +131,7 @@ interface SOPNode {
   totalQuestions: number;
   checkedCount?: number;
   reviewedCount?: number;
+  similarCount?: number;
 }
 
 interface SubcategoryNode {
@@ -159,14 +160,34 @@ interface MCQTreeViewProps {
   searchTerm?: string;
   onViewMCQs: (sopNode: SOPNode) => void;
   onDownloadSOP: (sopNode: SOPNode) => void;
+  
+  // Lifted state for persistence
+  expandedDepts: Set<string>;
+  setExpandedDepts: (expanded: Set<string>) => void;
+  expandedSubcats: Set<string>;
+  setExpandedSubcats: (expanded: Set<string>) => void;
+  expandedSOPs: Set<string>;
+  setExpandedSOPs: (expanded: Set<string>) => void;
 }
 
 
-export default function MCQTreeView({ tree, unorganized, searchTerm = '', onViewMCQs, onDownloadSOP }: MCQTreeViewProps) {
-  const [expandedDepts, setExpandedDepts] = useState<Set<string>>(new Set());
-  const [expandedSubcats, setExpandedSubcats] = useState<Set<string>>(new Set());
-  const [expandedSOPs, setExpandedSOPs] = useState<Set<string>>(new Set());
+export default function MCQTreeView({ 
+  tree, 
+  unorganized, 
+  searchTerm = '', 
+  onViewMCQs, 
+  onDownloadSOP,
+  expandedDepts,
+  setExpandedDepts,
+  expandedSubcats,
+  setExpandedSubcats,
+  expandedSOPs,
+  setExpandedSOPs
+}: MCQTreeViewProps) {
+  // Expansion state is now managed by parent
   const [isUnorganizedExpanded, setIsUnorganizedExpanded] = useState(false);
+  
+
   
   // Full-screen department view
   const [fullScreenDept, setFullScreenDept] = useState<DepartmentNode | null>(null);
@@ -181,7 +202,7 @@ export default function MCQTreeView({ tree, unorganized, searchTerm = '', onView
   const [deptSortOrder, setDeptSortOrder] = useState<Record<string, 'asc' | 'desc'>>({});
   
   // Sort state for each subcategory
-  const [subcatSortBy, setSubcatSortBy] = useState<Record<string, 'name' | 'questions'>>({});
+  const [subcatSortBy, setSubcatSortBy] = useState<Record<string, 'name' | 'questions' | 'identifier'>>({});
   const [subcatSortOrder, setSubcatSortOrder] = useState<Record<string, 'asc' | 'desc'>>({});
   
   // Efficient search filter function
@@ -213,6 +234,11 @@ export default function MCQTreeView({ tree, unorganized, searchTerm = '', onView
     return deptMatch || subcatMatch;
   };
   
+  // Helper for natural sorting (deals with numbers in strings correctly)
+  const naturalCompare = (a: string, b: string) => {
+    return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+  };
+
   // Sorting functions
   const sortSubcategories = (subcats: SubcategoryNode[], deptName: string): SubcategoryNode[] => {
     const sortBy = deptSortBy[deptName] || 'name';
@@ -223,7 +249,7 @@ export default function MCQTreeView({ tree, unorganized, searchTerm = '', onView
       
       switch (sortBy) {
         case 'name':
-          comparison = a.name.localeCompare(b.name);
+          comparison = naturalCompare(a.name, b.name);
           break;
         case 'sops':
           comparison = a.totalSOPs - b.totalSOPs;
@@ -238,15 +264,21 @@ export default function MCQTreeView({ tree, unorganized, searchTerm = '', onView
   };
   
   const sortSOPs = (sops: SOPNode[], subcatKey: string): SOPNode[] => {
-    const sortBy = subcatSortBy[subcatKey] || 'questions'; // Default to questions
-    const sortOrder = subcatSortOrder[subcatKey] || 'desc'; // Default descending so most questions first
+    const sortBy = subcatSortBy[subcatKey] || 'identifier'; // Default to identifier
+    const sortOrder = subcatSortOrder[subcatKey] || 'asc';    // Default ascending for identifiers
     
     return [...sops].sort((a, b) => {
       let comparison = 0;
       
       switch (sortBy) {
+        case 'identifier':
+          comparison = naturalCompare(a.sopCode, b.sopCode);
+          break;
         case 'name':
-          comparison = a.sopName.localeCompare(b.sopName);
+          // Clean the names of identifier prefixes before comparing for a true "Name" sort
+          const cleanA = cleanSOPName(a.sopName, a.sopCode);
+          const cleanB = cleanSOPName(b.sopName, b.sopCode);
+          comparison = cleanA.localeCompare(cleanB, undefined, { sensitivity: 'base' });
           break;
         case 'questions':
           comparison = a.totalQuestions - b.totalQuestions;
@@ -270,7 +302,7 @@ export default function MCQTreeView({ tree, unorganized, searchTerm = '', onView
   };
   
   
-  const toggleSubcatSort = (subcatKey: string, sortType: 'name' | 'questions') => {
+  const toggleSubcatSort = (subcatKey: string, sortType: 'name' | 'questions' | 'identifier') => {
     if (subcatSortBy[subcatKey] === sortType) {
       setSubcatSortOrder({
         ...subcatSortOrder,
@@ -562,24 +594,25 @@ export default function MCQTreeView({ tree, unorganized, searchTerm = '', onView
                         {subcat.sops.length > 1 && (
                           <div className="py-4 flex items-center justify-end gap-3">
                             <span className="text-xs text-gray-500 uppercase font-bold tracking-wider">Sort SOPs:</span>
-                             <div className="flex bg-black/30 rounded-lg p-1">
-                              {[
-                                { value: 'questions', label: 'Most Questions' },
-                                { value: 'name', label: 'Name' }
-                              ].map((sort) => (
-                                <button
-                                  key={sort.value}
-                                  onClick={() => toggleSubcatSort(subcatKey, sort.value as 'name' | 'questions')}
-                                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
-                                    subcatSortBy[subcatKey] === sort.value
-                                      ? 'bg-white/10 text-white shadow-sm'
-                                      : 'text-gray-500 hover:text-gray-300'
-                                  }`}
-                                >
-                                  {sort.label}
-                                </button>
-                              ))}
-                            </div>
+                              <div className="flex bg-black/30 rounded-lg p-1">
+                                {[
+                                  { value: 'identifier', label: 'ID' },
+                                  { value: 'name', label: 'Name' },
+                                  { value: 'questions', label: 'Questions' }
+                                ].map((sort) => (
+                                  <button
+                                    key={sort.value}
+                                    onClick={() => toggleSubcatSort(subcatKey, sort.value as 'name' | 'questions' | 'identifier')}
+                                    className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                                      (subcatSortBy[subcatKey] || 'identifier') === sort.value
+                                        ? 'bg-white/10 text-white shadow-sm'
+                                        : 'text-gray-500 hover:text-gray-300'
+                                    }`}
+                                  >
+                                    {sort.label}
+                                  </button>
+                                ))}
+                              </div>
                           </div>
                         )}
 
@@ -627,6 +660,14 @@ export default function MCQTreeView({ tree, unorganized, searchTerm = '', onView
                                         {sop.totalQuestions > 0 ? `${sop.totalQuestions} Qs` : 'No Qs'}
                                       </span>
                                       
+                                      {/* Similar Count Badge */}
+                                      {sop.similarCount && sop.similarCount > 0 ? (
+                                        <span className="text-[10px] uppercase tracking-wider font-bold px-2.5 py-1 rounded-md border border-orange-500/30 bg-orange-500/20 text-orange-400 shadow-[0_0_10px_rgba(249,115,22,0.1)] flex items-center gap-1">
+                                          <div className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse"></div>
+                                          {sop.similarCount} Similar
+                                        </span>
+                                      ) : null}
+
                                       {/* Checked Count Badge */}
                                       {sop.checkedCount && sop.checkedCount > 0 ? (
                                         <span className="text-[10px] uppercase tracking-wider font-bold px-2.5 py-1 rounded-md border border-green-500/30 bg-green-500/20 text-green-400 shadow-[0_0_10px_rgba(34,197,94,0.1)] flex items-center gap-1">
@@ -689,11 +730,17 @@ export default function MCQTreeView({ tree, unorganized, searchTerm = '', onView
                                               <div className="flex items-center gap-2 mt-0.5">
                                                 <span className="text-[10px] text-gray-400">{bank.totalQuestions} questions</span>
                                                 {(() => {
+                                                  const similarCount = bank.mcqs?.filter((q: any) => q?.isSimilar).length || 0;
                                                   const checkedCount = bank.mcqs?.filter((q: any) => q?.isChecked).length || 0;
                                                   const reviewedCount = bank.mcqs?.filter((q: any) => q?.isReviewed).length || 0;
-                                                  console.log(`Bank ${idx + 1}: mcqs length=${bank.mcqs?.length}, checked=${checkedCount}, reviewed=${reviewedCount}`);
+                                                  console.log(`Bank ${idx + 1}: mcqs length=${bank.mcqs?.length}, similar=${similarCount}, checked=${checkedCount}, reviewed=${reviewedCount}`);
                                                   return (
                                                     <>
+                                                      {similarCount > 0 && (
+                                                        <span className="text-[10px] text-orange-400 font-medium bg-orange-900/40 px-1.5 py-0.5 rounded border border-orange-500/30">
+                                                          {similarCount} Similar
+                                                        </span>
+                                                      )}
                                                       {checkedCount > 0 && (
                                                         <span className="text-[10px] text-green-400 font-medium bg-green-900/40 px-1.5 py-0.5 rounded border border-green-500/30">
                                                           {checkedCount} Checked

@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch all MCQ Banks with status fields
     const mcqBanks = await MCQBank.find({})
-      .select('_id sopId sopName sopIdentifier department totalQuestions mcqs.isChecked mcqs.isReviewed')
+      .select('_id sopId sopName sopIdentifier department totalQuestions mcqs.isChecked mcqs.isReviewed mcqs.isSimilar')
       .lean();
 
     console.log(`📊 Building tree from ${sops.length} SOPs and ${mcqBanks.length} MCQ banks`);
