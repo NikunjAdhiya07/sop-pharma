@@ -40,6 +40,7 @@ interface MCQBank {
     hard: number;
   };
   createdAt: string;
+  language?: 'English' | 'Gujarati';
 }
 
 function MCQBankContent() {
@@ -63,6 +64,20 @@ function MCQBankContent() {
   const [activeTab, setActiveTab] = useState<'active' | 'recycled'>('active');
   const [recycledQuestions, setRecycledQuestions] = useState<any[]>([]);
   const [loadingRecycled, setLoadingRecycled] = useState(false);
+  
+  // Similarity Check State
+  const [checkingSimilarity, setCheckingSimilarity] = useState(false);
+  const [similarityResults, setSimilarityResults] = useState<{
+    count: number;
+    groups: Array<{
+      primary: number;
+      similar: number[];
+    }>;
+    summary: string;
+  } | null>(null);
+  
+  // Store similar question details for inline display
+  const [similarQuestionDetails, setSimilarQuestionDetails] = useState<Record<number, number[]>>({});
 
   // Expansion State (Lifted from MCQTreeView for persistence)
   const loadExpansionState = useCallback((key: string): Set<string> => {
@@ -212,6 +227,7 @@ function MCQBankContent() {
       if (hasFullData) {
         setSelectedMCQBank(bank);
         setActiveTab('active'); // Reset to active tab when opening modal
+        setSimilarityResults(null); // Clear previous similarity results
         return;
       }
 
@@ -231,6 +247,10 @@ function MCQBankContent() {
         const fullBank = data.mcqBanks[0];
         setSelectedMCQBank(fullBank);
         setActiveTab('active'); // Reset to active tab
+        setSimilarityResults(null); // Clear previous similarity results
+        
+        // Fetch similarity details for questions with isSimilar flag
+        await fetchSimilarityDetails(fullBank._id);
         
         // Update the bank in our local list state
         setMcqBanks(prev => prev.map(b => b._id === bank._id ? fullBank : b));
@@ -301,6 +321,162 @@ function MCQBankContent() {
       console.error('Error fetching recycled questions:', error);
     } finally {
       setLoadingRecycled(false);
+    }
+  };
+
+  const handleCheckSimilarityForSOP = async (bank: MCQBank) => {
+    if (checkingSimilarity) return;
+    
+    setCheckingSimilarity(true);
+    setSimilarityResults(null);
+    setSimilarQuestionDetails({}); // Clear previous details
+    
+    try {
+      const response = await fetch('/api/similar-questions/detect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mcqBankId: bank._id,
+          sopId: bank.sopId,
+          threshold: 50, // Higher threshold to only flag truly similar questions
+          scanAllBanks: false, // Only check within this bank
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        // Build groups showing which questions are similar to each other
+        const groups = data.similarities.map((sim: any) => ({
+          primary: sim.primaryQuestion.questionIndex,
+          similar: sim.similarQuestions.map((sq: any) => sq.questionIndex),
+        }));
+        
+        // Create a map of question index -> similar question indices
+        const detailsMap: Record<number, number[]> = {};
+        groups.forEach((group: any) => {
+          detailsMap[group.primary] = group.similar;
+        });
+        
+        console.log('📊 Similarity Details Map:', detailsMap);
+        console.log('📊 Groups:', groups);
+        
+        setSimilarQuestionDetails(detailsMap);
+        
+        // Create a summary string like "Q92 = Q71, Q67, Q2..."
+        const summaryParts = groups.slice(0, 3).map((group: any) => {
+          const similarList = group.similar.slice(0, 3).map((i: number) => `Q${i + 1}`).join(', ');
+          const more = group.similar.length > 3 ? '...' : '';
+          return `Q${group.primary + 1} = ${similarList}${more}`;
+        });
+        const moreSummary = groups.length > 3 ? ` +${groups.length - 3} more` : '';
+        const summary = summaryParts.join('; ') + moreSummary;
+        
+        setSimilarityResults({
+          count: data.flaggedCount || 0,
+          groups,
+          summary,
+        });
+        
+        // DON'T refresh the bank here - it would overwrite our similarity details
+        // The isSimilar flags are already updated by the API
+        // Just update the local bank state with the new flags
+        if (selectedMCQBank) {
+          const updatedMcqs = selectedMCQBank.mcqs.map((mcq, idx) => {
+            const isFlagged = detailsMap.hasOwnProperty(idx);
+            return isFlagged ? { ...mcq, isSimilar: true } : mcq;
+          });
+          setSelectedMCQBank({ ...selectedMCQBank, mcqs: updatedMcqs });
+        }
+        
+        
+        if (data.flaggedCount > 0) {
+          // Build detailed alert message
+          const detailsText = groups.slice(0, 10).map((group: any) => {
+            const similarList = group.similar.map((i: number) => `Q${i + 1}`).join(', ');
+            return `Q${group.primary + 1} = ${similarList}`;
+          }).join('\n');
+          const moreText = groups.length > 10 ? `\n... and ${groups.length - 10} more groups` : '';
+          
+          alert(`Found ${data.flaggedCount} question(s) with similarities!\n\n${detailsText}${moreText}`);
+        } else {
+          alert('No similar questions found in this SOP.');
+        }
+      } else {
+        alert(`Failed to check similarities: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Error checking similarities:', error);
+      alert('Failed to check similarities. Please try again.');
+    } finally {
+      setCheckingSimilarity(false);
+    }
+  };
+
+  const fetchSimilarityDetails = async (bankId: string) => {
+    try {
+      // Fetch all similarity records (we'll filter client-side since API doesn't support mcqBankId filter)
+      const response = await fetch(`/api/similar-questions`);
+      const data = await response.json();
+      
+      if (data.success && data.similarQuestions) {
+        // Build a map of question index -> similar question indices
+        // Only include records where the primary question is from this bank
+        const detailsMap: Record<number, number[]> = {};
+        
+        data.similarQuestions.forEach((record: any) => {
+          // Check if this record's primary question belongs to the current bank
+          if (record.primaryQuestion.mcqBankId === bankId) {
+            const primaryIndex = record.primaryQuestion.questionIndex;
+            const similarIndices = record.similarQuestions
+              .filter((sq: any) => sq.mcqBankId === bankId) // Only show similar questions from same bank
+              .map((sq: any) => sq.questionIndex);
+            
+            if (similarIndices.length > 0) {
+              detailsMap[primaryIndex] = similarIndices;
+            }
+          }
+        });
+        
+        setSimilarQuestionDetails(detailsMap);
+      }
+    } catch (error) {
+      console.error('Error fetching similarity details:', error);
+    }
+  };
+
+  const handleDeleteQuestion = async (bankId: string, index: number) => {
+    try {
+      setUpdatingStatus(`${bankId}-${index}`);
+      
+      // Get user info from localStorage
+      const userInfo = localStorage.getItem('user');
+      const headers: HeadersInit = {};
+      if (userInfo) {
+        headers['x-user-info'] = userInfo;
+      }
+      
+      const response = await fetch(`/api/mcq-bank/delete-question?bankId=${bankId}&index=${index}`, {
+        method: 'DELETE',
+        headers,
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert(`Question deleted successfully and moved to Recycled section.`);
+        // Refresh the bank
+        if (selectedMCQBank) {
+          await fetchFullBankDetails({ ...selectedMCQBank, _id: bankId });
+        }
+      } else {
+        alert(`Failed to delete question: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Error deleting question:', error);
+      alert('Failed to delete question. Please try again.');
+    } finally {
+      setUpdatingStatus(null);
     }
   };
 
@@ -1130,6 +1306,42 @@ function MCQBankContent() {
                     <p className="text-purple-100 font-mono text-sm">
                       {selectedMCQBank.sopIdentifier}
                     </p>
+                    
+                    {/* Check Similar Button and Results */}
+                    <div className="flex items-center gap-3 mt-3">
+                      <button
+                        onClick={() => handleCheckSimilarityForSOP(selectedMCQBank)}
+                        disabled={checkingSimilarity}
+                        className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 text-white font-semibold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+                      >
+                        {checkingSimilarity ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Checking...
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-4 w-4" />
+                            Check Similar
+                          </>
+                        )}
+                      </button>
+                      
+                      {similarityResults && similarityResults.count > 0 && (
+                        <button
+                          onClick={() => router.push('/similar-questions')}
+                          className="flex items-center gap-2 px-4 py-2 bg-orange-500/20 border border-orange-500/50 rounded-lg hover:bg-orange-500/30 transition-all cursor-pointer"
+                          title="Click to view and manage similar questions"
+                        >
+                          <AlertCircle className="h-4 w-4 text-orange-400" />
+                          <span className="text-orange-300 font-semibold">
+                            {similarityResults.count} Similar: {similarityResults.summary}
+                          </span>
+                          <span className="text-orange-200 text-xs ml-2">→ View All</span>
+                        </button>
+                      )}
+                    </div>
+                    
                     <div className="flex bg-black/20 rounded-lg p-1 mt-4 gap-1 w-fit">
                       <button 
                         onClick={() => setActiveTab('active')}
@@ -1173,9 +1385,65 @@ function MCQBankContent() {
                             {String(originalIndex + 1).padStart(2, '0')}
                           </span>
                           <span className="text-2xl mr-3">{mcq.aiIcon}</span>
-                          <h3 className="text-white font-semibold flex-1">
-                            {mcq.question}
-                          </h3>
+                          <div className="flex-1">
+                            <h3 className="text-white font-semibold">
+                              {mcq.question}
+                            </h3>
+                            
+                            {/* Inline Similarity Indicator */}
+                            {(() => {
+                              // Debug logging
+                              if (originalIndex === 0) { // Log for Q1
+                                console.log('Q1 Debug:', {
+                                  isSimilar: mcq.isSimilar,
+                                  hasDetails: !!similarQuestionDetails[originalIndex],
+                                  details: similarQuestionDetails[originalIndex],
+                                  allDetails: similarQuestionDetails
+                                });
+                              }
+                              return null;
+                            })()}
+                            
+                            {mcq.isSimilar && similarQuestionDetails[originalIndex] && (
+                              <div className="mt-2 flex items-center gap-2 flex-wrap">
+                                <div className="flex items-center gap-2 px-3 py-1.5 bg-orange-500/10 border border-orange-500/30 rounded-lg">
+                                  <Copy className="h-3.5 w-3.5 text-orange-400" />
+                                  <span className="text-orange-300 text-sm font-medium">
+                                    Similar to: {similarQuestionDetails[originalIndex].map(i => `Q${i + 1}`).join(', ')}
+                                  </span>
+                                </div>
+                                
+                                {/* Quick Actions */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (confirm(`Delete Q${originalIndex + 1} and move to Recycled section?`)) {
+                                      handleDeleteQuestion(selectedMCQBank._id, originalIndex);
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-300 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5"
+                                  title="Delete this question"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                  Delete
+                                </button>
+                                
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (confirm(`Replace Q${originalIndex + 1} with a new question? The current question will be moved to Recycled.`)) {
+                                      handleReplaceQuestion(selectedMCQBank._id, originalIndex, selectedMCQBank.sopId);
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/40 text-blue-300 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5"
+                                  title="Replace with new question"
+                                >
+                                  <RefreshCw className="h-3.5 w-3.5" />
+                                  Regenerate
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                         <div className="flex flex-col items-end gap-2">
                           <div className="flex items-center gap-2">
@@ -1263,20 +1531,30 @@ function MCQBankContent() {
                       <div className="space-y-2">
                         {mcq.options && mcq.options.length > 0 ? (
                           mcq.options.map((option, optIndex) => (
-                            <div
+                            <div 
                               key={optIndex}
-                              className={`p-3 rounded-lg ${
-                                option === mcq.correctAnswer
-                                  ? 'bg-green-500/20 border border-green-500/50'
-                                  : 'bg-white/5 border border-white/10'
-                              }`}
+                              className={`p-4 rounded-xl border transition-all ${
+                                mcq.optionVariants?.[optIndex]?.isCorrect || option === mcq.correctAnswer
+                                  ? 'bg-green-500/10 border-green-500/50 text-green-300'
+                                  : 'bg-slate-700/30 border-slate-600 text-gray-400'
+                              } ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati' : ''}`}
                             >
-                              <span className="text-gray-300">{option}</span>
+                              <div className="flex items-center gap-3">
+                                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold ${
+                                  (mcq.optionVariants?.[optIndex]?.isCorrect || option === mcq.correctAnswer) ? 'border-green-500 bg-green-500 text-white' : 'border-slate-500 text-slate-500'
+                                }`}>
+                                  {String.fromCharCode(65 + optIndex)}
+                                </div>
+                                <span>{option}</span>
+                              </div>
                             </div>
                           ))
                         ) : (
-                          <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-                            <span className="text-red-400 text-sm">No options available</span>
+                          <div className="flex flex-col items-center justify-center py-16 text-center">
+                            <div className="bg-white/5 p-4 rounded-full mb-4">
+                              <FileText className="h-8 w-8 text-gray-400" />
+                            </div>
+                            <p className="text-gray-400 text-lg">No options available for this question.</p>
                           </div>
                         )}
                       </div>
@@ -1369,7 +1647,9 @@ function MCQBankContent() {
                   <span className="text-3xl mr-3 flex-shrink-0">{selectedMCQ.mcq.aiIcon}</span>
                   <div>
                     <h3 className="text-white font-bold text-base mb-1">Question {String(selectedMCQ.index + 1).padStart(2, '0')}:</h3>
-                    <p className="text-gray-300 text-base">{selectedMCQ.mcq.question}</p>
+                        <h3 className={`text-xl font-bold text-white mb-6 ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati' : ''}`}>
+                          {selectedMCQ.mcq.question}
+                        </h3>
                     <div className="mt-2 flex items-center gap-2">
                        {selectedMCQ.mcq.isSimilar && (
                         <div className="p-1 bg-orange-500/20 rounded-lg border border-orange-500/30" title="Has Similar Questions">

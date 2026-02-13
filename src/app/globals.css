@@ -38,3 +38,7 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(147, 51, 234, 0.7);
 }
+
+.font-gujarati {
+  font-family: var(--font-gujarati), sans-serif;
+}

@@ -32,6 +32,7 @@ interface MCQBank {
   sopIdentifier: string;
   mcqs: MCQ[];
   totalQuestions: number;
+  language?: 'English' | 'Gujarati';
 }
 
 export default function TakeTestPage() {
@@ -283,7 +284,7 @@ export default function TakeTestPage() {
                     {flaggedQuestions.has(currentQuestion) ? 'Flagged' : 'Flag'}
                   </button>
                 </div>
-                <h2 className="text-2xl font-bold text-white leading-relaxed">
+                <h2 className={`text-2xl font-bold text-white leading-relaxed ${mcqBank.language === 'Gujarati' ? 'font-gujarati' : ''}`}>
                   {currentMCQ.question}
                 </h2>
               </div>
@@ -310,7 +311,7 @@ export default function TakeTestPage() {
                     }`}>
                       {isSelected && <CheckCircle2 className="h-4 w-4 text-white" />}
                     </div>
-                    <span className="text-white font-medium">{option}</span>
+                    <span className={`text-white font-medium ${mcqBank.language === 'Gujarati' ? 'font-gujarati' : ''}`}>{option}</span>
                   </div>
                 </button>
               );

@@ -23,6 +23,7 @@ export default function FolderUploadModal({ isOpen, onClose, onSuccess }: Folder
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [isComplete, setIsComplete] = useState(false);
+  const [language, setLanguage] = useState<'English' | 'Gujarati'>('English');
   const [skippedFiles, setSkippedFiles] = useState<Array<{ fileName: string; reason: string }>>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -52,8 +53,10 @@ export default function FolderUploadModal({ isOpen, onClose, onSuccess }: Folder
     setIsUploading(true);
     setProgress({ total: 0, completed: 0, failed: 0, current: '', errors: [], results: [] });
     setSkippedFiles([]);
-
+    
+    // Extracted for easier use:
     const formData = new FormData();
+    formData.append('language', language);
     let totalFiles = 0;
     let filteredFiles = 0;
     const currentSkipped: Array<{ fileName: string; reason: string }> = [];
@@ -146,9 +149,11 @@ export default function FolderUploadModal({ isOpen, onClose, onSuccess }: Folder
   const processFiles = async (items: DataTransferItemList | any[]) => {
     setIsUploading(true);
     setProgress({ total: 0, completed: 0, failed: 0, current: '', errors: [], results: [] });
+    setIsComplete(false);
     setSkippedFiles([]);
 
     const formData = new FormData();
+    formData.append('language', language);
     const fileMap = new Map<string, File>();
 
     // Recursively traverse directory structure
@@ -361,7 +366,42 @@ export default function FolderUploadModal({ isOpen, onClose, onSuccess }: Folder
                 </ul>
               </div>
 
-              {/* Drag & Drop Area */}
+              {/* Language Selection */}
+              <div className="mb-6 bg-slate-800/50 border border-slate-700 rounded-xl p-6">
+                <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                  <span className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 text-sm">1</span>
+                  Select SOP Language
+                </h3>
+                <div className="flex gap-4">
+                  {['English', 'Gujarati'].map((lang) => (
+                    <button
+                      key={lang}
+                      onClick={() => setLanguage(lang as 'English' | 'Gujarati')}
+                      className={`flex-1 py-4 px-6 rounded-xl border-2 transition-all flex items-center justify-center gap-3 ${
+                        language === lang
+                          ? 'border-purple-500 bg-purple-500/10 text-white shadow-lg shadow-purple-500/10'
+                          : 'border-slate-700 bg-slate-900/50 text-gray-400 hover:border-slate-600 hover:text-gray-300'
+                      }`}
+                    >
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                        language === lang ? 'border-purple-500 bg-purple-500' : 'border-slate-600'
+                      }`}>
+                        {language === lang && <div className="w-2 h-2 rounded-full bg-white" />}
+                      </div>
+                      <span className="font-bold text-lg">{lang}</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs text-gray-500 italic">
+                  * All SOPs in this upload will be tagged as {language}. AI MCQs will also be generated in {language}.
+                </p>
+              </div>
+
+              {/* Step 2: Drag & Drop Area */}
+              <div className="mb-4 flex items-center gap-2">
+                <span className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 text-sm">2</span>
+                <h3 className="text-lg font-semibold text-white">Upload Folder</h3>
+              </div>
               <div
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}

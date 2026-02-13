@@ -35,6 +35,7 @@ export async function POST(request: NextRequest) {
     await connectDB();
 
     const formData = await request.formData();
+    const language = (formData.get('language') as 'English' | 'Gujarati') || 'English';
     const files: FileWithPath[] = [];
 
     // Parse all files and their paths from FormData
@@ -239,7 +240,7 @@ export async function POST(request: NextRequest) {
             const savedFilePath = await saveFileToFolder(buffer, folderPath, file.name);
 
             // Check if SOP already exists
-            let sop = await SOP.findOne({ identifier: sopIdentifier });
+            let sop = await SOP.findOne({ identifier: sopIdentifier, language: language });
 
             if (sop) {
               // Update existing SOP
@@ -250,6 +251,7 @@ export async function POST(request: NextRequest) {
               sop.originalFileName = file.name;
               sop.fileUrl = `/${savedFilePath}`;
               sop.department = department;
+              sop.language = language;
               
               // Update dates if extracted
               if (extractedDates.effectiveDate) sop.effectiveDate = extractedDates.effectiveDate;
@@ -276,6 +278,7 @@ export async function POST(request: NextRequest) {
                 fileUrl: `/${savedFilePath}`,
                 fileType: 'docx',
                 content: content,
+                language: language,
                 status: 'uploaded',
                 mcqCount: 0,
                 effectiveDate: extractedDates.effectiveDate,
@@ -292,13 +295,14 @@ export async function POST(request: NextRequest) {
             // Update or create SOPLibrary entry
             const departmentCode = sopIdentifier.substring(0, 4).toUpperCase();
             
-            let sopLibrary = await SOPLibrary.findOne({ sopIdentifier: sopIdentifier });
+            let sopLibrary = await SOPLibrary.findOne({ sopIdentifier: sopIdentifier, language: language });
             
             if (sopLibrary) {
               // Update folder info
               sopLibrary.folderPath = folderPath;
               sopLibrary.parentFolder = folderInfo.parentFolder || undefined;
               sopLibrary.subfolderLevel = folderInfo.level;
+              sopLibrary.language = language;
               await sopLibrary.save();
             } else {
               // Create new library entry
@@ -320,11 +324,12 @@ export async function POST(request: NextRequest) {
                   uploadedAt: new Date(),
                   fileSize: file.size,
                 }],
+                language: language,
               });
             }
 
             // Update or create MasterSOPRepository entry (separate collection for folder uploads)
-            let masterRepo = await MasterSOPRepository.findOne({ sopIdentifier: sopIdentifier });
+            let masterRepo = await MasterSOPRepository.findOne({ sopIdentifier: sopIdentifier, language: language });
             
             if (masterRepo) {
               // Update existing entry
@@ -334,6 +339,7 @@ export async function POST(request: NextRequest) {
               masterRepo.folderPath = folderPath;
               masterRepo.parentFolder = folderInfo.parentFolder || undefined;
               masterRepo.subfolderLevel = folderInfo.level;
+              masterRepo.language = language;
               masterRepo.sopDocument = {
                 fileName: file.name,
                 filePath: savedFilePath,
@@ -358,6 +364,7 @@ export async function POST(request: NextRequest) {
                 folderPath: folderPath,
                 parentFolder: folderInfo.parentFolder || undefined,
                 subfolderLevel: folderInfo.level,
+                language: language,
                 sopDocument: {
                   fileName: file.name,
                   filePath: savedFilePath,

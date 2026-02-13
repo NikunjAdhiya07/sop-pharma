@@ -61,6 +61,7 @@ export async function POST(request: NextRequest) {
       existingQuestions: existingQuestions,
       targetCount: currentCount + 1, // Generate 1 more than current
       isBulk: false,
+      language: sop.language || 'English',
     });
 
     console.log(`📥 Generation result: ${result.mcqs?.length || 0} questions generated`);

@@ -38,6 +38,7 @@ export interface IMCQBank extends Document {
     hard: number;
   };
   aiModel?: string;
+  language?: 'English' | 'Gujarati';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -172,6 +173,11 @@ const MCQBankSchema = new Schema<IMCQBank>({
   aiModel: {
     type: String,
     default: 'gemini-3-pro-preview',
+  },
+  language: {
+    type: String,
+    enum: ['English', 'Gujarati'],
+    default: 'English',
   },
 }, {
   timestamps: true,

@@ -28,6 +28,7 @@ export interface MCQGenerationRequest {
   existingQuestions?: string[];
   targetCount?: number;
   isBulk?: boolean;
+  language?: 'English' | 'Gujarati';
   onBatchComplete?: (batchMcqs: GeneratedMCQ[]) => Promise<void>; // Callback for incremental saving
 }
 
@@ -258,11 +259,14 @@ ${safeExistingQuestions.map(q => `- ${q}`).join('\n')}
 `
     : '';
 
+  // Determine target language
+  const targetLanguage = request.language || 'English';
+
   const prompt = `
 🔹 **ULTRA-STABLE MCQ GENERATOR [Batch ${batchIndex + 1}/${totalBatches}]**
 Model: Gemini-3-Flash-Preview
 
-Objective: Generate EXACTLY ${batchCount} HIGH-QUALITY MCQs from the pharmaceutical SOP provided.
+Objective: Generate EXACTLY ${batchCount} HIGH-QUALITY MCQs from the pharmaceutical SOP provided. Generate these MCQs in ${targetLanguage}.
 
 📄 **SOP CONTEXT**
 Name: ${request.sopName}
@@ -272,15 +276,16 @@ Content: ${request.sopContent}
 ${forbiddenSection}
 
 🎯 **STRICT REQUIREMENTS:**
-1. Generate exactly ${batchCount} questions.
-2. Start every question with ⭐.
-3. Every question MUST have exactly 4 options.
-4. Explanations must be concise (max 2 sentences).
-5. Output MUST be valid JSON matching the schema below.
-6. ❌ **FORBIDDEN**: Do NOT create questions that ask about section references (e.g., "In section 4.4.2, what is stated?", "What does section X.Y say?"). Questions must focus on actual content, procedures, and concepts, NOT on section numbers or references.
-7. 💎 **UNIQUENESS**: Each question MUST be distinct. Do NOT repeat the same concept with slight variations in this batch.
-8. 🧩 **DEEP COVERAGE**: Cover DIFFERENT parts of the provided SOP. If you've already covered the basics, go into specific details, parameters, tolerances, and "if-then" scenarios mentioned in the text.
-9. 🚀 **EXHAUSTIVE**: Be exhaustive. Find every possible unique piece of information to form a question.
+1. 🌐 **LANGUAGE**: ${targetLanguage === 'Gujarati' ? 'Generate ALL content (questions, options, explanations, and SOP references) in GUJARATI language using proper Unicode characters. The SOP content is in Gujarati, and your output MUST also be in Gujarati.' : 'Generate everything in English.'}
+2. Generate exactly ${batchCount} questions.
+3. Start every question with ⭐.
+4. Every question MUST have exactly 4 options.
+5. Explanations must be concise (max 2 sentences).
+6. Output MUST be valid JSON matching the schema below.
+7. ❌ **FORBIDDEN**: Do NOT create questions that ask about section references (e.g., "In section 4.4.2, what is stated?", "What does section X.Y say?"). Questions must focus on actual content, procedures, and concepts, NOT on section numbers or references.
+8. 💎 **UNIQUENESS**: Each question MUST be distinct. Do NOT repeat the same concept with slight variations in this batch.
+9. 🧩 **DEEP COVERAGE**: Cover DIFFERENT parts of the provided SOP. If you've already covered the basics, go into specific details, parameters, tolerances, and "if-then" scenarios mentioned in the text.
+10. 🚀 **EXHAUSTIVE**: Be exhaustive. Find every possible unique piece of information to form a question.
 
 📋 **SCHEMA:**
 {

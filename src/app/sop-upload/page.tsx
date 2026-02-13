@@ -23,6 +23,7 @@ export default function SOPUploadPage() {
   const [sopName, setSopName] = useState('');
   const [sopIdentifier, setSopIdentifier] = useState('');
   const [department, setDepartment] = useState('QA');
+  const [language, setLanguage] = useState<'English' | 'Gujarati'>('English');
   const [uploading, setUploading] = useState(false);
 
   const departments = [
@@ -95,6 +96,7 @@ export default function SOPUploadPage() {
       formData.append('sopName', sopName);
       formData.append('sopIdentifier', sopIdentifier);
       formData.append('department', department);
+      formData.append('language', language);
       if (overwrite) {
         formData.append('overwrite', 'true');
       }
@@ -321,6 +323,37 @@ export default function SOPUploadPage() {
                   </option>
                 ))}
               </select>
+            </div>
+
+            {/* Language Selection */}
+            <div>
+              <label className="block text-white font-semibold mb-3 text-lg">
+                SOP Language
+              </label>
+              <div className="flex gap-4">
+                {['English', 'Gujarati'].map((lang) => (
+                  <button
+                    key={lang}
+                    type="button"
+                    onClick={() => setLanguage(lang as 'English' | 'Gujarati')}
+                    className={`flex-1 py-4 px-6 rounded-xl border-2 transition-all flex items-center justify-center gap-3 ${
+                      language === lang
+                        ? 'border-purple-500 bg-purple-500/10 text-white shadow-lg shadow-purple-500/10'
+                        : 'border-white/10 bg-white/5 text-gray-400 hover:border-white/20 hover:text-gray-300'
+                    }`}
+                  >
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                      language === lang ? 'border-purple-500 bg-purple-500' : 'border-slate-600'
+                    }`}>
+                      {language === lang && <div className="w-2 h-2 rounded-full bg-white" />}
+                    </div>
+                    <span className="font-bold text-lg">{lang}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-sm text-gray-400">
+                💡 Tagging the language correctly ensures AI generates MCQs in the same language.
+              </p>
             </div>
 
             {/* Submit Button */}

@@ -40,6 +40,7 @@ export interface ISOPLibrary extends Document {
   videos: IVideoFile[];
   slides: ISlideFile[];
   sopDocuments: ISOPDocument[];
+  language?: 'English' | 'Gujarati';
   completionStatus: {
     hasVideos: boolean;
     hasSlides: boolean;
@@ -175,7 +176,6 @@ const SOPLibrarySchema = new Schema<ISOPLibrary>({
     type: String,
     required: true,
     trim: true,
-    unique: true,
   },
   department: {
     type: String,
@@ -202,6 +202,11 @@ const SOPLibrarySchema = new Schema<ISOPLibrary>({
   sopDocuments: {
     type: [SOPDocumentSchema],
     default: [],
+  },
+  language: {
+    type: String,
+    enum: ['English', 'Gujarati'],
+    default: 'English',
   },
   completionStatus: {
     hasVideos: {
@@ -279,6 +284,7 @@ SOPLibrarySchema.index({ department: 1 });
 SOPLibrarySchema.index({ departmentCode: 1 });
 SOPLibrarySchema.index({ mcqBankId: 1 });
 SOPLibrarySchema.index({ folderPath: 1 });
+SOPLibrarySchema.index({ sopIdentifier: 1, language: 1 }, { unique: true });
 SOPLibrarySchema.index({ department: 1, folderPath: 1 });
 
 // Pre-save hook to calculate completion status

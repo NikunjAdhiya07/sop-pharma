@@ -1,8 +1,13 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Noto_Sans_Gujarati } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
+const gujarati = Noto_Sans_Gujarati({ 
+  subsets: ["gujarati"],
+  weight: ['400', '700'],
+  variable: '--font-gujarati'
+});
 
 export const metadata: Metadata = {
   title: "SOP MCQ Bank Generator",
@@ -16,7 +21,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={inter.className}>{children}</body>
+      <body className={`${inter.className} ${gujarati.variable}`}>{children}</body>
     </html>
   );
 }

@@ -139,6 +139,7 @@ class MCQGenerationQueue {
         existingQuestions: existingQuestions,
         targetCount: targetCount || 100,
         isBulk: false,
+        language: sop.language || 'English',
         onBatchComplete: async (batchMcqs: any[]) => {
           if (batchMcqs.length > 0) {
             // Get the freshest bank state
@@ -159,6 +160,7 @@ class MCQGenerationQueue {
                   hard: batchMcqs.filter(m => m.difficulty === 'Hard').length,
                 },
                 aiModel: 'gemini-3-flash-preview',
+                language: sop.language || 'English',
               });
               console.log(`💾 Created NEW bank with first batch of ${batchMcqs.length} questions for ${sop.name}`);
             } else {

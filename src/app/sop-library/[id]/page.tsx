@@ -95,6 +95,7 @@ interface SOPLibrary {
     views: number;
     totalMCQs: number;
   };
+  language?: 'English' | 'Gujarati';
 }
 
 export default function SOPDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -110,6 +111,7 @@ export default function SOPDetailPage({ params }: { params: Promise<{ id: string
   const [selectedMCQ, setSelectedMCQ] = useState<{mcq: MCQ, index: number} | null>(null);
   const [difficultyFilter, setDifficultyFilter] = useState<string>('All');
   const [printing, setPrinting] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
   const [currentUser, setCurrentUser] = useState<{name: string, role: string} | null>(null);
   
   // Video Player Modal State
@@ -296,6 +298,41 @@ export default function SOPDetailPage({ params }: { params: Promise<{ id: string
     }
   };
 
+  const handleRegenerateMCQs = async () => {
+    if (!sopLibrary) return;
+    
+    const confirmed = confirm(
+      `This will delete all existing ${sopLibrary.metadata.totalMCQs} MCQs and generate new ones in ${sopLibrary.language || 'English'}. This may take a few minutes. Continue?`
+    );
+    
+    if (!confirmed) return;
+    
+    setRegenerating(true);
+    try {
+      const response = await fetch('/api/sop/regenerate-mcqs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ sopId: sopLibrary.sopId }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        alert(`✅ Successfully regenerated ${data.mcqBank.totalQuestions} MCQs in ${data.mcqBank.language}!`);
+        await fetchSOPLibrary(); // Refresh the page data
+      } else {
+        alert(`❌ Failed to regenerate MCQs: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Error regenerating MCQs:', error);
+      alert('An error occurred while regenerating MCQs');
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty) {
       case 'Easy':
@@ -352,6 +389,11 @@ export default function SOPDetailPage({ params }: { params: Promise<{ id: string
               <h1 className="text-2xl font-bold text-white leading-tight">
                 <span className="text-purple-400 mr-3 font-mono">{sopLibrary.sopIdentifier}</span>
                 {cleanSOPName(sopLibrary.sopName, sopLibrary.sopIdentifier)}
+                {sopLibrary.language === 'Gujarati' && (
+                  <span className="ml-3 px-2 py-0.5 bg-orange-500/20 text-orange-300 text-xs rounded-full border border-orange-500/30 uppercase tracking-wider">
+                    Gujarati
+                  </span>
+                )}
               </h1>
             </div>
             {sopLibrary.completionStatus.hasMCQs && (
@@ -655,10 +697,10 @@ export default function SOPDetailPage({ params }: { params: Promise<{ id: string
             </div>
 
             {/* Action Buttons */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <button
                 onClick={fetchMCQs}
-                disabled={loadingMCQs}
+                disabled={loadingMCQs || regenerating}
                 className="px-6 py-4 bg-white/10 border-2 border-green-500/30 text-white font-bold rounded-xl hover:bg-white/20 hover:border-green-500/50 transition-all flex items-center justify-center gap-2 group disabled:opacity-50"
               >
                 {loadingMCQs ? (
@@ -676,8 +718,27 @@ export default function SOPDetailPage({ params }: { params: Promise<{ id: string
               </button>
 
               <button
+                onClick={handleRegenerateMCQs}
+                disabled={regenerating || loadingMCQs}
+                className="px-6 py-4 bg-white/10 border-2 border-orange-500/30 text-white font-bold rounded-xl hover:bg-white/20 hover:border-orange-500/50 transition-all flex items-center justify-center gap-2 group disabled:opacity-50"
+              >
+                {regenerating ? (
+                  <>
+                    <Loader2 className="h-5 w-5 text-orange-400 animate-spin" />
+                    <span>Regenerating...</span>
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="h-5 w-5 text-orange-400 group-hover:rotate-180 transition-transform duration-500" />
+                    <span>Regenerate</span>
+                  </>
+                )}
+              </button>
+
+              <button
                 onClick={() => router.push(`/mcq-tests?sopId=${sopLibrary.sopId}`)}
-                className="px-6 py-4 bg-gradient-to-r from-green-600 to-blue-600 text-white font-bold rounded-xl hover:from-green-700 hover:to-blue-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-green-600/20"
+                disabled={regenerating}
+                className="px-6 py-4 bg-gradient-to-r from-green-600 to-blue-600 text-white font-bold rounded-xl hover:from-green-700 hover:to-blue-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-green-600/20 disabled:opacity-50"
               >
                 <Brain className="h-5 w-5" />
                 Start Test
@@ -735,7 +796,9 @@ export default function SOPDetailPage({ params }: { params: Promise<{ id: string
                             <span>{selectedMCQ.mcq.difficulty}</span>
                           </span>
                         </div>
-                        <h3 className="text-xl font-bold text-white">{selectedMCQ.mcq.question}</h3>
+                        <h3 className={`text-xl font-bold text-white ${sopLibrary?.language === 'Gujarati' ? 'font-gujarati' : ''}`}>
+                          {selectedMCQ.mcq.question}
+                        </h3>
                       </div>
                     </div>
 
@@ -748,7 +811,7 @@ export default function SOPDetailPage({ params }: { params: Promise<{ id: string
                             option.isCorrect
                               ? 'bg-green-600/30 border-2 border-green-500 text-white'
                               : 'bg-slate-700/50 border border-slate-600 text-gray-300'
-                          }`}
+                          } ${sopLibrary?.language === 'Gujarati' ? 'font-gujarati' : ''}`}
                         >
                           {option.text}
                         </div>
@@ -759,7 +822,9 @@ export default function SOPDetailPage({ params }: { params: Promise<{ id: string
                     {selectedMCQ.mcq.explanation && (
                       <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
                         <h4 className="text-sm font-bold text-blue-300 mb-2">💡 Explanation</h4>
-                        <p className="text-gray-300 text-sm leading-relaxed">{selectedMCQ.mcq.explanation}</p>
+                        <p className={`text-gray-300 text-sm leading-relaxed ${sopLibrary?.language === 'Gujarati' ? 'font-gujarati' : ''}`}>
+                          {selectedMCQ.mcq.explanation}
+                        </p>
                       </div>
                     )}
                   </div>

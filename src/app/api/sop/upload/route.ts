@@ -22,6 +22,7 @@ export async function POST(request: NextRequest) {
     const sopName = formData.get('sopName') as string;
     const sopIdentifier = formData.get('sopIdentifier') as string;
     const department = formData.get('department') as string || 'General';
+    const language = (formData.get('language') as 'English' | 'Gujarati') || 'English';
     const overwrite = formData.get('overwrite') === 'true';
 
     console.log('📝 Form data received:', {
@@ -81,8 +82,8 @@ export async function POST(request: NextRequest) {
       console.log('🔍 Checking for duplicates...');
       const duplicateSOP = await SOP.findOne({
         $or: [
-          { identifier: sopIdentifier },
-          { name: sopName },
+          { identifier: sopIdentifier, language: language },
+          { name: sopName, language: language },
           { checksum: checksum }
         ]
       });
@@ -174,6 +175,7 @@ export async function POST(request: NextRequest) {
           fileUrl,
           fileType,
           content: parsed.content,
+          language: language,
           checksum: checksum,
           status: 'uploaded',
           effectiveDate: extractedDates.effectiveDate,
@@ -197,6 +199,7 @@ export async function POST(request: NextRequest) {
         fileUrl,
         fileType,
         content: parsed.content,
+        language: language,
         checksum: checksum,
         status: 'uploaded',
         effectiveDate: extractedDates.effectiveDate,

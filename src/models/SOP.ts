@@ -7,6 +7,7 @@ export interface ISOP extends Document {
   fileUrl: string;
   fileType: 'pdf' | 'docx';
   content: string;
+  language?: 'English' | 'Gujarati';
   checksum?: string; // SHA-256 hash
   uploadedAt: Date;
   processedAt?: Date;
@@ -85,6 +86,11 @@ const SOPSchema = new Schema<ISOP>({
   content: {
     type: String,
     required: true,
+  },
+  language: {
+    type: String,
+    enum: ['English', 'Gujarati'],
+    default: 'English',
   },
   checksum: {
     type: String,

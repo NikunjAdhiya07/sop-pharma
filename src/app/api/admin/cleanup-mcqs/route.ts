@@ -127,6 +127,7 @@ export async function POST(request: NextRequest) {
                 existingQuestions: bank.mcqs.map(m => m.question),
                 targetCount: removedCount,
                 isBulk: false,
+                language: sop.language || 'English',
               });
 
               if (result.mcqs.length > 0) {

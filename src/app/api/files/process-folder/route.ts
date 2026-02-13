@@ -172,6 +172,7 @@ export async function POST(request: NextRequest) {
               sopIdentifier: sopIdentifier,
               existingQuestions: existingQuestions,
               isBulk: true,
+              language: sop.language || 'English',
               onBatchComplete: async (batchMcqs: any[]) => {
                 // Save each batch immediately to the database
                 if (batchMcqs.length > 0) {
@@ -193,6 +194,7 @@ export async function POST(request: NextRequest) {
                         hard: batchMcqs.filter(m => m.difficulty === 'Hard').length,
                       },
                       aiModel: 'gemini-3-flash-preview',
+                      language: sop.language || 'English',
                     });
                     console.log(`💾 Created MCQ bank with first batch of ${batchMcqs.length} MCQs`);
                   } else {

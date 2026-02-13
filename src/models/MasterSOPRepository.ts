@@ -9,6 +9,7 @@ export interface IMasterSOPRepository extends Document {
   folderPath: string;
   parentFolder?: string;
   subfolderLevel: number;
+  language?: 'English' | 'Gujarati';
   
   // SOP Document info
   sopDocument: {
@@ -47,7 +48,6 @@ const MasterSOPRepositorySchema = new Schema<IMasterSOPRepository>(
     sopIdentifier: {
       type: String,
       required: true,
-      unique: true,
       uppercase: true,
       trim: true,
       index: true,
@@ -90,6 +90,11 @@ const MasterSOPRepositorySchema = new Schema<IMasterSOPRepository>(
     subfolderLevel: {
       type: Number,
       default: 0,
+    },
+    language: {
+      type: String,
+      enum: ['English', 'Gujarati'],
+      default: 'English',
     },
     sopDocument: {
       fileName: {
@@ -165,7 +170,7 @@ const MasterSOPRepositorySchema = new Schema<IMasterSOPRepository>(
 
 // Indexes for efficient querying
 MasterSOPRepositorySchema.index({ department: 1, folderPath: 1 });
-MasterSOPRepositorySchema.index({ sopIdentifier: 1, department: 1 });
+MasterSOPRepositorySchema.index({ sopIdentifier: 1, language: 1 }, { unique: true });
 MasterSOPRepositorySchema.index({ folderPath: 1 });
 
 // Prevent model recompilation in development

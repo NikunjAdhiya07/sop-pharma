@@ -530,16 +530,52 @@ export default function SimilarQuestionsPage() {
                               View
                             </button>
                             {sq.reviewStatus === 'pending' && (
-                              <button
-                                onClick={() => {
-                                  setSelectedQuestion(sq);
-                                  setReviewMode(true);
-                                }}
-                                className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
-                              >
-                                <Edit3 className="w-4 h-4" />
-                                Review
-                              </button>
+                              <>
+                                <button
+                                  onClick={() => {
+                                    setSelectedQuestion(sq);
+                                    setReviewMode(true);
+                                  }}
+                                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+                                >
+                                  <Edit3 className="w-4 h-4" />
+                                  Review
+                                </button>
+                                <button
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    if (!confirm('Mark this question group as done/reviewed?')) return;
+                                    
+                                    try {
+                                      const response = await fetch('/api/similar-questions/review', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                          id: sq._id,
+                                          action: 'keep_primary',
+                                          reviewNotes: 'Marked as reviewed from list view'
+                                        })
+                                      });
+                                      
+                                      const data = await response.json();
+                                      
+                                      if (data.success) {
+                                        // alert('Marked as reviewed!'); // Optional feedback
+                                        fetchSimilarQuestions();
+                                      } else {
+                                        alert(`Failed: ${data.error}`);
+                                      }
+                                    } catch (error) {
+                                      console.error('Error marking as done:', error);
+                                      alert('Failed to mark as done');
+                                    }
+                                  }}
+                                  className="px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+                                >
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  Done
+                                </button>
+                              </>
                             )}
                             <button
                               onClick={() => handleDelete(sq._id)}
