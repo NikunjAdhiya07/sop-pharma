@@ -15,7 +15,8 @@ import {
   Play,
   Eye,
   X,
-  Printer
+  Printer,
+  RefreshCw
 } from 'lucide-react';
 import { watermarkSOP } from '@/lib/pdfWatermark';
 import { cleanSOPName } from '@/lib/sopLibraryHelper';
