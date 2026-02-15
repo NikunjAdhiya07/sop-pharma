@@ -204,6 +204,41 @@ export async function PUT(request: NextRequest) {
       }, { status: 404 });
     }
     
+    // Import EliminatedQuestion for tracking
+    const EliminatedQuestion = (await import('@/models/EliminatedQuestion')).default;
+    
+    // Helper function to move question to eliminated
+    const moveToEliminated = async (question: any, mcqBankId: any, questionIndex: number, similarityScore?: number, duplicateOf?: string) => {
+      try {
+        console.log('Moving question to eliminated:', {
+          sopId: similarQuestion.sopId,
+          sopIdentifier: similarQuestion.sopIdentifier,
+          questionIndex,
+          similarityScore,
+        });
+        
+        const eliminatedDoc = await EliminatedQuestion.create({
+          sopId: similarQuestion.sopId,
+          sopName: similarQuestion.sopName,
+          sopIdentifier: similarQuestion.sopIdentifier,
+          question: question,
+          originalQuestionIndex: questionIndex,
+          eliminationReason: 'duplicate',
+          eliminatedAt: new Date(),
+          eliminatedBy: reviewedBy || 'System',
+          duplicateOf: duplicateOf,
+          similarityScore: similarityScore,
+          replacedWith: 'Resolved via Similar Questions workflow',
+        });
+        
+        console.log('Successfully created eliminated question:', eliminatedDoc._id);
+        return eliminatedDoc;
+      } catch (error) {
+        console.error('Error moving question to eliminated:', error);
+        throw error;
+      }
+    };
+    
     // Update the similar question record
     const updateData: any = {
       reviewStatus: 'reviewed',
@@ -233,14 +268,30 @@ export async function PUT(request: NextRequest) {
       { new: true }
     );
     
+    // Track eliminated questions count
+    let eliminatedCount = 0;
+    
     // Handle the action taken
     if (actionTaken === 'keep_primary') {
       // Remove all similar questions, keep primary
+      // Move similar questions to eliminated
       for (const sq of similarQuestion.similarQuestions) {
-        await MCQBank.updateOne(
-          { _id: sq.mcqBankId },
-          { $pull: { mcqs: { $exists: true } }, $set: { [`mcqs.${sq.questionIndex}`]: null } }
+        await moveToEliminated(
+          sq.question, 
+          sq.mcqBankId, 
+          sq.questionIndex, 
+          sq.similarityScore,
+          `Primary: ${similarQuestion.primaryQuestion.question.question.substring(0, 100)}...`
         );
+        eliminatedCount++;
+        
+        // Remove from MCQ Bank
+        const bank = await MCQBank.findById(sq.mcqBankId);
+        if (bank) {
+          bank.mcqs.splice(sq.questionIndex, 1);
+          bank.totalQuestions = bank.mcqs.length;
+          await bank.save();
+        }
       }
       
       // Remove isSimilar flag from primary
@@ -250,18 +301,42 @@ export async function PUT(request: NextRequest) {
       );
     } else if (actionTaken === 'keep_similar') {
       // Remove primary, keep the selected similar question
-      await MCQBank.updateOne(
-        { _id: similarQuestion.primaryQuestion.mcqBankId },
-        { $pull: { mcqs: { $exists: true } }, $set: { [`mcqs.${similarQuestion.primaryQuestion.questionIndex}`]: null } }
+      // Move primary to eliminated
+      await moveToEliminated(
+        similarQuestion.primaryQuestion.question,
+        similarQuestion.primaryQuestion.mcqBankId,
+        similarQuestion.primaryQuestion.questionIndex,
+        100,
+        `Kept Similar: ${similarQuestion.similarQuestions[keptQuestionIndex]?.question?.question?.substring(0, 100)}...`
       );
+      eliminatedCount++;
+      
+      const primaryBank = await MCQBank.findById(similarQuestion.primaryQuestion.mcqBankId);
+      if (primaryBank) {
+        primaryBank.mcqs.splice(similarQuestion.primaryQuestion.questionIndex, 1);
+        primaryBank.totalQuestions = primaryBank.mcqs.length;
+        await primaryBank.save();
+      }
       
       // Remove other similar questions except the kept one
-      similarQuestion.similarQuestions.forEach(async (sq: any, index: number) => {
+      for (let index = 0; index < similarQuestion.similarQuestions.length; index++) {
+        const sq = similarQuestion.similarQuestions[index];
         if (index !== keptQuestionIndex) {
-          await MCQBank.updateOne(
-            { _id: sq.mcqBankId },
-            { $pull: { mcqs: { $exists: true } }, $set: { [`mcqs.${sq.questionIndex}`]: null } }
+          await moveToEliminated(
+            sq.question,
+            sq.mcqBankId,
+            sq.questionIndex,
+            sq.similarityScore,
+            `Kept Similar: ${similarQuestion.similarQuestions[keptQuestionIndex]?.question?.question?.substring(0, 100)}...`
           );
+          eliminatedCount++;
+          
+          const bank = await MCQBank.findById(sq.mcqBankId);
+          if (bank) {
+            bank.mcqs.splice(sq.questionIndex, 1);
+            bank.totalQuestions = bank.mcqs.length;
+            await bank.save();
+          }
         } else {
           // Remove isSimilar flag from kept question
           await MCQBank.updateOne(
@@ -269,10 +344,20 @@ export async function PUT(request: NextRequest) {
             { $set: { [`mcqs.${sq.questionIndex}.isSimilar`]: false } }
           );
         }
-      });
+      }
     } else if (actionTaken === 'merge') {
       // Replace primary with merged question, remove all others
       if (mergedQuestion) {
+        // Move original primary to eliminated
+        await moveToEliminated(
+          similarQuestion.primaryQuestion.question,
+          similarQuestion.primaryQuestion.mcqBankId,
+          similarQuestion.primaryQuestion.questionIndex,
+          100,
+          'Merged into new question'
+        );
+        eliminatedCount++;
+        
         await MCQBank.updateOne(
           { _id: similarQuestion.primaryQuestion.mcqBankId },
           { $set: { [`mcqs.${similarQuestion.primaryQuestion.questionIndex}`]: { ...mergedQuestion, isSimilar: false } } }
@@ -280,31 +365,68 @@ export async function PUT(request: NextRequest) {
         
         // Remove all similar questions
         for (const sq of similarQuestion.similarQuestions) {
-          await MCQBank.updateOne(
-            { _id: sq.mcqBankId },
-            { $pull: { mcqs: { $exists: true } }, $set: { [`mcqs.${sq.questionIndex}`]: null } }
+          await moveToEliminated(
+            sq.question,
+            sq.mcqBankId,
+            sq.questionIndex,
+            sq.similarityScore,
+            'Merged into new question'
           );
+          eliminatedCount++;
+          
+          const bank = await MCQBank.findById(sq.mcqBankId);
+          if (bank) {
+            bank.mcqs.splice(sq.questionIndex, 1);
+            bank.totalQuestions = bank.mcqs.length;
+            await bank.save();
+          }
         }
       }
     } else if (actionTaken === 'eliminate_all') {
       // Remove all questions (primary + similar)
-      await MCQBank.updateOne(
-        { _id: similarQuestion.primaryQuestion.mcqBankId },
-        { $pull: { mcqs: { $exists: true } }, $set: { [`mcqs.${similarQuestion.primaryQuestion.questionIndex}`]: null } }
+      // Move primary to eliminated
+      await moveToEliminated(
+        similarQuestion.primaryQuestion.question,
+        similarQuestion.primaryQuestion.mcqBankId,
+        similarQuestion.primaryQuestion.questionIndex,
+        100,
+        'All similar questions eliminated'
       );
+      eliminatedCount++;
+      
+      const primaryBank = await MCQBank.findById(similarQuestion.primaryQuestion.mcqBankId);
+      if (primaryBank) {
+        primaryBank.mcqs.splice(similarQuestion.primaryQuestion.questionIndex, 1);
+        primaryBank.totalQuestions = primaryBank.mcqs.length;
+        await primaryBank.save();
+      }
       
       for (const sq of similarQuestion.similarQuestions) {
-        await MCQBank.updateOne(
-          { _id: sq.mcqBankId },
-          { $pull: { mcqs: { $exists: true } }, $set: { [`mcqs.${sq.questionIndex}`]: null } }
+        await moveToEliminated(
+          sq.question,
+          sq.mcqBankId,
+          sq.questionIndex,
+          sq.similarityScore,
+          'All similar questions eliminated'
         );
+        eliminatedCount++;
+        
+        const bank = await MCQBank.findById(sq.mcqBankId);
+        if (bank) {
+          bank.mcqs.splice(sq.questionIndex, 1);
+          bank.totalQuestions = bank.mcqs.length;
+          await bank.save();
+        }
       }
     }
+    
+    console.log(`Similar questions resolved. Eliminated ${eliminatedCount} questions.`);
     
     return NextResponse.json({
       success: true,
       similarQuestion: updatedSimilarQuestion,
-      message: 'Similar question reviewed successfully',
+      eliminatedCount,
+      message: `Similar question reviewed successfully. ${eliminatedCount} question(s) moved to eliminated.`,
     });
   } catch (error: any) {
     console.error('Error updating similar question:', error);

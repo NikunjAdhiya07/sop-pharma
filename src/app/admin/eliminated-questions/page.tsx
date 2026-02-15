@@ -108,6 +108,9 @@ export default function EliminatedQuestionsPage() {
       if (filter.reason !== 'all') params.append('reason', filter.reason);
       if (filter.sopId) params.append('sopId', filter.sopId);
       
+      // Only fetch questions from review center workflow (excludes similarity-based)
+      params.append('source', 'review');
+      
       const response = await fetch(`/api/admin/eliminated-questions?${params}`);
       const data = await response.json();
       
@@ -197,10 +200,10 @@ export default function EliminatedQuestionsPage() {
         <div className="mb-8 flex items-start justify-between">
           <div>
             <h1 className="text-4xl font-bold text-white mb-2">
-              Eliminated Questions
+              Review Center - Eliminated Questions
             </h1>
             <p className="text-gray-400">
-              View and manage questions removed during MCQ cleanup
+              Questions deleted, replaced, or modified through the Review Center workflow
             </p>
           </div>
           

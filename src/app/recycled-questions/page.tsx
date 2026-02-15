@@ -46,7 +46,9 @@ export default function RecycledQuestionsPage() {
   const fetchRecycledQuestions = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/mcq-bank/eliminated?grouped=true&limit=1000');
+      // Only fetch questions eliminated due to similarity (duplicate reason)
+      // This excludes review center eliminations
+      const response = await fetch('/api/mcq-bank/eliminated?grouped=true&limit=1000&source=similarity');
       const data = await response.json();
 
       if (data.success) {
@@ -100,8 +102,8 @@ export default function RecycledQuestionsPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       <PageHeader
-        title="Recycled Questions"
-        subtitle="Audit trail of deleted and replaced MCQs"
+        title="Similar Questions - Eliminated"
+        subtitle="Questions removed due to similarity/duplicates from Similar Questions workflow"
         icon={Trash2}
       />
 

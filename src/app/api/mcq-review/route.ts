@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PUT: Update a review item (edit question or mark as done)
+// PUT: Update a review item (edit question, mark as done, or delete)
 export async function PUT(request: NextRequest) {
   try {
     await connectDB();
@@ -124,7 +124,9 @@ export async function PUT(request: NextRequest) {
       reviewStatus,
       editedBy,
       markedDoneBy,
-      moveToRecycle, // New flag to indicate if old version should be recycled
+      moveToRecycle, // Flag to indicate if old version should be recycled
+      deleteQuestion, // NEW: Flag to delete question from review
+      deletedBy, // NEW: User who deleted the question
     } = body;
 
     if (!reviewId) {
@@ -142,6 +144,45 @@ export async function PUT(request: NextRequest) {
         { success: false, error: 'Review not found' },
         { status: 404 }
       );
+    }
+
+    // NEW: Handle question deletion from review center
+    if (deleteQuestion) {
+      const EliminatedQuestion = (await import('@/models/EliminatedQuestion')).default;
+      
+      // Move question to EliminatedQuestion with reason 'review-deleted'
+      await EliminatedQuestion.create({
+        sopId: currentReview.sopId,
+        sopName: currentReview.sopName,
+        sopIdentifier: currentReview.sopIdentifier,
+        question: currentReview.editedQuestion || currentReview.originalQuestion,
+        originalQuestionIndex: currentReview.originalQuestionIndex,
+        eliminationReason: 'manual', // Using 'manual' as it's a deliberate deletion
+        eliminatedAt: new Date(),
+        eliminatedBy: deletedBy || 'Unknown',
+        replacedWith: 'Deleted from Review Center',
+      });
+
+      // Remove from MCQBank
+      const mcqBank = await MCQBank.findById(currentReview.originalMcqBankId);
+      if (mcqBank) {
+        mcqBank.mcqs.splice(currentReview.originalQuestionIndex, 1);
+        mcqBank.totalQuestions = mcqBank.mcqs.length;
+        mcqBank.difficultyDistribution = {
+          easy: mcqBank.mcqs.filter((m: any) => m.difficulty === 'Easy').length,
+          medium: mcqBank.mcqs.filter((m: any) => m.difficulty === 'Medium').length,
+          hard: mcqBank.mcqs.filter((m: any) => m.difficulty === 'Hard').length,
+        };
+        await mcqBank.save();
+      }
+
+      // Delete the review record
+      await MCQReview.findByIdAndDelete(reviewId);
+
+      return NextResponse.json({
+        success: true,
+        message: 'Question deleted from review and moved to eliminated questions',
+      });
     }
 
     const updateData: any = {};
@@ -180,7 +221,7 @@ export async function PUT(request: NextRequest) {
         newVersion,
         replacedBy: markedDoneBy || 'Unknown',
         replacedAt: new Date(),
-        recycleReason: 'Question updated and marked as completed',
+        recycleReason: 'Question updated and marked as completed in Review Center',
         folderPath,
         isRestored: false,
       });

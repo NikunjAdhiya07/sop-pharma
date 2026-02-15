@@ -10,6 +10,9 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const bankId = searchParams.get('bankId');
     const questionIndex = searchParams.get('index');
+    const source = searchParams.get('source'); // 'similarity' or null (defaults to manual)
+    const similarityScore = searchParams.get('similarityScore');
+    const duplicateOf = searchParams.get('duplicateOf');
 
     if (!bankId || questionIndex === null) {
       return NextResponse.json(
@@ -68,17 +71,32 @@ export async function DELETE(request: NextRequest) {
       }
     }
     
-    await EliminatedQuestion.create({
+    
+    // Determine elimination reason and metadata based on source
+    const eliminationData: any = {
       sopId: bank.sopId,
       sopName: bank.sopName,
       sopIdentifier: bank.sopIdentifier,
       question: deletedQuestion,
-      originalQuestionIndex: index, // Main field
-      originalIndex: index,         // Fallback field
-      eliminationReason: 'manual',
+      originalQuestionIndex: index,
+      originalIndex: index,
+      eliminationReason: source === 'similarity' ? 'duplicate' : 'manual',
       eliminatedAt: new Date(),
       eliminatedBy: eliminatedByUser,
-    });
+    };
+    
+    // Add similarity-specific metadata if provided
+    if (source === 'similarity') {
+      eliminationData.replacedWith = 'Deleted and regenerated via Similar Questions workflow';
+      if (similarityScore) {
+        eliminationData.similarityScore = parseFloat(similarityScore);
+      }
+      if (duplicateOf) {
+        eliminationData.duplicateOf = duplicateOf;
+      }
+    }
+    
+    await EliminatedQuestion.create(eliminationData);
 
     // Remove the question
     bank.mcqs.splice(index, 1);

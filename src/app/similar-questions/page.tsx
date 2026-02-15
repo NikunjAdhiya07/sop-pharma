@@ -249,11 +249,14 @@ export default function SimilarQuestionsPage() {
         headers['x-user-info'] = userInfo;
       }
       
-      // 1. Delete the question (archives it to EliminatedQuestions)
-      const deleteResponse = await fetch(`/api/mcq-bank/delete-question?bankId=${bankId}&index=${questionIndex}`, {
-        method: 'DELETE',
-        headers,
-      });
+      // 1. Delete the question (archives it to EliminatedQuestions with reason 'duplicate')
+      const deleteResponse = await fetch(
+        `/api/mcq-bank/delete-question?bankId=${bankId}&index=${questionIndex}&source=similarity&duplicateOf=Similar question - deleted and regenerated`,
+        {
+          method: 'DELETE',
+          headers,
+        }
+      );
       
       const deleteData = await deleteResponse.json();
       

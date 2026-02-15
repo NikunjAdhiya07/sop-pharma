@@ -1534,14 +1534,14 @@ function MCQBankContent() {
                             <div 
                               key={optIndex}
                               className={`p-4 rounded-xl border transition-all ${
-                                mcq.optionVariants?.[optIndex]?.isCorrect || option === mcq.correctAnswer
+                                option === mcq.correctAnswer
                                   ? 'bg-green-500/10 border-green-500/50 text-green-300'
                                   : 'bg-slate-700/30 border-slate-600 text-gray-400'
                               } ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati' : ''}`}
                             >
                               <div className="flex items-center gap-3">
                                 <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold ${
-                                  (mcq.optionVariants?.[optIndex]?.isCorrect || option === mcq.correctAnswer) ? 'border-green-500 bg-green-500 text-white' : 'border-slate-500 text-slate-500'
+                                  option === mcq.correctAnswer ? 'border-green-500 bg-green-500 text-white' : 'border-slate-500 text-slate-500'
                                 }`}>
                                   {String.fromCharCode(65 + optIndex)}
                                 </div>

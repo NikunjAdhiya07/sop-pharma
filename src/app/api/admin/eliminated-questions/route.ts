@@ -10,6 +10,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const sopId = searchParams.get('sopId');
     const reason = searchParams.get('reason');
+    const source = searchParams.get('source'); // 'review' or 'similarity'
     const limit = parseInt(searchParams.get('limit') || '100');
     const skip = parseInt(searchParams.get('skip') || '0');
 
@@ -17,6 +18,15 @@ export async function GET(request: NextRequest) {
     const query: any = {};
     if (sopId) query.sopId = sopId;
     if (reason) query.eliminationReason = reason;
+    
+    // Filter based on source
+    if (source === 'review') {
+      // Only review-based eliminations (exclude duplicates from similarity workflow)
+      query.eliminationReason = { $ne: 'duplicate' };
+    } else if (source === 'similarity') {
+      // Only similarity-based eliminations
+      query.eliminationReason = 'duplicate';
+    }
 
     // Fetch eliminated questions
     const eliminated = await EliminatedQuestion.find(query)
@@ -27,8 +37,16 @@ export async function GET(request: NextRequest) {
     const total = await EliminatedQuestion.countDocuments(query);
 
     // Get statistics
+    const statsQuery: any = {};
+    if (sopId) statsQuery.sopId = sopId;
+    if (source === 'review') {
+      statsQuery.eliminationReason = { $ne: 'duplicate' };
+    } else if (source === 'similarity') {
+      statsQuery.eliminationReason = 'duplicate';
+    }
+    
     const stats = await EliminatedQuestion.aggregate([
-      ...(sopId ? [{ $match: { sopId } }] : []),
+      ...(Object.keys(statsQuery).length > 0 ? [{ $match: statsQuery }] : []),
       {
         $group: {
           _id: '$eliminationReason',
