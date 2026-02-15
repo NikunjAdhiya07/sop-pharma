@@ -14,6 +14,8 @@ import {
   ComplianceFindingV3,
   AnalysisResultStatus,
 } from '@/lib/complianceEngineV3';
+import { validateFindings } from '@/lib/ComplianceFindingValidator';
+import { validateDataSync, autoFixDataSync } from '@/lib/syncValidator';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════
@@ -103,9 +105,9 @@ export async function POST(request: NextRequest) {
     }
     
     // Check Gemini API key early — don't waste time analyzing 30+ clauses that will all fail
-    const geminiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
     if (!geminiKey) {
-      console.error('❌ GEMINI_API_KEY is not set in environment variables');
+      console.error('❌ GEMINI_API_KEY (or GOOGLE_AI_API_KEY) is not set.');
       return NextResponse.json({
         success: false,
         error: 'AI API key not configured',
@@ -137,7 +139,7 @@ export async function POST(request: NextRequest) {
       currentStep: 'fetching-sop',
       progress: 5,
       config: {
-        aiModel: config?.aiModel || 'gemini-1.5-flash',
+        aiModel: config?.aiModel || 'models/gemini-3-flash-preview',
         maxClausesToAnalyze: config?.maxClausesToAnalyze || 50,
         guidelineFilters,
         retryOnFailure: true,
@@ -345,7 +347,7 @@ export async function POST(request: NextRequest) {
           sop.identifier,
           sop.department || 'General',
           clause,
-          config?.aiModel || 'gemini-1.5-flash'
+          config?.aiModel || 'models/gemini-3-flash-preview'
         );
         
         aiCallsCount++;
@@ -387,11 +389,42 @@ export async function POST(request: NextRequest) {
       console.log(`   ⚠️ Errors: ${analysisErrors}`);
     }
     
+    // ═══════════════════════════════════════════════════════════════════
+    // STEP 5.5: VALIDATE FINDINGS (STRICT MODE)
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n🔍 Step 5.5: Validating findings quality...');
+    
+    const validation = validateFindings(findings);
+    
+    console.log(`   Total findings: ${validation.summary.total}`);
+    console.log(`   Valid: ${validation.summary.valid}`);
+    console.log(`   Invalid: ${validation.summary.invalid}`);
+    console.log(`   Warnings: ${validation.summary.warnings}`);
+    
+    // Log validation issues
+    if (validation.invalidFindings.length > 0) {
+      console.warn(`\n⚠️ VALIDATION WARNINGS: ${validation.invalidFindings.length} findings have quality issues:`);
+      validation.invalidFindings.forEach(({ finding, validation: v }, idx) => {
+        console.warn(`   ${idx + 1}. ${finding.clauseNumber}:`);
+        v.errors.forEach(err => console.warn(`      ❌ ${err}`));
+        v.warnings.forEach(warn => console.warn(`      ⚠️ ${warn}`));
+      });
+    }
+    
+    // Use only valid findings for report (or all if we want to show issues)
+    const validatedFindings = validation.validFindings.length > 0 
+      ? validation.validFindings 
+      : findings; // Fallback to all findings if validation is too strict
+    
+    console.log(`   Using ${validatedFindings.length} findings for report`);
+    
     await updateJobProgress(jobId, {
       'steps.clauseAnalysis.status': 'completed',
       'steps.clauseAnalysis.completedAt': new Date(),
       'steps.clauseAnalysis.clausesAnalyzed': findings.length,
       'steps.clauseAnalysis.clausesFailed': analysisErrors,
+      'steps.clauseAnalysis.validationWarnings': validation.summary.warnings,
+      'steps.clauseAnalysis.validationErrors': validation.summary.invalid,
       progress: 75,
     });
     
@@ -455,6 +488,54 @@ export async function POST(request: NextRequest) {
     // Build next steps
     const nextSteps = buildNextSteps(scoreResult, criticalIssues, majorIssues);
     
+    // ═══════════════════════════════════════════════════════════════════
+    // STEP 6.5: DATA SYNCHRONIZATION VALIDATION
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n🔄 Step 6.5: Validating data synchronization...');
+    
+    // Prepare report data for sync validation
+    const reportData = {
+      overallScore: scoreResult.overallScore ?? 0,
+      complianceStatus: scoreResult.complianceStatus,
+      compliancePercentage: scoreResult.compliancePercentage ?? 0,
+      scoreBreakdown: {
+        totalChecks: scoreResult.scoreBreakdown.totalApplicableClauses || 0,
+        compliantCount: scoreResult.scoreBreakdown.compliantCount || 0,
+        partialCount: scoreResult.scoreBreakdown.partialCount || 0,
+        nonCompliantCount: scoreResult.scoreBreakdown.nonCompliantCount || 0,
+        notApplicableCount: scoreResult.scoreBreakdown.notApplicableCount || 0,
+        skippedCount: scoreResult.scoreBreakdown.skippedCount || 0,
+      },
+      findings: validatedFindings.map(f => ({
+        complianceLevel: f.complianceLevel,
+        matchConfidence: f.matchConfidence,
+      })),
+    };
+    
+    const syncValidation = validateDataSync(reportData);
+    
+    if (!syncValidation.isValid) {
+      console.warn('   ⚠️ Data synchronization issues detected:');
+      syncValidation.errors.forEach(err => console.warn(`      ❌ ${err}`));
+      
+      if (syncValidation.autoFixable) {
+        console.log('   🔧 Auto-fixing data synchronization issues...');
+        const fixed = autoFixDataSync(reportData);
+        
+        // Update scoreResult with fixed data
+        scoreResult.overallScore = fixed.overallScore;
+        scoreResult.compliancePercentage = fixed.compliancePercentage;
+        scoreResult.complianceStatus = fixed.complianceStatus;
+        scoreResult.scoreBreakdown.compliantCount = fixed.scoreBreakdown.compliantCount;
+        scoreResult.scoreBreakdown.partialCount = fixed.scoreBreakdown.partialCount;
+        scoreResult.scoreBreakdown.nonCompliantCount = fixed.scoreBreakdown.nonCompliantCount;
+        
+        console.log('   ✅ Data synchronized successfully');
+      }
+    } else {
+      console.log('   ✅ Data synchronization validated');
+    }
+    
     const report = new ComplianceReport({
       sopId: sop._id,
       sopIdentifier: sop.identifier,
@@ -467,7 +548,7 @@ export async function POST(request: NextRequest) {
       analysisStatus: 'completed',
       analysisStartedAt: new Date(startTime),
       analysisCompletedAt: new Date(),
-      analysisEngine: config?.aiModel || 'gemini-1.5-flash',
+      analysisEngine: config?.aiModel || 'models/gemini-3-flash-preview',
       processingTimeMs: Date.now() - startTime,
       analysisErrors: [],
       
@@ -489,7 +570,7 @@ export async function POST(request: NextRequest) {
       },
       
       // Store V3 findings - map to ComplianceReport schema enum values
-      findings: findings.map(f => {
+      findings: validatedFindings.map(f => {
         // Map V3 complianceLevel to schema-valid values
         const validLevels = ['compliant', 'partial', 'non-compliant', 'not-applicable', 'analysis-failed'];
         let mappedLevel = f.complianceLevel === 'unable-to-determine' ? 'analysis-failed' : f.complianceLevel;

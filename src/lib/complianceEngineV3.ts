@@ -16,9 +16,9 @@ import mongoose from 'mongoose';
  */
 
 // Validate API key early
-const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
 if (!GEMINI_KEY) {
-  console.warn('⚠️ GEMINI_API_KEY is not set in environment variables. AI analysis will fail.');
+  console.warn('⚠️ GEMINI_API_KEY (or GOOGLE_AI_API_KEY) is not set. AI analysis will fail.');
 }
 const genAI = new GoogleGenerativeAI(GEMINI_KEY);
 
@@ -484,8 +484,11 @@ export async function analyzeClauseWithPrecision(
   sopIdentifier: string,
   department: string,
   clause: GuidelineRequirement,
-  aiModel: string = 'gemini-1.5-flash'
+  aiModel: string = 'models/gemini-3-flash-preview'
 ): Promise<ComplianceFindingV3> {
+  const { generateCompliancePrompt, generateRefinedPrompt, validateAIResponse } = await import('./compliancePrompts');
+  const { validateFinding, sanitizeAIOutput, detectHallucination } = await import('./ComplianceFindingValidator');
+  
   const findingId = `finding-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   
   // Find most relevant SOP section for this clause
@@ -496,78 +499,88 @@ export async function analyzeClauseWithPrecision(
     ? sopContent.substring(0, 6000) + '... [truncated]'
     : sopContent;
   
-  const prompt = `You are an expert pharmaceutical compliance auditor. Analyze with precision.
-
-**SOP DETAILS:**
-- Name: ${sopName}
-- Identifier: ${sopIdentifier}
-- Department: ${department}
-- Full Content: ${truncatedContent}
-
-**MOST RELEVANT SOP SECTION:**
-- Section: ${relevantSection.sectionNumber} - ${relevantSection.sectionTitle}
-- Content: ${relevantSection.sectionContent.substring(0, 1500)}
-
-**GUIDELINE CLAUSE TO CHECK:**
-- Source: ${clause.guidelineName} (${clause.guidelineType})
-- Clause: ${clause.clauseNumber} - ${clause.clauseTitle}
-- Requirement: ${clause.clauseText}
-- Category: ${clause.category}
-
-**ANALYSIS INSTRUCTIONS:**
-1. Check if this clause is applicable to the SOP's scope and department
-2. If applicable, identify the EXACT SOP section that addresses (or should address) this requirement
-3. Determine compliance level with HIGH CONFIDENCE
-4. If unable to determine clearly, mark as "unable-to-determine"
-5. Be SPECIFIC - no generic responses
-
-**REQUIRED OUTPUT (JSON ONLY):**
-{
-  "isClauseApplicable": true or false,
-  "applicabilityReason": "Why this clause does/doesn't apply to this SOP",
-  "sopSectionNumber": "Exact section number (e.g., '5.2' or 'N/A if not found')",
-  "sopSectionTitle": "Section title or 'Not Addressed'",
-  "complianceLevel": "compliant" | "partial" | "non-compliant" | "not-applicable" | "unable-to-determine",
-  "matchConfidence": 0-100,
-  "issueType": "missing-clause" | "partial-coverage" | "incorrect-implementation" | "outdated-practice" | "ambiguous-wording" | "no-issue" | "not-applicable",
-  "issueSeverity": "critical" | "major" | "minor" | "informational",
-  "specificGap": "EXACT description of what is missing/wrong (e.g., 'Missing: 5-year document retention requirement')",
-  "guidelineRequirement": "What the guideline SPECIFICALLY requires (1 sentence)",
-  "sopCurrentState": "What the SOP currently says about this (quote if possible)",
-  "sopTextSnippet": "Relevant quote from SOP (1-2 sentences)",
-  "suggestedAction": "Specific action (reference clause number)",
-  "suggestedText": "EXACT text to add or modify",
-  "estimatedEffort": "low" | "medium" | "high",
-  "priority": 1-5
-}
-
-OUTPUT ONLY VALID JSON:`;
+  // Generate structured prompt
+  const prompt = generateCompliancePrompt({
+    sopName,
+    sopIdentifier,
+    department,
+    sopContent: truncatedContent,
+    relevantSectionContent: relevantSection.sectionContent,
+    relevantSectionNumber: relevantSection.sectionNumber,
+    relevantSectionTitle: relevantSection.sectionTitle,
+    guidelineName: clause.guidelineName,
+    guidelineType: clause.guidelineType,
+    clauseNumber: clause.clauseNumber,
+    clauseTitle: clause.clauseTitle,
+    clauseText: clause.clauseText,
+    category: clause.category,
+  });
 
   try {
     // Check API key before making the call
     if (!GEMINI_KEY) {
-      throw new Error('GEMINI_API_KEY is not configured. Please set the GEMINI_API_KEY environment variable in your .env.local file.');
+      throw new Error('GEMINI_API_KEY (or GOOGLE_AI_API_KEY) is not configured in .env.local.');
     }
     const model = genAI.getGenerativeModel({ model: aiModel });
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
     
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('AI response did not contain valid JSON');
+    let result;
+    let parsed: any;
+    let validationResult: any;
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    // Retry loop with validation
+    while (retryCount < maxRetries) {
+      try {
+        // Make AI call
+        const currentPrompt = retryCount === 0 
+          ? prompt 
+          : generateRefinedPrompt({
+              originalPrompt: prompt,
+              previousResponse: JSON.stringify(parsed || {}),
+              validationErrors: validationResult?.errors || [],
+            });
+        
+        result = await model.generateContent(currentPrompt);
+        const responseText = result.response.text();
+        
+        // Extract JSON
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          throw new Error('AI response did not contain valid JSON');
+        }
+        
+        parsed = JSON.parse(jsonMatch[0]);
+        
+        // Validate response
+        validationResult = validateAIResponse(parsed);
+        
+        if (validationResult.isValid) {
+          console.log(`✅ Valid response on attempt ${retryCount + 1}`);
+          break;
+        } else {
+          console.warn(`⚠️ Validation failed (Attempt ${retryCount + 1}/${maxRetries}):`, validationResult.errors);
+          retryCount++;
+          
+          if (retryCount >= maxRetries) {
+            console.error('Max retries reached. Using best available response.');
+            break;
+          }
+          
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      } catch (err: any) {
+        console.warn(`⚠️ AI call failed (Attempt ${retryCount + 1}/${maxRetries}): ${err.message}`);
+        retryCount++;
+        if (retryCount >= maxRetries) throw err;
+        // Exponential backoff: 1s, 2s, 4s
+        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retryCount - 1)));
+      }
     }
-    
-    const parsed = JSON.parse(jsonMatch[0]);
-    
-    // Determine final compliance level
-    let complianceLevel = normalizeComplianceLevel(parsed.complianceLevel);
-    
-    // If not applicable, use that consistently
-    if (!parsed.isClauseApplicable) {
-      complianceLevel = 'not-applicable';
-    }
-    
-    return {
+
+    // Sanitize AI output
+    const sanitized = sanitizeAIOutput({
       findingId,
       guidelineId: clause.guidelineId,
       guidelineName: clause.guidelineName,
@@ -577,20 +590,60 @@ OUTPUT ONLY VALID JSON:`;
       clauseTitle: clause.clauseTitle,
       clauseText: clause.clauseText,
       regulatoryReference: clause.regulatoryReference || `${clause.guidelineType} ${clause.clauseNumber}`,
-      sopSectionNumber: parsed.sopSectionNumber || 'N/A',
-      sopSectionTitle: parsed.sopSectionTitle || 'Not Addressed',
-      sopTextSnippet: parsed.sopTextSnippet || 'No specific SOP text identified for this clause.',
+      ...parsed,
+    });
+    
+    // Detect hallucinations
+    const hallucinationCheck = detectHallucination(sanitized);
+    if (hallucinationCheck.isHallucinated) {
+      console.warn(`⚠️ Possible hallucination detected:`, hallucinationCheck.reasons);
+      // Lower confidence score for suspected hallucinations
+      sanitized.matchConfidence = Math.min(sanitized.matchConfidence, 60);
+    }
+    
+    // Final validation
+    const finalValidation = validateFinding(sanitized);
+    if (!finalValidation.isValid) {
+      console.error(`❌ Final validation failed:`, finalValidation.errors);
+      // Log but continue - we'll use the best available data
+    }
+    
+    if (finalValidation.warnings.length > 0) {
+      console.warn(`⚠️ Validation warnings:`, finalValidation.warnings);
+    }
+    
+    // Determine final compliance level
+    let complianceLevel = normalizeComplianceLevel(sanitized.complianceLevel);
+    
+    // If not applicable, use that consistently
+    if (!sanitized.isClauseApplicable) {
+      complianceLevel = 'not-applicable';
+    }
+    
+    return {
+      findingId: sanitized.findingId || findingId,
+      guidelineId: sanitized.guidelineId || clause.guidelineId,
+      guidelineName: sanitized.guidelineName || clause.guidelineName,
+      folderName: sanitized.folderName || clause.folderName,
+      pdfName: sanitized.pdfName || clause.pdfName,
+      clauseNumber: sanitized.clauseNumber || clause.clauseNumber,
+      clauseTitle: sanitized.clauseTitle || clause.clauseTitle,
+      clauseText: sanitized.clauseText || clause.clauseText,
+      regulatoryReference: sanitized.regulatoryReference || `${clause.guidelineType} ${clause.clauseNumber}`,
+      sopSectionNumber: sanitized.sopSectionNumber || 'N/A',
+      sopSectionTitle: sanitized.sopSectionTitle || 'Not Addressed',
+      sopTextSnippet: sanitized.sopTextSnippet || 'No specific SOP text identified for this clause.',
       complianceLevel,
-      matchConfidence: Math.min(100, Math.max(0, parsed.matchConfidence || 50)),
-      issueType: normalizeIssueType(parsed.issueType),
-      issueSeverity: normalizeIssueSeverity(parsed.issueSeverity),
-      specificGap: parsed.specificGap || 'Analysis required',
-      guidelineRequirement: parsed.guidelineRequirement || clause.clauseText.substring(0, 200),
-      sopCurrentState: parsed.sopCurrentState || 'Not determined',
-      suggestedAction: parsed.suggestedAction || 'Review required',
-      suggestedText: parsed.suggestedText || 'Review and update this section to address the guideline requirement.',
-      estimatedEffort: normalizeEstimatedEffort(parsed.estimatedEffort),
-      priority: Math.min(5, Math.max(1, parsed.priority || 3)),
+      matchConfidence: Math.min(100, Math.max(0, sanitized.matchConfidence || 50)),
+      issueType: normalizeIssueType(sanitized.issueType),
+      issueSeverity: normalizeIssueSeverity(sanitized.issueSeverity),
+      specificGap: sanitized.specificGap || 'Analysis required',
+      guidelineRequirement: sanitized.guidelineRequirement || clause.clauseText.substring(0, 200),
+      sopCurrentState: sanitized.sopCurrentState || 'Not determined',
+      suggestedAction: sanitized.suggestedAction || 'Review required',
+      suggestedText: sanitized.suggestedText || 'Review and update this section to address the guideline requirement.',
+      estimatedEffort: normalizeEstimatedEffort(sanitized.estimatedEffort),
+      priority: Math.min(5, Math.max(1, sanitized.priority || 3)),
       analyzedAt: new Date(),
       aiModelUsed: aiModel,
       analysisMethod: 'ai-semantic',
@@ -629,6 +682,7 @@ OUTPUT ONLY VALID JSON:`;
     };
   }
 }
+
 
 function findRelevantSection(sections: SOPSection[], clause: GuidelineRequirement): SOPSection {
   const clauseKeywords = (clause.keywords || []).concat(

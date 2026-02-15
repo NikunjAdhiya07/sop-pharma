@@ -330,3 +330,45 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+/**
+ * DELETE: Delete a compliance report
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const reportId = searchParams.get('reportId');
+
+    if (!reportId) {
+      return NextResponse.json(
+        { error: 'Report ID is required' },
+        { status: 400 }
+      );
+    }
+
+    await dbConnect();
+    
+    // Check if report exists first
+    const report = await ComplianceReport.findById(reportId);
+    if (!report) {
+      return NextResponse.json(
+        { error: 'Report not found' },
+        { status: 404 }
+      );
+    }
+
+    await ComplianceReport.findByIdAndDelete(reportId);
+
+    return NextResponse.json({
+      success: true,
+      message: 'Report deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting report:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete report', details: (error as Error).message },
+      { status: 500 }
+    );
+  }
+}
+

@@ -11,9 +11,9 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
  * - Traceable references to exact guideline sections
  */
 
-const apiKey = process.env.GEMINI_API_KEY;
+const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
 if (!apiKey) {
-  console.error('❌ GEMINI_API_KEY is missing in environment variables');
+  console.error('❌ GEMINI_API_KEY (or GOOGLE_AI_API_KEY) is missing');
 }
 
 const genAI = new GoogleGenerativeAI(apiKey || 'dummy_key_to_prevent_init_crash');

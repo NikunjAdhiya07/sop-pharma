@@ -241,7 +241,7 @@ const ComplianceReportSchema = new Schema<IComplianceReport>({
   },
   analysisEngine: {
     type: String,
-    enum: ['gemini-1.5-flash', 'manual', 'hybrid'],
+    enum: ['gemini-1.5-flash', 'manual', 'hybrid', 'models/gemini-3-flash-preview'],
     default: 'gemini-1.5-flash',
   },
   processingTimeMs: {

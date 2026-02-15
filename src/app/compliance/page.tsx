@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import FindingCard from './components/FindingCard';
+import SummaryCards from './components/SummaryCards';
 
 /**
  * SOP Compliance Engine - Redesigned with Step-by-Step Workflow
@@ -62,10 +64,13 @@ interface ComplianceFinding {
   suggestedAction: string;
   sopTextSnippet: string;
   highlightedIssue: string;
-  criticality: 'critical' | 'high' | 'medium' | 'low';
-  issueType: 'missing' | 'weak' | 'incomplete' | 'none';
+  criticality?: 'critical' | 'high' | 'medium' | 'low';
+  issueSeverity?: 'critical' | 'major' | 'minor' | 'informational';
+  issueType?: 'missing' | 'weak' | 'incomplete' | 'none';
+  guidelineRequirement?: string;
+  suggestedText?: string;
   // Section reference (like MCQ sopReference)
-  guidelineReference: string;
+  guidelineReference?: string;
 }
 
 interface ComplianceReport {
@@ -375,6 +380,36 @@ export default function ComplianceEnginePage() {
       setDeletingFolder(null);
     }
   };
+
+  // Delete a compliance report
+  const handleDeleteReport = async (reportId: string, event?: React.MouseEvent) => {
+    if (event) {
+      event.stopPropagation();
+    }
+    
+    if (!confirm('Are you sure you want to delete this compliance report?')) return;
+
+    try {
+      const response = await fetch(`/api/compliance/analyze?reportId=${reportId}`, {
+        method: 'DELETE',
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        // If the deleted report was selected, clear selection
+        if (selectedReport && selectedReport._id === reportId) {
+          setSelectedReport(null);
+        }
+        await fetchReports();
+      } else {
+        alert('Failed to delete report: ' + (data.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Error deleting report:', error);
+      alert('Error deleting report');
+    }
+  };
   // Run Analysis for all SOPs
   const runFullAnalysis = async () => {
     if (sops.length === 0) {
@@ -399,7 +434,7 @@ export default function ComplianceEnginePage() {
       setAnalysisProgress(`Analyzing ${i + 1}/${sops.length}: ${sop.identifier} - ${sop.name}`);
 
       try {
-        // Use V3 API with precision engine
+        // Use V3 API (V4 can't handle improperly parsed guidelines)
         const response = await fetch('/api/compliance/analyze-v3', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -407,11 +442,12 @@ export default function ComplianceEnginePage() {
             sopId: sop._id,
             userId: '000000000000000000000001',
             config: {
-              aiModel: 'gemini-1.5-flash',
-              maxClausesToAnalyze: 30, // Limit for faster analysis
+              aiModel: 'models/gemini-3-flash-preview',
+              maxClausesToAnalyze: 30,
             },
           }),
         });
+
 
         const data = await response.json();
         if (data.success) {
@@ -976,31 +1012,43 @@ export default function ComplianceEnginePage() {
               ) : (
                 <div className="space-y-3 max-h-[600px] overflow-y-auto">
                   {(reports || []).map(report => (
-                    <button
+                    <div
                       key={report._id}
-                      onClick={() => handleSelectReport(report)}
-                      className={`w-full p-4 rounded-xl text-left transition-all ${
+                      className={`relative w-full p-4 rounded-xl text-left transition-all group ${
                         selectedReport?._id === report._id
                           ? 'bg-purple-600/30 border-2 border-purple-500'
                           : 'bg-white/5 border border-white/10 hover:bg-white/10'
                       }`}
                     >
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-purple-400 font-bold">{report.sopIdentifier}</span>
-                        <span className={`text-2xl font-bold ${getScoreColor(report.overallScore)}`}>
-                          {getScoreEmoji(report.overallScore)} {report.overallScore}/10
-                        </span>
+                      <button
+                        onClick={(e) => handleDeleteReport(report._id, e)}
+                        className="absolute top-2 right-2 p-1.5 bg-red-600/80 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all z-20"
+                        title="Delete report"
+                      >
+                       🗑️
+                      </button>
+
+                      <div 
+                        onClick={() => handleSelectReport(report)}
+                        className="cursor-pointer"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-purple-400 font-bold">{report.sopIdentifier}</span>
+                          <span className={`text-2xl font-bold ${getScoreColor(report.overallScore)}`}>
+                            {getScoreEmoji(report.overallScore)} {report.overallScore}/10
+                          </span>
+                        </div>
+                        <p className="text-white text-sm truncate pr-8">{report.sopName}</p>
+                        <div className="flex items-center justify-between mt-2">
+                          <span className={`px-2 py-1 rounded-lg text-xs ${getStatusColor(report.complianceStatus)}`}>
+                            {report.complianceStatus}
+                          </span>
+                          <span className="text-gray-500 text-xs">
+                            {new Date(report.analyzedAt).toLocaleDateString()}
+                          </span>
+                        </div>
                       </div>
-                      <p className="text-white text-sm truncate">{report.sopName}</p>
-                      <div className="flex items-center justify-between mt-2">
-                        <span className={`px-2 py-1 rounded-lg text-xs ${getStatusColor(report.complianceStatus)}`}>
-                          {report.complianceStatus}
-                        </span>
-                        <span className="text-gray-500 text-xs">
-                          {new Date(report.analyzedAt).toLocaleDateString()}
-                        </span>
-                      </div>
-                    </button>
+                    </div>
                   ))}
                 </div>
               )}
@@ -1025,103 +1073,42 @@ export default function ComplianceEnginePage() {
                   </div>
                 </div>
 
-                {/* Statistics */}
-                <div className="grid grid-cols-4 gap-4 mb-6">
-                  <div className="p-4 bg-white/10 rounded-xl text-center">
-                    <p className="text-2xl font-bold text-white">{selectedReport.totalGuidelinesChecked}</p>
-                    <p className="text-gray-400 text-xs">Checked</p>
-                  </div>
-                  <div className="p-4 bg-emerald-600/20 rounded-xl text-center">
-                    <p className="text-2xl font-bold text-emerald-400">🟢 {selectedReport.compliantCount}</p>
-                    <p className="text-emerald-300 text-xs">Compliant</p>
-                  </div>
-                  <div className="p-4 bg-amber-600/20 rounded-xl text-center">
-                    <p className="text-2xl font-bold text-amber-400">🟡 {selectedReport.partialCount}</p>
-                    <p className="text-amber-300 text-xs">Partial</p>
-                  </div>
-                  <div className="p-4 bg-red-600/20 rounded-xl text-center">
-                    <p className="text-2xl font-bold text-red-400">🔴 {selectedReport.nonCompliantCount}</p>
-                    <p className="text-red-300 text-xs">Non-Compliant</p>
-                  </div>
-                </div>
+                {/* Summary Cards - New Component */}
+                <SummaryCards
+                  overallScore={selectedReport.overallScore}
+                  complianceStatus={selectedReport.complianceStatus}
+                  totalChecked={selectedReport.totalGuidelinesChecked}
+                  compliant={selectedReport.compliantCount}
+                  partial={selectedReport.partialCount}
+                  nonCompliant={selectedReport.nonCompliantCount}
+                />
 
-                {/* Detailed Findings */}
+                {/* Detailed Findings - New Component */}
                 <h3 className="text-lg font-bold text-white mb-4">📋 Findings with Guideline References</h3>
-                <div className="space-y-4 max-h-[400px] overflow-y-auto">
-                  {selectedReport.findings?.map((finding, idx) => (
-                    <div
-                      key={idx}
-                      className={`p-4 rounded-xl border ${
-                        finding.complianceLevel === 'compliant'
-                          ? 'bg-emerald-600/10 border-emerald-500/30'
-                          : finding.complianceLevel === 'partial'
-                          ? 'bg-amber-600/10 border-amber-500/30'
-                          : 'bg-red-600/10 border-red-500/30'
-                      }`}
-                    >
-                      {/* Guideline Reference (like MCQ sopReference) */}
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className="px-2 py-1 bg-purple-600/30 text-purple-300 rounded text-xs font-bold">
-                              📁 {finding.folderName}
-                            </span>
-                            <span className="px-2 py-1 bg-white/10 text-gray-300 rounded text-xs">
-                              {finding.guidelineName}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-white font-bold">
-                              Section {finding.clauseNumber}
-                            </span>
-                            <span className="text-gray-400">-</span>
-                            <span className="text-gray-300">{finding.clauseTitle}</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-col items-end gap-1">
-                          <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                            finding.complianceLevel === 'compliant'
-                              ? 'bg-emerald-600/30 text-emerald-300'
-                              : finding.complianceLevel === 'partial'
-                              ? 'bg-amber-600/30 text-amber-300'
-                              : 'bg-red-600/30 text-red-300'
-                          }`}>
-                            {finding.complianceLevel === 'compliant' ? '🟢' : finding.complianceLevel === 'partial' ? '🟡' : '🔴'} {finding.complianceLevel?.toUpperCase()}
-                          </span>
-                          {finding.criticality && finding.complianceLevel !== 'compliant' && (
-                            <span className={`px-2 py-0.5 rounded text-xs ${getCriticalityColor(finding.criticality)}`}>
-                              {finding.criticality?.toUpperCase()}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Issue Type */}
-                      {finding.issueType && finding.issueType !== 'none' && (
-                        <div className="mb-3">
-                          <span className="px-2 py-1 bg-white/10 text-gray-300 rounded text-xs">
-                            Issue: {finding.issueType === 'missing' ? '❌ Missing Clause' : finding.issueType === 'weak' ? '⚡ Weak' : '📝 Incomplete'}
-                          </span>
-                        </div>
-                      )}
-
-                      {/* Explanation */}
-                      {finding.mismatchExplanation && (
-                        <div className="p-3 bg-white/5 rounded-lg mb-3">
-                          <p className="text-gray-400 text-xs mb-1">📖 Explanation:</p>
-                          <p className="text-white text-sm">{finding.mismatchExplanation}</p>
-                        </div>
-                      )}
-
-                      {/* Suggested Action */}
-                      {finding.suggestedAction && finding.complianceLevel !== 'compliant' && (
-                        <div className="p-3 bg-purple-600/20 rounded-lg">
-                          <p className="text-purple-300 text-xs mb-1">💡 Suggested Improvement:</p>
-                          <p className="text-white text-sm">{finding.suggestedAction}</p>
-                        </div>
-                      )}
+                <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2">
+                  {selectedReport.findings && selectedReport.findings.length > 0 ? (
+                    selectedReport.findings.map((finding, idx) => (
+                      <FindingCard
+                        key={idx}
+                        id={`finding-${idx}`}
+                        requirement={finding.guidelineRequirement || finding.clauseText || ''}
+                        gap={finding.mismatchExplanation || finding.highlightedIssue || ''}
+                        impact={finding.highlightedIssue || 'Impact not specified'}
+                        suggestion={finding.suggestedAction || ''}
+                        reference={`${finding.folderName} → ${finding.guidelineName} → ${finding.clauseNumber}`}
+                        severity={finding.issueSeverity || (finding.criticality === 'critical' || finding.criticality === 'high' ? 'major' : 'minor')}
+                        status={finding.complianceLevel}
+                        confidence={finding.matchConfidence || 0}
+                        sopSection={finding.sopSectionAffected?.split(' - ')[0] || 'N/A'}
+                        sopTextSnippet={finding.sopTextSnippet || ''}
+                        suggestedText={finding.suggestedText || ''}
+                      />
+                    ))
+                  ) : (
+                    <div className="text-center py-8 text-gray-400">
+                      <p>No findings available</p>
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
             )}

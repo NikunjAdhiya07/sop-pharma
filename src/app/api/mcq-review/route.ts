@@ -124,12 +124,23 @@ export async function PUT(request: NextRequest) {
       reviewStatus,
       editedBy,
       markedDoneBy,
+      moveToRecycle, // New flag to indicate if old version should be recycled
     } = body;
 
     if (!reviewId) {
       return NextResponse.json(
         { success: false, error: 'Review ID is required' },
         { status: 400 }
+      );
+    }
+
+    // Get the current review to access old data
+    const currentReview = await MCQReview.findById(reviewId);
+    
+    if (!currentReview) {
+      return NextResponse.json(
+        { success: false, error: 'Review not found' },
+        { status: 404 }
       );
     }
 
@@ -140,6 +151,44 @@ export async function PUT(request: NextRequest) {
       updateData.editedQuestion = editedQuestion;
       updateData.editedBy = editedBy;
       updateData.editedAt = new Date();
+    }
+
+    // If marking as done with changes - move old version to recycle
+    if (reviewStatus === 'done' && moveToRecycle && currentReview.editedQuestion) {
+      // Import MCQRecycle dynamically to avoid circular dependencies
+      const MCQRecycle = (await import('@/models/MCQRecycle')).default;
+      
+      // Determine which version is "old" - if there was already an edited version, that's the old one
+      // Otherwise, the original question is the old one
+      const oldVersion = currentReview.editedQuestion || currentReview.originalQuestion;
+      const newVersion = editedQuestion || currentReview.editedQuestion;
+      
+      // Create folder path
+      const parts = currentReview.sopIdentifier.split('-');
+      const department = parts.length >= 2 ? parts[1] : 'General';
+      const folderPath = `${department}/${currentReview.sopIdentifier}`;
+      
+      // Move to recycle
+      await MCQRecycle.create({
+        originalReviewId: currentReview._id,
+        originalMcqBankId: currentReview.originalMcqBankId,
+        originalQuestionIndex: currentReview.originalQuestionIndex,
+        sopId: currentReview.sopId,
+        sopName: currentReview.sopName,
+        sopIdentifier: currentReview.sopIdentifier,
+        oldVersion,
+        newVersion,
+        replacedBy: markedDoneBy || 'Unknown',
+        replacedAt: new Date(),
+        recycleReason: 'Question updated and marked as completed',
+        folderPath,
+        isRestored: false,
+      });
+      
+      // Update version tracking
+      updateData.versionNumber = (currentReview.versionNumber || 1) + 1;
+      updateData.lastUpdatedVersion = new Date();
+      updateData.hasBeenRecycled = true;
     }
 
     // If marking as done
@@ -172,7 +221,9 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({
       success: true,
       review: updatedReview,
-      message: 'Review updated successfully',
+      message: moveToRecycle 
+        ? 'Review updated and old version moved to recycle' 
+        : 'Review updated successfully',
     });
   } catch (error: any) {
     console.error('Error updating review:', error);

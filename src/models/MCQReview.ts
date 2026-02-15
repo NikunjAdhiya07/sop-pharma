@@ -52,6 +52,11 @@ export interface IMCQReview extends Document {
   editedAt?: Date;
   markedDoneBy?: string;
   markedDoneAt?: Date;
+  
+  // Version tracking
+  versionNumber: number; // Tracks how many times this has been updated
+  lastUpdatedVersion?: Date; // When the last version update occurred
+  hasBeenRecycled: boolean; // Whether old version was moved to recycle
 }
 
 const OptionVariantSchema = new Schema<IOptionVariant>({
@@ -167,6 +172,17 @@ const MCQReviewSchema = new Schema<IMCQReview>({
   },
   markedDoneAt: {
     type: Date,
+  },
+  versionNumber: {
+    type: Number,
+    default: 1,
+  },
+  lastUpdatedVersion: {
+    type: Date,
+  },
+  hasBeenRecycled: {
+    type: Boolean,
+    default: false,
   },
 }, {
   timestamps: true,

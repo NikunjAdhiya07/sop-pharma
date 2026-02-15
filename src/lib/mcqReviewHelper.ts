@@ -47,16 +47,22 @@ export async function getMCQsWithReviewEdits(
   const selectedMCQs = shuffled.slice(0, count);
 
   // Fetch all reviews that are marked as "done" and have edited versions
+  // Optimize: Only fetch reviews for the relevant MCQ banks
+  const mcqBankIds = mcqBanks.map(b => b._id);
+  
   const reviews = await MCQReview.find({
     reviewStatus: 'done',
-    editedQuestion: { $exists: true, $ne: null }
+    editedQuestion: { $exists: true, $ne: null },
+    originalMcqBankId: { $in: mcqBankIds }
   }).lean();
 
   // Create a map for quick lookup: "mcqBankId:questionIndex" -> editedQuestion
   const editMap = new Map<string, any>();
   
   for (const review of reviews) {
+    // @ts-ignore
     const key = `${review.originalMcqBankId}:${review.originalQuestionIndex}`;
+    // @ts-ignore
     editMap.set(key, review.editedQuestion);
   }
 

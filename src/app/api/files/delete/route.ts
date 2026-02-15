@@ -4,6 +4,7 @@ import SOP from '@/models/SOP';
 import MCQBank from '@/models/MCQBank';
 import { unlink } from 'fs/promises';
 import path from 'path';
+import ComplianceReport from '@/models/ComplianceReport';
 
 export async function DELETE(request: NextRequest) {
   try {
@@ -29,7 +30,10 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Delete associated MCQ Bank if exists
-    await MCQBank.deleteOne({ sopId: id });
+    await MCQBank.deleteMany({ sopId: id }); // Use deleteMany just in case
+
+    // Delete associated Compliance Reports
+    await ComplianceReport.deleteMany({ sopId: id });
 
     // Delete the physical file
     try {
