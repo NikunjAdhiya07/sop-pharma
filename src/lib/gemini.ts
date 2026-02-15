@@ -394,18 +394,34 @@ Return ONLY the JSON. No additional text before or after.
 
     console.log(`✅ Batch ${batchIndex + 1} parsed successfully: ${parsed.mcqs.length} questions`);
 
-    // Standardize and heal
-    return parsed.mcqs.map(mcq => ({
-      ...mcq,
-      aiIcon: mcq.aiIcon || '🔬',
-      optionVariants: (mcq.optionVariants || mcq.options.map((opt: string) => ({
-        text: opt,
-        isCorrect: opt === mcq.correctAnswer
-      }))).map((v: any) => ({
-        ...v,
-        isCorrect: v.isCorrect !== undefined ? v.isCorrect : v.text === mcq.correctAnswer
-      }))
-    }));
+    // Standardize, validate, and heal
+    return parsed.mcqs.map((mcq, idx) => {
+      // Validate that correctAnswer exists and matches one of the options
+      const hasValidCorrectAnswer = mcq.options && mcq.options.some((opt: string) => 
+        opt.trim().toLowerCase() === (mcq.correctAnswer || '').trim().toLowerCase()
+      );
+      
+      if (!hasValidCorrectAnswer) {
+        console.warn(`⚠️ Question ${idx + 1} in batch ${batchIndex + 1} has invalid correctAnswer: "${mcq.correctAnswer}"`);
+        console.warn(`   Options: ${JSON.stringify(mcq.options)}`);
+        console.warn(`   Defaulting to first option as correct answer.`);
+        
+        // Default to first option if correctAnswer is invalid
+        mcq.correctAnswer = mcq.options && mcq.options.length > 0 ? mcq.options[0] : '';
+      }
+      
+      return {
+        ...mcq,
+        aiIcon: mcq.aiIcon || '🔬',
+        optionVariants: (mcq.optionVariants || mcq.options.map((opt: string) => ({
+          text: opt,
+          isCorrect: opt === mcq.correctAnswer
+        }))).map((v: any) => ({
+          ...v,
+          isCorrect: v.isCorrect !== undefined ? v.isCorrect : v.text === mcq.correctAnswer
+        }))
+      };
+    });
 
   } catch (error: any) {
     console.error(`💥 Error in batch ${batchIndex + 1} (attempt ${retryCount + 1}/${MAX_RETRIES + 1}):`, error.message);
