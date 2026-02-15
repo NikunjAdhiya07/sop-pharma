@@ -142,7 +142,7 @@ export default function FindingCard({
           <div className="space-y-2">
             {gap.split('\n\n').map((part, idx) => {
               // Check if this part has a bold header (e.g., **Guideline Requires:**)
-              const match = part.match(/^\*\*(.*?):\*\*\s*(.*)$/s);
+              const match = part.match(/^\*\*(.*?):\*\*\s*([\s\S]*)$/);
               if (match) {
                 return (
                   <div key={idx} className="mb-2">
@@ -170,7 +170,7 @@ export default function FindingCard({
           <div className="space-y-3">
             {suggestion.split('\n\n').map((part, idx) => {
               // Check for bold headers
-              const match = part.match(/^\*\*(.*?):\*\*\s*(.*)$/s);
+              const match = part.match(/^\*\*(.*?):\*\*\s*([\s\S]*)$/);
               if (match) {
                 const header = match[1];
                 const content = match[2];
