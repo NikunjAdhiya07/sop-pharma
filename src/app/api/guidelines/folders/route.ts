@@ -21,7 +21,7 @@ export async function GET() {
         $group: {
           _id: '$folderName',
           guidelineCount: { $sum: 1 },
-          totalClauses: { $sum: { $size: '$clauses' } },
+          totalClauses: { $sum: { $size: { $ifNull: ['$clauses', []] } } },
           lastUpdated: { $max: '$updatedAt' },
         },
       },

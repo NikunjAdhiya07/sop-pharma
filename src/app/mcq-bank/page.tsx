@@ -123,6 +123,7 @@ function MCQBankContent() {
   // Sort state
   const [sortBy, setSortBy] = useState<'name' | 'questions' | 'date' | 'identifier'>('identifier');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [filterReviewStatus, setFilterReviewStatus] = useState<'all' | 'checked' | 'similar' | 'reviewed'>('all');
 
   // Apply copy protection to prevent copying/downloading questions
   useCopyProtection();
@@ -214,7 +215,8 @@ function MCQBankContent() {
     }
   };
 
-  const fetchFullBankDetails = async (bank: MCQBank) => {
+  const fetchFullBankDetails = async (bank: MCQBank, filter: 'all' | 'checked' | 'similar' | 'reviewed' = 'all') => {
+    setFilterReviewStatus(filter);
     // Always fetch latest from DB when opening modal to ensure persistence
     try {
       // Check if we have FULL question data (not just partial status flags)
@@ -467,7 +469,7 @@ function MCQBankContent() {
         alert(`Question deleted successfully and moved to Recycled section.`);
         // Refresh the bank
         if (selectedMCQBank) {
-          await fetchFullBankDetails({ ...selectedMCQBank, _id: bankId });
+          await fetchFullBankDetails({ ...selectedMCQBank, _id: bankId }, filterReviewStatus);
         }
       } else {
         alert(`Failed to delete question: ${data.error}`);
@@ -531,12 +533,12 @@ function MCQBankContent() {
         // We need to refetch the whole bank
         if (selectedMCQBank) {
            // Create a temp object to pass ID
-           fetchFullBankDetails({ ...selectedMCQBank, _id: bankId });
+           fetchFullBankDetails({ ...selectedMCQBank, _id: bankId }, filterReviewStatus);
         }
       } else {
         alert('Question deleted but failed to generate replacement. Please try manually adding a question.');
         if (selectedMCQBank) {
-           fetchFullBankDetails({ ...selectedMCQBank, _id: bankId });
+           fetchFullBankDetails({ ...selectedMCQBank, _id: bankId }, filterReviewStatus);
         }
       }
 
@@ -1099,10 +1101,10 @@ function MCQBankContent() {
               setExpandedSubcats={setExpandedSubcats}
               expandedSOPs={expandedSOPs}
               setExpandedSOPs={setExpandedSOPs}
-              onViewMCQs={(sopNode) => {
+              onViewMCQs={(sopNode, filterStatus = 'all') => {
                 // Find the first MCQ bank for this SOP
                 if (sopNode.mcqBanks && sopNode.mcqBanks.length > 0) {
-                  fetchFullBankDetails(sopNode.mcqBanks[0]);
+                  fetchFullBankDetails(sopNode.mcqBanks[0], filterStatus);
                 }
               }}
               onDownloadSOP={(sopNode) => {
@@ -1355,6 +1357,34 @@ function MCQBankContent() {
                         className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'recycled' ? 'bg-white text-purple-600 shadow-sm' : 'text-purple-100 hover:bg-white/10'}`}
                       >Recycled ({recycledQuestions.length > 0 ? recycledQuestions.length : ''})</button>
                     </div>
+                    {/* Filter Pills */}
+                    {activeTab === 'active' && selectedMCQBank?.mcqs && (
+                      <div className="flex flex-wrap gap-2 mt-4 ml-1">
+                        {[
+                          { id: 'all', label: 'All', count: selectedMCQBank.mcqs.length },
+                          { id: 'checked', label: 'Checked', count: selectedMCQBank.mcqs.filter(q => q.isChecked).length },
+                          { id: 'similar', label: 'Similar', count: selectedMCQBank.mcqs.filter(q => q.isSimilar).length },
+                          { id: 'reviewed', label: 'Reviewed', count: selectedMCQBank.mcqs.filter(q => q.isReviewed).length }
+                        ].map(filter => (
+                          <button
+                            key={filter.id}
+                            onClick={() => setFilterReviewStatus(filter.id as any)}
+                            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all border flex items-center gap-2 ${
+                              filterReviewStatus === filter.id
+                                ? 'bg-white text-purple-600 border-white shadow-md'
+                                : 'bg-white/5 text-purple-200 border-white/10 hover:bg-white/10'
+                            }`}
+                          >
+                            <span>{filter.label}</span>
+                            <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${
+                              filterReviewStatus === filter.id ? 'bg-purple-100 text-purple-600' : 'bg-black/30 text-purple-200'
+                            }`}>
+                              {filter.count}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-4">
 
@@ -1372,6 +1402,9 @@ function MCQBankContent() {
                 {activeTab === 'active' ? (selectedMCQBank.mcqs && selectedMCQBank.mcqs.length > 0 ? (
                   selectedMCQBank.mcqs.map((mcq, originalIndex) => {
                   if (difficultyFilter !== 'All' && mcq.difficulty !== difficultyFilter) return null;
+                  if (filterReviewStatus === 'checked' && !mcq.isChecked) return null;
+                  if (filterReviewStatus === 'similar' && !mcq.isSimilar) return null;
+                  if (filterReviewStatus === 'reviewed' && !mcq.isReviewed) return null;
                   
                   return (
                     <div

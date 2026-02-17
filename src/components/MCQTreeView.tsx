@@ -158,7 +158,7 @@ interface MCQTreeViewProps {
     totalQuestions: number;
   };
   searchTerm?: string;
-  onViewMCQs: (sopNode: SOPNode) => void;
+  onViewMCQs: (sopNode: SOPNode, filterStatus?: 'all' | 'checked' | 'similar' | 'reviewed') => void;
   onDownloadSOP: (sopNode: SOPNode) => void;
   
   // Lifted state for persistence
@@ -198,11 +198,11 @@ export default function MCQTreeView({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   
   // Sort state for each department
-  const [deptSortBy, setDeptSortBy] = useState<Record<string, 'name' | 'sops' | 'questions'>>({});
+  const [deptSortBy, setDeptSortBy] = useState<Record<string, 'name' | 'sops' | 'questions' | 'checked' | 'similar' | 'reviewed' | 'notChecked'>>({});
   const [deptSortOrder, setDeptSortOrder] = useState<Record<string, 'asc' | 'desc'>>({});
   
   // Sort state for each subcategory
-  const [subcatSortBy, setSubcatSortBy] = useState<Record<string, 'name' | 'questions' | 'identifier'>>({});
+  const [subcatSortBy, setSubcatSortBy] = useState<Record<string, 'name' | 'questions' | 'identifier' | 'checked' | 'similar' | 'reviewed' | 'notChecked'>>({});
   const [subcatSortOrder, setSubcatSortOrder] = useState<Record<string, 'asc' | 'desc'>>({});
   
   // Efficient search filter function
@@ -257,6 +257,18 @@ export default function MCQTreeView({
         case 'questions':
           comparison = a.totalQuestions - b.totalQuestions;
           break;
+        case 'checked':
+          comparison = a.sops.reduce((sum, s) => sum + (s.checkedCount || 0), 0) - b.sops.reduce((sum, s) => sum + (s.checkedCount || 0), 0);
+          break;
+        case 'similar':
+          comparison = a.sops.reduce((sum, s) => sum + (s.similarCount || 0), 0) - b.sops.reduce((sum, s) => sum + (s.similarCount || 0), 0);
+          break;
+        case 'reviewed':
+          comparison = a.sops.reduce((sum, s) => sum + (s.reviewedCount || 0), 0) - b.sops.reduce((sum, s) => sum + (s.reviewedCount || 0), 0);
+          break;
+        case 'notChecked':
+          comparison = a.sops.reduce((sum, s) => sum + (s.totalQuestions - (s.checkedCount || 0)), 0) - b.sops.reduce((sum, s) => sum + (s.totalQuestions - (s.checkedCount || 0)), 0);
+          break;
       }
       
       return sortOrder === 'asc' ? comparison : -comparison;
@@ -283,13 +295,25 @@ export default function MCQTreeView({
         case 'questions':
           comparison = a.totalQuestions - b.totalQuestions;
           break;
+        case 'checked':
+          comparison = (a.checkedCount || 0) - (b.checkedCount || 0);
+          break;
+        case 'similar':
+          comparison = (a.similarCount || 0) - (b.similarCount || 0);
+          break;
+        case 'reviewed':
+          comparison = (a.reviewedCount || 0) - (b.reviewedCount || 0);
+          break;
+        case 'notChecked':
+          comparison = (a.totalQuestions - (a.checkedCount || 0)) - (b.totalQuestions - (b.checkedCount || 0));
+          break;
       }
       
       return sortOrder === 'asc' ? comparison : -comparison;
     });
   };
   
-  const toggleDeptSort = (deptName: string, sortType: 'name' | 'sops' | 'questions') => {
+  const toggleDeptSort = (deptName: string, sortType: 'name' | 'sops' | 'questions' | 'checked' | 'similar' | 'reviewed' | 'notChecked') => {
     if (deptSortBy[deptName] === sortType) {
       setDeptSortOrder({
         ...deptSortOrder,
@@ -297,12 +321,14 @@ export default function MCQTreeView({
       });
     } else {
       setDeptSortBy({ ...deptSortBy, [deptName]: sortType });
-      setDeptSortOrder({ ...deptSortOrder, [deptName]: 'asc' });
+      // Default to descending for numeric stats, ascending for name
+      const defaultOrder = ['questions', 'sops', 'checked', 'similar', 'reviewed', 'notChecked'].includes(sortType) ? 'desc' : 'asc';
+      setDeptSortOrder({ ...deptSortOrder, [deptName]: defaultOrder });
     }
   };
   
   
-  const toggleSubcatSort = (subcatKey: string, sortType: 'name' | 'questions' | 'identifier') => {
+  const toggleSubcatSort = (subcatKey: string, sortType: 'name' | 'questions' | 'identifier' | 'checked' | 'similar' | 'reviewed' | 'notChecked') => {
     if (subcatSortBy[subcatKey] === sortType) {
       setSubcatSortOrder({
         ...subcatSortOrder,
@@ -310,7 +336,9 @@ export default function MCQTreeView({
       });
     } else {
       setSubcatSortBy({ ...subcatSortBy, [subcatKey]: sortType });
-      setSubcatSortOrder({ ...subcatSortOrder, [subcatKey]: 'asc' });
+      // Default to descending for numeric stats
+      const defaultOrder = ['questions', 'checked', 'similar', 'reviewed', 'notChecked'].includes(sortType) ? 'desc' : 'asc';
+      setSubcatSortOrder({ ...subcatSortOrder, [subcatKey]: defaultOrder });
     }
   };
   
@@ -430,11 +458,11 @@ export default function MCQTreeView({
         const theme = getDeptTheme(dept.name);
         
         return (
-          <div key={dept.name} className={`bg-white/5 backdrop-blur-lg rounded-3xl border border-white/10 ${theme.borderHover} transition-all duration-300 transform hover:scale-[1.03] shadow-xl hover:shadow-2xl overflow-hidden cursor-pointer group`}>
+          <div key={dept.name} className={`backdrop-blur-lg rounded-3xl border border-white/5 ${theme.borderHover} bg-gradient-to-br ${theme.subcatBg} transition-all duration-300 transform hover:scale-[1.03] shadow-xl hover:shadow-2xl overflow-hidden cursor-pointer group`}>
             {/* Department Header */}
             <button
               onClick={() => setFullScreenDept(dept)}
-              className={`w-full px-6 py-6 flex flex-col gap-4 bg-gradient-to-br from-white/5 to-transparent transition-all`}
+              className={`w-full px-6 py-6 flex flex-col gap-4 bg-transparent transition-all`}
             >
               <div className="flex items-center justify-between w-full">
                 <div className="flex items-center gap-4">
@@ -498,6 +526,44 @@ export default function MCQTreeView({
                   <span className="bg-black/20 px-3 py-1 rounded-lg border border-white/5">{fullScreenDept.totalSOPs} SOPs</span>
                   <span className="bg-black/20 px-3 py-1 rounded-lg border border-white/5">{fullScreenDept.totalQuestions} Questions</span>
                   <span className="bg-black/20 px-3 py-1 rounded-lg border border-white/5">{fullScreenDept.subcategories.length} Subcategories</span>
+                  {(() => {
+                    const stats = fullScreenDept.subcategories.reduce((acc, sub) => {
+                      sub.sops.forEach(sop => {
+                        acc.checked += sop.checkedCount || 0;
+                        acc.similar += sop.similarCount || 0;
+                        acc.reviewed += sop.reviewedCount || 0;
+                      });
+                      return acc;
+                    }, { checked: 0, similar: 0, reviewed: 0 });
+                    return (
+                      <>
+                         <button 
+                            onClick={() => toggleDeptSort(fullScreenDept.name, 'checked')}
+                            className="bg-green-900/20 px-3 py-1 rounded-lg border border-green-500/20 text-green-300 hover:bg-green-900/40 hover:border-green-500/40 transition-colors"
+                         >
+                           {stats.checked} Checked
+                         </button>
+                         <button 
+                            onClick={() => toggleDeptSort(fullScreenDept.name, 'notChecked')}
+                            className="bg-red-900/20 px-3 py-1 rounded-lg border border-red-500/20 text-red-300 hover:bg-red-900/40 hover:border-red-500/40 transition-colors"
+                         >
+                           {(fullScreenDept.totalQuestions || 0) - stats.checked} Not Checked
+                         </button>
+                         <button 
+                            onClick={() => toggleDeptSort(fullScreenDept.name, 'similar')}
+                            className="bg-orange-900/20 px-3 py-1 rounded-lg border border-orange-500/20 text-orange-300 hover:bg-orange-900/40 hover:border-orange-500/40 transition-colors"
+                         >
+                           {stats.similar} Similar
+                         </button>
+                         <button 
+                            onClick={() => toggleDeptSort(fullScreenDept.name, 'reviewed')}
+                            className="bg-yellow-900/20 px-3 py-1 rounded-lg border border-yellow-500/20 text-yellow-300 hover:bg-yellow-900/40 hover:border-yellow-500/40 transition-colors"
+                         >
+                           {stats.reviewed} Reviewed
+                         </button>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -550,6 +616,32 @@ export default function MCQTreeView({
                     )}
                   </button>
                 ))}
+                
+                <div className="w-px h-6 bg-white/10 mx-2"></div>
+                
+                {[
+                  { value: 'checked', label: 'Checked' },
+                  { value: 'notChecked', label: 'Not Checked' },
+                  { value: 'similar', label: 'Similar' },
+                  { value: 'reviewed', label: 'Reviewed' }
+                ].map((sort) => (
+                  <button
+                    key={sort.value}
+                    onClick={() => toggleDeptSort(fullScreenDept.name, sort.value as any)}
+                    className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 ${
+                      deptSortBy[fullScreenDept.name] === sort.value
+                        ? `${theme.button} text-white shadow-lg shadow-${theme.bg}/20`
+                        : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200'
+                    }`}
+                  >
+                    {sort.label}
+                    {deptSortBy[fullScreenDept.name] === sort.value && (
+                      deptSortOrder[fullScreenDept.name] === 'asc' ? 
+                        <SortAsc className="h-4 w-4" /> : 
+                        <SortDesc className="h-4 w-4" />
+                    )}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
@@ -563,9 +655,9 @@ export default function MCQTreeView({
                 return (
                   <div key={subcatKey} className={`rounded-2xl border border-white/5 overflow-hidden bg-gradient-to-br ${theme.subcatBg}`}>
                     {/* Subcategory Header */}
-                    <button
+                    <div
                       onClick={() => toggleSubcategory(subcatKey)}
-                      className="w-full px-6 py-5 flex items-center justify-between hover:bg-white/5 transition-all group"
+                      className="w-full px-6 py-5 flex items-center justify-between hover:bg-white/5 transition-all group cursor-pointer"
                     >
                       <div className="flex items-center gap-4">
                         <div className={`p-2 rounded-lg bg-black/20 ${theme.text}`}>
@@ -576,8 +668,48 @@ export default function MCQTreeView({
                             {subcat.name}
                             <span className="text-xs px-2 py-0.5 rounded bg-white/10 text-gray-300 font-normal">{subcat.code}</span>
                           </h4>
-                          <p className="text-sm text-gray-400 mt-1">
-                            {subcat.totalSOPs} SOPs • {subcat.totalQuestions} Questions
+                          <p className="text-sm text-gray-400 mt-1 flex items-center gap-2">
+                             {subcat.totalSOPs} SOPs • {subcat.totalQuestions} Questions
+                             {(() => {
+                               const stats = subcat.sops.reduce((acc, sop) => {
+                                 acc.checked += sop.checkedCount || 0;
+                                 acc.similar += sop.similarCount || 0;
+                                 acc.reviewed += sop.reviewedCount || 0;
+                                 return acc;
+                               }, { checked: 0, similar: 0, reviewed: 0 });
+                               return (
+                               <span className="flex items-center gap-2 text-xs ml-2 border-l border-white/10 pl-2">
+                                     <button 
+                                      onClick={(e) => { e.stopPropagation(); toggleSubcatSort(subcatKey, 'checked'); }}
+                                      className={`flex items-center gap-1 hover:underline ${stats.checked > 0 ? 'text-green-400' : 'text-gray-600'}`}
+                                     >
+                                       <div className={`w-1.5 h-1.5 rounded-full ${stats.checked > 0 ? 'bg-green-400' : 'bg-gray-600'}`}></div>
+                                       {stats.checked} Checked
+                                     </button>
+                                     <button 
+                                      onClick={(e) => { e.stopPropagation(); toggleSubcatSort(subcatKey, 'notChecked'); }}
+                                      className={`flex items-center gap-1 hover:underline ${subcat.totalQuestions - stats.checked > 0 ? 'text-red-400' : 'text-gray-600'}`}
+                                     >
+                                       <div className={`w-1.5 h-1.5 rounded-full ${subcat.totalQuestions - stats.checked > 0 ? 'bg-red-400' : 'bg-gray-600'}`}></div>
+                                       {subcat.totalQuestions - stats.checked} Not Checked
+                                     </button>
+                                     <button 
+                                      onClick={(e) => { e.stopPropagation(); toggleSubcatSort(subcatKey, 'similar'); }}
+                                      className={`flex items-center gap-1 hover:underline ${stats.similar > 0 ? 'text-orange-400' : 'text-gray-600'}`}
+                                     >
+                                       <div className={`w-1.5 h-1.5 rounded-full ${stats.similar > 0 ? 'bg-orange-400' : 'bg-gray-600'}`}></div>
+                                       {stats.similar} Similar
+                                     </button>
+                                     <button 
+                                      onClick={(e) => { e.stopPropagation(); toggleSubcatSort(subcatKey, 'reviewed'); }}
+                                      className={`flex items-center gap-1 hover:underline ${stats.reviewed > 0 ? 'text-yellow-400' : 'text-gray-600'}`}
+                                     >
+                                        <div className={`w-1.5 h-1.5 rounded-full ${stats.reviewed > 0 ? 'bg-yellow-400' : 'bg-gray-600'}`}></div>
+                                       {stats.reviewed} Reviewed
+                                     </button>
+                                   </span>
+                               );
+                             })()}
                           </p>
                         </div>
                       </div>
@@ -585,7 +717,7 @@ export default function MCQTreeView({
                       <div className={`p-2 rounded-full ${isSubcatExpanded ? 'bg-white/10' : 'bg-transparent'} transition-colors`}>
                         <ChevronRight className={`h-5 w-5 ${theme.text} transition-transform duration-300 ${isSubcatExpanded ? 'rotate-90' : ''}`} />
                       </div>
-                    </button>
+                    </div>
 
                     {/* SOP Content Area */}
                     {isSubcatExpanded && (
@@ -597,12 +729,33 @@ export default function MCQTreeView({
                               <div className="flex bg-black/30 rounded-lg p-1">
                                 {[
                                   { value: 'identifier', label: 'ID' },
-                                  { value: 'name', label: 'Name' },
+                                   { value: 'name', label: 'Name' },
                                   { value: 'questions', label: 'Questions' }
                                 ].map((sort) => (
                                   <button
                                     key={sort.value}
                                     onClick={() => toggleSubcatSort(subcatKey, sort.value as 'name' | 'questions' | 'identifier')}
+                                    className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                                      (subcatSortBy[subcatKey] || 'identifier') === sort.value
+                                        ? 'bg-white/10 text-white shadow-sm'
+                                        : 'text-gray-500 hover:text-gray-300'
+                                    }`}
+                                  >
+                                    {sort.label}
+                                  </button>
+                                ))}
+                                
+                                <span className="w-px h-4 bg-white/10 mx-1"></span>
+                                
+                                {[
+                                  { value: 'checked', label: 'Checked' },
+                                  { value: 'notChecked', label: 'Not Checked' },
+                                  { value: 'similar', label: 'Similar' },
+                                  { value: 'reviewed', label: 'Reviewed' }
+                                ].map((sort) => (
+                                  <button
+                                    key={sort.value}
+                                    onClick={() => toggleSubcatSort(subcatKey, sort.value as any)}
                                     className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
                                       (subcatSortBy[subcatKey] || 'identifier') === sort.value
                                         ? 'bg-white/10 text-white shadow-sm'
@@ -628,13 +781,13 @@ export default function MCQTreeView({
                               className={`group relative bg-[#131620] rounded-xl border overflow-hidden transition-all duration-300 cursor-pointer
                                   ${isSOPExpanded 
                                     ? 'border-purple-500 bg-[#1A1E2E] shadow-[0_0_20px_rgba(168,85,247,0.15)]' 
-                                    : 'border-white/5 hover:border-purple-500/50 hover:bg-[#1A1E2E] hover:shadow-[0_0_20px_rgba(168,85,247,0.15)] hover:scale-[1.02]'
+                                    : 'border-slate-800/60 bg-[#131620] hover:border-purple-500/50 hover:bg-[#1A1E2E] hover:shadow-[0_0_20px_rgba(168,85,247,0.15)] hover:scale-[1.02]'
                                   }`}
                             >
                               {/* SOP Header */}
-                              <button
+                              <div
                                 onClick={() => toggleSOP(sop.sopId)}
-                                className="w-full px-6 py-5 flex items-start gap-5 text-left"
+                                className="w-full px-6 py-5 flex items-start gap-5 text-left cursor-pointer"
                               >
                                 {/* Icon Box */}
                                 <div className={`mt-1 p-3 rounded-xl transition-all duration-300 shrink-0
@@ -660,28 +813,46 @@ export default function MCQTreeView({
                                         {sop.totalQuestions > 0 ? `${sop.totalQuestions} Qs` : 'No Qs'}
                                       </span>
                                       
-                                      {/* Similar Count Badge */}
+                                      {/* Similar Count Badge - Clickable */}
                                       {sop.similarCount && sop.similarCount > 0 ? (
-                                        <span className="text-[10px] uppercase tracking-wider font-bold px-2.5 py-1 rounded-md border border-orange-500/30 bg-orange-500/20 text-orange-400 shadow-[0_0_10px_rgba(249,115,22,0.1)] flex items-center gap-1">
+                                        <button 
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onViewMCQs(sop, 'similar');
+                                          }}
+                                          className="text-[10px] uppercase tracking-wider font-bold px-2.5 py-1 rounded-md border border-orange-500/30 bg-orange-500/20 text-orange-400 shadow-[0_0_10px_rgba(249,115,22,0.1)] flex items-center gap-1 hover:bg-orange-500/30 hover:scale-105 transition-all"
+                                        >
                                           <div className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse"></div>
                                           {sop.similarCount} Similar
-                                        </span>
+                                        </button>
                                       ) : null}
 
-                                      {/* Checked Count Badge */}
+                                      {/* Checked Count Badge - Clickable */}
                                       {sop.checkedCount && sop.checkedCount > 0 ? (
-                                        <span className="text-[10px] uppercase tracking-wider font-bold px-2.5 py-1 rounded-md border border-green-500/30 bg-green-500/20 text-green-400 shadow-[0_0_10px_rgba(34,197,94,0.1)] flex items-center gap-1">
+                                        <button 
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onViewMCQs(sop, 'checked');
+                                          }}
+                                          className="text-[10px] uppercase tracking-wider font-bold px-2.5 py-1 rounded-md border border-green-500/30 bg-green-500/20 text-green-400 shadow-[0_0_10px_rgba(34,197,94,0.1)] flex items-center gap-1 hover:bg-green-500/30 hover:scale-105 transition-all"
+                                        >
                                           <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></div>
                                           {sop.checkedCount} Checked
-                                        </span>
+                                        </button>
                                       ) : null}
 
-                                      {/* Reviewed Count Badge */}
+                                      {/* Reviewed Count Badge - Clickable */}
                                       {sop.reviewedCount && sop.reviewedCount > 0 ? (
-                                        <span className="text-[10px] uppercase tracking-wider font-bold px-2.5 py-1 rounded-md border border-yellow-500/30 bg-yellow-500/20 text-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.1)] flex items-center gap-1">
+                                        <button 
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onViewMCQs(sop, 'reviewed');
+                                          }}
+                                          className="text-[10px] uppercase tracking-wider font-bold px-2.5 py-1 rounded-md border border-yellow-500/30 bg-yellow-500/20 text-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.1)] flex items-center gap-1 hover:bg-yellow-500/30 hover:scale-105 transition-all"
+                                        >
                                           <div className="w-1.5 h-1.5 rounded-full bg-yellow-400"></div>
                                           {sop.reviewedCount} Reviewed
-                                        </span>
+                                        </button>
                                       ) : null}
                                   </div>
                                   
@@ -697,7 +868,7 @@ export default function MCQTreeView({
                                     : 'text-gray-600 group-hover:text-purple-400 group-hover:translate-x-1'
                                   }`} 
                                 />
-                              </button>
+                              </div>
 
                               {/* Expanded SOP Details */}
                               {isSOPExpanded && (
@@ -716,7 +887,7 @@ export default function MCQTreeView({
                                   )}
 
                                   {/* MCQ Banks List */}
-                                  {sop.mcqBanks.length > 0 ? (
+                                          {sop.mcqBanks && sop.mcqBanks.length > 0 ? (
                                     <div className="space-y-2 mt-2">
                                       <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold ml-1">Available Question Banks</p>
                                       {sop.mcqBanks.map((bank, idx) => (
@@ -730,9 +901,9 @@ export default function MCQTreeView({
                                               <div className="flex items-center gap-2 mt-0.5">
                                                 <span className="text-[10px] text-gray-400">{bank.totalQuestions} questions</span>
                                                 {(() => {
-                                                  const similarCount = bank.mcqs?.filter((q: any) => q?.isSimilar).length || 0;
-                                                  const checkedCount = bank.mcqs?.filter((q: any) => q?.isChecked).length || 0;
-                                                  const reviewedCount = bank.mcqs?.filter((q: any) => q?.isReviewed).length || 0;
+                                                  const similarCount = bank.mcqs?.filter((q: any) => q?.isSimilar)?.length || 0;
+                                                  const checkedCount = bank.mcqs?.filter((q: any) => q?.isChecked)?.length || 0;
+                                                  const reviewedCount = bank.mcqs?.filter((q: any) => q?.isReviewed)?.length || 0;
                                                   console.log(`Bank ${idx + 1}: mcqs length=${bank.mcqs?.length}, similar=${similarCount}, checked=${checkedCount}, reviewed=${reviewedCount}`);
                                                   return (
                                                     <>

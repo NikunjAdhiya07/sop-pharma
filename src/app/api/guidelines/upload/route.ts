@@ -229,7 +229,7 @@ export async function GET(request: NextRequest) {
     
     // For summary, we still want clauses but we limit the number of guidelines
     // to prevent massive payload sizes that cause timeouts
-    const limit = isSummary ? 500 : 50;
+    const limit = isSummary ? 2000 : 50;
 
     let guidelines = await SOPGuideline.find(query)
       .select('name folderName pdfName guidelineType category createdAt clauses.clauseNumber clauses.clauseTitle') // Don't fetch clauseText for summary to SAVE MASSIVE SPACE

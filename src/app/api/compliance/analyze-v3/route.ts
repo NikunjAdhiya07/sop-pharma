@@ -198,16 +198,25 @@ export async function POST(request: NextRequest) {
       'steps.guidelineFetch.startedAt': new Date(),
     });
     
-    const guidelineQuery: any = { ocrStatus: 'completed' };
+    const guidelineQuery: any = {};
     if (guidelineFilters?.folderName) guidelineQuery.folderName = guidelineFilters.folderName;
     if (guidelineFilters?.category) guidelineQuery.category = guidelineFilters.category;
     if (guidelineFilters?.guidelineType) guidelineQuery.guidelineType = guidelineFilters.guidelineType;
     
     const guidelines = await SOPGuideline.find(guidelineQuery)
-      .select('name folderName pdfName guidelineType category clauses')
+      .select('name folderName pdfName guidelineType category clauses ocrStatus')
       .lean();
     
-    console.log(`   Guidelines found: ${guidelines.length}`);
+    // Filter for guidelines with valid clauses
+    const validGuidelines = guidelines.filter(g => 
+      g.clauses && 
+      Array.isArray(g.clauses) && 
+      g.clauses.length > 0 &&
+      (g.ocrStatus === 'completed' || !g.ocrStatus) // Include if completed or field doesn't exist
+    );
+    
+    
+    console.log(`   Guidelines found: ${guidelines.length} (${validGuidelines.length} with valid clauses)`);
     
     // ═══════════════════════════════════════════════════════════════════
     // STEP 3: GATEKEEPING - VALIDATE PREREQUISITES (CRITICAL!)
@@ -216,7 +225,7 @@ export async function POST(request: NextRequest) {
     
     const gatekeeping = await validateAnalysisPrerequisites(
       sop,
-      guidelines,
+      validGuidelines,
       sop.department || 'General'
     );
     
@@ -263,7 +272,7 @@ export async function POST(request: NextRequest) {
     await updateJobProgress(jobId, {
       'steps.guidelineFetch.status': 'completed',
       'steps.guidelineFetch.completedAt': new Date(),
-      'steps.guidelineFetch.guidelinesFound': guidelines.length,
+      'steps.guidelineFetch.guidelinesFound': validGuidelines.length,
       'steps.guidelineFetch.clausesFound': gatekeeping.guidelineValidation.clausesFound,
       progress: 25,
     });
@@ -278,7 +287,7 @@ export async function POST(request: NextRequest) {
     console.log(`   Relevant categories: ${deptContext.relevantCategories.join(', ')}`);
     
     // Build clauses list with proper typing
-    const allClauses: GuidelineRequirement[] = guidelines.flatMap(guideline =>
+    const allClauses: GuidelineRequirement[] = validGuidelines.flatMap(guideline =>
       (guideline.clauses || []).map((clause: any) => ({
         guidelineId: guideline._id?.toString() || '',
         guidelineName: guideline.name || 'Unknown Guideline',
@@ -583,18 +592,18 @@ export async function POST(request: NextRequest) {
           pdfName: f.pdfName || 'Unknown',
           clauseNumber: f.clauseNumber || 'N/A',
           clauseTitle: f.clauseTitle || 'Unknown Clause',
-          clauseText: f.clauseText || 'No clause text available',
+          clauseText: (f.clauseText || 'No clause text available').slice(0, 1000) + ((f.clauseText?.length || 0) > 1000 ? '...' : ''),
           complianceLevel: mappedLevel,
           matchConfidence: f.matchConfidence,
           sopSectionAffected: `${f.sopSectionNumber || 'N/A'} - ${f.sopSectionTitle || 'Unknown'}`,
-          mismatchExplanation: f.specificGap || 'No explanation available',
-          suggestedAction: f.suggestedAction || 'Manual review required',
-          sopTextSnippet: f.sopTextSnippet || 'No SOP text available for this clause.',
-          highlightedIssue: f.specificGap || 'No specific issue identified',
+          mismatchExplanation: (f.specificGap || 'No explanation available').slice(0, 2000) + ((f.specificGap?.length || 0) > 2000 ? '...' : ''),
+          suggestedAction: (f.suggestedAction || 'Manual review required').slice(0, 2000) + ((f.suggestedAction?.length || 0) > 2000 ? '...' : ''),
+          sopTextSnippet: (f.sopTextSnippet || 'No SOP text available for this clause.').slice(0, 2000) + ((f.sopTextSnippet?.length || 0) > 2000 ? '...' : ''),
+          highlightedIssue: (f.specificGap || 'No specific issue identified').slice(0, 2000) + ((f.specificGap?.length || 0) > 2000 ? '...' : ''),
           issueSeverity: f.issueSeverity,
           issueType: f.issueType,
-          guidelineRequirement: f.guidelineRequirement || 'See guideline clause text',
-          suggestedText: f.suggestedText || 'Manual review required - consult guideline for specific text.',
+          guidelineRequirement: (f.guidelineRequirement || 'See guideline clause text').slice(0, 2000) + ((f.guidelineRequirement?.length || 0) > 2000 ? '...' : ''),
+          suggestedText: (f.suggestedText || 'Manual review required - consult guideline for specific text.').slice(0, 2000) + ((f.suggestedText?.length || 0) > 2000 ? '...' : ''),
           estimatedEffort: f.estimatedEffort,
           priority: f.priority,
           analyzedAt: f.analyzedAt,
