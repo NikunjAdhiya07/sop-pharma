@@ -2,8 +2,9 @@
 const nextConfig = {
   experimental: {
     serverActions: {
-      bodySizeLimit: '10mb',
+      bodySizeLimit: '50mb',
     },
+    serverExternalPackages: ['pizzip', 'mammoth', 'pdf-parse', 'tesseract.js'],
   },
 };
 
