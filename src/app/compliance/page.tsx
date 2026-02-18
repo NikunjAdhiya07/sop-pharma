@@ -390,11 +390,51 @@ export default function ComplianceEnginePage() {
         isMulti: group.length > 1,
         sources: Array.from(new Set(group.map(f => f.folderName || f.guidelineName || 'Guideline').filter(Boolean))),
         clauses: Array.from(new Set(group.map(f => f.clauseNumber).filter(Boolean))),
-        combinedAction: group.map((f, i) => {
-          const action = (f.suggestedAction || '').replace(/```[\s\S]*?```/g, '').trim();
-          return group.length === 1 ? action : `${i + 1}. ${action}${f.clauseNumber ? ` [${f.clauseNumber}]` : ''}`;
-        }).filter(Boolean).join('\n\n'),
-        combinedSuggestion: group.map(f => f.suggestedText || (f.suggestedAction?.match(/```([\s\S]*?)```/)?.[1]) || '').filter(Boolean).join('\n\n'),
+        combinedAction: Array.from(new Set(group.map((f) => {
+          let action = (f.suggestedAction || '')
+            .replace(/```[\s\S]*?```/g, '')
+            .replace(/\r?\n/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          
+          // Clean prefixes (Action:, 1., and Section Key like "5.11")
+          action = action
+            .replace(/^(Action|Suggestion|Remediation):\s*/i, '')
+            .replace(/^(\d+\.|-|\*)\s*/, '')
+            .replace(new RegExp(`^${key.replace(/\./g, '\\.')}\\s*`, 'i'), '');
+          
+          if (!action) return '';
+          if (!action.endsWith('.')) action += '.';
+          
+          return `${action}${f.clauseNumber ? ` [Clause ${f.clauseNumber}]` : ''}`;
+        }).filter(Boolean))).join(' '),
+        combinedSuggestion: (() => {
+          const texts = Array.from(new Set(group.map(f => 
+            (f.suggestedText || (f.suggestedAction?.match(/```([\s\S]*?)```/)?.[1]) || '')
+            .replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim()
+          ).filter(Boolean)));
+
+          // Filter out unrelated sections (e.g. 5.12 appearing in 5.11)
+          const filteredTexts = texts.filter(t => {
+            const match = t.match(/^(\d+(\.\d+)*)/);
+            if (!match) return true;
+            // Keep if it starts with current key (e.g. 5.11 starts with 5.11)
+            return match[1].startsWith(key);
+          });
+
+          if (filteredTexts.length === 0) return '';
+          
+          // Merge into one paragraph, stripping EXACT key repetition
+          const merged = filteredTexts.map(t => {
+             const exactKeyRegex = new RegExp(`^${key.replace(/\./g, '\\.')}[\\s:\\.]`, 'i');
+             if (exactKeyRegex.test(t)) {
+               return t.replace(exactKeyRegex, '').trim();
+             }
+             return t;
+          }).join(' ');
+          
+          return `${key} ${merged}`;
+        })(),
       }))
       .sort((a, b) => { const na = parseFloat(a.sectionKey), nb = parseFloat(b.sectionKey); return !isNaN(na) && !isNaN(nb) ? na - nb : !isNaN(na) ? -1 : !isNaN(nb) ? 1 : a.sectionKey.localeCompare(b.sectionKey); });
   }, [selectedReport, selectedFindingIds]);
