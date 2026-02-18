@@ -203,9 +203,18 @@ export async function POST(request: NextRequest) {
             }
 
             // Validate content
-            const wordCount = content.trim().split(/\s+/).length;
-            if (wordCount < 10) {
-              throw new Error(`Insufficient content. Only ${wordCount} words found. Minimum 10 words required.`);
+            const trimmedContent = content.trim();
+            if (trimmedContent.length === 0) {
+              throw new Error('No text content could be extracted from the DOCX file.');
+            }
+            // For Gujarati, individual characters are often in separate <w:t> XML tags,
+            // so the extracted text has spaces between each character/syllable.
+            // Use character count as a fallback for Gujarati to avoid false failures.
+            const wordCount = trimmedContent.split(/\s+/).filter(w => w.length > 0).length;
+            const minWords = language === 'Gujarati' ? 5 : 10;
+            const minChars = language === 'Gujarati' ? 50 : 30;
+            if (wordCount < minWords && trimmedContent.length < minChars) {
+              throw new Error(`Insufficient content. Only ${wordCount} words (${trimmedContent.length} chars) found. Minimum ${minWords} words or ${minChars} characters required.`);
             }
 
             // Extract SOP ID from filename

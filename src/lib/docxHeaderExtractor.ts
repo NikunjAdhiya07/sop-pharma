@@ -61,25 +61,68 @@ export async function extractAllDOCXContent(buffer: Buffer): Promise<string> {
 
 /**
  * Extract text from Word XML
+ * Handles complex scripts (Gujarati, etc.) by parsing at paragraph level.
+ * Runs within a paragraph are concatenated directly (no spaces added between runs),
+ * and paragraphs are separated by newlines. This prevents Gujarati words from being
+ * split with spaces when a single word spans multiple <w:t> elements.
  */
 function extractTextFromXML(xml: string): string {
-  // Extract text from <w:t> tags (text runs)
-  const textMatches = xml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || [];
-  const texts = textMatches.map(match => {
-    const textMatch = match.match(/>([^<]*)</);
-    return textMatch ? textMatch[1] : '';
-  });
+  // Process paragraph by paragraph to avoid inserting spaces inside words
+  // A paragraph in Word XML is wrapped in <w:p>...</w:p>
+  const paragraphRegex = /<w:p[ >][\s\S]*?<\/w:p>/g;
+  const paragraphs: string[] = [];
 
-  // Join with spaces and clean up
-  let text = texts.join(' ');
-  
-  // Decode XML entities
-  text = text
+  let match: RegExpExecArray | null;
+  while ((match = paragraphRegex.exec(xml)) !== null) {
+    const paraXml = match[0];
+    let paraText = '';
+
+    // Within a paragraph, extract all <w:t> runs and concatenate them directly
+    // (no spaces between runs — spaces in the document are explicit space characters
+    // already present in the text content of <w:t> tags)
+    // First, replace <w:br/> (line breaks) with a space marker in the raw XML
+    const paraXmlWithBreaks = paraXml.replace(/<w:br[^/]*\/>/g, '<w:t> </w:t>');
+    const runRegex = /<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g;
+    let runMatch: RegExpExecArray | null;
+    while ((runMatch = runRegex.exec(paraXmlWithBreaks)) !== null) {
+      paraText += runMatch[1];
+    }
+
+    if (paraText.trim()) {
+      paragraphs.push(paraText);
+    }
+  }
+
+  // If no paragraphs found (e.g., header/footer with different structure),
+  // fall back to simple run extraction
+  if (paragraphs.length === 0) {
+    const runRegex = /<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g;
+    const runs: string[] = [];
+    let runMatch: RegExpExecArray | null;
+    while ((runMatch = runRegex.exec(xml)) !== null) {
+      if (runMatch[1].trim()) {
+        runs.push(runMatch[1]);
+      }
+    }
+    // For fallback, join with space (old behavior)
+    let text = runs.join(' ');
+    text = decodeXMLEntities(text);
+    return text;
+  }
+
+  let text = paragraphs.join('\n');
+  text = decodeXMLEntities(text);
+  return text;
+}
+
+/**
+ * Decode common XML entities in extracted text
+ */
+function decodeXMLEntities(text: string): string {
+  return text
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&amp;/g, '&')
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'");
-
-  return text;
 }
