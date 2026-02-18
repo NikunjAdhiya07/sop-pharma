@@ -1,6 +1,7 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
+import { ChevronDown, ChevronUp, BookOpen, FileText, Hash, AlignLeft, ExternalLink } from 'lucide-react';
 
 // Updated: Dark theme for compliance dashboard
 
@@ -18,6 +19,11 @@ export interface FindingCardProps {
   sopTextSnippet?: string;
   suggestedText?: string;
   clauseNumber?: string;
+  clauseTitle?: string;
+  clauseText?: string;
+  guidelineName?: string;
+  folderName?: string;
+  pdfName?: string;
   onToggleApplicable?: (findingId: string, isChecked: boolean) => void;
   isApplicable?: boolean;
 }
@@ -94,11 +100,17 @@ export default function FindingCard({
   sopTextSnippet,
   suggestedText,
   clauseNumber,
+  clauseTitle,
+  clauseText,
+  guidelineName,
+  folderName,
+  pdfName,
   onToggleApplicable,
   isApplicable = false,
 }: FindingCardProps) {
   const severityStyle = severityConfig[severity];
   const statusStyle = statusConfig[status];
+  const [guidelineExpanded, setGuidelineExpanded] = useState(false);
 
   // Helper to get breadcrumb from reference
   const breadcrumb = reference.split(' → ');
@@ -127,6 +139,28 @@ export default function FindingCard({
     
     return clauseNumber;
   }, [clauseNumber, requirement]);
+
+  // Extract page number from clauseNumber if it's a large numeric ID (e.g. "1083" → page 1083)
+  const pageNumber = React.useMemo(() => {
+    if (!clauseNumber) return null;
+    // If clauseNumber is purely numeric and >= 3 digits, treat it as a page reference
+    if (/^\d{3,}$/.test(clauseNumber)) return clauseNumber;
+    // Look for [page] pattern in clauseNumber like "5.2.1 [p.45]"
+    const pageMatch = clauseNumber.match(/\[p\.?\s*(\d+)\]/i);
+    if (pageMatch) return pageMatch[1];
+    return null;
+  }, [clauseNumber]);
+
+  // Determine the "real" clause display (non-page version)
+  const realClauseNumber = React.useMemo(() => {
+    if (!clauseNumber) return null;
+    if (/^\d{3,}$/.test(clauseNumber)) return null; // It's a page number, not a clause
+    return clauseNumber;
+  }, [clauseNumber]);
+
+  // Resolve guideline name from reference or prop
+  const resolvedGuidelineName = guidelineName || breadcrumb[breadcrumb.length - 1] || 'Unknown Guideline';
+  const resolvedFolderName = folderName || breadcrumb[0] || '';
 
   return (
     <div
@@ -168,7 +202,22 @@ export default function FindingCard({
           </div>
         </div>
         
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+           {/* Expand Guideline Reference Button */}
+           <button
+             onClick={() => setGuidelineExpanded(v => !v)}
+             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border ${
+               guidelineExpanded
+                 ? 'bg-blue-500/20 border-blue-500/40 text-blue-300'
+                 : 'bg-white/5 border-white/10 text-slate-400 hover:border-blue-500/30 hover:text-blue-300'
+             }`}
+             title="View guideline source details"
+           >
+             <BookOpen className="h-3 w-3" />
+             Source
+             {guidelineExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+           </button>
+
            {/* Applicable Checkbox */}
            {onToggleApplicable && status !== 'compliant' && (
              <div className="flex items-center gap-2 px-3 py-2 bg-white/5 rounded-lg border border-purple-500/30 hover:border-purple-500/50 transition-all">
@@ -199,6 +248,109 @@ export default function FindingCard({
            </div>
         </div>
       </div>
+
+      {/* ── Guideline Reference Expand Panel ─────────────────────────────── */}
+      {guidelineExpanded && (
+        <div className="border-b border-blue-500/20 bg-gradient-to-br from-blue-950/40 to-slate-900/60 animate-in slide-in-from-top-1 duration-200">
+          <div className="px-6 py-4 space-y-4">
+            {/* Header row */}
+            <div className="flex items-center gap-2 mb-1">
+              <BookOpen className="h-4 w-4 text-blue-400" />
+              <span className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em]">Guideline Source Reference</span>
+            </div>
+
+            {/* Info grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {/* Guideline Name */}
+              <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <BookOpen className="h-3 w-3 text-blue-400" />
+                  <span className="text-[9px] font-black text-blue-400 uppercase tracking-widest">Guideline</span>
+                </div>
+                <p className="text-sm font-bold text-white leading-tight">{resolvedGuidelineName}</p>
+                {resolvedFolderName && (
+                  <p className="text-[10px] text-blue-300/70 mt-0.5">{resolvedFolderName}</p>
+                )}
+              </div>
+
+              {/* PDF / Document */}
+              {pdfName && (
+                <div className="bg-slate-700/40 border border-white/10 rounded-xl p-3">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <FileText className="h-3 w-3 text-slate-400" />
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Document</span>
+                  </div>
+                  <p className="text-sm font-bold text-slate-200 leading-tight break-all">{pdfName}</p>
+                </div>
+              )}
+
+              {/* Page Number */}
+              {pageNumber && (
+                <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-3">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Hash className="h-3 w-3 text-purple-400" />
+                    <span className="text-[9px] font-black text-purple-400 uppercase tracking-widest">Page Reference</span>
+                  </div>
+                  <p className="text-2xl font-black text-purple-300 leading-none">p.{pageNumber}</p>
+                  <p className="text-[9px] text-purple-400/60 mt-0.5">Source page number</p>
+                </div>
+              )}
+
+              {/* Clause Number (only if it's a real clause, not a page ID) */}
+              {realClauseNumber && (
+                <div className="bg-slate-700/40 border border-white/10 rounded-xl p-3">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Hash className="h-3 w-3 text-slate-400" />
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Clause</span>
+                  </div>
+                  <p className="text-sm font-black text-white font-mono">{realClauseNumber}</p>
+                  {clauseTitle && (
+                    <p className="text-[10px] text-slate-400 mt-0.5 leading-tight">{clauseTitle}</p>
+                  )}
+                </div>
+              )}
+
+              {/* Clause Title (standalone if no clause number) */}
+              {clauseTitle && !realClauseNumber && (
+                <div className="bg-slate-700/40 border border-white/10 rounded-xl p-3 sm:col-span-2">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <AlignLeft className="h-3 w-3 text-slate-400" />
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Clause Title</span>
+                  </div>
+                  <p className="text-sm font-bold text-slate-200 leading-tight">{clauseTitle}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Full Clause Text */}
+            {(clauseText || requirement) && (
+              <div className="bg-black/30 border border-white/5 rounded-xl overflow-hidden">
+                <div className="px-4 py-2 bg-white/5 border-b border-white/5 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <AlignLeft className="h-3 w-3 text-blue-400" />
+                    <span className="text-[9px] font-black text-blue-400 uppercase tracking-widest">
+                      Guideline Text
+                      {realClauseNumber && <span className="ml-1 text-blue-300/60">— Clause {realClauseNumber}</span>}
+                      {pageNumber && <span className="ml-1 text-purple-300/60">— Page {pageNumber}</span>}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(clauseText || requirement)}
+                    className="text-[9px] text-slate-500 hover:text-white transition-colors"
+                  >
+                    COPY
+                  </button>
+                </div>
+                <div className="p-4">
+                  <p className="text-slate-300 text-xs leading-relaxed font-mono whitespace-pre-wrap border-l-2 border-blue-500/30 pl-3">
+                    {clauseText || requirement}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Content Body */}
       <div className="p-6 space-y-6">

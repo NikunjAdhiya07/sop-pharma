@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import FindingCard from './components/FindingCard';
+import { CheckSquare, Square, Sparkles, X, Copy, BookOpen, FileText, Layers, CheckCircle } from 'lucide-react';
 
 
 /**
@@ -90,6 +91,191 @@ interface ComplianceReport {
 
 type WorkflowStep = 'fetch-sops' | 'fetch-guidelines' | 'review' | 'analyze' | 'results';
 
+// ── Consolidated Section Card (needs own state for expand toggle) ────────────
+function ConsolidatedSectionCard({ sec }: { sec: {
+  sectionKey: string;
+  isMulti: boolean;
+  findings: ComplianceFinding[];
+  sources: string[];
+  clauses: string[];
+  combinedAction: string;
+  combinedSuggestion: string;
+}}) {
+  const [refExpanded, setRefExpanded] = useState(false);
+  return (
+    <div
+      className={`rounded-2xl border overflow-hidden ${
+        sec.isMulti ? 'border-purple-500/40 bg-purple-500/5' : 'border-white/10 bg-white/5'
+      }`}
+    >
+      {/* Section header */}
+      <div className={`px-5 py-3 flex items-center justify-between border-b ${
+        sec.isMulti ? 'border-purple-500/20 bg-purple-500/10' : 'border-white/5 bg-white/5'
+      }`}>
+        <div className="flex items-center gap-3">
+          <div className={`px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wider ${
+            sec.isMulti
+              ? 'bg-purple-500/30 text-purple-300 border border-purple-500/40'
+              : 'bg-white/10 text-gray-300 border border-white/10'
+          }`}>
+            Section {sec.sectionKey}
+          </div>
+          {sec.isMulti && (
+            <span className="text-xs text-purple-400 font-semibold flex items-center gap-1">
+              <Layers className="h-3.5 w-3.5" />
+              {sec.findings.length} changes combined
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Guideline Refs expand toggle */}
+          <button
+            onClick={() => setRefExpanded(v => !v)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border ${
+              refExpanded
+                ? 'bg-blue-500/20 border-blue-500/40 text-blue-300'
+                : 'bg-white/5 border-white/10 text-slate-400 hover:border-blue-500/30 hover:text-blue-300'
+            }`}
+          >
+            <BookOpen className="h-3 w-3" />
+            Guideline Refs
+            {refExpanded
+              ? <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+              : <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            }
+          </button>
+          {/* Copy section */}
+          <button
+            onClick={() => navigator.clipboard.writeText([sec.combinedAction, sec.combinedSuggestion ? `\nPROPOSED VERBIAGE:\n${sec.combinedSuggestion}` : ''].filter(Boolean).join('\n'))}
+            className="text-[10px] text-gray-500 hover:text-white transition-colors flex items-center gap-1"
+          >
+            <Copy className="h-3 w-3" /> Copy
+          </button>
+        </div>
+      </div>
+
+      {/* ── Guideline Reference Expand Panel ── */}
+      {refExpanded && (
+        <div className="border-b border-blue-500/20 bg-gradient-to-br from-blue-950/50 to-slate-900/80">
+          <div className="px-5 py-4 space-y-3">
+            <p className="text-[9px] font-black text-blue-400 uppercase tracking-[0.2em] flex items-center gap-1.5">
+              <BookOpen className="h-3 w-3" /> Guideline Source References
+            </p>
+            {sec.findings.map((f, fi) => {
+              const isPageId = f.clauseNumber && /^\d{3,}$/.test(f.clauseNumber);
+              const pageNum = isPageId ? f.clauseNumber : null;
+              const clauseNum = isPageId ? null : f.clauseNumber;
+              return (
+                <div key={fi} className="bg-black/30 border border-white/5 rounded-xl overflow-hidden">
+                  {/* Finding ref header */}
+                  <div className="px-4 py-2 bg-white/5 border-b border-white/5 flex items-center gap-3 flex-wrap">
+                    {fi > 0 && sec.isMulti && (
+                      <span className="w-4 h-4 rounded-full bg-purple-500/30 text-purple-300 flex items-center justify-center text-[9px] font-black flex-shrink-0">{fi + 1}</span>
+                    )}
+                    {/* Guideline folder */}
+                    <span className="flex items-center gap-1 px-2 py-0.5 bg-blue-500/15 border border-blue-500/25 rounded text-[10px] font-bold text-blue-300">
+                      <BookOpen className="h-2.5 w-2.5" />
+                      {f.folderName || 'Guideline'}
+                    </span>
+                    {/* Guideline name */}
+                    {f.guidelineName && f.guidelineName !== f.folderName && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 bg-blue-500/10 border border-blue-500/15 rounded text-[10px] font-bold text-blue-200/80 max-w-[180px] truncate" title={f.guidelineName}>
+                        {f.guidelineName}
+                      </span>
+                    )}
+                    {/* PDF name */}
+                    {f.pdfName && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 bg-slate-700/50 border border-white/10 rounded text-[10px] font-bold text-slate-300 max-w-[200px] truncate" title={f.pdfName}>
+                        <FileText className="h-2.5 w-2.5 flex-shrink-0" />
+                        {f.pdfName}
+                      </span>
+                    )}
+                    {/* Clause number */}
+                    {clauseNum && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 bg-slate-700/50 border border-white/10 rounded text-[10px] font-bold text-gray-300 font-mono">
+                        Clause {clauseNum}
+                      </span>
+                    )}
+                    {/* Page number */}
+                    {pageNum && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 bg-purple-500/15 border border-purple-500/30 rounded text-[10px] font-black text-purple-300">
+                        p.{pageNum}
+                      </span>
+                    )}
+                  </div>
+                  {/* Clause title + text */}
+                  <div className="px-4 py-3 space-y-2">
+                    {f.clauseTitle && (
+                      <p className="text-[10px] font-black text-slate-300 uppercase tracking-wider">{f.clauseTitle}</p>
+                    )}
+                    {(f.clauseText || f.guidelineRequirement) && (
+                      <p className="text-xs text-slate-400 leading-relaxed border-l-2 border-blue-500/30 pl-3 font-mono">
+                        {f.clauseText || f.guidelineRequirement}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="p-5 space-y-4">
+        {/* Sources + clauses pills */}
+        <div className="flex flex-wrap gap-2">
+          {sec.sources.map(src => (
+            <span key={src} className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-500/10 border border-blue-500/20 rounded-lg text-[10px] font-bold text-blue-300 uppercase tracking-wider">
+              <BookOpen className="h-3 w-3" />{src}
+            </span>
+          ))}
+          {sec.clauses.map(cl => (
+            <span key={cl} className="flex items-center gap-1 px-2.5 py-1 bg-slate-700/50 border border-white/10 rounded-lg text-[10px] font-bold text-gray-400">
+              <FileText className="h-3 w-3" />Clause {cl}
+            </span>
+          ))}
+        </div>
+
+        {/* Issues list (multi only) */}
+        {sec.isMulti && (
+          <div className="space-y-1">
+            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Issues being resolved:</p>
+            {sec.findings.map((f, i) => (
+              <div key={i} className="flex items-start gap-2 text-xs text-gray-400">
+                <span className="mt-0.5 w-4 h-4 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center text-[9px] font-black flex-shrink-0">{i + 1}</span>
+                <span className="leading-relaxed">{f.mismatchExplanation || f.highlightedIssue || 'Gap identified'}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Consolidated action */}
+        <div>
+          <p className="text-[10px] text-emerald-400 font-black uppercase tracking-wider mb-2 flex items-center gap-1">
+            <CheckCircle className="h-3 w-3" />
+            {sec.isMulti ? 'Consolidated Action' : 'Suggested Action'}
+          </p>
+          <p className="text-sm text-slate-200 font-medium leading-relaxed whitespace-pre-wrap">{sec.combinedAction}</p>
+        </div>
+
+        {/* Proposed verbiage */}
+        {sec.combinedSuggestion && (
+          <div className="bg-black/40 rounded-xl border border-white/5 overflow-hidden">
+            <div className="px-4 py-2 bg-white/5 border-b border-white/5">
+              <span className="text-[9px] text-emerald-400 font-black uppercase tracking-widest">
+                {sec.isMulti ? 'Combined Proposed Verbiage' : 'Proposed Verbiage'}
+              </span>
+            </div>
+            <div className="p-4">
+              <pre className="text-slate-300 font-mono text-xs whitespace-pre-wrap leading-relaxed">{sec.combinedSuggestion}</pre>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ComplianceEnginePage() {
   const router = useRouter();
   
@@ -130,6 +316,11 @@ export default function ComplianceEnginePage() {
   const [applicableFindings, setApplicableFindings] = useState<Set<string>>(new Set());
   const [submittingApplicable, setSubmittingApplicable] = useState(false);
 
+  // ── Selection for consolidated summary ──────────────────────────────────────
+  const [selectedFindingIds, setSelectedFindingIds] = useState<Set<number>>(new Set());
+  const [showConsolidatedSummary, setShowConsolidatedSummary] = useState(false);
+  const [isSummaryFullScreen, setIsSummaryFullScreen] = useState(false);
+
   // Handle checkbox toggle for applicable findings
   const handleToggleApplicable = (findingId: string, isChecked: boolean) => {
     setApplicableFindings(prev => {
@@ -142,6 +333,71 @@ export default function ComplianceEnginePage() {
       return newSet;
     });
   };
+
+  // ── Helpers for consolidated summary ────────────────────────────────────────
+  const normaliseSectionKey = (f: ComplianceFinding): string => {
+    const raw = (f as any).sopSectionAffected || (f as any).sopSectionNumber || 'General';
+    const m = String(raw).match(/(\d[\d.]*)/);
+    return m ? m[1] : String(raw).trim() || 'General';
+  };
+
+  // Filtered findings currently visible
+  const visibleFindings = useMemo(() => {
+    if (!selectedReport?.findings) return [];
+    return selectedReport.findings
+      .map((f, i) => ({ f, i }))
+      .filter(({ f }) => (filterStatus === 'all' || f.complianceLevel === filterStatus) &&
+                         (filterGuideline === 'all' || f.folderName === filterGuideline));
+  }, [selectedReport, filterStatus, filterGuideline]);
+
+  const allFindingsSelected = visibleFindings.length > 0 && visibleFindings.every(({ i }) => selectedFindingIds.has(i));
+  const someFindingsSelected = visibleFindings.some(({ i }) => selectedFindingIds.has(i));
+
+  const toggleSelectAllFindings = () => {
+    if (allFindingsSelected) {
+      const next = new Set(selectedFindingIds);
+      visibleFindings.forEach(({ i }) => next.delete(i));
+      setSelectedFindingIds(next);
+    } else {
+      const next = new Set(selectedFindingIds);
+      visibleFindings.forEach(({ i }) => next.add(i));
+      setSelectedFindingIds(next);
+    }
+  };
+
+  const toggleFindingSelect = (idx: number) => {
+    setSelectedFindingIds(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx); else next.add(idx);
+      return next;
+    });
+  };
+
+  // Build consolidated sections from selected findings
+  const consolidatedSections = useMemo(() => {
+    if (!selectedReport?.findings) return [];
+    const selected = selectedReport.findings.filter((_, i) => selectedFindingIds.has(i));
+    const map = new Map<string, ComplianceFinding[]>();
+    for (const f of selected) {
+      const key = normaliseSectionKey(f);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(f);
+    }
+    return Array.from(map.entries())
+      .map(([key, group]) => ({
+        sectionKey: key,
+        findings: group,
+        isMulti: group.length > 1,
+        sources: Array.from(new Set(group.map(f => f.folderName || f.guidelineName || 'Guideline').filter(Boolean))),
+        clauses: Array.from(new Set(group.map(f => f.clauseNumber).filter(Boolean))),
+        combinedAction: group.map((f, i) => {
+          const action = (f.suggestedAction || '').replace(/```[\s\S]*?```/g, '').trim();
+          return group.length === 1 ? action : `${i + 1}. ${action}${f.clauseNumber ? ` [${f.clauseNumber}]` : ''}`;
+        }).filter(Boolean).join('\n\n'),
+        combinedSuggestion: group.map(f => f.suggestedText || (f.suggestedAction?.match(/```([\s\S]*?)```/)?.[1]) || '').filter(Boolean).join('\n\n'),
+      }))
+      .sort((a, b) => { const na = parseFloat(a.sectionKey), nb = parseFloat(b.sectionKey); return !isNaN(na) && !isNaN(nb) ? na - nb : !isNaN(na) ? -1 : !isNaN(nb) ? 1 : a.sectionKey.localeCompare(b.sectionKey); });
+  }, [selectedReport, selectedFindingIds]);
 
   // Submit all selected applicable findings
   const submitApplicableFindings = async () => {
@@ -1406,20 +1662,20 @@ export default function ComplianceEnginePage() {
 
                   {/* Detailed Findings Header */}
                   <div className="bg-slate-800/40 backdrop-blur-md rounded-2xl border border-white/5 shadow-sm overflow-hidden">
-                    <div className="p-5 border-b border-white/5 bg-slate-800/40 flex items-center justify-between sticky top-0 z-10">
-                      <h3 className="text-lg font-bold text-white flex items-center gap-3">
-                        <span className="text-xl">📔</span>
-                        Findings with Guideline References
+                    <div className="p-5 border-b border-white/5 bg-slate-800/40 flex flex-col gap-3 sticky top-0 z-10">
+                      {/* Row 1: title + clear filter */}
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-bold text-white flex items-center gap-3">
+                          <span className="text-xl">📔</span>
+                          Findings with Guideline References
+                          {filterStatus !== 'all' && (
+                            <span className="text-[10px] font-black text-white px-2.5 py-1 bg-purple-500 rounded-md uppercase tracking-[0.2em] border border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.4)]">
+                              {filterStatus}
+                            </span>
+                          )}
+                        </h3>
                         {filterStatus !== 'all' && (
-                          <span className="text-[10px] font-black text-white px-2.5 py-1 bg-purple-500 rounded-md uppercase tracking-[0.2em] border border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.4)]">
-                            {filterStatus}
-                          </span>
-                        )}
-                      </h3>
-                      
-                      <div className="flex items-center gap-3">
-                        {filterStatus !== 'all' && (
-                          <button 
+                          <button
                             onClick={() => setFilterStatus('all')}
                             className="text-xs font-medium text-purple-400 hover:text-purple-300 hover:underline"
                           >
@@ -1427,61 +1683,126 @@ export default function ComplianceEnginePage() {
                           </button>
                         )}
                       </div>
+
+                      {/* Row 2: Select All + Generate Summary */}
+                      <div className="flex items-center justify-between gap-3 pt-1 border-t border-white/5">
+                        <button
+                          onClick={toggleSelectAllFindings}
+                          className="flex items-center gap-2 text-sm font-semibold text-gray-300 hover:text-white transition-colors"
+                        >
+                          {allFindingsSelected ? (
+                            <CheckSquare className="h-5 w-5 text-purple-400" />
+                          ) : someFindingsSelected ? (
+                            <div className="h-5 w-5 rounded border-2 border-purple-400 bg-purple-400/20 flex items-center justify-center">
+                              <div className="h-2 w-2 bg-purple-400 rounded-sm" />
+                            </div>
+                          ) : (
+                            <Square className="h-5 w-5 text-gray-500" />
+                          )}
+                          {allFindingsSelected ? 'Deselect All' : 'Select All Results'}
+                          {someFindingsSelected && (
+                            <span className="ml-1 px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs font-bold rounded-full border border-purple-500/30">
+                              {selectedFindingIds.size} selected
+                            </span>
+                          )}
+                        </button>
+
+                        <button
+                          onClick={() => setShowConsolidatedSummary(true)}
+                          disabled={selectedFindingIds.size === 0}
+                          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                            selectedFindingIds.size > 0
+                              ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:from-purple-700 hover:to-pink-700 shadow-lg shadow-purple-500/20'
+                              : 'bg-white/5 text-gray-600 cursor-not-allowed border border-white/5'
+                          }`}
+                        >
+                          <Sparkles className="h-3.5 w-3.5" />
+                          Generate Consolidated Summary
+                          {selectedFindingIds.size > 0 && (
+                            <span className="ml-1 px-1.5 py-0.5 bg-white/20 rounded text-[10px]">{selectedFindingIds.size}</span>
+                          )}
+                        </button>
+                      </div>
                     </div>
                     
                     <div className="p-6 space-y-6 bg-slate-900/30 min-h-[400px]">
-                      {selectedReport.findings && selectedReport.findings.length > 0 ? (
-                        selectedReport.findings
-                          .filter(f => filterStatus === 'all' || f.complianceLevel === filterStatus)
-                          .filter(f => filterGuideline === 'all' || f.folderName === filterGuideline)
-                          .map((finding, idx) => (
-                          <div key={idx} className="transition-all duration-300">
-                             <FindingCard
-                               id={`finding-${idx}`}
-                               requirement={finding.guidelineRequirement || finding.clauseText || ''}
-                               gap={finding.mismatchExplanation || finding.highlightedIssue || ''}
-                               impact={finding.highlightedIssue || 'Impact not specified'}
-                               suggestion={finding.suggestedAction || ''}
-                               reference={`${finding.folderName} → ${finding.guidelineName}`}
-                               clauseNumber={finding.clauseNumber}
-                               severity={finding.issueSeverity || (finding.criticality === 'critical' || finding.criticality === 'high' ? 'major' : 'minor')}
-                               status={finding.complianceLevel}
-                               confidence={finding.matchConfidence || 0}
-                               sopSection={finding.sopSectionAffected?.split(' - ')[0] || 'N/A'}
-                               sopTextSnippet={finding.sopTextSnippet || ''}
-                               suggestedText={finding.suggestedText || ''}
-                               onToggleApplicable={handleToggleApplicable}
-                               isApplicable={applicableFindings.has(`finding-${idx}`)}
-                             />
+                      {selectedReport.findings && selectedReport.findings.length > 0
+                        ? visibleFindings.map(({ f: finding, i: globalIdx }) => {
+                            const isSelected = selectedFindingIds.has(globalIdx);
+                            return (
+                              <div key={globalIdx} className="relative transition-all duration-300">
+                                {/* Selection checkbox */}
+                                <div className="absolute -left-2 top-5 z-10">
+                                  <button
+                                    onClick={() => toggleFindingSelect(globalIdx)}
+                                    className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all shadow-lg ${
+                                      isSelected
+                                        ? 'bg-purple-600 border-purple-500 shadow-purple-500/30'
+                                        : 'bg-slate-900 border-slate-600 hover:border-purple-400'
+                                    }`}
+                                    title={isSelected ? 'Deselect' : 'Select for summary'}
+                                  >
+                                    {isSelected && <CheckSquare className="h-3.5 w-3.5 text-white" />}
+                                  </button>
+                                </div>
+                                {/* Highlight ring when selected */}
+                                <div className={`transition-all duration-200 rounded-2xl ${
+                                  isSelected ? 'ring-2 ring-purple-500/50 ring-offset-2 ring-offset-slate-900' : ''
+                                }`}>
+                                  <FindingCard
+                                    id={`finding-${globalIdx}`}
+                                    requirement={finding.guidelineRequirement || finding.clauseText || ''}
+                                    gap={finding.mismatchExplanation || finding.highlightedIssue || ''}
+                                    impact={finding.highlightedIssue || 'Impact not specified'}
+                                    suggestion={finding.suggestedAction || ''}
+                                    reference={`${finding.folderName} → ${finding.guidelineName}`}
+                                    clauseNumber={finding.clauseNumber}
+                                    clauseTitle={finding.clauseTitle || ''}
+                                    clauseText={finding.clauseText || ''}
+                                    guidelineName={finding.guidelineName || ''}
+                                    folderName={finding.folderName || ''}
+                                    pdfName={finding.pdfName || ''}
+                                    severity={finding.issueSeverity || (finding.criticality === 'critical' || finding.criticality === 'high' ? 'major' : 'minor')}
+                                    status={finding.complianceLevel}
+                                    confidence={finding.matchConfidence || 0}
+                                    sopSection={finding.sopSectionAffected?.split(' - ')[0] || 'N/A'}
+                                    sopTextSnippet={finding.sopTextSnippet || ''}
+                                    suggestedText={finding.suggestedText || ''}
+                                    onToggleApplicable={handleToggleApplicable}
+                                    isApplicable={applicableFindings.has(`finding-${globalIdx}`)}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })
+                        : (
+                          <div className="text-center py-20 text-gray-400">
+                            <p>No findings found.</p>
                           </div>
-                        ))
-                      ) : (
-                        <div className="text-center py-20 text-gray-400">
-                           <p>No findings found.</p>
-                        </div>
-                      )}
-                      
-                      {selectedReport.findings && selectedReport.findings.length > 0 && selectedReport.findings.filter(f => filterStatus === 'all' || f.complianceLevel === filterStatus).filter(f => filterGuideline === 'all' || f.folderName === filterGuideline).length === 0 && (
-                         <div className="text-center py-20">
-                           <p className="text-gray-400 mb-2">No findings match the current filters</p>
-                           <div className="flex gap-2 justify-center mt-3">
-                             {filterStatus !== 'all' && (
-                               <button 
-                                 onClick={() => setFilterStatus('all')}
-                                 className="text-purple-400 font-medium hover:text-purple-300 hover:underline text-sm"
-                               >
-                                 Clear Status Filter
-                               </button>
-                             )}
-                             {filterGuideline !== 'all' && (
-                               <button 
-                                 onClick={() => setFilterGuideline('all')}
-                                 className="text-purple-400 font-medium hover:text-purple-300 hover:underline text-sm"
-                               >
-                                 Clear Guideline Filter
-                               </button>
-                             )}
-                           </div>
+                        )
+                      }
+
+                      {visibleFindings.length === 0 && selectedReport.findings && selectedReport.findings.length > 0 && (
+                        <div className="text-center py-20">
+                          <p className="text-gray-400 mb-2">No findings match the current filters</p>
+                          <div className="flex gap-2 justify-center mt-3">
+                            {filterStatus !== 'all' && (
+                              <button
+                                onClick={() => setFilterStatus('all')}
+                                className="text-purple-400 font-medium hover:text-purple-300 hover:underline text-sm"
+                              >
+                                Clear Status Filter
+                              </button>
+                            )}
+                            {filterGuideline !== 'all' && (
+                              <button
+                                onClick={() => setFilterGuideline('all')}
+                                className="text-purple-400 font-medium hover:text-purple-300 hover:underline text-sm"
+                              >
+                                Clear Guideline Filter
+                              </button>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1493,6 +1814,81 @@ export default function ComplianceEnginePage() {
         )}
       </div>
       </div>
+
+      {/* ── Consolidated Summary Modal ─────────────────────────────────────── */}
+      {showConsolidatedSummary && (
+        <div className={`fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm transition-all duration-300 ${isSummaryFullScreen ? 'p-0' : 'p-4 pt-12'}`}>
+          <div className={`bg-gradient-to-br from-slate-900 to-slate-800 border border-purple-500/30 shadow-2xl flex flex-col transition-all duration-300 ${
+            isSummaryFullScreen 
+              ? 'fixed inset-0 w-screen h-screen rounded-none' 
+              : 'w-full max-w-4xl max-h-[85vh] rounded-2xl'
+          }`}>
+            {/* Header */}
+            <div className={`flex flex-shrink-0 items-center justify-between px-6 py-4 border-b border-white/10 bg-gradient-to-r from-purple-900/40 to-blue-900/40 ${isSummaryFullScreen ? '' : 'rounded-t-2xl'}`}>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-500/20 rounded-xl">
+                  <Sparkles className="h-5 w-5 text-purple-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white">Consolidated Compliance Summary</h2>
+                  <p className="text-xs text-gray-400">
+                    {consolidatedSections.length} section{consolidatedSections.length !== 1 ? 's' : ''} • {selectedFindingIds.size} findings merged
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {/* Full Screen Toggle */}
+                <button
+                  onClick={() => setIsSummaryFullScreen(!isSummaryFullScreen)}
+                  className="p-2 hover:bg-white/10 rounded-xl text-gray-400 hover:text-white transition-all mr-2"
+                  title={isSummaryFullScreen ? "Exit Full Screen" : "Full Screen"}
+                >
+                  {isSummaryFullScreen 
+                    ? <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg> // Collapse icon replacement
+                    : <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg> // Expand icon
+                  }
+                </button>
+
+                <button
+                  onClick={() => {
+                    const lines: string[] = [
+                      `CONSOLIDATED COMPLIANCE SUMMARY — ${selectedReport?.sopName || ''}`,
+                      `Generated: ${new Date().toLocaleString()}`,
+                      `Sections: ${consolidatedSections.length} | Findings: ${selectedFindingIds.size}`,
+                      '', '═'.repeat(60), ''
+                    ];
+                    consolidatedSections.forEach((sec, i) => {
+                      lines.push(`SECTION ${sec.sectionKey}${sec.isMulti ? ` (${sec.findings.length} changes combined)` : ''}`);
+                      lines.push(`Sources: ${sec.sources.join(', ')}`);
+                      if (sec.clauses.length) lines.push(`Clauses: ${sec.clauses.join(', ')}`);
+                      lines.push(''); lines.push(sec.combinedAction);
+                      if (sec.combinedSuggestion) { lines.push(''); lines.push('PROPOSED VERBIAGE:'); lines.push(sec.combinedSuggestion); }
+                      if (i < consolidatedSections.length - 1) { lines.push(''); lines.push('─'.repeat(60)); lines.push(''); }
+                    });
+                    navigator.clipboard.writeText(lines.join('\n'));
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl transition-all"
+                >
+                  <Copy className="h-3.5 w-3.5" /> Copy All
+                </button>
+                <button
+                  onClick={() => setShowConsolidatedSummary(false)}
+                  className="p-2 hover:bg-white/10 rounded-xl text-gray-400 hover:text-white transition-all"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Sections */}
+            <div className="p-6 space-y-5 overflow-y-auto flex-1 bg-slate-900/50">
+              {consolidatedSections.map((sec) => (
+                <ConsolidatedSectionCard key={sec.sectionKey} sec={sec} />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
