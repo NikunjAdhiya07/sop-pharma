@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
+    const ids = searchParams.get('ids'); // comma-separated bulk IDs
     const sopId = searchParams.get('sopId');
     const difficulty = searchParams.get('difficulty');
     const folderDepartment = searchParams.get('folderDepartment');
@@ -74,6 +75,34 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // Bulk fetch by multiple IDs — uses native driver to preserve isChecked/isReviewed/isSimilar
+    if (ids) {
+      const db = mongoose.connection.db;
+      if (!db) {
+        return NextResponse.json({ error: 'Database not connected' }, { status: 500 });
+      }
+      const collection = db.collection('mcqbanks');
+      const idList = ids.split(',').filter(Boolean).map(id => {
+        try { return new mongoose.Types.ObjectId(id.trim()); } catch { return null; }
+      }).filter((id): id is mongoose.Types.ObjectId => id !== null);
+
+      if (idList.length === 0) {
+        return NextResponse.json({ success: true, mcqBanks: [], pagination: { page: 1, limit: 0, total: 0, totalPages: 0 } });
+      }
+
+      const banks = await collection.find({ _id: { $in: idList } })
+        .maxTimeMS(60000)
+        .toArray();
+
+      console.log(`📋 Bulk fetched ${banks.length} banks via native driver (requested ${idList.length})`);
+
+      return NextResponse.json({
+        success: true,
+        mcqBanks: banks,
+        pagination: { page: 1, limit: banks.length, total: banks.length, totalPages: 1 },
+      });
+    }
+
     let query: any = {};
 
     if (sopId) {
@@ -88,7 +117,7 @@ export async function GET(request: NextRequest) {
       query.folderSubcategory = folderSubcategory;
     }
 
-    // If summary mode, only fetch essential fields
+    // If summary mode, only fetch essential fields (no MCQ data needed, Mongoose is fine)
     if (summary) {
       const mcqBanks = await MCQBank.find(query)
         .select('sopId sopIdentifier sopName folderDepartment folderSubcategory totalQuestions difficultyDistribution createdAt')
@@ -111,23 +140,31 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Fetch MCQ Banks with folder fields explicitly selected
-    const mcqBanks = await MCQBank.find(query)
+    // Use native MongoDB driver to preserve isChecked/isReviewed/isSimilar fields
+    // (Mongoose schema filtering strips these subdocument fields)
+    const db = mongoose.connection.db;
+    if (!db) {
+      return NextResponse.json({ error: 'Database not connected' }, { status: 500 });
+    }
+    const collection = db.collection('mcqbanks');
+
+    const total = await collection.countDocuments(query);
+
+    const mcqBanks = await collection.find(query)
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
-      .lean()
-      .maxTimeMS(30000);
-
-    const total = await MCQBank.countDocuments(query);
+      .maxTimeMS(30000)
+      .toArray();
 
     // Debug: Log folder field status
     const organizedCount = mcqBanks.filter(b => b.folderDepartment && b.folderSubcategory).length;
-    console.log(`📊 Fetched ${mcqBanks.length} banks: ${organizedCount} organized, ${mcqBanks.length - organizedCount} unorganized`);
+    console.log(`📊 Fetched ${mcqBanks.length} banks via native driver: ${organizedCount} organized, ${mcqBanks.length - organizedCount} unorganized`);
     
     if (mcqBanks.length > 0) {
       const sample = mcqBanks[0];
-      console.log(`📝 Sample bank: ${sample.sopIdentifier}, folder: ${sample.folderDepartment}/${sample.folderSubcategory}`);
+      const checkedCount = sample.mcqs?.filter((m: any) => m.isChecked).length || 0;
+      console.log(`📝 Sample bank: ${sample.sopIdentifier}, folder: ${sample.folderDepartment}/${sample.folderSubcategory}, checked: ${checkedCount}/${sample.mcqs?.length || 0}`);
     }
 
     // Filter by difficulty if specified

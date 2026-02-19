@@ -16,7 +16,8 @@ import {
   Eye,
   X,
   Printer,
-  RefreshCw
+  RefreshCw,
+  History
 } from 'lucide-react';
 import { watermarkSOP } from '@/lib/pdfWatermark';
 import { cleanSOPName } from '@/lib/sopLibraryHelper';
@@ -397,15 +398,33 @@ export default function SOPDetailPage({ params }: { params: Promise<{ id: string
                 )}
               </h1>
             </div>
-            {sopLibrary.completionStatus.hasMCQs && (
+            <div className="flex items-center gap-2 flex-shrink-0">
               <button
-                onClick={() => router.push(`/mcq-tests?sopId=${sopLibrary.sopId}`)}
-                className="flex-shrink-0 px-6 py-2.5 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
+                onClick={() => router.push(`/sop-replace?sopId=${sopLibrary.sopId}`)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-orange-600/20 border border-orange-500/30 text-orange-300 font-semibold rounded-lg hover:bg-orange-600/30 hover:border-orange-500/50 transition-all"
+                title="Replace this SOP with a new version"
               >
-                <Brain className="h-4 w-4" />
-                Take Test
+                <RefreshCw className="h-4 w-4" />
+                Replace SOP
               </button>
-            )}
+              <button
+                onClick={() => router.push(`/sop-replace?sopId=${sopLibrary.sopId}#history`)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-slate-700/50 border border-white/10 text-gray-300 font-semibold rounded-lg hover:bg-slate-700 hover:text-white transition-all"
+                title="View version history"
+              >
+                <History className="h-4 w-4" />
+                History
+              </button>
+              {sopLibrary.completionStatus.hasMCQs && (
+                <button
+                  onClick={() => router.push(`/mcq-tests?sopId=${sopLibrary.sopId}`)}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition-colors"
+                >
+                  <Brain className="h-4 w-4" />
+                  Take Test
+                </button>
+              )}
+            </div>
           </div>
         </div>
 

@@ -21,6 +21,7 @@ if (!GEMINI_KEY) {
   console.warn('⚠️ GEMINI_API_KEY (or GOOGLE_AI_API_KEY) is not set. AI analysis will fail.');
 }
 const genAI = new GoogleGenerativeAI(GEMINI_KEY);
+const STABLE_MODEL = 'gemini-2.0-flash';
 
 // ═══════════════════════════════════════════════════════════════════════
 // TYPES & INTERFACES
@@ -484,7 +485,7 @@ export async function analyzeClauseWithPrecision(
   sopIdentifier: string,
   department: string,
   clause: GuidelineRequirement,
-  aiModel: string = 'models/gemini-3-flash-preview'
+  aiModel: string = STABLE_MODEL
 ): Promise<ComplianceFindingV3> {
   const { generateCompliancePrompt, generateRefinedPrompt, validateAIResponse } = await import('./compliancePrompts');
   const { validateFinding, sanitizeAIOutput, detectHallucination } = await import('./ComplianceFindingValidator');

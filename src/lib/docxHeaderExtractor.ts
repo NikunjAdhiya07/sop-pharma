@@ -10,13 +10,24 @@ export async function extractAllDOCXContent(buffer: Buffer): Promise<string> {
     let allText = '';
 
     // Extract from document.xml (main body)
+    // CRITICAL: Do not swallow errors here! If body extraction fails, we must throw
+    // so that the caller (parseDOCX) falls back to Mammoth.
     try {
       const documentXml = zip.file('word/document.xml')?.asText();
       if (documentXml) {
-        allText += extractTextFromXML(documentXml) + '\n\n';
+        const bodyText = extractTextFromXML(documentXml);
+        if (!bodyText.trim()) {
+           console.warn('⚠️ document.xml extracted but yielded empty text');
+        } else {
+           console.log(`✅ Extracted ${bodyText.length} chars from document.xml`);
+        }
+        allText += bodyText + '\n\n';
+      } else {
+        throw new Error('word/document.xml not found in ZIP');
       }
     } catch (e) {
-      console.log('No document.xml found');
+      console.error('❌ Error reading document.xml:', e);
+      throw e; // Re-throw to trigger fallback
     }
 
     // Extract from header files (THIS IS WHERE YOUR DATES ARE!)
@@ -32,7 +43,7 @@ export async function extractAllDOCXContent(buffer: Buffer): Promise<string> {
           }
         }
       } catch (e) {
-        // Header file doesn't exist, skip
+        // Header file ignores are fine
       }
     }
 
@@ -48,7 +59,7 @@ export async function extractAllDOCXContent(buffer: Buffer): Promise<string> {
           }
         }
       } catch (e) {
-        // Footer file doesn't exist, skip
+        // Footer file ignores are fine
       }
     }
 
@@ -57,7 +68,7 @@ export async function extractAllDOCXContent(buffer: Buffer): Promise<string> {
     console.error('Error extracting DOCX content:', error);
     throw new Error('Failed to extract DOCX content: ' + (error instanceof Error ? error.message : 'Unknown error'));
   }
-}
+} css
 
 /**
  * Extract text from Word XML

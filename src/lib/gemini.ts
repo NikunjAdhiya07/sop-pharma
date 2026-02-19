@@ -1,18 +1,22 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-if (!process.env.GOOGLE_AI_API_KEY) {
-  throw new Error('GOOGLE_AI_API_KEY is not defined in environment variables');
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+
+if (!GEMINI_API_KEY) {
+  console.error('❌ Gemini API Key is missing! Please set GEMINI_API_KEY or GOOGLE_AI_API_KEY in your environment.');
 }
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY);
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-// Switch to Flash for faster generation with higher rate limits
+// Use a stable model by default. gemini-2.0-flash is reliable and fast.
+const DEFAULT_MODEL = 'gemini-2.0-flash';
+
 export const geminiModel = genAI.getGenerativeModel({ 
-  model: 'models/gemini-3-flash-preview',
+  model: DEFAULT_MODEL,
   generationConfig: {
     responseMimeType: "application/json",
-    maxOutputTokens: 32768, // Increased to reduce truncation risk
-    temperature: 0.1, // Very low temperature for maximum JSON stability
+    maxOutputTokens: 32768, 
+    temperature: 0.1, 
   }
 });
 
@@ -264,7 +268,7 @@ ${safeExistingQuestions.map(q => `- ${q}`).join('\n')}
 
   const prompt = `
 🔹 **ULTRA-STABLE MCQ GENERATOR [Batch ${batchIndex + 1}/${totalBatches}]**
-Model: Gemini-3-Flash-Preview
+Model: gemini-2.0-flash
 
 Objective: Generate EXACTLY ${batchCount} HIGH-QUALITY MCQs from the pharmaceutical SOP provided. Generate these MCQs in ${targetLanguage}.
 
@@ -336,7 +340,7 @@ Return ONLY the JSON. No additional text before or after.
       } else if (errorMessage.includes('quota') || errorMessage.includes('rate limit')) {
         throw new Error(`Rate limit exceeded.`);
       } else if (errorMessage.includes('model')) {
-        throw new Error(`Model error: The model 'gemini-3-flash-preview' may not be available. Error: ${errorMessage}`);
+        throw new Error(`Model error: The model '${DEFAULT_MODEL}' may not be available. Error: ${errorMessage}`);
       } else {
         throw new Error(`Gemini API error: ${errorMessage || 'Unknown API error'}`);
       }
@@ -366,7 +370,7 @@ Return ONLY the JSON. No additional text before or after.
     
     // Check if cleaning resulted in empty string
     if (!jsonText || jsonText.trim().length === 0) {
-      console.error(`❌ Batch ${batchIndex + 1} - Cleaning resulted in empty JSON`);
+      console.error(`❌ Batch ${batchIndex + 1} - Cleaning resulted in empty JSON. Raw text:`, rawText.substring(0, 500));
       throw new Error(`Unable to extract JSON from AI response. Response may be malformed or non-JSON.`);
     }
     
@@ -593,6 +597,6 @@ export async function generateMCQsFromSOP(
     mcqs: allMCQs,
     difficultyDistribution: distribution,
     totalQuestions: allMCQs.length,
-    aiModel: 'gemini-3-flash-preview',
+    aiModel: DEFAULT_MODEL,
   };
 }

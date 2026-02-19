@@ -252,7 +252,7 @@ IMPORTANT:
 - Provide ONLY valid JSON, no additional text.`;
   
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     const result = await model.generateContent(prompt);
     const responseText = result.response.text();
     

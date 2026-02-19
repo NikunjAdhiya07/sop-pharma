@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { ChevronRight, ChevronDown, Folder, FolderOpen, FileText, BookOpen, Download, Eye, SortAsc, SortDesc, Star } from 'lucide-react';
+import { ChevronRight, ChevronDown, Folder, FolderOpen, FileText, BookOpen, Download, Eye, SortAsc, SortDesc, Star, Search, Loader2, X, ArrowLeft, CheckCircle2, AlertTriangle, MessageSquare } from 'lucide-react';
 import Link from 'next/link';
 
 // Helper function to clean SOP name from folder path
@@ -168,6 +168,10 @@ interface MCQTreeViewProps {
   setExpandedSubcats: (expanded: Set<string>) => void;
   expandedSOPs: Set<string>;
   setExpandedSOPs: (expanded: Set<string>) => void;
+
+  // Lifted fullScreenDept so it survives parent re-renders (e.g. loading spinner)
+  fullScreenDept: DepartmentNode | null;
+  setFullScreenDept: (dept: DepartmentNode | null) => void;
 }
 
 
@@ -182,15 +186,14 @@ export default function MCQTreeView({
   expandedSubcats,
   setExpandedSubcats,
   expandedSOPs,
-  setExpandedSOPs
+  setExpandedSOPs,
+  fullScreenDept,
+  setFullScreenDept,
 }: MCQTreeViewProps) {
   // Expansion state is now managed by parent
   const [isUnorganizedExpanded, setIsUnorganizedExpanded] = useState(false);
   
-
-  
-  // Full-screen department view
-  const [fullScreenDept, setFullScreenDept] = useState<DepartmentNode | null>(null);
+  // fullScreenDept is now lifted to parent — no local state needed
   
   // Modal dragging state
   const [isDragging, setIsDragging] = useState(false);
@@ -204,6 +207,78 @@ export default function MCQTreeView({
   // Sort state for each subcategory
   const [subcatSortBy, setSubcatSortBy] = useState<Record<string, 'name' | 'questions' | 'identifier' | 'checked' | 'similar' | 'reviewed' | 'notChecked'>>({});
   const [subcatSortOrder, setSubcatSortOrder] = useState<Record<string, 'asc' | 'desc'>>({});
+
+  // Department modal: filter mode (questions view vs SOP view)
+  const [deptFilterMode, setDeptFilterMode] = useState<'sops' | 'checked' | 'similar' | 'reviewed' | 'notChecked'>('sops');
+  const [deptSearchTerm, setDeptSearchTerm] = useState('');
+  const [deptQuestions, setDeptQuestions] = useState<any[]>([]);
+  const [loadingDeptQuestions, setLoadingDeptQuestions] = useState(false);
+
+  // Fetch all questions for a department when switching to questions view
+  const fetchDeptQuestions = useCallback(async (deptName: string, filter: 'checked' | 'similar' | 'reviewed' | 'notChecked') => {
+    setLoadingDeptQuestions(true);
+    try {
+      // Collect all MCQ bank IDs from the tree data (already available in fullScreenDept)
+      // This is reliable because the tree computes departments from SOP identifiers,
+      // NOT from the folderDepartment field which may not be set on MCQ bank documents.
+      const bankIds: string[] = [];
+      if (fullScreenDept) {
+        fullScreenDept.subcategories.forEach((sub: any) => {
+          sub.sops.forEach((sop: any) => {
+            if (sop.mcqBanks && sop.mcqBanks.length > 0) {
+              sop.mcqBanks.forEach((bank: any) => {
+                if (bank._id) bankIds.push(bank._id.toString());
+              });
+            }
+          });
+        });
+      }
+
+      if (bankIds.length === 0) {
+        setDeptQuestions([]);
+        return;
+      }
+
+      // Use bulk IDs endpoint — single request, native driver preserves isChecked/isReviewed/isSimilar
+      const allQs: any[] = [];
+      
+      // Split IDs into chunks to avoid URL length limits (~2000 chars per chunk)
+      const chunkSize = 50;
+      for (let i = 0; i < bankIds.length; i += chunkSize) {
+        const chunk = bankIds.slice(i, i + chunkSize);
+        const idsParam = chunk.join(',');
+        const res = await fetch(`/api/mcq-bank?ids=${idsParam}&t=${Date.now()}`, { cache: 'no-store' });
+        const data = await res.json();
+        if (data.success && data.mcqBanks) {
+          data.mcqBanks.forEach((bank: any) => {
+            if (bank.mcqs && bank.mcqs.length > 0) {
+              bank.mcqs.forEach((mcq: any, idx: number) => {
+                allQs.push({
+                  ...mcq,
+                  _bankId: bank._id,
+                  _sopIdentifier: bank.sopIdentifier || '',
+                  _sopName: bank.sopName || '',
+                  _originalIndex: idx,
+                });
+              });
+            }
+          });
+        }
+      }
+      setDeptQuestions(allQs);
+    } catch (err) {
+      console.error('Error fetching dept questions:', err);
+    } finally {
+      setLoadingDeptQuestions(false);
+    }
+  }, [fullScreenDept]);
+
+  // Reset filter mode when department changes
+  useEffect(() => {
+    setDeptFilterMode('sops');
+    setDeptSearchTerm('');
+    setDeptQuestions([]);
+  }, [fullScreenDept?.name]);
   
   // Efficient search filter function
   const searchLower = searchTerm.toLowerCase().trim();
@@ -527,41 +602,56 @@ export default function MCQTreeView({
                   <span className="bg-black/20 px-3 py-1 rounded-lg border border-white/5">{fullScreenDept.totalQuestions} Questions</span>
                   <span className="bg-black/20 px-3 py-1 rounded-lg border border-white/5">{fullScreenDept.subcategories.length} Subcategories</span>
                   {(() => {
-                    const stats = fullScreenDept.subcategories.reduce((acc, sub) => {
-                      sub.sops.forEach(sop => {
+                    const stats = fullScreenDept.subcategories.reduce((acc: any, sub: any) => {
+                      sub.sops.forEach((sop: any) => {
                         acc.checked += sop.checkedCount || 0;
                         acc.similar += sop.similarCount || 0;
                         acc.reviewed += sop.reviewedCount || 0;
                       });
                       return acc;
                     }, { checked: 0, similar: 0, reviewed: 0 });
+                    
+                    const filterPills = [
+                      { id: 'checked' as const, label: 'Checked', count: stats.checked,
+                        active: 'bg-green-600 border-green-600 text-white shadow-lg',
+                        inactive: 'bg-green-900/20 border-green-500/25 text-green-300 hover:bg-green-900/40',
+                        dot: 'bg-green-400' },
+                      { id: 'notChecked' as const, label: 'Not Checked', count: (fullScreenDept.totalQuestions || 0) - stats.checked,
+                        active: 'bg-red-600 border-red-600 text-white shadow-lg',
+                        inactive: 'bg-red-900/20 border-red-500/25 text-red-300 hover:bg-red-900/40',
+                        dot: 'bg-red-400' },
+                      { id: 'similar' as const, label: 'Similar', count: stats.similar,
+                        active: 'bg-orange-600 border-orange-600 text-white shadow-lg',
+                        inactive: 'bg-orange-900/20 border-orange-500/25 text-orange-300 hover:bg-orange-900/40',
+                        dot: 'bg-orange-400' },
+                      { id: 'reviewed' as const, label: 'Reviewed', count: stats.reviewed,
+                        active: 'bg-amber-600 border-amber-600 text-white shadow-lg',
+                        inactive: 'bg-amber-900/20 border-amber-500/25 text-amber-300 hover:bg-amber-900/40',
+                        dot: 'bg-amber-400' },
+                    ];
+                    
                     return (
-                      <>
-                         <button 
-                            onClick={() => toggleDeptSort(fullScreenDept.name, 'checked')}
-                            className="bg-green-900/20 px-3 py-1 rounded-lg border border-green-500/20 text-green-300 hover:bg-green-900/40 hover:border-green-500/40 transition-colors"
-                         >
-                           {stats.checked} Checked
-                         </button>
-                         <button 
-                            onClick={() => toggleDeptSort(fullScreenDept.name, 'notChecked')}
-                            className="bg-red-900/20 px-3 py-1 rounded-lg border border-red-500/20 text-red-300 hover:bg-red-900/40 hover:border-red-500/40 transition-colors"
-                         >
-                           {(fullScreenDept.totalQuestions || 0) - stats.checked} Not Checked
-                         </button>
-                         <button 
-                            onClick={() => toggleDeptSort(fullScreenDept.name, 'similar')}
-                            className="bg-orange-900/20 px-3 py-1 rounded-lg border border-orange-500/20 text-orange-300 hover:bg-orange-900/40 hover:border-orange-500/40 transition-colors"
-                         >
-                           {stats.similar} Similar
-                         </button>
-                         <button 
-                            onClick={() => toggleDeptSort(fullScreenDept.name, 'reviewed')}
-                            className="bg-yellow-900/20 px-3 py-1 rounded-lg border border-yellow-500/20 text-yellow-300 hover:bg-yellow-900/40 hover:border-yellow-500/40 transition-colors"
-                         >
-                           {stats.reviewed} Reviewed
-                         </button>
-                      </>
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        {filterPills.map(pill => (
+                          <button
+                            key={pill.id}
+                            onClick={() => {
+                              if (deptFilterMode === pill.id) {
+                                setDeptFilterMode('sops');
+                              } else {
+                                setDeptFilterMode(pill.id);
+                                fetchDeptQuestions(fullScreenDept.name, pill.id);
+                              }
+                            }}
+                            className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full border transition-all ${
+                              deptFilterMode === pill.id ? pill.active : pill.inactive
+                            }`}
+                          >
+                            <div className={`w-1.5 h-1.5 rounded-full ${pill.dot}`}></div>
+                            {pill.count} {pill.label}
+                          </button>
+                        ))}
+                      </div>
                     );
                   })()}
                 </div>
@@ -589,66 +679,254 @@ export default function MCQTreeView({
             </div>
           </div>
 
-          {/* Sort Controls */}
+          {/* Search + Sort Controls Bar */}
           <div className="px-8 py-4 bg-white/5 border-b border-white/5 shrink-0">
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-400 font-medium">Sort by:</span>
-              <div className="flex gap-2">
-                {[
-                  { value: 'name', label: 'Name' },
-                  { value: 'sops', label: 'SOP Count' },
-                  { value: 'questions', label: 'Questions' }
-                ].map((sort) => (
-                  <button
-                    key={sort.value}
-                    onClick={() => toggleDeptSort(fullScreenDept.name, sort.value as 'name' | 'sops' | 'questions')}
-                    className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 ${
-                      deptSortBy[fullScreenDept.name] === sort.value
-                        ? `${theme.button} text-white shadow-lg shadow-${theme.bg}/20`
-                        : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200'
-                    }`}
-                  >
-                    {sort.label}
-                    {deptSortBy[fullScreenDept.name] === sort.value && (
-                      deptSortOrder[fullScreenDept.name] === 'asc' ? 
-                        <SortAsc className="h-4 w-4" /> : 
-                        <SortDesc className="h-4 w-4" />
-                    )}
+            <div className="flex items-center gap-4 flex-wrap">
+              {/* Search */}
+              <div className="relative flex-1 min-w-[200px] max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                <input
+                  type="text"
+                  placeholder="Search SOPs by name or code..."
+                  value={deptSearchTerm}
+                  onChange={e => setDeptSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-8 py-2 bg-black/30 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-purple-500/50 transition-all"
+                />
+                {deptSearchTerm && (
+                  <button onClick={() => setDeptSearchTerm('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white">
+                    <X className="h-3.5 w-3.5" />
                   </button>
-                ))}
-                
-                <div className="w-px h-6 bg-white/10 mx-2"></div>
-                
-                {[
-                  { value: 'checked', label: 'Checked' },
-                  { value: 'notChecked', label: 'Not Checked' },
-                  { value: 'similar', label: 'Similar' },
-                  { value: 'reviewed', label: 'Reviewed' }
-                ].map((sort) => (
-                  <button
-                    key={sort.value}
-                    onClick={() => toggleDeptSort(fullScreenDept.name, sort.value as any)}
-                    className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 ${
-                      deptSortBy[fullScreenDept.name] === sort.value
-                        ? `${theme.button} text-white shadow-lg shadow-${theme.bg}/20`
-                        : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200'
-                    }`}
-                  >
-                    {sort.label}
-                    {deptSortBy[fullScreenDept.name] === sort.value && (
-                      deptSortOrder[fullScreenDept.name] === 'asc' ? 
-                        <SortAsc className="h-4 w-4" /> : 
-                        <SortDesc className="h-4 w-4" />
-                    )}
-                  </button>
-                ))}
+                )}
               </div>
+
+              {/* Sort controls — only show in SOP view mode */}
+              {deptFilterMode === 'sops' && (
+                <>
+                  <span className="text-sm text-gray-400 font-medium">Sort by:</span>
+                  <div className="flex gap-2">
+                    {[
+                      { value: 'name', label: 'Name' },
+                      { value: 'sops', label: 'SOP Count' },
+                      { value: 'questions', label: 'Questions' }
+                    ].map((sort) => (
+                      <button
+                        key={sort.value}
+                        onClick={() => toggleDeptSort(fullScreenDept.name, sort.value as 'name' | 'sops' | 'questions')}
+                        className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 ${
+                          deptSortBy[fullScreenDept.name] === sort.value
+                            ? `${theme.button} text-white shadow-lg`
+                            : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200'
+                        }`}
+                      >
+                        {sort.label}
+                        {deptSortBy[fullScreenDept.name] === sort.value && (
+                          deptSortOrder[fullScreenDept.name] === 'asc' ? 
+                            <SortAsc className="h-4 w-4" /> : 
+                            <SortDesc className="h-4 w-4" />
+                        )}
+                      </button>
+                    ))}
+                    
+                    <div className="w-px h-6 bg-white/10 mx-2"></div>
+                    
+                    {[
+                      { value: 'checked', label: 'Checked' },
+                      { value: 'notChecked', label: 'Not Checked' },
+                      { value: 'similar', label: 'Similar' },
+                      { value: 'reviewed', label: 'Reviewed' }
+                    ].map((sort) => (
+                      <button
+                        key={sort.value}
+                        onClick={() => toggleDeptSort(fullScreenDept.name, sort.value as any)}
+                        className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 ${
+                          deptSortBy[fullScreenDept.name] === sort.value
+                            ? `${theme.button} text-white shadow-lg`
+                            : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200'
+                        }`}
+                      >
+                        {sort.label}
+                        {deptSortBy[fullScreenDept.name] === sort.value && (
+                          deptSortOrder[fullScreenDept.name] === 'asc' ? 
+                            <SortAsc className="h-4 w-4" /> : 
+                            <SortDesc className="h-4 w-4" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* Back to SOPs button when in questions view */}
+              {deptFilterMode !== 'sops' && (
+                <button
+                  onClick={() => setDeptFilterMode('sops')}
+                  className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-xl text-sm font-medium transition-all border border-white/10"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Back to SOPs
+                </button>
+              )}
             </div>
           </div>
 
           {/* Scrollable Content */}
           <div className="overflow-y-auto flex-1 p-8 space-y-6 custom-scrollbar">
-              {sortSubcategories(fullScreenDept.subcategories, fullScreenDept.name).map((subcat) => {
+
+            {/* Questions View — when a status filter is active */}
+            {deptFilterMode !== 'sops' ? (
+              <div>
+                {loadingDeptQuestions ? (
+                  <div className="flex flex-col items-center justify-center py-20">
+                    <Loader2 className="h-10 w-10 text-purple-400 animate-spin mb-4" />
+                    <p className="text-gray-400 text-sm">Loading questions across all SOPs...</p>
+                  </div>
+                ) : (() => {
+                  // Filter questions based on the selected filter
+                  let filtered = deptQuestions.filter(q => {
+                    if (deptFilterMode === 'checked') return q.isChecked === true;
+                    if (deptFilterMode === 'notChecked') return q.isChecked !== true;
+                    if (deptFilterMode === 'similar') return q.isSimilar === true;
+                    if (deptFilterMode === 'reviewed') return q.isReviewed === true;
+                    return true;
+                  });
+
+                  // Apply search filter
+                  if (deptSearchTerm.trim()) {
+                    const searchLow = deptSearchTerm.toLowerCase().trim();
+                    filtered = filtered.filter(q =>
+                      (q.question || '').toLowerCase().includes(searchLow) ||
+                      (q._sopIdentifier || '').toLowerCase().includes(searchLow) ||
+                      (q._sopName || '').toLowerCase().includes(searchLow)
+                    );
+                  }
+
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="flex flex-col items-center justify-center py-20">
+                        <BookOpen className="h-12 w-12 text-gray-600 mb-3" />
+                        <p className="text-gray-400 text-sm">No questions found for this filter.</p>
+                      </div>
+                    );
+                  }
+
+                  const filterLabel = deptFilterMode === 'checked' ? 'Checked' : deptFilterMode === 'notChecked' ? 'Not Checked' : deptFilterMode === 'similar' ? 'Similar' : 'Reviewed';
+                  const filterDotClass = deptFilterMode === 'checked' ? 'bg-green-400' : deptFilterMode === 'notChecked' ? 'bg-red-400' : deptFilterMode === 'similar' ? 'bg-orange-400' : 'bg-amber-400';
+
+                  return (
+                    <>
+                      <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-2 h-2 rounded-full ${filterDotClass}`} />
+                          <h3 className="text-lg font-bold text-white">
+                            {filtered.length} {filterLabel} Questions
+                          </h3>
+                          <span className="text-xs text-gray-500">across all SOPs in {fullScreenDept.name}</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        {filtered.slice(0, 100).map((q, idx) => (
+                          <div
+                            key={`${q._bankId}-${q._originalIndex}`}
+                            className="bg-[#131620] rounded-xl border border-slate-800/60 hover:border-purple-500/40 transition-all p-5"
+                          >
+                            {/* Question header */}
+                            <div className="flex items-start justify-between gap-4 mb-3">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-xs font-bold text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
+                                  {q._sopIdentifier}
+                                </span>
+                                <span className="text-[10px] text-gray-500">Q{q._originalIndex + 1}</span>
+                                {q.difficulty && (
+                                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
+                                    q.difficulty === 'Easy' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
+                                    q.difficulty === 'Medium' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
+                                    'bg-red-500/10 text-red-400 border border-red-500/20'
+                                  }`}>
+                                    {q.difficulty}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                {q.isChecked && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 flex items-center gap-1">
+                                    <CheckCircle2 className="h-3 w-3" /> Checked
+                                  </span>
+                                )}
+                                {q.isSimilar && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20 flex items-center gap-1">
+                                    <AlertTriangle className="h-3 w-3" /> Similar
+                                  </span>
+                                )}
+                                {q.isReviewed && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1">
+                                    <Star className="h-3 w-3" /> Reviewed
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Question text */}
+                            <p className="text-sm text-gray-200 leading-relaxed mb-3 font-medium">
+                              {q.question}
+                            </p>
+
+                            {/* Options */}
+                            {q.options && q.options.length > 0 && (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {q.options.map((opt: any, optIdx: number) => {
+                                  const optLabel = String.fromCharCode(65 + optIdx);
+                                  const isCorrect = q.correctAnswer === optLabel || q.correctAnswer === opt;
+                                  return (
+                                    <div
+                                      key={optIdx}
+                                      className={`flex items-start gap-2 px-3 py-2 rounded-lg text-xs ${
+                                        isCorrect
+                                          ? 'bg-green-500/10 border border-green-500/30 text-green-300'
+                                          : 'bg-white/5 border border-white/5 text-gray-400'
+                                      }`}
+                                    >
+                                      <span className={`font-bold flex-shrink-0 ${isCorrect ? 'text-green-400' : 'text-gray-500'}`}>
+                                        {optLabel}.
+                                      </span>
+                                      <span className="leading-relaxed">{opt}</span>
+                                      {isCorrect && <CheckCircle2 className="h-3.5 w-3.5 text-green-400 ml-auto flex-shrink-0 mt-0.5" />}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+
+                        {filtered.length > 100 && (
+                          <div className="text-center py-4">
+                            <p className="text-sm text-gray-500">Showing first 100 of {filtered.length} questions. Use search to narrow results.</p>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            ) : (
+
+            /* SOP/Subcategory View — default */
+            <div className="space-y-6">
+              {sortSubcategories(
+                fullScreenDept.subcategories
+                  .map(sub => ({
+                    ...sub,
+                    sops: deptSearchTerm.trim()
+                      ? sub.sops.filter(s => {
+                          const st = deptSearchTerm.toLowerCase().trim();
+                          return s.sopName.toLowerCase().includes(st) || s.sopCode.toLowerCase().includes(st);
+                        })
+                      : sub.sops,
+                  }))
+                  .filter(sub => sub.sops.length > 0),
+                fullScreenDept.name
+              ).map((subcat) => {
                 const subcatKey = `${fullScreenDept.name}-${subcat.code}`;
                 const isSubcatExpanded = expandedSubcats.has(subcatKey);
 
@@ -769,182 +1047,87 @@ export default function MCQTreeView({
                           </div>
                         )}
 
-                        {/* SOP Grid */}
-                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                        {/* SOP Grid - 2 columns, each SOP is a compact row */}
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
                         {sortSOPs(subcat.sops, subcatKey).map((sop) => {
-                          const isSOPExpanded = expandedSOPs.has(sop.sopId);
                           const hasQuestions = sop.totalQuestions > 0;
 
                           return (
-                            <div 
-                              key={sop.sopId} 
-                              className={`group relative bg-[#131620] rounded-xl border overflow-hidden transition-all duration-300 cursor-pointer
-                                  ${isSOPExpanded 
-                                    ? 'border-purple-500 bg-[#1A1E2E] shadow-[0_0_20px_rgba(168,85,247,0.15)]' 
-                                    : 'border-slate-800/60 bg-[#131620] hover:border-purple-500/50 hover:bg-[#1A1E2E] hover:shadow-[0_0_20px_rgba(168,85,247,0.15)] hover:scale-[1.02]'
-                                  }`}
+                            <div
+                              key={sop.sopId}
+                              className="group relative bg-[#131620] rounded-xl border border-slate-800/60 hover:border-purple-500/50 hover:bg-[#1A1E2E] transition-all duration-200 overflow-hidden"
                             >
-                              {/* SOP Header */}
                               <div
-                                onClick={() => toggleSOP(sop.sopId)}
-                                className="w-full px-6 py-5 flex items-start gap-5 text-left cursor-pointer"
+                                onClick={() => sop.mcqBanks && sop.mcqBanks.length > 0 ? onViewMCQs(sop) : undefined}
+                                className={`flex items-center gap-4 px-5 py-4 ${sop.mcqBanks && sop.mcqBanks.length > 0 ? 'cursor-pointer' : 'cursor-default'}`}
                               >
-                                {/* Icon Box */}
-                                <div className={`mt-1 p-3 rounded-xl transition-all duration-300 shrink-0
-                                  ${hasQuestions 
-                                    ? 'bg-blue-500/10 text-blue-400 group-hover:bg-blue-500/20 group-hover:scale-110' 
-                                    : 'bg-gray-800/40 text-gray-500 group-hover:bg-purple-500/10 group-hover:text-purple-400 group-hover:scale-110'
-                                  }`}>
+                                {/* Icon */}
+                                <div className={`flex-shrink-0 p-2.5 rounded-xl transition-all duration-200 ${
+                                  hasQuestions
+                                    ? 'bg-blue-500/10 text-blue-400 group-hover:bg-blue-500/20'
+                                    : 'bg-gray-800/60 text-gray-600'
+                                }`}>
                                   <FileText className="h-5 w-5" />
                                 </div>
-                                
-                                <div className="flex-1 min-w-0 pt-0.5">
-                                  {/* Identifier Row */}
-                                  <div className="flex items-center gap-3 mb-2">
-                                    <h4 className="text-lg font-extrabold tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-pink-300 transition-all duration-300 group-hover:to-white group-hover:from-purple-200 drop-shadow-sm">
+
+                                {/* Info */}
+                                <div className="flex-1 min-w-0">
+                                  {/* Identifier + count badges */}
+                                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                                    <h4 className="text-sm font-extrabold tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-pink-300">
                                       {sop.sopCode}
                                     </h4>
-                                    
-                                    <span className={`text-[10px] uppercase tracking-wider font-bold px-2.5 py-1 rounded-md border transition-all duration-300
-                                      ${hasQuestions 
-                                        ? 'bg-green-500/10 text-green-400 border-green-500/20 group-hover:bg-green-500/20 group-hover:border-green-500/40' 
-                                        : 'bg-gray-800 text-gray-500 border-gray-700 group-hover:border-gray-600'
-                                      }`}>
-                                        {sop.totalQuestions > 0 ? `${sop.totalQuestions} Qs` : 'No Qs'}
-                                      </span>
-                                      
-                                      {/* Similar Count Badge - Clickable */}
-                                      {sop.similarCount && sop.similarCount > 0 ? (
-                                        <button 
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            onViewMCQs(sop, 'similar');
-                                          }}
-                                          className="text-[10px] uppercase tracking-wider font-bold px-2.5 py-1 rounded-md border border-orange-500/30 bg-orange-500/20 text-orange-400 shadow-[0_0_10px_rgba(249,115,22,0.1)] flex items-center gap-1 hover:bg-orange-500/30 hover:scale-105 transition-all"
-                                        >
-                                          <div className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse"></div>
-                                          {sop.similarCount} Similar
-                                        </button>
-                                      ) : null}
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                                      hasQuestions
+                                        ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                                        : 'bg-gray-800/40 text-gray-500 border-gray-700'
+                                    }`}>
+                                      {sop.totalQuestions > 0 ? `${sop.totalQuestions} Qs` : 'No Qs'}
+                                    </span>
 
-                                      {/* Checked Count Badge - Clickable */}
-                                      {sop.checkedCount && sop.checkedCount > 0 ? (
-                                        <button 
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            onViewMCQs(sop, 'checked');
-                                          }}
-                                          className="text-[10px] uppercase tracking-wider font-bold px-2.5 py-1 rounded-md border border-green-500/30 bg-green-500/20 text-green-400 shadow-[0_0_10px_rgba(34,197,94,0.1)] flex items-center gap-1 hover:bg-green-500/30 hover:scale-105 transition-all"
-                                        >
-                                          <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></div>
-                                          {sop.checkedCount} Checked
-                                        </button>
-                                      ) : null}
-
-                                      {/* Reviewed Count Badge - Clickable */}
-                                      {sop.reviewedCount && sop.reviewedCount > 0 ? (
-                                        <button 
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            onViewMCQs(sop, 'reviewed');
-                                          }}
-                                          className="text-[10px] uppercase tracking-wider font-bold px-2.5 py-1 rounded-md border border-yellow-500/30 bg-yellow-500/20 text-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.1)] flex items-center gap-1 hover:bg-yellow-500/30 hover:scale-105 transition-all"
-                                        >
-                                          <div className="w-1.5 h-1.5 rounded-full bg-yellow-400"></div>
-                                          {sop.reviewedCount} Reviewed
-                                        </button>
-                                      ) : null}
+                                    {/* Status badges - clickable */}
+                                    {sop.similarCount && sop.similarCount > 0 ? (
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); onViewMCQs(sop, 'similar'); }}
+                                        className="text-[10px] font-bold px-2 py-0.5 rounded border border-orange-500/30 bg-orange-500/10 text-orange-400 hover:bg-orange-500/25 transition-all flex items-center gap-1"
+                                      >
+                                        <div className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse"></div>
+                                        {sop.similarCount} Similar
+                                      </button>
+                                    ) : null}
+                                    {sop.checkedCount && sop.checkedCount > 0 ? (
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); onViewMCQs(sop, 'checked'); }}
+                                        className="text-[10px] font-bold px-2 py-0.5 rounded border border-green-500/30 bg-green-500/10 text-green-400 hover:bg-green-500/25 transition-all flex items-center gap-1"
+                                      >
+                                        <div className="w-1.5 h-1.5 rounded-full bg-green-400"></div>
+                                        {sop.checkedCount} Checked
+                                      </button>
+                                    ) : null}
+                                    {sop.reviewedCount && sop.reviewedCount > 0 ? (
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); onViewMCQs(sop, 'reviewed'); }}
+                                        className="text-[10px] font-bold px-2 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/25 transition-all flex items-center gap-1"
+                                      >
+                                        <div className="w-1.5 h-1.5 rounded-full bg-amber-400"></div>
+                                        {sop.reviewedCount} Reviewed
+                                      </button>
+                                    ) : null}
                                   </div>
-                                  
-                                  {/* SOP Name */}
-                                  <p className="text-gray-400 font-medium text-sm leading-relaxed transition-colors duration-300 group-hover:text-white line-clamp-2 pr-4">
+
+                                  {/* SOP name */}
+                                  <p className="text-gray-400 text-xs leading-tight group-hover:text-gray-200 transition-colors line-clamp-1">
                                     {cleanSOPName(sop.sopName, sop.sopCode)}
                                   </p>
                                 </div>
-                                
-                                <ChevronRight className={`h-5 w-5 mt-1 transition-all duration-300 shrink-0 
-                                  ${isSOPExpanded 
-                                    ? 'rotate-90 text-purple-400' 
-                                    : 'text-gray-600 group-hover:text-purple-400 group-hover:translate-x-1'
-                                  }`} 
-                                />
+
+                                {/* Arrow — only when has questions */}
+                                {sop.mcqBanks && sop.mcqBanks.length > 0 ? (
+                                  <ChevronRight className="h-5 w-5 flex-shrink-0 text-gray-600 group-hover:text-purple-400 group-hover:translate-x-0.5 transition-all" />
+                                ) : (
+                                  <div className="h-5 w-5 flex-shrink-0" />
+                                )}
                               </div>
-
-                              {/* Expanded SOP Details */}
-                              {isSOPExpanded && (
-                                <div className="px-4 pb-4 pt-0 space-y-3">
-                                  <div className="h-px w-full bg-white/5 mb-3"></div>
-                                  
-                                  {/* Download Button */}
-                                  {sop.sopFileUrl && (
-                                    <button
-                                      onClick={() => onDownloadSOP(sop)}
-                                      className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-xs font-medium text-gray-300 transition-colors border border-white/5 hover:border-white/10"
-                                    >
-                                      <Download className="h-3.5 w-3.5" />
-                                      Download {sop.sopFileType.toUpperCase()}
-                                    </button>
-                                  )}
-
-                                  {/* MCQ Banks List */}
-                                          {sop.mcqBanks && sop.mcqBanks.length > 0 ? (
-                                    <div className="space-y-2 mt-2">
-                                      <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold ml-1">Available Question Banks</p>
-                                      {sop.mcqBanks.map((bank, idx) => (
-                                        <div key={bank._id || idx} className="flex items-center justify-between p-3 rounded-lg bg-gradient-to-r from-purple-900/10 to-blue-900/10 border border-white/5 group/bank hover:border-purple-500/30 transition-all">
-                                          <div className="flex items-center gap-3">
-                                            <div className="p-1.5 rounded bg-purple-500/10 text-purple-400">
-                                              <BookOpen className="h-3.5 w-3.5" />
-                                            </div>
-                                            <div>
-                                              <span className="text-xs font-semibold text-gray-200 block">Bank Set #{idx + 1}</span>
-                                              <div className="flex items-center gap-2 mt-0.5">
-                                                <span className="text-[10px] text-gray-400">{bank.totalQuestions} questions</span>
-                                                {(() => {
-                                                  const similarCount = bank.mcqs?.filter((q: any) => q?.isSimilar)?.length || 0;
-                                                  const checkedCount = bank.mcqs?.filter((q: any) => q?.isChecked)?.length || 0;
-                                                  const reviewedCount = bank.mcqs?.filter((q: any) => q?.isReviewed)?.length || 0;
-                                                  console.log(`Bank ${idx + 1}: mcqs length=${bank.mcqs?.length}, similar=${similarCount}, checked=${checkedCount}, reviewed=${reviewedCount}`);
-                                                  return (
-                                                    <>
-                                                      {similarCount > 0 && (
-                                                        <span className="text-[10px] text-orange-400 font-medium bg-orange-900/40 px-1.5 py-0.5 rounded border border-orange-500/30">
-                                                          {similarCount} Similar
-                                                        </span>
-                                                      )}
-                                                      {checkedCount > 0 && (
-                                                        <span className="text-[10px] text-green-400 font-medium bg-green-900/40 px-1.5 py-0.5 rounded border border-green-500/30">
-                                                          {checkedCount} Checked
-                                                        </span>
-                                                      )}
-                                                      {reviewedCount > 0 && (
-                                                        <span className="text-[10px] text-yellow-400 font-medium bg-yellow-900/40 px-1.5 py-0.5 rounded border border-yellow-500/30">
-                                                          {reviewedCount} Reviewed
-                                                        </span>
-                                                      )}
-                                                    </>
-                                                  );
-                                                })()}
-                                              </div>
-                                            </div>
-                                          </div>
-                                          
-                                          <button
-                                            onClick={() => onViewMCQs(sop)}
-                                            className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-xs rounded-lg transition-colors font-medium shadow-lg shadow-purple-900/20"
-                                          >
-                                            View
-                                          </button>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <div className="p-4 rounded-lg bg-white/5 border border-dashed border-white/10 text-center">
-                                      <p className="text-xs text-gray-500">No question banks generated yet.</p>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
                             </div>
                           );
                         })}
@@ -953,7 +1136,8 @@ export default function MCQTreeView({
                     )}
                   </div>
                 );
-              })}
+              })}</div>
+            )}
           </div>
         </div>
       </div>

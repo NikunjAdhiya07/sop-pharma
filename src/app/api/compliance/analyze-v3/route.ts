@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
       currentStep: 'fetching-sop',
       progress: 5,
       config: {
-        aiModel: config?.aiModel || 'models/gemini-3-flash-preview',
+        aiModel: config?.aiModel || 'gemini-2.0-flash',
         maxClausesToAnalyze: config?.maxClausesToAnalyze || 50,
         guidelineFilters,
         retryOnFailure: true,
@@ -356,7 +356,7 @@ export async function POST(request: NextRequest) {
           sop.identifier,
           sop.department || 'General',
           clause,
-          config?.aiModel || 'models/gemini-3-flash-preview'
+          config?.aiModel || 'gemini-2.0-flash'
         );
         
         aiCallsCount++;
@@ -557,7 +557,7 @@ export async function POST(request: NextRequest) {
       analysisStatus: 'completed',
       analysisStartedAt: new Date(startTime),
       analysisCompletedAt: new Date(),
-      analysisEngine: config?.aiModel || 'models/gemini-3-flash-preview',
+      analysisEngine: config?.aiModel || 'gemini-2.0-flash',
       processingTimeMs: Date.now() - startTime,
       analysisErrors: [],
       

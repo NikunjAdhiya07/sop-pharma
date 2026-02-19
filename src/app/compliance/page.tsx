@@ -409,31 +409,55 @@ export default function ComplianceEnginePage() {
           return `${action}${f.clauseNumber ? ` [Clause ${f.clauseNumber}]` : ''}`;
         }).filter(Boolean))).join(' '),
         combinedSuggestion: (() => {
-          const texts = Array.from(new Set(group.map(f => 
-            (f.suggestedText || (f.suggestedAction?.match(/```([\s\S]*?)```/)?.[1]) || '')
-            .replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim()
-          ).filter(Boolean)));
+          // 1. Gather all raw texts
+          const rawTexts = group.map(f => 
+            f.suggestedText || (f.suggestedAction?.match(/```([\s\S]*?)```/)?.[1]) || ''
+          ).filter(Boolean);
 
-          // Filter out unrelated sections (e.g. 5.12 appearing in 5.11)
-          const filteredTexts = texts.filter(t => {
-            const match = t.match(/^(\d+(\.\d+)*)/);
-            if (!match) return true;
-            // Keep if it starts with current key (e.g. 5.11 starts with 5.11)
-            return match[1].startsWith(key);
+          // 2. Split into potential "section blocks" to detect mixed feedback (e.g. 5.11 inside 1.0)
+          let blocks: string[] = [];
+          rawTexts.forEach(text => {
+             // Split by looking for "Number.Number" at start of lines or sentences
+             const parts = text.split(/(?=(?:^|\s|\n)\d+\.\d+\b)/); 
+             blocks.push(...parts);
           });
 
-          if (filteredTexts.length === 0) return '';
+          // 3. Filter blocks belonging to current selection hierarchy
+          const relevantBlocks = blocks.map(b => b.trim()).filter(b => {
+              if (!b) return false;
+              const match = b.match(/^(\d+(?:\.\d+)*)/);
+              if (match) {
+                  // Keep if it starts with current key (e.g. "5.11" matches "5.11.2")
+                  return match[1].startsWith(key);
+              }
+              // If no number start, it's generic text for this section
+              return true;
+          });
+
+          if (relevantBlocks.length === 0) return '';
           
-          // Merge into one paragraph, stripping EXACT key repetition
-          const merged = filteredTexts.map(t => {
-             const exactKeyRegex = new RegExp(`^${key.replace(/\./g, '\\.')}[\\s:\\.]`, 'i');
-             if (exactKeyRegex.test(t)) {
-               return t.replace(exactKeyRegex, '').trim();
-             }
-             return t;
-          }).join(' ');
+          // 4. Clean and Merge
+          const sentences = new Set<string>();
+          relevantBlocks.forEach(block => {
+              // Strip key prefix to avoid "5.11 Text... 5.11 More Text"
+              let content = block.replace(new RegExp(`^${key.replace(/\./g, '\\.')}(\\.\\d+)*\\s*[:\\-]?\\s*`, 'i'), '');
+              
+              // Also strip generic headers if present immediately after number
+              // e.g. "Frequency:" in "5.9 Frequency:"
+              content = content.replace(/^[A-Z][a-z]+(\s+[A-Z][a-z]+)*:/, '').trim();
+
+              if (!content) return;
+
+              // Split into sentences to allow clean merging
+              // (Simple split by . ! ?)
+              const sent = content.match(/[^.!?]+[.!?]+/g) || [content];
+              sent.forEach(s => {
+                  const c = s.trim();
+                  if (c.length > 2) sentences.add(c);
+              });
+          });
           
-          return `${key} ${merged}`;
+          return `${key} ${Array.from(sentences).join(' ')}`;
         })(),
       }))
       .sort((a, b) => { const na = parseFloat(a.sectionKey), nb = parseFloat(b.sectionKey); return !isNaN(na) && !isNaN(nb) ? na - nb : !isNaN(na) ? -1 : !isNaN(nb) ? 1 : a.sectionKey.localeCompare(b.sectionKey); });

@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, Suspense, useCallback } from 'react';
+import { useState, useEffect, Suspense, useCallback, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Search, Filter, Download, Eye, BookOpen, Award, Loader2, Plus, Trash2, FolderOpen, Upload, ArrowLeft, Grid, List, ArrowUpDown, SortAsc, SortDesc, CheckCircle2, Star, FileText, RefreshCw, Copy, AlertCircle } from 'lucide-react';
+import { Search, Filter, Download, Eye, BookOpen, Award, Loader2, Plus, Trash2, FolderOpen, Upload, ArrowLeft, Grid, List, ArrowUpDown, SortAsc, SortDesc, CheckCircle2, Star, FileText, RefreshCw, Copy, AlertCircle, X, ChevronsUpDown, MoreHorizontal } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 import MCQTreeView from '@/components/MCQTreeView';
 import { useCopyProtection, CopyProtected } from '@/lib/copyProtection';
@@ -104,6 +104,13 @@ function MCQBankContent() {
   const [expandedSubcats, setExpandedSubcats] = useState<Set<string>>(() => loadExpansionState('mcq-tree-expanded-subcats'));
   const [expandedSOPs, setExpandedSOPs] = useState<Set<string>>(() => loadExpansionState('mcq-tree-expanded-sops'));
 
+  // Lifted fullScreenDept — survives re-renders caused by loading/state changes
+  // This is the key to correct "Back" navigation from MCQ modal → department view
+  const [fullScreenDept, setFullScreenDept] = useState<any>(null);
+
+  // Separate loading state for bank-detail fetches so we don't unmount the tree
+  const [loadingBankDetail, setLoadingBankDetail] = useState(false);
+
   // Save expansion state whenever it changes
   useEffect(() => {
     saveExpansionState('mcq-tree-expanded-depts', expandedDepts);
@@ -124,6 +131,12 @@ function MCQBankContent() {
   const [sortBy, setSortBy] = useState<'name' | 'questions' | 'date' | 'identifier'>('identifier');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [filterReviewStatus, setFilterReviewStatus] = useState<'all' | 'checked' | 'similar' | 'reviewed'>('all');
+  // Modal-level search (search within a SOP's questions)
+  const [modalSearch, setModalSearch] = useState('');
+  const [modalSearchInputVisible, setModalSearchInputVisible] = useState(false);
+  // Lazy rendering: show 30 at a time, more loaded on scroll
+  const [visibleCount, setVisibleCount] = useState(30);
+  const modalBodyRef = useRef<HTMLDivElement>(null);
 
   // Apply copy protection to prevent copying/downloading questions
   useCopyProtection();
@@ -217,6 +230,11 @@ function MCQBankContent() {
 
   const fetchFullBankDetails = async (bank: MCQBank, filter: 'all' | 'checked' | 'similar' | 'reviewed' = 'all') => {
     setFilterReviewStatus(filter);
+    // Reset modal-level search and visible count when opening a new SOP
+    setModalSearch('');
+    setModalSearchInputVisible(false);
+    setVisibleCount(30);
+    setSimilarQuestionDetails({});
     // Always fetch latest from DB when opening modal to ensure persistence
     try {
       // Check if we have FULL question data (not just partial status flags)
@@ -233,7 +251,7 @@ function MCQBankContent() {
         return;
       }
 
-      setLoading(true);
+      setLoadingBankDetail(true);
       // Use the ID filter for pinpoint precision
       // timestamp to prevent browser caching
       const response = await fetch(`/api/mcq-bank?id=${bank._id}&limit=1&t=${Date.now()}`, {
@@ -263,7 +281,7 @@ function MCQBankContent() {
       console.error('Error fetching full bank details:', error);
       alert('Error loading questions');
     } finally {
-      setLoading(false);
+      setLoadingBankDetail(false);
     }
   };
 
@@ -896,6 +914,9 @@ function MCQBankContent() {
     }
   };
 
+  // Only show the full-page spinner during initial page load (first fetch)
+  // Bank-detail loading uses a non-blocking overlay (loadingBankDetail) so the
+  // tree component stays mounted and fullScreenDept state is preserved.
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
@@ -1101,6 +1122,8 @@ function MCQBankContent() {
               setExpandedSubcats={setExpandedSubcats}
               expandedSOPs={expandedSOPs}
               setExpandedSOPs={setExpandedSOPs}
+              fullScreenDept={fullScreenDept}
+              setFullScreenDept={setFullScreenDept}
               onViewMCQs={(sopNode, filterStatus = 'all') => {
                 // Find the first MCQ bank for this SOP
                 if (sopNode.mcqBanks && sopNode.mcqBanks.length > 0) {
@@ -1295,311 +1318,309 @@ function MCQBankContent() {
           </div>
         )}
 
-        {/* MCQ Bank Detail Modal */}
-        {selectedMCQBank && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-            <div className="bg-slate-900 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-purple-500/30 shadow-[0_0_50px_rgba(0,0,0,0.5)]">
-              <div className="sticky top-0 bg-gradient-to-r from-purple-600 to-pink-600 p-6 rounded-t-2xl z-10">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-xl font-bold text-white mb-2 uppercase">
-                      {formatSOPDisplayName(selectedMCQBank.sopName, selectedMCQBank.sopIdentifier)}
-                    </h2>
-                    <p className="text-purple-100 font-mono text-sm">
-                      {selectedMCQBank.sopIdentifier}
-                    </p>
-                    
-                    {/* Check Similar Button and Results */}
-                    <div className="flex items-center gap-3 mt-3">
-                      <button
-                        onClick={() => handleCheckSimilarityForSOP(selectedMCQBank)}
-                        disabled={checkingSimilarity}
-                        className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 text-white font-semibold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
-                      >
-                        {checkingSimilarity ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            Checking...
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="h-4 w-4" />
-                            Check Similar
-                          </>
-                        )}
-                      </button>
-                      
-                      {similarityResults && similarityResults.count > 0 && (
-                        <button
-                          onClick={() => router.push('/similar-questions')}
-                          className="flex items-center gap-2 px-4 py-2 bg-orange-500/20 border border-orange-500/50 rounded-lg hover:bg-orange-500/30 transition-all cursor-pointer"
-                          title="Click to view and manage similar questions"
-                        >
-                          <AlertCircle className="h-4 w-4 text-orange-400" />
-                          <span className="text-orange-300 font-semibold">
-                            {similarityResults.count} Similar: {similarityResults.summary}
-                          </span>
-                          <span className="text-orange-200 text-xs ml-2">→ View All</span>
-                        </button>
-                      )}
-                    </div>
-                    
-                    <div className="flex bg-black/20 rounded-lg p-1 mt-4 gap-1 w-fit">
-                      <button 
-                        onClick={() => setActiveTab('active')}
-                        className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'active' ? 'bg-white text-purple-600 shadow-sm' : 'text-purple-100 hover:bg-white/10'}`}
-                      >Active Questions</button>
-                      <button 
-                        onClick={() => {
-                          setActiveTab('recycled');
-                          if (selectedMCQBank?.sopId) fetchRecycledQuestions(selectedMCQBank.sopId);
-                        }}
-                        className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'recycled' ? 'bg-white text-purple-600 shadow-sm' : 'text-purple-100 hover:bg-white/10'}`}
-                      >Recycled ({recycledQuestions.length > 0 ? recycledQuestions.length : ''})</button>
-                    </div>
-                    {/* Filter Pills */}
-                    {activeTab === 'active' && selectedMCQBank?.mcqs && (
-                      <div className="flex flex-wrap gap-2 mt-4 ml-1">
-                        {[
-                          { id: 'all', label: 'All', count: selectedMCQBank.mcqs.length },
-                          { id: 'checked', label: 'Checked', count: selectedMCQBank.mcqs.filter(q => q.isChecked).length },
-                          { id: 'similar', label: 'Similar', count: selectedMCQBank.mcqs.filter(q => q.isSimilar).length },
-                          { id: 'reviewed', label: 'Reviewed', count: selectedMCQBank.mcqs.filter(q => q.isReviewed).length }
-                        ].map(filter => (
-                          <button
-                            key={filter.id}
-                            onClick={() => setFilterReviewStatus(filter.id as any)}
-                            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all border flex items-center gap-2 ${
-                              filterReviewStatus === filter.id
-                                ? 'bg-white text-purple-600 border-white shadow-md'
-                                : 'bg-white/5 text-purple-200 border-white/10 hover:bg-white/10'
-                            }`}
-                          >
-                            <span>{filter.label}</span>
-                            <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${
-                              filterReviewStatus === filter.id ? 'bg-purple-100 text-purple-600' : 'bg-black/30 text-purple-200'
-                            }`}>
-                              {filter.count}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-4">
+        {/* MCQ Bank Detail Modal - Redesigned */}
+        {selectedMCQBank && (() => {
+          // Compute filtered questions inside the render block
+          const allMcqs = selectedMCQBank.mcqs || [];
+          const searchLower = modalSearch.trim().toLowerCase();
+          const filtered = allMcqs.filter((mcq, idx) => {
+            if (difficultyFilter !== 'All' && mcq.difficulty !== difficultyFilter) return false;
+            if (filterReviewStatus === 'checked' && !mcq.isChecked) return false;
+            if (filterReviewStatus === 'similar' && !mcq.isSimilar) return false;
+            if (filterReviewStatus === 'reviewed' && !mcq.isReviewed) return false;
+            if (searchLower) {
+              const qText = (mcq.question || '').toLowerCase();
+              const opts = (mcq.options || []).join(' ').toLowerCase();
+              const ref = (mcq.sopReference || '').toLowerCase();
+              if (!qText.includes(searchLower) && !opts.includes(searchLower) && !ref.includes(searchLower)) return false;
+            }
+            return true;
+          });
 
+          // Highlight helper
+          const highlight = (text: string) => {
+            if (!searchLower || !text) return <span>{text}</span>;
+            const idx = text.toLowerCase().indexOf(searchLower);
+            if (idx === -1) return <span>{text}</span>;
+            return <span>{text.slice(0, idx)}<mark className="bg-yellow-400/40 text-yellow-200 rounded px-0.5">{text.slice(idx, idx + searchLower.length)}</mark>{text.slice(idx + searchLower.length)}</span>;
+          };
+
+          return (
+          // z-[60] ensures this MCQ modal sits above the department full-screen modal (z-50)
+          // so closing this modal returns to the department view exactly where you left it
+          <div className="fixed inset-0 bg-black/70 flex items-start justify-center pt-4 px-4 pb-4 z-[60] backdrop-blur-sm" onClick={() => setSelectedMCQBank(null)}>
+            <div
+              className="bg-[#0f1117] rounded-xl w-full max-w-4xl flex flex-col border border-white/10 shadow-2xl"
+              style={{ maxHeight: 'calc(100vh - 32px)' }}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* ── COMPACT STICKY HEADER ── */}
+              <div className="sticky top-0 z-20 bg-[#0f1117] border-b border-white/10 rounded-t-xl flex-shrink-0">
+                {/* Top row */}
+                <div className="flex items-center gap-3 px-4 py-2.5">
+                  <button
+                    onClick={() => setSelectedMCQBank(null)}
+                    className="flex items-center gap-1.5 text-gray-400 hover:text-white transition-colors flex-shrink-0 text-sm"
+                    title="Back to SOP list"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    <span className="hidden sm:inline">Back</span>
+                  </button>
+
+                  <div className="h-4 w-px bg-white/15 flex-shrink-0" />
+
+                  <span className="font-mono text-xs text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded flex-shrink-0">
+                    {selectedMCQBank.sopIdentifier}
+                  </span>
+
+                  <span className="text-white font-semibold text-sm truncate flex-1" title={selectedMCQBank.sopName}>
+                    {cleanSOPName(selectedMCQBank.sopName, selectedMCQBank.sopIdentifier)}
+                  </span>
+
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {/* Search toggle */}
+                    <button
+                      onClick={() => { setModalSearchInputVisible(v => !v); if (modalSearchInputVisible) setModalSearch(''); }}
+                      className={`p-1.5 rounded-lg transition-colors ${ modalSearchInputVisible || modalSearch ? 'bg-blue-500/20 text-blue-400' : 'text-gray-400 hover:text-white hover:bg-white/10'}`}
+                      title="Search questions"
+                    >
+                      <Search className="h-4 w-4" />
+                    </button>
+                    {/* Check Similar */}
+                    <button
+                      onClick={() => handleCheckSimilarityForSOP(selectedMCQBank)}
+                      disabled={checkingSimilarity}
+                      className="p-1.5 rounded-lg text-orange-400 hover:bg-orange-500/10 transition-colors disabled:opacity-50"
+                      title={checkingSimilarity ? 'Checking...' : 'Check Similar'}
+                    >
+                      {checkingSimilarity ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
+                    </button>
+                    {/* Close */}
                     <button
                       onClick={() => setSelectedMCQBank(null)}
-                      className="text-white hover:text-gray-200 text-2xl font-bold"
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                      title="Close"
                     >
-                      ×
+                      <X className="h-4 w-4" />
                     </button>
                   </div>
                 </div>
+
+                {/* Expandable search bar */}
+                {modalSearchInputVisible && (
+                  <div className="px-4 pb-2.5 flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-500" />
+                      <input
+                        autoFocus
+                        type="text"
+                        placeholder="Search by question, keyword, or option..."
+                        value={modalSearch}
+                        onChange={e => { setModalSearch(e.target.value); setVisibleCount(30); }}
+                        className="w-full pl-9 pr-8 py-1.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all"
+                      />
+                      {modalSearch && (
+                        <button onClick={() => setModalSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    <span className="text-xs text-gray-500 whitespace-nowrap">
+                      {filtered.length} result{filtered.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                )}
+
+                {/* Tab + Filter row */}
+                <div className="flex items-center gap-2 px-4 pb-2 flex-wrap">
+                  {/* Active / Recycled tabs */}
+                  <div className="flex bg-white/5 rounded-lg p-0.5 gap-0.5">
+                    <button
+                      onClick={() => { setActiveTab('active'); setVisibleCount(30); }}
+                      className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${ activeTab === 'active' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                    >Active ({selectedMCQBank.mcqs?.length ?? 0})</button>
+                    <button
+                      onClick={() => { setActiveTab('recycled'); if (selectedMCQBank?.sopId) fetchRecycledQuestions(selectedMCQBank.sopId); }}
+                      className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${ activeTab === 'recycled' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                    >Recycled {recycledQuestions.length > 0 ? `(${recycledQuestions.length})` : ''}</button>
+                  </div>
+
+                  {/* Filter pills - only in active tab */}
+                  {activeTab === 'active' && (
+                    <div className="flex gap-1 flex-wrap">
+                      {([
+                        { id: 'all', label: 'All', count: allMcqs.length, color: 'purple' },
+                        { id: 'checked', label: 'Checked', count: allMcqs.filter(q => q.isChecked).length, color: 'green' },
+                        { id: 'similar', label: 'Similar', count: allMcqs.filter(q => q.isSimilar).length, color: 'orange' },
+                        { id: 'reviewed', label: 'Reviewed', count: allMcqs.filter(q => q.isReviewed).length, color: 'amber' },
+                      ] as const).map(pill => (
+                        <button
+                          key={pill.id}
+                          onClick={() => { setFilterReviewStatus(pill.id as any); setVisibleCount(30); }}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                            filterReviewStatus === pill.id
+                              ? pill.color === 'purple' ? 'bg-purple-600 text-white border-purple-600'
+                              : pill.color === 'green' ? 'bg-green-600 text-white border-green-600'
+                              : pill.color === 'orange' ? 'bg-orange-600 text-white border-orange-600'
+                              : 'bg-amber-600 text-white border-amber-600'
+                              : 'bg-white/5 text-gray-400 border-white/10 hover:border-white/20 hover:text-white'
+                          }`}
+                        >
+                          {pill.label}
+                          <span className="opacity-75 text-[10px]">{pill.count}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Similarity banner */}
+                  {similarityResults && similarityResults.count > 0 && (
+                    <button
+                      onClick={() => router.push('/similar-questions')}
+                      className="ml-auto flex items-center gap-1.5 px-2.5 py-1 bg-orange-500/10 border border-orange-500/30 rounded-lg hover:bg-orange-500/20 transition-all"
+                    >
+                      <AlertCircle className="h-3.5 w-3.5 text-orange-400" />
+                      <span className="text-orange-300 text-xs font-semibold">{similarityResults.count} Similar found</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <div className="p-6 space-y-4">
-                {activeTab === 'active' ? (selectedMCQBank.mcqs && selectedMCQBank.mcqs.length > 0 ? (
-                  selectedMCQBank.mcqs.map((mcq, originalIndex) => {
-                  if (difficultyFilter !== 'All' && mcq.difficulty !== difficultyFilter) return null;
-                  if (filterReviewStatus === 'checked' && !mcq.isChecked) return null;
-                  if (filterReviewStatus === 'similar' && !mcq.isSimilar) return null;
-                  if (filterReviewStatus === 'reviewed' && !mcq.isReviewed) return null;
-                  
+              {/* ── SCROLLABLE BODY ── */}
+              <div
+                ref={modalBodyRef}
+                className="flex-1 overflow-y-auto"
+                onScroll={(e) => {
+                  const el = e.currentTarget;
+                  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
+                    setVisibleCount(v => Math.min(v + 20, filtered.length));
+                  }
+                }}
+              >
+              <div className="p-4 space-y-3">
+                {activeTab === 'active' ? (allMcqs.length > 0 ? (
+                  filtered.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-center">
+                      <Search className="h-10 w-10 text-gray-600 mb-3" />
+                      <p className="text-gray-400">{modalSearch ? `No questions matching "${modalSearch}"` : 'No questions match the current filter.'}</p>
+                      {modalSearch && <button onClick={() => setModalSearch('')} className="mt-3 text-sm text-blue-400 hover:underline">Clear search</button>}
+                    </div>
+                  ) : (
+                  filtered.slice(0, visibleCount).map((mcq, visibleIdx) => {
+                  const originalIndex = allMcqs.indexOf(mcq);
+                  const isUpdating = updatingStatus === `${selectedMCQBank._id}-${originalIndex}`;
                   return (
                     <div
                       key={originalIndex}
-                      className="bg-white/5 rounded-xl p-5 border border-white/10 hover:border-purple-500/30 transition-all cursor-pointer"
+                      className="group bg-white/[0.03] hover:bg-white/[0.06] rounded-xl border border-white/8 hover:border-white/15 transition-all duration-150 cursor-pointer"
                       onClick={() => setSelectedMCQ({mcq, index: originalIndex})}
                     >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-start flex-1 pr-4">
-                          <span className="flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30 text-purple-300 font-mono text-xs mr-4 flex-shrink-0">
+                      {/* Question row */}
+                      <div className="flex items-start gap-3 p-3.5">
+                        {/* Number + icon */}
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="w-6 h-6 flex items-center justify-center bg-white/5 border border-white/10 rounded text-[10px] font-mono text-gray-500">
                             {String(originalIndex + 1).padStart(2, '0')}
                           </span>
-                          <span className="text-2xl mr-3">{mcq.aiIcon}</span>
-                          <div className="flex-1">
-                            <h3 className="text-white font-semibold">
-                              {mcq.question}
-                            </h3>
-                            
-                            {/* Inline Similarity Indicator */}
-                            {(() => {
-                              // Debug logging
-                              if (originalIndex === 0) { // Log for Q1
-                                console.log('Q1 Debug:', {
-                                  isSimilar: mcq.isSimilar,
-                                  hasDetails: !!similarQuestionDetails[originalIndex],
-                                  details: similarQuestionDetails[originalIndex],
-                                  allDetails: similarQuestionDetails
-                                });
-                              }
-                              return null;
-                            })()}
-                            
-                            {mcq.isSimilar && similarQuestionDetails[originalIndex] && (
-                              <div className="mt-2 flex items-center gap-2 flex-wrap">
-                                <div className="flex items-center gap-2 px-3 py-1.5 bg-orange-500/10 border border-orange-500/30 rounded-lg">
-                                  <Copy className="h-3.5 w-3.5 text-orange-400" />
-                                  <span className="text-orange-300 text-sm font-medium">
-                                    Similar to: {similarQuestionDetails[originalIndex].map(i => `Q${i + 1}`).join(', ')}
-                                  </span>
-                                </div>
-                                
-                                {/* Quick Actions */}
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (confirm(`Delete Q${originalIndex + 1} and move to Recycled section?`)) {
-                                      handleDeleteQuestion(selectedMCQBank._id, originalIndex);
-                                    }
-                                  }}
-                                  className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-300 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5"
-                                  title="Delete this question"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                  Delete
-                                </button>
-                                
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (confirm(`Replace Q${originalIndex + 1} with a new question? The current question will be moved to Recycled.`)) {
-                                      handleReplaceQuestion(selectedMCQBank._id, originalIndex, selectedMCQBank.sopId);
-                                    }
-                                  }}
-                                  className="px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/40 text-blue-300 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5"
-                                  title="Replace with new question"
-                                >
-                                  <RefreshCw className="h-3.5 w-3.5" />
-                                  Regenerate
-                                </button>
+                          <span className="text-base leading-none">{mcq.aiIcon}</span>
+                        </div>
+
+                        {/* Question text */}
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm text-white leading-snug ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati' : ''}`}>
+                            {searchLower ? highlight(mcq.question) : mcq.question}
+                          </p>
+
+                          {/* Similarity indicator */}
+                          {mcq.isSimilar && similarQuestionDetails[originalIndex] && (
+                            <div className="mt-2 flex items-center gap-2 flex-wrap">
+                              <span className="flex items-center gap-1.5 text-xs text-orange-300 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded">
+                                <Copy className="h-3 w-3" />
+                                Similar to: {similarQuestionDetails[originalIndex].map(i => `Q${i + 1}`).join(', ')}
+                              </span>
+                              <button onClick={(e) => { e.stopPropagation(); if (confirm(`Delete Q${originalIndex + 1}?`)) handleDeleteQuestion(selectedMCQBank._id, originalIndex); }}
+                                className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 transition-colors">
+                                <Trash2 className="h-3 w-3" /> Delete
+                              </button>
+                              <button onClick={(e) => { e.stopPropagation(); if (confirm(`Regenerate Q${originalIndex + 1}?`)) handleReplaceQuestion(selectedMCQBank._id, originalIndex, selectedMCQBank.sopId); }}
+                                className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors">
+                                <RefreshCw className="h-3 w-3" /> Regen
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Options (collapsed, subtle) */}
+                          <div className="mt-2 space-y-1">
+                            {(mcq.options || []).map((opt, oi) => (
+                              <div key={oi} className={`flex items-start gap-2 p-1.5 rounded-lg text-xs transition-colors ${
+                                opt === mcq.correctAnswer
+                                  ? 'bg-green-500/8 text-green-400'
+                                  : 'text-gray-500'
+                              }`}>
+                                <span className={`w-4 h-4 flex-shrink-0 flex items-center justify-center rounded-full text-[9px] font-bold mt-0.5 ${
+                                  opt === mcq.correctAnswer ? 'bg-green-500 text-white' : 'bg-white/8 text-gray-600'
+                                }`}>{String.fromCharCode(65 + oi)}</span>
+                                <span className={selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati' : ''}>
+                                  {searchLower ? highlight(opt) : opt}
+                                </span>
                               </div>
-                            )}
+                            ))}
                           </div>
                         </div>
-                        <div className="flex flex-col items-end gap-2">
-                          <div className="flex items-center gap-2">
-                            {mcq.isSimilar && (
-                              <div className="p-1.5 bg-orange-500/20 rounded-lg border border-orange-500/30" title="Has Similar Questions">
-                                <Copy className="h-4 w-4 text-orange-400" />
-                              </div>
-                            )}
-                            {mcq.isChecked && (
-                              <div className="p-1.5 bg-green-500/20 rounded-lg border border-green-500/30" title="Approved">
-                                <CheckCircle2 className="h-4 w-4 text-green-400" />
-                              </div>
-                            )}
-                            {mcq.isReviewed && (
-                              <div className="p-1.5 bg-amber-500/20 rounded-lg border border-amber-500/30" title="Needs Review">
-                                <Star className="h-4 w-4 text-amber-400 fill-amber-400" />
-                              </div>
-                            )}
-                            <span className={`px-3 py-1 rounded-full text-xs font-bold border whitespace-nowrap ${getDifficultyColor(mcq.difficulty)}`}>
-                              {mcq.difficultyStars} {mcq.difficulty}
-                            </span>
+
+                        {/* Right: badge + icon actions */}
+                        <div className="flex flex-col items-end gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getDifficultyColor(mcq.difficulty)}`}>
+                            {mcq.difficulty}
+                          </span>
+
+                          {/* Status icons (read-only indicators) */}
+                          <div className="flex items-center gap-1">
+                            {mcq.isSimilar && <span title="Similar"><Copy className="h-3 w-3 text-orange-400" /></span>}
+                            {mcq.isChecked && <span title="Checked"><CheckCircle2 className="h-3 w-3 text-green-400" /></span>}
+                            {mcq.isReviewed && <span title="Reviewed"><Star className="h-3 w-3 text-amber-400 fill-amber-400" /></span>}
                           </div>
-                          <div className="flex gap-2">
+
+                          {/* Icon-only action buttons */}
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {/* Similar toggle */}
                             <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleSimilar(selectedMCQBank, originalIndex, mcq);
-                              }}
-                              disabled={updatingStatus === `${selectedMCQBank._id}-${originalIndex}`}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                                mcq.isSimilar
-                                  ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/40'
-                                  : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10'
-                              } disabled:opacity-50`}
+                              disabled={isUpdating}
+                              onClick={(e) => { e.stopPropagation(); toggleSimilar(selectedMCQBank, originalIndex, mcq); }}
+                              title={mcq.isSimilar ? 'Unmark Similar' : 'Mark Similar'}
+                              className={`p-1.5 rounded-lg transition-all ${ mcq.isSimilar ? 'bg-orange-500/20 text-orange-400' : 'text-gray-500 hover:text-orange-400 hover:bg-orange-500/10'} disabled:opacity-40`}
                             >
-                              {updatingStatus === `${selectedMCQBank._id}-${originalIndex}` ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <Copy className="h-3.5 w-3.5" />
-                              )}
-                              {mcq.isSimilar ? 'Similar' : 'Mark Similar'}
+                              {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
                             </button>
+                            {/* Checked toggle */}
                             <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleChecked(selectedMCQBank._id, originalIndex, !!mcq.isChecked);
-                              }}
-                              disabled={updatingStatus === `${selectedMCQBank._id}-${originalIndex}`}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                                mcq.isChecked
-                                  ? 'bg-green-600 text-white shadow-lg shadow-green-900/40'
-                                  : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10'
-                              } disabled:opacity-50`}
+                              disabled={isUpdating}
+                              onClick={(e) => { e.stopPropagation(); toggleChecked(selectedMCQBank._id, originalIndex, !!mcq.isChecked); }}
+                              title={mcq.isChecked ? 'Uncheck' : 'Mark Checked'}
+                              className={`p-1.5 rounded-lg transition-all ${ mcq.isChecked ? 'bg-green-500/20 text-green-400' : 'text-gray-500 hover:text-green-400 hover:bg-green-500/10'} disabled:opacity-40`}
                             >
-                              {updatingStatus === `${selectedMCQBank._id}-${originalIndex}` ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <CheckCircle2 className="h-3.5 w-3.5" />
-                              )}
-                              {mcq.isChecked ? 'Checked' : 'Mark Checked'}
+                              {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
                             </button>
+                            {/* Review toggle */}
                             <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleReview(selectedMCQBank, originalIndex, mcq);
-                              }}
-                              disabled={updatingStatus === `${selectedMCQBank._id}-${originalIndex}`}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                                mcq.isReviewed
-                                  ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/40'
-                                  : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10'
-                              } disabled:opacity-50`}
+                              disabled={isUpdating}
+                              onClick={(e) => { e.stopPropagation(); toggleReview(selectedMCQBank, originalIndex, mcq); }}
+                              title={mcq.isReviewed ? 'Remove from Review' : 'Add to Review'}
+                              className={`p-1.5 rounded-lg transition-all ${ mcq.isReviewed ? 'bg-amber-500/20 text-amber-400' : 'text-gray-500 hover:text-amber-400 hover:bg-amber-500/10'} disabled:opacity-40`}
                             >
-                              {updatingStatus === `${selectedMCQBank._id}-${originalIndex}` ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <Star className={`h-3.5 w-3.5 ${mcq.isReviewed ? 'fill-white' : ''}`} />
-                              )}
-                              {mcq.isReviewed ? 'In Review' : 'Add Review'}
+                              {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Star className={`h-3.5 w-3.5 ${mcq.isReviewed ? 'fill-current' : ''}`} />}
                             </button>
                           </div>
                         </div>
-                      </div>
-                      
-                      <div className="space-y-2">
-                        {mcq.options && mcq.options.length > 0 ? (
-                          mcq.options.map((option, optIndex) => (
-                            <div 
-                              key={optIndex}
-                              className={`p-4 rounded-xl border transition-all ${
-                                option === mcq.correctAnswer
-                                  ? 'bg-green-500/10 border-green-500/50 text-green-300'
-                                  : 'bg-slate-700/30 border-slate-600 text-gray-400'
-                              } ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati' : ''}`}
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold ${
-                                  option === mcq.correctAnswer ? 'border-green-500 bg-green-500 text-white' : 'border-slate-500 text-slate-500'
-                                }`}>
-                                  {String.fromCharCode(65 + optIndex)}
-                                </div>
-                                <span>{option}</span>
-                              </div>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="flex flex-col items-center justify-center py-16 text-center">
-                            <div className="bg-white/5 p-4 rounded-full mb-4">
-                              <FileText className="h-8 w-8 text-gray-400" />
-                            </div>
-                            <p className="text-gray-400 text-lg">No options available for this question.</p>
-                          </div>
-                        )}
                       </div>
                     </div>
                   );
-                })
+                  })
+                  )
                 ) : (
                   <div className="flex flex-col items-center justify-center py-16 text-center">
-                    <div className="bg-white/5 p-4 rounded-full mb-4">
-                      <FileText className="h-8 w-8 text-gray-400" />
-                    </div>
-                    <p className="text-gray-400 text-lg">No questions found in this bank.</p>
+                    <FileText className="h-10 w-10 text-gray-600 mb-3" />
+                    <p className="text-gray-400">No questions found in this bank.</p>
                   </div>
                 )) : (
                   <div className="space-y-4">
@@ -1656,12 +1677,26 @@ function MCQBankContent() {
                 )}
               </div>
             </div>
+              {/* Load more indicator */}
+              {activeTab === 'active' && visibleCount < filtered.length && (
+                <div className="flex justify-center py-4 border-t border-white/5">
+                  <button
+                    onClick={() => setVisibleCount(v => Math.min(v + 30, filtered.length))}
+                    className="text-sm text-gray-400 hover:text-white flex items-center gap-2 transition-colors"
+                  >
+                    <ChevronsUpDown className="h-4 w-4" />
+                    Load more ({filtered.length - visibleCount} remaining)
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* MCQ Detail Modal */}
         {selectedMCQ && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[60]">
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[70]">
             <div className="bg-slate-900 rounded-2xl max-w-3xl w-full max-h-[85vh] flex flex-col border border-purple-500/30 shadow-[0_0_50px_rgba(0,0,0,0.5)]">
               <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-4 rounded-t-2xl flex-shrink-0">
                 <div className="flex items-center justify-between">
@@ -1771,6 +1806,16 @@ function MCQBankContent() {
           </div>
         )}
       </div>
+
+      {/* Non-blocking loading overlay for bank detail fetch — tree stays mounted */}
+      {loadingBankDetail && (
+        <div className="fixed inset-0 z-[55] bg-black/50 backdrop-blur-sm flex items-center justify-center pointer-events-all">
+          <div className="flex flex-col items-center gap-3 bg-[#0f1117] border border-white/10 rounded-2xl px-8 py-6 shadow-2xl">
+            <Loader2 className="h-8 w-8 text-purple-400 animate-spin" />
+            <p className="text-gray-300 text-sm font-medium">Loading questions...</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
