@@ -68,7 +68,7 @@ export async function extractAllDOCXContent(buffer: Buffer): Promise<string> {
     console.error('Error extracting DOCX content:', error);
     throw new Error('Failed to extract DOCX content: ' + (error instanceof Error ? error.message : 'Unknown error'));
   }
-} css
+}
 
 /**
  * Extract text from Word XML
