@@ -5,12 +5,12 @@ import SOP from '@/models/SOP';
 // GET /api/sop/[id] - Fetch a single SOP by ID
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     await connectDB();
 
-    const { id } = params;
     if (!id) {
       return NextResponse.json({ error: 'SOP ID is required' }, { status: 400 });
     }

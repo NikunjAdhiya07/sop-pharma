@@ -7,12 +7,12 @@ import ArchivedMCQBank from '@/models/ArchivedMCQBank';
 // Returns all archived versions of a specific SOP, ordered newest-first
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await connectDB();
 
-    const { id } = params;
+    const { id } = await params;
     if (!id) {
       return NextResponse.json({ error: 'SOP ID is required' }, { status: 400 });
     }

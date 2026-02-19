@@ -79,28 +79,60 @@ export async function parseDOCX(buffer: Buffer): Promise<ParsedDocument> {
   try {
     // First, try to extract using raw XML (includes headers!)
     let content = '';
+    let xmlSuccess = false;
+
     try {
       const { extractAllDOCXContent } = await import('./docxHeaderExtractor');
-      content = await extractAllDOCXContent(buffer);
+      const xmlContent = await extractAllDOCXContent(buffer);
       console.log('✅ Extracted content using XML parser (includes headers)');
+      
+      // Safety check: If content is very short (likely only headers), try to append Mammoth content
+      // A typical empty SOP with just headers might be very small, but a real SOP > 2KB should have body text.
+      const wordCount = xmlContent.split(/\s+/).filter(w => w.length > 0).length;
+      
+      // If we found very few words but the file is reasonably large, something is wrong
+      if (wordCount < 20 && buffer.length > 2000) {
+         console.warn(`⚠️ XML extraction yielded only ${wordCount} words from a ${buffer.length} byte file. Attempting Mammoth fallback for body text.`);
+         content = xmlContent; // Keep headers
+         xmlSuccess = false;   // Trigger fallback
+      } else {
+         content = xmlContent;
+         xmlSuccess = true;
+      }
     } catch (xmlError) {
-      console.log('⚠️ XML extraction failed, falling back to mammoth');
-      
-      // Fallback to mammoth
-      const htmlResult = await mammoth.convertToHtml({ buffer });
-      let htmlText = htmlResult.value
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<\/p>/gi, '\n')
-        .replace(/<\/tr>/gi, '\n')
-        .replace(/<\/td>/gi, ' ')
-        .replace(/<[^>]*>/g, ' ')
-        .replace(/&nbsp;/g, ' ')
-        .replace(/\s+/g, ' ')
-        .replace(/ \n /g, '\n')
-        .trim();
-      
-      const rawResult = await mammoth.extractRawText({ buffer });
-      content = htmlText + '\n\n' + rawResult.value;
+      console.log('⚠️ XML extraction failed completely, falling back to Mammoth');
+      xmlSuccess = false;
+    }
+
+    if (!xmlSuccess) {
+      try {
+        console.log('🐘 Starting Mammoth fallback extraction...');
+        // Fallback to mammoth
+        const htmlResult = await mammoth.convertToHtml({ buffer });
+        let htmlText = htmlResult.value
+          .replace(/<br\s*\/?>/gi, '\n')
+          .replace(/<\/p>/gi, '\n')
+          .replace(/<\/tr>/gi, '\n')
+          .replace(/<\/td>/gi, ' ')
+          .replace(/<[^>]*>/g, ' ')
+          .replace(/&nbsp;/g, ' ')
+          .replace(/\s+/g, ' ')
+          .replace(/ \n /g, '\n')
+          .trim();
+        
+        const rawResult = await mammoth.extractRawText({ buffer });
+        const mammothContent = htmlText + '\n\n' + rawResult.value;
+        
+        // Append Mammoth content to any XML content (headers) we already found
+        content = (content + '\n\n' + mammothContent).trim();
+        console.log('✅ Mammoth extraction complete');
+      } catch (mammothError) {
+        console.error('❌ Mammoth extraction also failed:', mammothError);
+        // If we have at least some content from XML (headers), let's proceed with that rather than failing completely
+        if (!content) {
+            throw mammothError;
+        }
+      }
     }
     
     content = content.trim();
