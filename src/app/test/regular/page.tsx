@@ -11,7 +11,8 @@ import {
   BrainCircuit, 
   Filter,
   BarChart3,
-  ClipboardList
+  ClipboardList,
+  Search
 } from 'lucide-react';
 import QuestionBasisSelection from '@/components/QuestionBasisSelection';
 import TestRunner from '@/components/TestRunner';
@@ -22,6 +23,8 @@ interface MCQBank {
   sopId: string;
   sopName: string;
   sopIdentifier: string;
+  department?: string;
+  folderDepartment?: string;
 }
 
 export default function RegularTestPage() {
@@ -37,6 +40,9 @@ export default function RegularTestPage() {
   // Data State
   const [banks, setBanks] = useState<MCQBank[]>([]);
   const [loadingBanks, setLoadingBanks] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedDept, setSelectedDept] = useState('All');
+  const [departments, setDepartments] = useState<string[]>([]);
   const [generating, setGenerating] = useState(false);
   const [questions, setQuestions] = useState<any[]>([]);
 
@@ -49,10 +55,15 @@ export default function RegularTestPage() {
   const fetchBanks = async () => {
     setLoadingBanks(true);
     try {
-      const response = await fetch('/api/mcq-bank?limit=100');
+      // Use summary=true and high limit to get all SOP metadata for screening
+      const response = await fetch('/api/mcq-bank?limit=1000&summary=true');
       const data = await response.json();
       if (data.success) {
         setBanks(data.mcqBanks);
+        
+        // Extract unique departments robustly
+        const depts: string[] = Array.from(new Set(data.mcqBanks.map((b: any) => b.department || b.folderDepartment).filter(Boolean))) as string[];
+        setDepartments(['All', ...depts.sort()]);
       }
     } catch (error) {
       console.error('Error fetching banks:', error);
@@ -60,6 +71,21 @@ export default function RegularTestPage() {
       setLoadingBanks(false);
     }
   };
+
+  const filteredBanks = (banks || []).filter(bank => {
+    if (!bank) return false;
+    const name = bank.sopName || '';
+    const id = bank.sopIdentifier || '';
+    const dept = bank.department || bank.folderDepartment || 'General';
+
+    const matchesSearch = 
+      name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      id.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesDept = selectedDept === 'All' || dept === selectedDept;
+    
+    return matchesSearch && matchesDept;
+  }).sort((a, b) => (a.sopIdentifier || '').localeCompare(b.sopIdentifier || ''));
 
   const handleStartTest = async () => {
     setGenerating(true);
@@ -186,16 +212,40 @@ export default function RegularTestPage() {
               </div>
             </div>
 
-            <div className="space-y-8">
+            <div className="space-y-6">
+              <div className="flex flex-col md:flex-row gap-4 mb-2">
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                  <input
+                    type="text"
+                    placeholder="Search SOP name or code..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all"
+                  />
+                </div>
+                <select
+                  value={selectedDept}
+                  onChange={(e) => setSelectedDept(e.target.value)}
+                  className="bg-slate-800 border border-white/10 text-white rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 min-w-[200px]"
+                >
+                  {departments.map(dept => (
+                    <option key={dept} value={dept}>{dept}</option>
+                  ))}
+                </select>
+              </div>
+
               <div>
-                <label className="block text-white font-semibold mb-4 text-lg">Select Active SOPs</label>
+                <label className="block text-white font-semibold mb-4 text-lg">
+                  Select Active SOPs ({filteredBanks.length} found)
+                </label>
                 {loadingBanks ? (
                   <div className="flex justify-center p-12">
                     <Loader2 className="h-8 w-8 text-emerald-500 animate-spin" />
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
-                    {banks.map((bank) => (
+                    {filteredBanks.map((bank) => (
                       <div
                         key={bank._id}
                         onClick={() => {
@@ -219,7 +269,12 @@ export default function RegularTestPage() {
                           >
                             {formatSOPDisplayName(bank.sopName, bank.sopIdentifier)}
                           </p>
-                          <p className="text-gray-500 text-xs font-mono mt-1">{bank.sopIdentifier}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <p className="text-gray-500 text-[10px] font-mono uppercase bg-white/5 px-1.5 py-0.5 rounded border border-white/5">{bank.sopIdentifier}</p>
+                            {bank.department && (
+                              <p className="text-[9px] text-emerald-500/70 font-bold uppercase tracking-widest">{bank.department}</p>
+                            )}
+                          </div>
                         </div>
                         <div className={`w-5 h-5 rounded border transition-all flex items-center justify-center ml-3 flex-shrink-0 ${
                            selectedSopIds.includes(bank.sopId) ? 'bg-emerald-500 border-emerald-500' : 'border-white/20 group-hover:border-emerald-500/50'
@@ -228,6 +283,11 @@ export default function RegularTestPage() {
                         </div>
                       </div>
                     ))}
+                    {filteredBanks.length === 0 && !loadingBanks && (
+                      <div className="col-span-full py-10 text-center text-gray-500">
+                        No SOPs found matching your filters.
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

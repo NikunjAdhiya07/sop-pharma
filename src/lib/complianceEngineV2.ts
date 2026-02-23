@@ -125,7 +125,7 @@ Analyze whether this SOP complies with the specific guideline clause above.
 
   try {
     const model = genAI.getGenerativeModel({ 
-      model: aiModel || 'gemini-1.5-flash'
+      model: aiModel || 'gemini-3-pro-preview'
     });
     
     const result = await model.generateContent(prompt);

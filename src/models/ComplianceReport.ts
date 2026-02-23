@@ -43,7 +43,7 @@ export interface IComplianceReport extends Document {
   analysisStatus: 'pending' | 'in-progress' | 'completed' | 'failed' | 'partial-failure';
   analysisStartedAt: Date;
   analysisCompletedAt?: Date;
-  analysisEngine: 'gemini-1.5-flash' | 'manual' | 'hybrid';
+  analysisEngine: 'gemini-1.5-flash' | 'manual' | 'hybrid' | 'gemini-3-pro-preview';
   processingTimeMs: number;
   
   // Error Tracking (Clear failure reasons)
@@ -241,8 +241,8 @@ const ComplianceReportSchema = new Schema<IComplianceReport>({
   },
   analysisEngine: {
     type: String,
-    enum: ['gemini-1.5-flash', 'manual', 'hybrid', 'models/gemini-3-flash-preview'],
-    default: 'gemini-1.5-flash',
+    enum: ['gemini-1.5-flash', 'manual', 'hybrid', 'gemini-3-pro-preview'],
+    default: 'gemini-3-pro-preview',
   },
   processingTimeMs: {
     type: Number,
@@ -358,7 +358,7 @@ const ComplianceReportSchema = new Schema<IComplianceReport>({
     
     // Metadata
     analyzedAt: { type: Date, default: Date.now },
-    aiModelUsed: { type: String, default: 'gemini-1.5-flash' },
+    aiModelUsed: { type: String, default: 'gemini-3-pro-preview' },
     reviewedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     reviewStatus: {
       type: String,

@@ -308,7 +308,7 @@ const ComplianceAnalysisJobSchema = new Schema<IComplianceAnalysisJob>({
   
   // 8. CONFIGURATION
   config: {
-    aiModel: { type: String, default: 'gemini-1.5-flash' },
+    aiModel: { type: String, default: 'gemini-3-pro-preview' },
     maxClausesToAnalyze: { type: Number, default: 50 },
     guidelineFilters: {
       folderName: { type: String },

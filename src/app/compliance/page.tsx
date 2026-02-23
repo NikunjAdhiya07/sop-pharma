@@ -814,7 +814,7 @@ export default function ComplianceEnginePage() {
             sopId: sop._id,
             userId: '000000000000000000000001',
             config: {
-              aiModel: 'models/gemini-3-flash-preview',
+              aiModel: 'gemini-3-pro-preview',
               maxClausesToAnalyze: 200,
             },
           }),

@@ -92,7 +92,7 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+    <div className="min-h-screen bg-[#080710]">
         <div className="flex flex-col items-center">
           <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-4"></div>
           <p className="text-white text-xl font-medium">Loading Dashboard...</p>
@@ -123,7 +123,7 @@ export default function DashboardPage() {
   const canManageSOPs = user.role === 'admin' || user.role === 'trainer' || user.role === 'qa-head';
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+    <div className="min-h-screen bg-[#080710]">
       {/* Animated background elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse"></div>

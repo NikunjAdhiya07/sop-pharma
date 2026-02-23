@@ -20,7 +20,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
  */
 
 interface AnalysisConfig {
-  aiModel?: 'gemini-1.5-flash' | 'gemini-1.5-pro';
+  aiModel?: 'gemini-1.5-flash' | 'gemini-3-pro-preview';
   maxClausesToAnalyze?: number;  // 0 = all
   enableMissingDetection?: boolean;
   priorityThreshold?: number;  // 1-5
@@ -232,7 +232,7 @@ export async function POST(request: NextRequest) {
     
     // Default configuration
     const analysisConfig: AnalysisConfig = {
-      aiModel: config.aiModel || 'gemini-1.5-flash',
+      aiModel: config.aiModel || 'gemini-3-pro-preview',
       maxClausesToAnalyze: config.maxClausesToAnalyze || 0,  // 0 = all
       enableMissingDetection: config.enableMissingDetection !== false,
       priorityThreshold: config.priorityThreshold || 5
@@ -305,7 +305,9 @@ export async function POST(request: NextRequest) {
     }
     
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: analysisConfig.aiModel! });
+    const model = genAI.getGenerativeModel({ 
+      model: analysisConfig.aiModel || 'gemini-3-pro-preview'
+    });
     
     // Step 5: Analyze each clause
     const findings: Finding[] = [];

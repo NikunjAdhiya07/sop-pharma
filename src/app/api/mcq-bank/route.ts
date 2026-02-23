@@ -120,10 +120,11 @@ export async function GET(request: NextRequest) {
     // If summary mode, only fetch essential fields (no MCQ data needed, Mongoose is fine)
     if (summary) {
       const mcqBanks = await MCQBank.find(query)
-        .select('sopId sopIdentifier sopName folderDepartment folderSubcategory totalQuestions difficultyDistribution createdAt')
+        .select('sopId sopIdentifier sopName department folderDepartment folderSubcategory totalQuestions difficultyDistribution createdAt')
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
+        .allowDiskUse(true)
         .lean();
 
       const total = await MCQBank.countDocuments(query);

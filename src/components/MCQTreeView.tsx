@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { ChevronRight, ChevronDown, Folder, FolderOpen, FileText, BookOpen, Download, Eye, SortAsc, SortDesc, Star, Search, Loader2, X, ArrowLeft, CheckCircle2, AlertTriangle, MessageSquare } from 'lucide-react';
+import { ChevronRight, ChevronDown, Folder, FolderOpen, FileText, BookOpen, Download, Eye, SortAsc, SortDesc, Star, Search, Loader2, X, ArrowLeft, CheckCircle2, AlertTriangle, AlertCircle, MessageSquare, Info, ArrowRight, Users, Maximize2, Minimize2 } from 'lucide-react';
 import Link from 'next/link';
+import { normalizeDepartmentName } from '@/lib/mcqTreeBuilder';
 
 // Helper function to clean SOP name from folder path
 function cleanSOPName(rawName: string, identifier: string): string {
@@ -21,103 +22,120 @@ function cleanSOPName(rawName: string, identifier: string): string {
 }
 
 // Helper to get department theme colors
+// Helper to get department theme colors - High Quality Vibrance
 const getDeptTheme = (deptName: string) => {
   const name = deptName.toLowerCase();
   
   if (name.includes('qa')) return {
     text: 'text-purple-400',
     textHover: 'group-hover:text-purple-300',
-    bg: 'bg-purple-500',
-    border: 'border-purple-500',
+    bg: 'bg-purple-600',
+    badge: 'bg-purple-500/10 border-purple-500/20 text-purple-400',
+    border: 'border-purple-600',
     borderHover: 'hover:border-purple-400',
-    gradient: 'from-purple-900/40 to-indigo-900/40',
+    gradient: 'from-purple-900/40 via-indigo-900/40 to-[#0a0817]/40',
     subcatBg: 'from-purple-900/20 to-purple-800/10',
-    icon: 'text-purple-400',
-    button: 'bg-purple-600 hover:bg-purple-700'
+    icon: 'text-purple-500',
+    secondary: 'text-purple-200',
+    button: 'bg-purple-600 hover:bg-purple-700 shadow-purple-500/20'
   };
   
   if (name.includes('qc')) return {
     text: 'text-blue-400',
     textHover: 'group-hover:text-blue-300',
-    bg: 'bg-blue-500',
-    border: 'border-blue-500',
+    bg: 'bg-blue-600',
+    badge: 'bg-blue-500/10 border-blue-500/20 text-blue-400',
+    border: 'border-blue-600',
     borderHover: 'hover:border-blue-400',
-    gradient: 'from-blue-900/40 to-cyan-900/40',
+    gradient: 'from-blue-900/40 via-cyan-900/40 to-[#0a0817]/40',
     subcatBg: 'from-blue-900/20 to-blue-800/10',
-    icon: 'text-blue-400',
-    button: 'bg-blue-600 hover:bg-blue-700'
+    icon: 'text-blue-500',
+    secondary: 'text-blue-200',
+    button: 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/20'
   };
 
   if (name.includes('microbiology')) return {
     text: 'text-orange-400',
     textHover: 'group-hover:text-orange-300',
-    bg: 'bg-orange-500',
-    border: 'border-orange-500', 
+    bg: 'bg-orange-600',
+    badge: 'bg-orange-500/10 border-orange-500/20 text-orange-400',
+    border: 'border-orange-600', 
     borderHover: 'hover:border-orange-400',
-    gradient: 'from-orange-900/40 to-amber-900/40',
+    gradient: 'from-orange-900/40 via-amber-900/40 to-[#0a0817]/40',
     subcatBg: 'from-orange-900/20 to-orange-800/10',
-    icon: 'text-orange-400',
-    button: 'bg-orange-600 hover:bg-orange-700'
+    icon: 'text-orange-500',
+    secondary: 'text-orange-200',
+    button: 'bg-orange-600 hover:bg-orange-700 shadow-orange-500/20'
   };
 
   if (name.includes('production')) return {
-    text: 'text-green-400',
-    textHover: 'group-hover:text-green-300',
-    bg: 'bg-green-500',
-    border: 'border-green-500',
-    borderHover: 'hover:border-green-400',
-    gradient: 'from-green-900/40 to-emerald-900/40',
-    subcatBg: 'from-green-900/20 to-green-800/10',
-    icon: 'text-green-400',
-    button: 'bg-green-600 hover:bg-green-700'
+    text: 'text-emerald-400',
+    textHover: 'group-hover:text-emerald-300',
+    bg: 'bg-emerald-600',
+    badge: 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400',
+    border: 'border-emerald-600',
+    borderHover: 'hover:border-emerald-400',
+    gradient: 'from-purple-900/40 via-indigo-900/40 to-[#0a0817]/40',
+    subcatBg: 'from-purple-900/20 to-purple-800/10',
+    icon: 'text-purple-500',
+    secondary: 'text-purple-200',
+    button: 'bg-purple-600 hover:bg-purple-700 shadow-purple-500/20'
   };
   
   if (name.includes('store')) return {
-    text: 'text-yellow-400',
-    textHover: 'group-hover:text-yellow-300',
-    bg: 'bg-yellow-500',
-    border: 'border-yellow-500',
-    borderHover: 'hover:border-yellow-400',
-    gradient: 'from-yellow-900/40 to-amber-900/40',
-    subcatBg: 'from-yellow-900/20 to-yellow-800/10',
-    icon: 'text-yellow-400',
-    button: 'bg-yellow-600 hover:bg-yellow-700'
+    text: 'text-amber-400',
+    textHover: 'group-hover:text-amber-300',
+    bg: 'bg-amber-600',
+    badge: 'bg-amber-500/10 border-amber-500/20 text-amber-400',
+    border: 'border-amber-600',
+    borderHover: 'hover:border-amber-400',
+    gradient: 'from-amber-900/40 via-yellow-900/40 to-[#0a0817]/40',
+    subcatBg: 'from-amber-900/20 to-amber-800/10',
+    icon: 'text-amber-500',
+    secondary: 'text-amber-200',
+    button: 'bg-amber-600 hover:bg-amber-700 shadow-amber-500/20'
   };
 
   if (name.includes('engineering')) return {
     text: 'text-cyan-400',
     textHover: 'group-hover:text-cyan-300',
-    bg: 'bg-cyan-500',
-    border: 'border-cyan-500',
+    bg: 'bg-cyan-600',
+    badge: 'bg-cyan-500/10 border-cyan-500/20 text-cyan-400',
+    border: 'border-cyan-600',
     borderHover: 'hover:border-cyan-400',
-    gradient: 'from-cyan-900/40 to-blue-900/40',
+    gradient: 'from-cyan-900/40 via-blue-900/40 to-[#0a0817]/40',
     subcatBg: 'from-cyan-900/20 to-cyan-800/10',
-    icon: 'text-cyan-400',
-    button: 'bg-cyan-600 hover:bg-cyan-700'
+    icon: 'text-cyan-500',
+    secondary: 'text-cyan-200',
+    button: 'bg-cyan-600 hover:bg-cyan-700 shadow-cyan-500/20'
   };
 
   if (name.includes('personnel') || name.includes('hr')) return {
     text: 'text-pink-400',
     textHover: 'group-hover:text-pink-300',
-    bg: 'bg-pink-500',
-    border: 'border-pink-500',
+    bg: 'bg-pink-600',
+    badge: 'bg-pink-500/10 border-pink-500/20 text-pink-400',
+    border: 'border-pink-600',
     borderHover: 'hover:border-pink-400',
-    gradient: 'from-pink-900/40 to-rose-900/40',
+    gradient: 'from-pink-900/40 via-rose-900/40 to-[#0a0817]/40',
     subcatBg: 'from-pink-900/20 to-pink-800/10',
-    icon: 'text-pink-400',
-    button: 'bg-pink-600 hover:bg-pink-700'
+    icon: 'text-pink-500',
+    secondary: 'text-pink-200',
+    button: 'bg-pink-600 hover:bg-pink-700 shadow-pink-500/20'
   };
 
   return {
-    text: 'text-gray-300',
-    textHover: 'group-hover:text-white',
-    bg: 'bg-gray-500',
-    border: 'border-gray-500',
-    borderHover: 'hover:border-gray-400',
-    gradient: 'from-slate-800 to-slate-900',
-    subcatBg: 'from-slate-800/50 to-slate-900/50',
-    icon: 'text-gray-400',
-    button: 'bg-gray-600 hover:bg-gray-700'
+    text: 'text-indigo-400',
+    textHover: 'group-hover:text-indigo-300',
+    bg: 'bg-indigo-600',
+    badge: 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400',
+    border: 'border-indigo-600',
+    borderHover: 'hover:border-indigo-400',
+    gradient: 'from-[#0a0817] to-indigo-950/40',
+    subcatBg: 'from-[#0a0817]/50 to-indigo-950/20',
+    icon: 'text-indigo-500',
+    secondary: 'text-indigo-200',
+    button: 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20'
   };
 };
 
@@ -145,6 +163,7 @@ interface SubcategoryNode {
 interface DepartmentNode {
   type: 'department';
   name: string;
+  icon?: string;
   totalSOPs: number;
   totalQuestions: number;
   subcategories: SubcategoryNode[];
@@ -172,6 +191,7 @@ interface MCQTreeViewProps {
   // Lifted fullScreenDept so it survives parent re-renders (e.g. loading spinner)
   fullScreenDept: DepartmentNode | null;
   setFullScreenDept: (dept: DepartmentNode | null) => void;
+  trainerMappings?: Record<string, string>;
 }
 
 
@@ -189,7 +209,9 @@ export default function MCQTreeView({
   setExpandedSOPs,
   fullScreenDept,
   setFullScreenDept,
+  trainerMappings = {},
 }: MCQTreeViewProps) {
+  const [isCinemaMode, setIsCinemaMode] = useState(false);
   // Expansion state is now managed by parent
   const [isUnorganizedExpanded, setIsUnorganizedExpanded] = useState(false);
   
@@ -212,10 +234,33 @@ export default function MCQTreeView({
   const [deptFilterMode, setDeptFilterMode] = useState<'sops' | 'checked' | 'similar' | 'reviewed' | 'notChecked'>('sops');
   const [deptSearchTerm, setDeptSearchTerm] = useState('');
   const [deptQuestions, setDeptQuestions] = useState<any[]>([]);
+  // Similar questions grouping state
+  const [similarGroups, setSimilarGroups] = useState<any[]>([]);
+  const [loadingSimilarGroups, setLoadingSimilarGroups] = useState(false);
+
   const [loadingDeptQuestions, setLoadingDeptQuestions] = useState(false);
 
   // Fetch all questions for a department when switching to questions view
   const fetchDeptQuestions = useCallback(async (deptName: string, filter: 'checked' | 'similar' | 'reviewed' | 'notChecked') => {
+    // If filter is 'similar', we use a specialized fetch for grouped data
+    if (filter === 'similar') {
+      setLoadingSimilarGroups(true);
+      try {
+        const res = await fetch(`/api/similar-questions?department=${encodeURIComponent(deptName)}`, { cache: 'no-store' });
+        const data = await res.json();
+        if (data.success) {
+          setSimilarGroups(data.similarQuestions || []);
+        } else {
+          setSimilarGroups([]);
+        }
+      } catch (err) {
+        console.error('Error fetching similar groups:', err);
+      } finally {
+        setLoadingSimilarGroups(false);
+      }
+      return; // Skip normal fetch
+    }
+
     setLoadingDeptQuestions(true);
     try {
       // Collect all MCQ bank IDs from the tree data (already available in fullScreenDept)
@@ -277,7 +322,9 @@ export default function MCQTreeView({
   useEffect(() => {
     setDeptFilterMode('sops');
     setDeptSearchTerm('');
+    setDeptSearchTerm('');
     setDeptQuestions([]);
+    setSimilarGroups([]);
   }, [fullScreenDept?.name]);
   
   // Efficient search filter function
@@ -533,7 +580,7 @@ export default function MCQTreeView({
         const theme = getDeptTheme(dept.name);
         
         return (
-          <div key={dept.name} className={`backdrop-blur-lg rounded-3xl border border-white/5 ${theme.borderHover} bg-gradient-to-br ${theme.subcatBg} transition-all duration-300 transform hover:scale-[1.03] shadow-xl hover:shadow-2xl overflow-hidden cursor-pointer group`}>
+          <div key={dept.name} className={`rounded-3xl border border-white/5 ${theme.borderHover} bg-gradient-to-br ${theme.subcatBg} transition-all duration-300 transform hover:scale-[1.03] shadow-xl hover:shadow-2xl overflow-hidden cursor-pointer group`}>
             {/* Department Header */}
             <button
               onClick={() => setFullScreenDept(dept)}
@@ -548,9 +595,27 @@ export default function MCQTreeView({
                     <h3 className={`text-xl font-bold text-white ${theme.textHover} transition-colors`}>
                       {dept.name}
                     </h3>
-                    <p className="text-sm text-gray-400 mt-1">
-                      {dept.subcategories.length} Subcategor{dept.subcategories.length !== 1 ? 'ies' : 'y'}
-                    </p>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <p className="text-sm text-gray-400">
+                        {dept.subcategories.length} Subcategor{dept.subcategories.length !== 1 ? 'ies' : 'y'}
+                      </p>
+                      {(() => {
+                        const normalizedKey = normalizeDepartmentName(dept.name).toLowerCase();
+                        const trainerName = trainerMappings[normalizedKey] || 
+                                           trainerMappings[dept.name.toLowerCase()] || 
+                                           trainerMappings[dept.name];
+                        if (!trainerName) return null;
+                        return (
+                          <>
+                            <span className="h-1 w-1 rounded-full bg-gray-600" />
+                            <div className={`px-2 py-0.5 rounded-lg border ${theme.badge} text-[10px] font-black uppercase tracking-wider animate-in fade-in zoom-in duration-500`}>
+                              <span className="opacity-60 mr-1">Trainer:</span>
+                              {trainerName}
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
                   </div>
                 </div>
                 <div className={`h-8 w-8 rounded-full flex items-center justify-center border border-white/10 ${theme.text}`}>
@@ -574,64 +639,100 @@ export default function MCQTreeView({
       })}
     </div>
 
-    {/* Full-Screen Department Modal */}
+    {/* Full-Screen Department Modal - Premium Overhaul */}
     {fullScreenDept && (() => {
       const theme = getDeptTheme(fullScreenDept.name);
       return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
         <div 
-          className={`bg-[#0f111a] rounded-3xl border ${theme.border} w-full max-w-[90vw] h-[90vh] overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)] flex flex-col`}
-          style={{
-            transform: `translate(${modalPosition.x}px, ${modalPosition.y}px)`,
-            transition: isDragging ? 'none' : 'transform 0.2s ease-out'
-          }}
+          className="fixed inset-0 z-[60] bg-[#0D1117] flex flex-col animate-in fade-in slide-in-from-bottom-8 duration-500"
+          style={{ transform: `translate(${modalPosition.x}px, ${modalPosition.y}px)` }}
         >
-          {/* Modal Header */}
-          <div 
-            className={`bg-gradient-to-r ${theme.gradient} px-8 py-6 border-b border-white/10 flex items-center justify-between cursor-move select-none shrink-0`}
-            onMouseDown={handleMouseDown}
-          >
-            <div className="flex items-center gap-5">
-              <div className="p-3 bg-white/10 rounded-2xl border border-white/10">
-                <FolderOpen className={`h-8 w-8 ${theme.text} text-white`} />
-              </div>
-              <div>
-                <h2 className="text-3xl font-bold text-white tracking-tight">{fullScreenDept.name}</h2>
-                <div className="flex items-center gap-4 mt-2 text-blue-100/70 text-sm font-medium">
-                  <span className="bg-black/20 px-3 py-1 rounded-lg border border-white/5">{fullScreenDept.totalSOPs} SOPs</span>
-                  <span className="bg-black/20 px-3 py-1 rounded-lg border border-white/5">{fullScreenDept.totalQuestions} Questions</span>
-                  <span className="bg-black/20 px-3 py-1 rounded-lg border border-white/5">{fullScreenDept.subcategories.length} Subcategories</span>
+          {/* Header Area with Rich Dynamic Gradients - Draggable Header */}
+          {!isCinemaMode && (
+            <div 
+              onMouseDown={handleMouseDown}
+              className={`relative px-10 pt-8 pb-12 bg-gradient-to-br ${theme.gradient} border-b border-white/5 overflow-hidden shrink-0 shadow-2xl cursor-grab active:cursor-grabbing animate-in slide-in-from-top duration-500`}
+            >
+            {/* Ambient Background Elements */}
+
+            
+            <div className="relative flex items-center justify-between">
+              <div className="flex items-center gap-10">
+                <div className={`w-24 h-24 rounded-[32px] ${theme.badge} flex items-center justify-center text-5xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] border border-white/10 group hover:scale-105 transition-transform duration-500`}>
+                  <span className="drop-shadow-2xl">{fullScreenDept.icon || '📁'}</span>
+                </div>
+                
+                <div className="space-y-3">
+                  <div className="flex items-center gap-4">
+                    <h2 className="text-5xl font-black text-white tracking-tight">
+                      {fullScreenDept.name}
+                    </h2>
+                    <div className="flex flex-col gap-2">
+                       <span className="w-fit px-4 py-1.5 rounded-2xl bg-white/10 border border-white/10 text-white/40 text-xs font-bold uppercase tracking-[0.3em]">
+                         Digital Repository
+                       </span>
+                       {trainerMappings[fullScreenDept.name.toLowerCase()] && (
+                          <div className={`w-fit px-5 py-2.5 rounded-2xl border ${theme.badge} shadow-2xl animate-in slide-in-from-left-4 duration-700`}>
+                             <div className="flex items-center gap-3">
+                                <Users className="h-4 w-4 opacity-50" />
+                                <div className="flex flex-col">
+                                   <span className="text-[9px] font-black uppercase tracking-[0.2em] opacity-50 mb-0.5">Assigned Trainer</span>
+                                   <span className="text-sm font-black tracking-tight">{trainerMappings[fullScreenDept.name.toLowerCase()]}</span>
+                                </div>
+                             </div>
+                          </div>
+                       )}
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-3">
+                      <div className="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_10px_#6366f1]" />
+                      <span className="text-sm font-bold text-white/50 uppercase tracking-widest leading-none">
+                        <strong className="text-white mr-1.5">{fullScreenDept.totalQuestions}</strong> Question Units
+                      </span>
+                    </div>
+                    <div className="w-px h-4 bg-white/10" />
+                    <div className="flex items-center gap-3">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_#10b981]" />
+                      <span className="text-sm font-bold text-white/50 uppercase tracking-widest leading-none">
+                        <strong className="text-white mr-1.5">{fullScreenDept.totalSOPs}</strong> Active SOPs
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* High Quality Filter Pills */}
                   {(() => {
-                    const stats = fullScreenDept.subcategories.reduce((acc: any, sub: any) => {
-                      sub.sops.forEach((sop: any) => {
-                        acc.checked += sop.checkedCount || 0;
-                        acc.similar += sop.similarCount || 0;
-                        acc.reviewed += sop.reviewedCount || 0;
+                    const stats = { checked: 0, similar: 0, reviewed: 0 };
+                    fullScreenDept.subcategories.forEach(sub => {
+                      sub.sops.forEach(sop => {
+                        stats.checked += sop.checkedCount || 0;
+                        stats.similar += sop.similarCount || 0;
+                        stats.reviewed += sop.reviewedCount || 0;
                       });
-                      return acc;
-                    }, { checked: 0, similar: 0, reviewed: 0 });
+                    });
                     
                     const filterPills = [
-                      { id: 'checked' as const, label: 'Checked', count: stats.checked,
-                        active: 'bg-green-600 border-green-600 text-white shadow-lg',
-                        inactive: 'bg-green-900/20 border-green-500/25 text-green-300 hover:bg-green-900/40',
-                        dot: 'bg-green-400' },
+                      { id: 'checked' as const, label: 'Approved', count: stats.checked,
+                        active: 'bg-gradient-to-r from-purple-600 to-indigo-600 border-white/20 text-white shadow-[0_0_30px_rgba(147,51,234,0.3)]',
+                        inactive: 'bg-purple-500/5 border-purple-500/10 text-purple-400 hover:bg-purple-500/10',
+                        dot: 'bg-purple-400' },
                       { id: 'notChecked' as const, label: 'Not Checked', count: (fullScreenDept.totalQuestions || 0) - stats.checked,
-                        active: 'bg-red-600 border-red-600 text-white shadow-lg',
-                        inactive: 'bg-red-900/20 border-red-500/25 text-red-300 hover:bg-red-900/40',
-                        dot: 'bg-red-400' },
+                        active: 'bg-rose-600 border-white/20 text-white shadow-[0_0_30px_rgba(225,29,72,0.3)]',
+                        inactive: 'bg-rose-500/5 border-rose-500/10 text-rose-400 hover:bg-rose-500/10',
+                        dot: 'bg-rose-400' },
                       { id: 'similar' as const, label: 'Similar', count: stats.similar,
-                        active: 'bg-orange-600 border-orange-600 text-white shadow-lg',
-                        inactive: 'bg-orange-900/20 border-orange-500/25 text-orange-300 hover:bg-orange-900/40',
+                        active: 'bg-orange-600 border-white/20 text-white shadow-[0_0_30_rgba(234,88,12,0.3)]',
+                        inactive: 'bg-orange-500/5 border-orange-500/10 text-orange-400 hover:bg-orange-500/10',
                         dot: 'bg-orange-400' },
                       { id: 'reviewed' as const, label: 'Reviewed', count: stats.reviewed,
-                        active: 'bg-amber-600 border-amber-600 text-white shadow-lg',
-                        inactive: 'bg-amber-900/20 border-amber-500/25 text-amber-300 hover:bg-amber-900/40',
-                        dot: 'bg-amber-400' },
+                        active: 'bg-indigo-600 border-white/20 text-white shadow-[0_0_30px_rgba(79,70,229,0.3)]',
+                        inactive: 'bg-indigo-500/5 border-indigo-500/10 text-indigo-400 hover:bg-indigo-500/10',
+                        dot: 'bg-indigo-400' },
                     ];
                     
                     return (
-                      <div className="flex flex-wrap gap-2 mt-3">
+                      <div className="flex flex-wrap gap-2.5 mt-8">
                         {filterPills.map(pill => (
                           <button
                             key={pill.id}
@@ -643,12 +744,12 @@ export default function MCQTreeView({
                                 fetchDeptQuestions(fullScreenDept.name, pill.id);
                               }
                             }}
-                            className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full border transition-all ${
+                            className={`inline-flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.2em] px-6 py-3 rounded-2xl border transition-all duration-300 ${
                               deptFilterMode === pill.id ? pill.active : pill.inactive
                             }`}
                           >
-                            <div className={`w-1.5 h-1.5 rounded-full ${pill.dot}`}></div>
-                            {pill.count} {pill.label}
+                            <div className={`w-2 h-2 rounded-full ${pill.dot} shadow-[0_0_8px_currentColor]`} />
+                            {pill.label}: {pill.count}
                           </button>
                         ))}
                       </div>
@@ -656,141 +757,146 @@ export default function MCQTreeView({
                   })()}
                 </div>
               </div>
-            </div>
-            <div className="flex items-center gap-3">
-              {/* Review Center Button */}
-              <Link href="/mcq-review">
-                <button
-                  className="flex items-center gap-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-500 text-white rounded-xl transition-all shadow-lg hover:shadow-yellow-500/20 font-semibold text-sm"
-                  title="Go to Review Center"
-                >
-                  <Star className="h-4 w-4" />
-                  Review Center
-                </button>
-              </Link>
               
-              {/* Close Button */}
-              <button
-                onClick={() => setFullScreenDept(null)}
-                className="p-3 hover:bg-white/10 rounded-full transition-colors border border-transparent hover:border-white/10"
-              >
-                <ChevronDown className="h-6 w-6 text-white rotate-180" />
-              </button>
-            </div>
-          </div>
+              <div className="flex items-center gap-4">
+                <Link href="/mcq-review">
+                   <button className="flex items-center gap-3 px-8 py-4 bg-white/10 hover:bg-white/20 text-white rounded-[24px] border border-white/10 transition-all font-bold text-xs uppercase tracking-widest backdrop-blur-xl shadow-2xl group">
+                    <Star className="h-4 w-4 fill-amber-400 text-amber-400 group-hover:scale-125 transition-transform" />
+                    Review Center
+                  </button>
+                </Link>
 
-          {/* Search + Sort Controls Bar */}
-          <div className="px-8 py-4 bg-white/5 border-b border-white/5 shrink-0">
-            <div className="flex items-center gap-4 flex-wrap">
-              {/* Search */}
-              <div className="relative flex-1 min-w-[200px] max-w-md">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                <button
+                  onClick={() => setIsCinemaMode(true)}
+                  className="p-5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-[24px] transition-all group shadow-xl"
+                  title="Expand View (Cinema Mode)"
+                >
+                  <Maximize2 className="h-6 w-6 text-white/70 group-hover:text-white transition-all duration-300" />
+                </button>
+
+                <button
+                  onClick={() => setFullScreenDept(null)}
+                  className="p-5 bg-white/5 hover:bg-rose-500/20 border border-white/10 hover:border-rose-500/40 rounded-[24px] transition-all group shadow-xl"
+                >
+                  <X className="h-6 w-6 text-white/70 group-hover:text-white group-hover:rotate-90 transition-all duration-300" />
+                </button>
+              </div>
+            </div>
+            </div>
+          )}
+
+          {/* Action Toolbar: Search & View Controls */}
+          <div className="px-10 py-5 bg-[#0D1117] border-b border-white/5 shrink-0 flex items-center justify-between shadow-lg">
+            {isCinemaMode && (
+              <div className="flex items-center gap-4 mr-6">
+                <button
+                  onClick={() => setIsCinemaMode(false)}
+                  className="p-3 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-xl border border-indigo-500/20 transition-all group"
+                  title="Exit Expand View"
+                >
+                  <Minimize2 className="h-5 w-5" />
+                </button>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest leading-none mb-1">{fullScreenDept.name}</span>
+                  <span className="text-[8px] font-bold text-gray-600 uppercase tracking-tighter">Expand View Active</span>
+                </div>
+              </div>
+            )}
+            <div className="flex items-center gap-6 flex-1 max-w-4xl">
+              <div className="relative flex-1">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-500" />
                 <input
                   type="text"
-                  placeholder="Search SOPs by name or code..."
+                  placeholder="Query department SOPs, codes, or specific questions..."
                   value={deptSearchTerm}
                   onChange={e => setDeptSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-8 py-2 bg-black/30 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-purple-500/50 transition-all"
+                  className="w-full pl-12 pr-10 py-3.5 bg-slate-800/40 border border-white/10 rounded-2xl text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500/50 transition-all"
                 />
                 {deptSearchTerm && (
-                  <button onClick={() => setDeptSearchTerm('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white">
-                    <X className="h-3.5 w-3.5" />
+                  <button onClick={() => setDeptSearchTerm('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors">
+                    <X className="h-4 w-4" />
                   </button>
                 )}
               </div>
 
-              {/* Sort controls — only show in SOP view mode */}
-              {deptFilterMode === 'sops' && (
-                <>
-                  <span className="text-sm text-gray-400 font-medium">Sort by:</span>
-                  <div className="flex gap-2">
-                    {[
-                      { value: 'name', label: 'Name' },
-                      { value: 'sops', label: 'SOP Count' },
-                      { value: 'questions', label: 'Questions' }
-                    ].map((sort) => (
-                      <button
-                        key={sort.value}
-                        onClick={() => toggleDeptSort(fullScreenDept.name, sort.value as 'name' | 'sops' | 'questions')}
-                        className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 ${
-                          deptSortBy[fullScreenDept.name] === sort.value
-                            ? `${theme.button} text-white shadow-lg`
-                            : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200'
-                        }`}
-                      >
-                        {sort.label}
-                        {deptSortBy[fullScreenDept.name] === sort.value && (
-                          deptSortOrder[fullScreenDept.name] === 'asc' ? 
-                            <SortAsc className="h-4 w-4" /> : 
-                            <SortDesc className="h-4 w-4" />
-                        )}
-                      </button>
-                    ))}
-                    
-                    <div className="w-px h-6 bg-white/10 mx-2"></div>
-                    
-                    {[
-                      { value: 'checked', label: 'Checked' },
-                      { value: 'notChecked', label: 'Not Checked' },
-                      { value: 'similar', label: 'Similar' },
-                      { value: 'reviewed', label: 'Reviewed' }
-                    ].map((sort) => (
-                      <button
-                        key={sort.value}
-                        onClick={() => toggleDeptSort(fullScreenDept.name, sort.value as any)}
-                        className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 ${
-                          deptSortBy[fullScreenDept.name] === sort.value
-                            ? `${theme.button} text-white shadow-lg`
-                            : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200'
-                        }`}
-                      >
-                        {sort.label}
-                        {deptSortBy[fullScreenDept.name] === sort.value && (
-                          deptSortOrder[fullScreenDept.name] === 'asc' ? 
-                            <SortAsc className="h-4 w-4" /> : 
-                            <SortDesc className="h-4 w-4" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-
-              {/* Back to SOPs button when in questions view */}
-              {deptFilterMode !== 'sops' && (
-                <button
-                  onClick={() => setDeptFilterMode('sops')}
-                  className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-xl text-sm font-medium transition-all border border-white/10"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  Back to SOPs
-                </button>
+              {/* View Strategy Toggle */}
+              {deptFilterMode === 'sops' ? (
+                <div className="flex items-center gap-2 bg-slate-800/30 p-1.5 rounded-2xl border border-white/5">
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-3 mr-1">Sort by:</span>
+                  {[
+                    { value: 'name', label: 'Identity' },
+                    { value: 'sops', label: 'Density' },
+                    { value: 'questions', label: 'Volume' }
+                  ].map((sort) => (
+                    <button
+                      key={sort.value}
+                      onClick={() => toggleDeptSort(fullScreenDept.name, sort.value as 'name' | 'sops' | 'questions')}
+                      className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-2 ${
+                        deptSortBy[fullScreenDept.name] === sort.value
+                          ? `${theme.button} text-white shadow-xl`
+                          : 'text-gray-500 hover:text-gray-300'
+                      }`}
+                    >
+                      {sort.label}
+                      {deptSortBy[fullScreenDept.name] === sort.value && (
+                        deptSortOrder[fullScreenDept.name] === 'asc' ? <SortAsc className="h-3 w-3" /> : <SortDesc className="h-3 w-3" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={() => setDeptFilterMode('sops')}
+                    className="flex items-center gap-2.5 px-6 py-3 bg-white/5 hover:bg-white/10 text-indigo-400 hover:text-indigo-300 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all border border-white/10"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Return to Structural View
+                  </button>
+                  
+                  {deptFilterMode !== 'similar' && (
+                    <button
+                      onClick={() => {
+                        setDeptFilterMode('similar');
+                        fetchDeptQuestions(fullScreenDept.name, 'similar');
+                      }}
+                       className="flex items-center gap-2.5 px-6 py-3 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 hover:text-orange-300 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all border border-orange-500/20"
+                    >
+                      <AlertCircle className="h-4 w-4" />
+                      Check Similar
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>
 
-          {/* Scrollable Content */}
-          <div className="overflow-y-auto flex-1 p-8 space-y-6 custom-scrollbar">
-
-            {/* Questions View — when a status filter is active */}
+          {/* Main Scroll Content */}
+          <div className="overflow-y-auto flex-1 p-10 space-y-8 custom-scrollbar bg-[#0D1117]">
             {deptFilterMode !== 'sops' ? (
-              <div>
+              <div className="max-w-6xl mx-auto">
                 {loadingDeptQuestions ? (
-                  <div className="flex flex-col items-center justify-center py-20">
-                    <Loader2 className="h-10 w-10 text-purple-400 animate-spin mb-4" />
-                    <p className="text-gray-400 text-sm">Loading questions across all SOPs...</p>
+                  <div className="flex flex-col items-center justify-center py-32 space-y-6">
+                    <div className="relative">
+                      <div className="w-16 h-16 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin" />
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <Loader2 className="h-6 w-6 text-indigo-400 animate-pulse" />
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-white font-bold tracking-widest uppercase text-xs">Cataloging Assets</p>
+                      <p className="text-gray-500 text-sm mt-1">Indexing questions across all SOP identifiers...</p>
+                    </div>
                   </div>
                 ) : (() => {
-                  // Filter questions based on the selected filter
                   let filtered = deptQuestions.filter(q => {
                     if (deptFilterMode === 'checked') return q.isChecked === true;
                     if (deptFilterMode === 'notChecked') return q.isChecked !== true;
-                    if (deptFilterMode === 'similar') return q.isSimilar === true;
+                    if (deptFilterMode === 'similar') return false; // Handled by separate view
                     if (deptFilterMode === 'reviewed') return q.isReviewed === true;
                     return true;
                   });
 
-                  // Apply search filter
                   if (deptSearchTerm.trim()) {
                     const searchLow = deptSearchTerm.toLowerCase().trim();
                     filtered = filtered.filter(q =>
@@ -802,95 +908,86 @@ export default function MCQTreeView({
 
                   if (filtered.length === 0) {
                     return (
-                      <div className="flex flex-col items-center justify-center py-20">
-                        <BookOpen className="h-12 w-12 text-gray-600 mb-3" />
-                        <p className="text-gray-400 text-sm">No questions found for this filter.</p>
+                      <div className="flex flex-col items-center justify-center py-32 text-center">
+                        <div className="w-20 h-20 bg-white/5 rounded-[40px] flex items-center justify-center mb-6 border border-white/5 shadow-inner">
+                          <BookOpen className="h-10 w-10 text-gray-700" />
+                        </div>
+                        <h3 className="text-2xl font-bold text-gray-400">Inventory Empty</h3>
+                        <p className="text-gray-600 text-sm mt-2">No question units currently match your specified filters.</p>
                       </div>
                     );
                   }
 
-                  const filterLabel = deptFilterMode === 'checked' ? 'Checked' : deptFilterMode === 'notChecked' ? 'Not Checked' : deptFilterMode === 'similar' ? 'Similar' : 'Reviewed';
-                  const filterDotClass = deptFilterMode === 'checked' ? 'bg-green-400' : deptFilterMode === 'notChecked' ? 'bg-red-400' : deptFilterMode === 'similar' ? 'bg-orange-400' : 'bg-amber-400';
-
                   return (
-                    <>
-                      <div className="flex items-center justify-between mb-6">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-2 h-2 rounded-full ${filterDotClass}`} />
-                          <h3 className="text-lg font-bold text-white">
-                            {filtered.length} {filterLabel} Questions
-                          </h3>
-                          <span className="text-xs text-gray-500">across all SOPs in {fullScreenDept.name}</span>
-                        </div>
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3 mb-8 px-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-[0_0_10px_#6366f1]" />
+                        <h3 className="text-lg font-bold text-white tracking-tight">
+                          Displaying <span className="text-indigo-400">{filtered.length} matching units</span> across department records
+                        </h3>
                       </div>
 
-                      <div className="space-y-3">
-                        {filtered.slice(0, 100).map((q, idx) => (
+                      <div className="grid grid-cols-1 gap-4">
+                        {filtered.slice(0, 100).map((q) => (
                           <div
                             key={`${q._bankId}-${q._originalIndex}`}
-                            className="bg-[#131620] rounded-xl border border-slate-800/60 hover:border-purple-500/40 transition-all p-5"
+                            className="group relative bg-[#131722] rounded-[32px] border border-white/5 p-8 hover:border-indigo-500/40 transition-all duration-500 hover:shadow-[0_20px_60px_rgba(0,0,0,0.5)] overflow-hidden"
                           >
-                            {/* Question header */}
-                            <div className="flex items-start justify-between gap-4 mb-3">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-xs font-bold text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
+                            {/* Hover Backdrop Decor */}
+                            <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+                            
+                            <div className="relative flex items-center justify-between mb-6">
+                              <div className="flex items-center gap-3">
+                                <div className="px-3 py-1 bg-black/40 rounded-xl border border-white/5 text-[10px] font-bold text-indigo-400 uppercase tracking-widest">
                                   {q._sopIdentifier}
-                                </span>
-                                <span className="text-[10px] text-gray-500">Q{q._originalIndex + 1}</span>
+                                </div>
+                                <div className="px-3 py-1 bg-black/40 rounded-xl border border-white/5 text-[10px] font-bold text-gray-500 uppercase tracking-widest">
+                                  Unit #{q._originalIndex + 1}
+                                </div>
                                 {q.difficulty && (
-                                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
-                                    q.difficulty === 'Easy' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
-                                    q.difficulty === 'Medium' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
-                                    'bg-red-500/10 text-red-400 border border-red-500/20'
+                                  <div className={`px-3 py-1 rounded-xl border text-[10px] font-bold uppercase tracking-widest ${
+                                    q.difficulty === 'Easy' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                                    q.difficulty === 'Medium' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
+                                    'bg-rose-500/10 text-rose-400 border-rose-500/20'
                                   }`}>
                                     {q.difficulty}
-                                  </span>
+                                  </div>
                                 )}
                               </div>
-                              <div className="flex items-center gap-1.5 flex-shrink-0">
-                                {q.isChecked && (
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 flex items-center gap-1">
-                                    <CheckCircle2 className="h-3 w-3" /> Checked
-                                  </span>
-                                )}
-                                {q.isSimilar && (
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20 flex items-center gap-1">
-                                    <AlertTriangle className="h-3 w-3" /> Similar
-                                  </span>
-                                )}
-                                {q.isReviewed && (
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1">
-                                    <Star className="h-3 w-3" /> Reviewed
-                                  </span>
-                                )}
+
+                              <div className="flex items-center gap-2">
+                                {q.isChecked && <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20"><CheckCircle2 className="h-4 w-4" /></div>}
+                                {q.isSimilar && <div className="p-2 bg-orange-500/10 text-orange-400 rounded-xl border border-orange-500/20"><AlertCircle className="h-4 w-4" /></div>}
+                                {q.isReviewed && <div className="p-2 bg-indigo-500/10 text-indigo-400 rounded-xl border border-indigo-500/20"><Star className="h-4 w-4" /></div>}
                               </div>
                             </div>
 
-                            {/* Question text */}
-                            <p className="text-sm text-gray-200 leading-relaxed mb-3 font-medium">
-                              {q.question}
-                            </p>
+                            <h3 className="text-xl font-bold text-gray-100 leading-tight mb-8 tracking-tight group-hover:text-white transition-colors">
+                              {q.question.replace(/^⭐\s*/, '')}
+                            </h3>
 
-                            {/* Options */}
                             {q.options && q.options.length > 0 && (
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 {q.options.map((opt: any, optIdx: number) => {
                                   const optLabel = String.fromCharCode(65 + optIdx);
-                                  const isCorrect = q.correctAnswer === optLabel || q.correctAnswer === opt;
+                                  const isCorrect = q.correctAnswer === optLabel || q.correctAnswer === opt || 
+                                    (q.optionVariants && q.optionVariants.find((v:any) => v.text === opt)?.isCorrect);
+
                                   return (
                                     <div
                                       key={optIdx}
-                                      className={`flex items-start gap-2 px-3 py-2 rounded-lg text-xs ${
-                                        isCorrect
-                                          ? 'bg-green-500/10 border border-green-500/30 text-green-300'
-                                          : 'bg-white/5 border border-white/5 text-gray-400'
+                                      className={`flex items-center gap-4 p-4 rounded-2xl border transition-all ${
+                                        isCorrect 
+                                          ? 'bg-emerald-500/10 border-emerald-500/30' 
+                                          : 'bg-black/20 border-white/5'
                                       }`}
                                     >
-                                      <span className={`font-bold flex-shrink-0 ${isCorrect ? 'text-green-400' : 'text-gray-500'}`}>
-                                        {optLabel}.
-                                      </span>
-                                      <span className="leading-relaxed">{opt}</span>
-                                      {isCorrect && <CheckCircle2 className="h-3.5 w-3.5 text-green-400 ml-auto flex-shrink-0 mt-0.5" />}
+                                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold border ${
+                                        isCorrect ? 'bg-emerald-500 text-white border-emerald-400 shadow-lg' : 'bg-white/5 text-gray-500 border-white/10'
+                                      }`}>
+                                        {optLabel}
+                                      </div>
+                                      <span className={`text-sm ${isCorrect ? 'text-emerald-400 font-bold' : 'text-gray-400'}`}>{opt}</span>
                                     </div>
                                   );
                                 })}
@@ -898,367 +995,318 @@ export default function MCQTreeView({
                             )}
                           </div>
                         ))}
-
-                        {filtered.length > 100 && (
-                          <div className="text-center py-4">
-                            <p className="text-sm text-gray-500">Showing first 100 of {filtered.length} questions. Use search to narrow results.</p>
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-            ) : (
-
-            /* SOP/Subcategory View — default */
-            <div className="space-y-6">
-              {sortSubcategories(
-                fullScreenDept.subcategories
-                  .map(sub => ({
-                    ...sub,
-                    sops: deptSearchTerm.trim()
-                      ? sub.sops.filter(s => {
-                          const st = deptSearchTerm.toLowerCase().trim();
-                          return s.sopName.toLowerCase().includes(st) || s.sopCode.toLowerCase().includes(st);
-                        })
-                      : sub.sops,
-                  }))
-                  .filter(sub => sub.sops.length > 0),
-                fullScreenDept.name
-              ).map((subcat) => {
-                const subcatKey = `${fullScreenDept.name}-${subcat.code}`;
-                const isSubcatExpanded = expandedSubcats.has(subcatKey);
-
-                return (
-                  <div key={subcatKey} className={`rounded-2xl border border-white/5 overflow-hidden bg-gradient-to-br ${theme.subcatBg}`}>
-                    {/* Subcategory Header */}
-                    <div
-                      onClick={() => toggleSubcategory(subcatKey)}
-                      className="w-full px-6 py-5 flex items-center justify-between hover:bg-white/5 transition-all group cursor-pointer"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className={`p-2 rounded-lg bg-black/20 ${theme.text}`}>
-                          {isSubcatExpanded ? <FolderOpen className="h-6 w-6" /> : <Folder className="h-6 w-6" />}
-                        </div>
-                        <div className="text-left">
-                          <h4 className={`text-lg font-bold text-white ${theme.textHover} transition-colors flex items-center gap-3`}>
-                            {subcat.name}
-                            <span className="text-xs px-2 py-0.5 rounded bg-white/10 text-gray-300 font-normal">{subcat.code}</span>
-                          </h4>
-                          <p className="text-sm text-gray-400 mt-1 flex items-center gap-2">
-                             {subcat.totalSOPs} SOPs • {subcat.totalQuestions} Questions
-                             {(() => {
-                               const stats = subcat.sops.reduce((acc, sop) => {
-                                 acc.checked += sop.checkedCount || 0;
-                                 acc.similar += sop.similarCount || 0;
-                                 acc.reviewed += sop.reviewedCount || 0;
-                                 return acc;
-                               }, { checked: 0, similar: 0, reviewed: 0 });
-                               return (
-                               <span className="flex items-center gap-2 text-xs ml-2 border-l border-white/10 pl-2">
-                                     <button 
-                                      onClick={(e) => { e.stopPropagation(); toggleSubcatSort(subcatKey, 'checked'); }}
-                                      className={`flex items-center gap-1 hover:underline ${stats.checked > 0 ? 'text-green-400' : 'text-gray-600'}`}
-                                     >
-                                       <div className={`w-1.5 h-1.5 rounded-full ${stats.checked > 0 ? 'bg-green-400' : 'bg-gray-600'}`}></div>
-                                       {stats.checked} Checked
-                                     </button>
-                                     <button 
-                                      onClick={(e) => { e.stopPropagation(); toggleSubcatSort(subcatKey, 'notChecked'); }}
-                                      className={`flex items-center gap-1 hover:underline ${subcat.totalQuestions - stats.checked > 0 ? 'text-red-400' : 'text-gray-600'}`}
-                                     >
-                                       <div className={`w-1.5 h-1.5 rounded-full ${subcat.totalQuestions - stats.checked > 0 ? 'bg-red-400' : 'bg-gray-600'}`}></div>
-                                       {subcat.totalQuestions - stats.checked} Not Checked
-                                     </button>
-                                     <button 
-                                      onClick={(e) => { e.stopPropagation(); toggleSubcatSort(subcatKey, 'similar'); }}
-                                      className={`flex items-center gap-1 hover:underline ${stats.similar > 0 ? 'text-orange-400' : 'text-gray-600'}`}
-                                     >
-                                       <div className={`w-1.5 h-1.5 rounded-full ${stats.similar > 0 ? 'bg-orange-400' : 'bg-gray-600'}`}></div>
-                                       {stats.similar} Similar
-                                     </button>
-                                     <button 
-                                      onClick={(e) => { e.stopPropagation(); toggleSubcatSort(subcatKey, 'reviewed'); }}
-                                      className={`flex items-center gap-1 hover:underline ${stats.reviewed > 0 ? 'text-yellow-400' : 'text-gray-600'}`}
-                                     >
-                                        <div className={`w-1.5 h-1.5 rounded-full ${stats.reviewed > 0 ? 'bg-yellow-400' : 'bg-gray-600'}`}></div>
-                                       {stats.reviewed} Reviewed
-                                     </button>
-                                   </span>
-                               );
-                             })()}
-                          </p>
-                        </div>
-                      </div>
-                      
-                      <div className={`p-2 rounded-full ${isSubcatExpanded ? 'bg-white/10' : 'bg-transparent'} transition-colors`}>
-                        <ChevronRight className={`h-5 w-5 ${theme.text} transition-transform duration-300 ${isSubcatExpanded ? 'rotate-90' : ''}`} />
                       </div>
                     </div>
+                  );
+                })()}
 
-                    {/* SOP Content Area */}
-                    {isSubcatExpanded && (
-                      <div className="px-6 pb-6 bg-black/20 border-t border-white/5">
-                        {/* SOP Sort Controls */}
-                        {subcat.sops.length > 1 && (
-                          <div className="py-4 flex items-center justify-end gap-3">
-                            <span className="text-xs text-gray-500 uppercase font-bold tracking-wider">Sort SOPs:</span>
-                              <div className="flex bg-black/30 rounded-lg p-1">
-                                {[
-                                  { value: 'identifier', label: 'ID' },
-                                   { value: 'name', label: 'Name' },
-                                  { value: 'questions', label: 'Questions' }
-                                ].map((sort) => (
-                                  <button
-                                    key={sort.value}
-                                    onClick={() => toggleSubcatSort(subcatKey, sort.value as 'name' | 'questions' | 'identifier')}
-                                    className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
-                                      (subcatSortBy[subcatKey] || 'identifier') === sort.value
-                                        ? 'bg-white/10 text-white shadow-sm'
-                                        : 'text-gray-500 hover:text-gray-300'
-                                    }`}
-                                  >
-                                    {sort.label}
-                                  </button>
-                                ))}
-                                
-                                <span className="w-px h-4 bg-white/10 mx-1"></span>
-                                
-                                {[
-                                  { value: 'checked', label: 'Checked' },
-                                  { value: 'notChecked', label: 'Not Checked' },
-                                  { value: 'similar', label: 'Similar' },
-                                  { value: 'reviewed', label: 'Reviewed' }
-                                ].map((sort) => (
-                                  <button
-                                    key={sort.value}
-                                    onClick={() => toggleSubcatSort(subcatKey, sort.value as any)}
-                                    className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
-                                      (subcatSortBy[subcatKey] || 'identifier') === sort.value
-                                        ? 'bg-white/10 text-white shadow-sm'
-                                        : 'text-gray-500 hover:text-gray-300'
-                                    }`}
-                                  >
-                                    {sort.label}
-                                  </button>
-                                ))}
-                              </div>
-                          </div>
-                        )}
-
-                        {/* SOP Grid - 2 columns, each SOP is a compact row */}
-                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-                        {sortSOPs(subcat.sops, subcatKey).map((sop) => {
-                          const hasQuestions = sop.totalQuestions > 0;
-
-                          return (
-                            <div
-                              key={sop.sopId}
-                              className="group relative bg-[#131620] rounded-xl border border-slate-800/60 hover:border-purple-500/50 hover:bg-[#1A1E2E] transition-all duration-200 overflow-hidden"
-                            >
-                              <div
-                                onClick={() => sop.mcqBanks && sop.mcqBanks.length > 0 ? onViewMCQs(sop) : undefined}
-                                className={`flex items-center gap-4 px-5 py-4 ${sop.mcqBanks && sop.mcqBanks.length > 0 ? 'cursor-pointer' : 'cursor-default'}`}
-                              >
-                                {/* Icon */}
-                                <div className={`flex-shrink-0 p-2.5 rounded-xl transition-all duration-200 ${
-                                  hasQuestions
-                                    ? 'bg-blue-500/10 text-blue-400 group-hover:bg-blue-500/20'
-                                    : 'bg-gray-800/60 text-gray-600'
-                                }`}>
-                                  <FileText className="h-5 w-5" />
+                {/* Similar Questions Special View */}
+                {deptFilterMode === 'similar' && (
+                  <div className="space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
+                     {loadingSimilarGroups ? (
+                        <div className="flex flex-col items-center justify-center py-20 space-y-6">
+                            <div className="relative">
+                                <div className="w-16 h-16 border-4 border-orange-500/20 border-t-orange-500 rounded-full animate-spin" />
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    <AlertCircle className="h-6 w-6 text-orange-400 animate-pulse" />
                                 </div>
-
-                                {/* Info */}
-                                <div className="flex-1 min-w-0">
-                                  {/* Identifier + count badges */}
-                                  <div className="flex items-center gap-2 flex-wrap mb-1">
-                                    <h4 className="text-sm font-extrabold tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-pink-300">
-                                      {sop.sopCode}
-                                    </h4>
-                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                                      hasQuestions
-                                        ? 'bg-green-500/10 text-green-400 border-green-500/20'
-                                        : 'bg-gray-800/40 text-gray-500 border-gray-700'
-                                    }`}>
-                                      {sop.totalQuestions > 0 ? `${sop.totalQuestions} Qs` : 'No Qs'}
-                                    </span>
-
-                                    {/* Status badges - clickable */}
-                                    {sop.similarCount && sop.similarCount > 0 ? (
-                                      <button
-                                        onClick={(e) => { e.stopPropagation(); onViewMCQs(sop, 'similar'); }}
-                                        className="text-[10px] font-bold px-2 py-0.5 rounded border border-orange-500/30 bg-orange-500/10 text-orange-400 hover:bg-orange-500/25 transition-all flex items-center gap-1"
-                                      >
-                                        <div className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse"></div>
-                                        {sop.similarCount} Similar
-                                      </button>
-                                    ) : null}
-                                    {sop.checkedCount && sop.checkedCount > 0 ? (
-                                      <button
-                                        onClick={(e) => { e.stopPropagation(); onViewMCQs(sop, 'checked'); }}
-                                        className="text-[10px] font-bold px-2 py-0.5 rounded border border-green-500/30 bg-green-500/10 text-green-400 hover:bg-green-500/25 transition-all flex items-center gap-1"
-                                      >
-                                        <div className="w-1.5 h-1.5 rounded-full bg-green-400"></div>
-                                        {sop.checkedCount} Checked
-                                      </button>
-                                    ) : null}
-                                    {sop.reviewedCount && sop.reviewedCount > 0 ? (
-                                      <button
-                                        onClick={(e) => { e.stopPropagation(); onViewMCQs(sop, 'reviewed'); }}
-                                        className="text-[10px] font-bold px-2 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/25 transition-all flex items-center gap-1"
-                                      >
-                                        <div className="w-1.5 h-1.5 rounded-full bg-amber-400"></div>
-                                        {sop.reviewedCount} Reviewed
-                                      </button>
-                                    ) : null}
-                                  </div>
-
-                                  {/* SOP name */}
-                                  <p className="text-gray-400 text-xs leading-tight group-hover:text-gray-200 transition-colors line-clamp-1">
-                                    {cleanSOPName(sop.sopName, sop.sopCode)}
-                                  </p>
-                                </div>
-
-                                {/* Arrow — only when has questions */}
-                                {sop.mcqBanks && sop.mcqBanks.length > 0 ? (
-                                  <ChevronRight className="h-5 w-5 flex-shrink-0 text-gray-600 group-hover:text-purple-400 group-hover:translate-x-0.5 transition-all" />
-                                ) : (
-                                  <div className="h-5 w-5 flex-shrink-0" />
-                                )}
-                              </div>
                             </div>
-                          );
-                        })}
+                            <div className="text-center">
+                                <p className="text-white font-bold tracking-widest uppercase text-xs">Clusters Detected</p>
+                                <p className="text-gray-500 text-sm mt-1 animate-pulse">Analyzing similarity vectors and grouping related questions...</p>
+                            </div>
                         </div>
-                      </div>
-                    )}
+                     ) : similarGroups.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-20 bg-white/5 rounded-[40px] border border-white/5 text-center shadow-inner">
+                            <div className="w-24 h-24 bg-orange-500/10 rounded-full flex items-center justify-center mb-6 text-orange-400 border border-orange-500/20 shadow-[0_0_30px_rgba(249,115,22,0.1)]">
+                                <CheckCircle2 className="h-10 w-10" />
+                            </div>
+                            <h3 className="text-3xl font-black text-white tracking-tight mb-2">No Similarities Detected</h3>
+                            <p className="text-gray-400 text-sm max-w-md mx-auto leading-relaxed">
+                                Great news! No duplicate or similar questions were found in the <span className="text-indigo-400 font-bold">{fullScreenDept.name}</span> department. The repository is clean.
+                            </p>
+                        </div>
+                     ) : (
+                        <div className="space-y-8">
+                            <div className="flex items-center justify-between px-2">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-3 h-3 rounded-full bg-orange-500 shadow-[0_0_15px_#f97316]" />
+                                    <h3 className="text-2xl font-black text-white tracking-tight">
+                                        Detected <span className="text-orange-400">{similarGroups.length} Similarity Clusters</span>
+                                    </h3>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest bg-white/5 px-4 py-2 rounded-xl border border-white/5">
+                                        Grouped by Primary Question
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-8">
+                                {similarGroups.map((group) => (
+                                    <div key={group._id} className="bg-[#131722] rounded-[40px] border border-white/5 overflow-hidden shadow-2xl hover:shadow-[0_20px_60px_rgba(0,0,0,0.4)] transition-all duration-500 group">
+                                        {/* Group Header */}
+                                        <div className="bg-gradient-to-r from-white/[0.03] to-transparent border-b border-white/5 px-10 py-6 flex items-center justify-between">
+                                            <div className="flex items-center gap-6">
+                                                <div className="px-4 py-1.5 bg-black/40 rounded-xl border border-white/10 text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] shadow-inner">
+                                                    {group.sopIdentifier}
+                                                </div>
+                                                <div className="px-4 py-1.5 bg-orange-500/10 rounded-xl border border-orange-500/20 text-[11px] font-black text-orange-400 uppercase tracking-[0.2em] flex items-center gap-2 shadow-[0_0_15px_rgba(249,115,22,0.1)]">
+                                                    <AlertCircle className="h-3 w-3" />
+                                                    Pending Review
+                                                </div>
+                                            </div>
+                                            <span className="text-[10px] text-gray-600 font-mono tracking-widest uppercase">ID: {group._id.slice(-6)}</span>
+                                        </div>
+
+                                        <div className="p-10 grid grid-cols-1 xl:grid-cols-2 gap-12 relative">
+                                            {/* Vertical Divider */}
+                                            <div className="hidden xl:block absolute top-10 bottom-10 left-1/2 w-px bg-gradient-to-b from-transparent via-white/10 to-transparent" />
+
+                                            {/* Primary Question Column */}
+                                            <div className="space-y-6">
+                                                <div className="flex items-center gap-4 border-b border-indigo-500/10 pb-4">
+                                                    <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.15)]">
+                                                        <Star className="h-5 w-5 fill-indigo-400" />
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="text-sm font-black text-indigo-100 uppercase tracking-widest leading-none mb-1">Primary Question</h4>
+                                                        <p className="text-[10px] font-bold text-indigo-400/60 uppercase tracking-wider">The source of truth</p>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div className="p-8 rounded-[24px] bg-gradient-to-b from-indigo-500/[0.03] to-transparent border border-indigo-500/10 group-hover:border-indigo-500/20 transition-all shadow-inner">
+                                                    <p className="text-lg font-medium text-gray-100 leading-relaxed mb-8 tracking-tight">
+                                                        {group.primaryQuestion.question?.question?.replace(/^⭐\s*/, '') || 'Question text missing'}
+                                                    </p>
+                                                    
+                                                    <div className="space-y-3">
+                                                        {group.primaryQuestion.question?.options?.map((opt: string, i: number) => {
+                                                            const isCorrect = opt === group.primaryQuestion.question?.correctAnswer;
+                                                            return (
+                                                                <div key={i} className={`px-5 py-4 rounded-2xl border text-sm flex items-center gap-4 transition-all ${isCorrect ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.1)]' : 'bg-black/20 border-white/5 text-gray-400 hover:bg-white/5'}`}>
+                                                                    <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold border ${isCorrect ? 'bg-emerald-500 text-white border-emerald-400 shadow-lg' : 'bg-white/5 border-white/10 text-gray-500'}`}>
+                                                                        {String.fromCharCode(65 + i)}
+                                                                    </span>
+                                                                    <span className="leading-snug">{opt}</span>
+                                                                </div>
+                                                            )
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Similar Question Column */}
+                                            <div className="space-y-6">
+                                                <div className="flex items-center gap-4 border-b border-orange-500/10 pb-4">
+                                                    <div className="p-2.5 rounded-xl bg-orange-500/10 text-orange-400 border border-orange-500/20 shadow-[0_0_15px_rgba(249,115,22,0.15)]">
+                                                        <AlertCircle className="h-5 w-5" />
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="text-sm font-black text-orange-100 uppercase tracking-widest leading-none mb-1">Similar Variant ({group.similarQuestions.length})</h4>
+                                                        <p className="text-[10px] font-bold text-orange-400/60 uppercase tracking-wider">Detected duplicate candidate</p>
+                                                    </div>
+                                                </div>
+
+                                                {group.similarQuestions.map((sq: any, idx: number) => (
+                                                    <div key={idx} className="p-8 rounded-[24px] bg-gradient-to-b from-orange-500/[0.03] to-transparent border border-orange-500/10 group-hover:border-orange-500/20 transition-all relative shadow-inner">
+                                                        <div className="absolute top-0 right-0 p-6">
+                                                            <div className="px-3 py-1.5 bg-orange-500/20 rounded-lg border border-orange-500/30 text-[10px] font-black text-orange-300 uppercase tracking-wider shadow-[0_0_15px_rgba(249,115,22,0.2)]">
+                                                                {sq.similarityScore}% Match
+                                                            </div>
+                                                        </div>
+
+                                                        <p className="text-lg font-medium text-gray-100 leading-relaxed mb-8 pr-20 tracking-tight">
+                                                            {sq.question?.question?.replace(/^⭐\s*/, '') || 'Question text missing'}
+                                                        </p>
+                                                        
+                                                        <div className="space-y-3">
+                                                            {sq.question?.options?.map((opt: string, i: number) => {
+                                                                const isCorrect = opt === sq.question?.correctAnswer;
+                                                                return (
+                                                                    <div key={i} className={`px-5 py-4 rounded-2xl border text-sm flex items-center gap-4 transition-all ${isCorrect ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.1)]' : 'bg-black/20 border-white/5 text-gray-400 hover:bg-white/5'}`}>
+                                                                        <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold border ${isCorrect ? 'bg-emerald-500 text-white border-emerald-400 shadow-lg' : 'bg-white/5 border-white/10 text-gray-500'}`}>
+                                                                            {String.fromCharCode(65 + i)}
+                                                                        </span>
+                                                                        <span className="leading-snug">{opt}</span>
+                                                                    </div>
+                                                                )
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        
+                                        {/* Action Footer */}
+                                        <div className="bg-black/40 px-10 py-5 flex items-center justify-between border-t border-white/5 backdrop-blur-xl">
+                                            <div className="flex items-center gap-4 text-[10px] text-gray-500 font-medium uppercase tracking-widest">
+                                                <Info className="h-4 w-4" />
+                                                <span>Review required to resolve conflict</span>
+                                            </div>
+                                            <div className="flex items-center gap-4">
+                                                <button className="px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-white hover:bg-white/5 transition-all">
+                                                    Ignore
+                                                </button>
+                                                <Link href={`/mcq-review?tab=similar&id=${group._id}`}>
+                                                    <button className="px-8 py-3 rounded-2xl bg-orange-500 hover:bg-orange-600 text-white text-[10px] font-black uppercase tracking-widest shadow-[0_10px_30px_rgba(249,115,22,0.3)] hover:shadow-[0_10px_40px_rgba(249,115,22,0.4)] transition-all flex items-center gap-3 transform hover:-translate-y-1">
+                                                        Resolve Conflict
+                                                        <ArrowRight className="h-4 w-4" />
+                                                    </button>
+                                                </Link>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                     )}
                   </div>
-                );
-              })}</div>
-            )}
-          </div>
-        </div>
-      </div>
-      );
-    })()}
-
-    {/* Unorganized Section */}
-      {filteredUnorganized && filteredUnorganized.sops.length > 0 && (
-        <div className="bg-gradient-to-br from-orange-900/30 to-orange-800/20 rounded-2xl border border-orange-500/30 overflow-hidden">
-          {/* Unorganized Header - Clickable */}
-          <button
-            onClick={() => setIsUnorganizedExpanded(!isUnorganizedExpanded)}
-            className="w-full px-6 py-4 flex items-center justify-between hover:bg-white/5 transition-all group"
-          >
-            <div className="flex items-center gap-3">
-              {isUnorganizedExpanded ? (
-                <ChevronDown className="h-5 w-5 text-orange-400" />
-              ) : (
-                <ChevronRight className="h-5 w-5 text-orange-400" />
-              )}
-              {isUnorganizedExpanded ? (
-                <FolderOpen className="h-6 w-6 text-orange-400" />
-              ) : (
-                <Folder className="h-6 w-6 text-orange-400" />
-              )}
-              <div>
-                <h3 className="text-xl font-bold text-white group-hover:text-orange-300 transition-colors">Unorganized</h3>
-                <p className="text-sm text-gray-400">
-                  {filteredUnorganized.totalSOPs} SOP{filteredUnorganized.totalSOPs !== 1 ? 's' : ''} • {filteredUnorganized.totalQuestions} Questions
-                </p>
+                )}
               </div>
-            </div>
-          </button>
-          
-          {/* Unorganized Description */}
-          <div className="px-6 pb-4">
-            <p className="text-sm text-orange-300">
-              These MCQ banks don't have corresponding SOP files in the system.
-            </p>
-          </div>
-
-          {/* Unorganized SOPs Grid */}
-          {isUnorganizedExpanded && (
-            <div className="px-6 pb-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {filteredUnorganized.sops.map((sop) => {
-                  const isSOPExpanded = expandedSOPs.has(sop.sopId);
+            ) : (
+              <div className="w-full space-y-8">
+                {sortSubcategories(
+                  fullScreenDept.subcategories
+                    .map(sub => ({
+                      ...sub,
+                      sops: deptSearchTerm.trim()
+                        ? sub.sops.filter(s => {
+                            const st = deptSearchTerm.toLowerCase().trim();
+                            return s.sopName.toLowerCase().includes(st) || s.sopCode.toLowerCase().includes(st);
+                          })
+                        : sub.sops,
+                    }))
+                    .filter(sub => sub.sops.length > 0),
+                  fullScreenDept.name
+                ).map((subcat) => {
+                  const subcatKey = `${fullScreenDept.name}-${subcat.code}`;
+                  const isSubcatExpanded = expandedSubcats.has(subcatKey);
 
                   return (
-                    <div key={sop.sopId} className="bg-slate-800/50 rounded-lg border border-slate-600/30 overflow-hidden hover:border-orange-500/50 transition-all">
-                      {/* SOP Header */}
-                      <button
-                        onClick={() => toggleSOP(sop.sopId)}
-                        className="w-full px-3 py-2 flex items-center justify-between hover:bg-white/5 transition-all group"
-                        title={`${sop.sopCode} – ${sop.sopName}`}
+                    <div key={subcatKey} className={`rounded-[24px] border border-white/5 overflow-hidden bg-[#1a1625] focus-within:ring-2 focus-within:ring-indigo-500/30 transition-all shadow-xl shadow-black/20`}>
+
+                      <div
+                        onClick={() => toggleSubcategory(subcatKey)}
+                        className={`w-full px-8 py-6 flex items-center justify-between transition-all group cursor-pointer ${isSubcatExpanded ? 'bg-white/[0.02] border-b border-white/5' : 'hover:bg-white/[0.02]'}`}
                       >
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          {isSOPExpanded ? (
-                            <ChevronDown className="h-3 w-3 text-orange-400 flex-shrink-0" />
-                          ) : (
-                            <ChevronRight className="h-3 w-3 text-orange-400 flex-shrink-0" />
-                          )}
-                          <FileText className="h-3 w-3 text-orange-400 flex-shrink-0" />
-                          <div className="text-left flex-1 min-w-0">
-                            <h5 className="text-xs font-semibold text-white group-hover:text-orange-300 transition-colors truncate">
-                              {sop.sopCode}
-                            </h5>
-                            <p className="text-[10px] text-gray-400 truncate">
-                              {cleanSOPName(sop.sopName, sop.sopCode)}
-                            </p>
+                        <div className="flex items-center gap-6">
+                          <div className={`p-3.5 rounded-2xl bg-[#231f36] ${theme.text} shadow-lg ring-1 ring-white/5`}>
+                            {isSubcatExpanded ? <FolderOpen className="h-7 w-7" /> : <Folder className="h-7 w-7" />}
+                          </div>
+                          <div className="text-left space-y-1">
+                            <h4 className="text-xl font-bold text-gray-200 tracking-tight flex items-center gap-3 group-hover:text-white transition-colors">
+                              {subcat.name}
+                              <span className="text-[10px] px-2.5 py-1 rounded-lg bg-indigo-500/10 text-indigo-300 font-bold uppercase tracking-wider border border-indigo-500/20">{subcat.code}</span>
+                            </h4>
+                            <div className="flex items-center gap-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                               <span>{subcat.totalSOPs} Active SOPs</span>
+                               <span className="w-1 h-1 rounded-full bg-gray-700" />
+                               <span>{subcat.totalQuestions} Questions</span>
+                            </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <span className="text-[10px] text-gray-400 bg-orange-900/20 px-2 py-0.5 rounded">
-                            {sop.totalQuestions} Q's
-                          </span>
+                        
+                        <div className={`p-2.5 rounded-xl ${isSubcatExpanded ? 'bg-indigo-500/20 text-indigo-300' : 'bg-white/5 text-gray-600'} transition-all group-hover:bg-indigo-500/10 group-hover:text-indigo-400`}>
+                          <ChevronRight className={`h-5 w-5 transition-transform duration-300 ${isSubcatExpanded ? 'rotate-90' : ''}`} />
                         </div>
-                      </button>
+                      </div>
 
-                      {/* SOP Details (MCQ Banks) */}
-                      {isSOPExpanded && (
-                        <div className="px-3 pb-2 space-y-1.5 bg-slate-900/30 border-t border-slate-600/30">
-                          {/* MCQ Banks */}
-                          {sop.mcqBanks.length > 0 ? (
-                            <div className="space-y-1.5">
-                              {sop.mcqBanks.map((bank, idx) => (
-                                <div key={bank._id || idx} className="flex items-center gap-2 p-2 bg-purple-900/20 rounded border border-purple-500/20">
-                                  <BookOpen className="h-3 w-3 text-purple-400 flex-shrink-0" />
-                                  <div className="flex-1 min-w-0">
-                                    <span className="text-[10px] text-gray-300 block">
-                                      MCQ Bank #{idx + 1}
-                                    </span>
-                                    <p className="text-[9px] text-gray-400">
-                                      {bank.totalQuestions} questions
-                                    </p>
+                      {isSubcatExpanded && (
+                        <div className="bg-[#13111c]/30 animate-in slide-in-from-top-2 duration-300 border-t border-white/5 shadow-inner">
+                           <div className="grid grid-cols-1 lg:grid-cols-2 gap-px bg-white/5">
+                            {sortSOPs(subcat.sops, subcatKey).map((sop) => {
+                              const hasQuestions = sop.totalQuestions > 0;
+                              return (
+                                <div
+                                  key={sop.sopId}
+                                  onClick={() => sop.mcqBanks && sop.mcqBanks.length > 0 ? onViewMCQs(sop) : undefined}
+                                  className={`group relative bg-[#1a1625] hover:bg-[#231f36] transition-all duration-200 cursor-pointer flex items-center justify-between px-8 py-6`}
+                                >
+                                  {/* Ambient Row Light */}
+                                  <div className="absolute inset-y-0 left-0 w-1 bg-indigo-500/0 group-hover:bg-indigo-500 transition-all" />
+                                  
+                                  <div className="flex items-center gap-5">
+                                    <div className={`p-3.5 rounded-2xl bg-white/5 text-gray-500 group-hover:text-indigo-400 group-hover:bg-indigo-500/10 transition-all border border-transparent group-hover:border-indigo-500/20`}>
+                                      <FileText className="h-6 w-6" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-3 mb-1.5 flex-wrap">
+                                      <div className="flex flex-col min-w-0">
+                                        <div className="flex items-center gap-2">
+                                          <h4 className="text-sm font-black text-white tracking-widest uppercase">
+                                            {sop.sopCode}
+                                          </h4>
+                                          {(() => {
+                                            const upCode = sop.sopCode.toUpperCase().trim();
+                                            const baseCodeMatch = upCode.match(/^([A-Z]{2,4}\d+)/);
+                                            const baseCode = baseCodeMatch ? baseCodeMatch[1] : '';
+                                            
+                                            const sopTrainer = trainerMappings[upCode] || (baseCode && trainerMappings[baseCode]);
+                                            const deptName = fullScreenDept?.name || '';
+                                            const nk = normalizeDepartmentName(deptName).toLowerCase();
+                                            const deptTrainer = trainerMappings[nk] || trainerMappings[deptName.toLowerCase()];
+                                            
+                                            const trainerName = sopTrainer || deptTrainer;
+                                            if (!trainerName) return null;
+                                            
+                                            return (
+                                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-300 border border-purple-500/20 tracking-wider flex items-center gap-1.5 ml-2">
+                                                <Users className="h-3 w-3" />
+                                                {trainerName}
+                                              </span>
+                                            );
+                                          })()}
+                                        </div>
+                                      </div>
+                                         <span className={`text-[9px] font-black px-2.5 py-0.5 rounded-[8px] border uppercase tracking-widest ${
+                                           hasQuestions ? 'bg-black/40 text-gray-400 border-white/10' : 'bg-gray-800 text-gray-600 border-transparent'
+                                         }`}>
+                                           {sop.totalQuestions} Qs
+                                         </span>
+                                         {(sop.similarCount || 0) > 0 && (
+                                           <span className="text-[9px] font-black px-2 py-0.5 rounded-[8px] border bg-orange-500/10 text-orange-400 border-orange-500/20 uppercase tracking-widest flex items-center gap-1">
+                                             <span className="w-1 h-1 rounded-full bg-orange-400 shadow-[0_0_5px_currentColor]" />
+                                             {sop.similarCount} Similar
+                                           </span>
+                                         )}
+                                         {(sop.checkedCount || 0) > 0 && (
+                                           <span className="text-[9px] font-black px-2 py-0.5 rounded-[8px] border bg-emerald-500/10 text-emerald-400 border-emerald-500/20 uppercase tracking-widest flex items-center gap-1">
+                                             <span className="w-1 h-1 rounded-full bg-emerald-400 shadow-[0_0_5px_currentColor]" />
+                                             {sop.checkedCount} Checked
+                                           </span>
+                                         )}
+                                         {(sop.reviewedCount || 0) > 0 && (
+                                           <span className="text-[9px] font-black px-2 py-0.5 rounded-[8px] border bg-indigo-500/10 text-indigo-400 border-indigo-500/20 uppercase tracking-widest flex items-center gap-1">
+                                             <span className="w-1 h-1 rounded-full bg-indigo-400 shadow-[0_0_5px_currentColor]" />
+                                             {sop.reviewedCount} Reviewed
+                                           </span>
+                                         )}
+
+                                      </div>
+                                      <p className="text-xs text-gray-500 font-medium group-hover:text-gray-300 transition-colors truncate">
+                                        {cleanSOPName(sop.sopName, sop.sopCode)}
+                                      </p>
+                                    </div>
+                                    <div className="p-2 rounded-lg bg-white/5 text-gray-600 group-hover:bg-indigo-500/10 group-hover:text-indigo-400 transition-colors">
+                                      <ChevronRight className="h-4 w-4" />
+                                    </div>
                                   </div>
-                                  <button
-                                    onClick={() => onViewMCQs(sop)}
-                                    className="px-2 py-0.5 bg-purple-600 hover:bg-purple-700 text-white text-[10px] rounded transition-colors flex items-center gap-1 flex-shrink-0"
-                                  >
-                                    <Eye className="h-2.5 w-2.5" />
-                                    View
-                                  </button>
                                 </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="p-2 bg-orange-900/20 rounded border border-orange-500/20 text-center">
-                              <p className="text-[10px] text-orange-300">No MCQs generated yet</p>
-                            </div>
-                          )}
+                              );
+                            })}
+                           </div>
                         </div>
                       )}
                     </div>
                   );
                 })}
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
-      )}
+      );
+    })()}
     </div>
   );
 }

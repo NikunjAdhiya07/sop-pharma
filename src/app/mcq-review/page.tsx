@@ -317,16 +317,16 @@ export default function MCQReviewPage() {
   });
 
   return (
-    <div className="min-h-screen bg-slate-900 p-8">
+    <div className="min-h-screen bg-[#080710] p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
           <button
-            onClick={() => router.push('/test')}
-            className="mb-4 flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
+            onClick={() => router.back()}
+            className="mb-4 flex items-center gap-2 text-gray-400 hover:text-white transition-all group"
           >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Tests
+            <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
+            Back
           </button>
           
           <div className="flex items-center justify-between">
@@ -339,7 +339,7 @@ export default function MCQReviewPage() {
             </div>
             
             <div className="flex gap-4">
-              <div className="bg-white/5 backdrop-blur-md rounded-2xl p-4 border border-white/10">
+              <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
                 <div className="flex items-center gap-3">
                   <Clock className="h-6 w-6 text-amber-400" />
                   <div>
@@ -445,7 +445,7 @@ export default function MCQReviewPage() {
 
             {/* Empty State */}
             {!loading && reviews.length === 0 && (
-              <div className="bg-white/5 backdrop-blur-md rounded-3xl p-20 border border-white/10 text-center">
+              <div className="bg-white/5 rounded-3xl p-20 border border-white/10 text-center">
                 <Star className="h-20 w-20 text-gray-600 mx-auto mb-4" />
                 <h3 className="text-2xl font-bold text-white mb-2">No Reviews Found</h3>
                 <p className="text-gray-400">
@@ -468,7 +468,7 @@ export default function MCQReviewPage() {
                 return (
                   <div
                     key={review._id}
-                    className={`bg-white/5 backdrop-blur-lg rounded-3xl p-8 border transition-all ${
+                    className={`bg-slate-800/60 rounded-3xl p-8 border transition-all ${
                       review.reviewStatus === 'done'
                         ? 'border-emerald-500/20'
                         : 'border-amber-500/20'

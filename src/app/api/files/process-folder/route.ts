@@ -193,7 +193,7 @@ export async function POST(request: NextRequest) {
                         medium: batchMcqs.filter(m => m.difficulty === 'Medium').length,
                         hard: batchMcqs.filter(m => m.difficulty === 'Hard').length,
                       },
-                      aiModel: 'gemini-3-flash-preview',
+                      aiModel: 'gemini-3-pro-preview',
                       language: sop.language || 'English',
                     });
                     console.log(`💾 Created MCQ bank with first batch of ${batchMcqs.length} MCQs`);

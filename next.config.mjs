@@ -1,8 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   serverExternalPackages: ['pizzip', 'mammoth', 'pdf-parse', 'tesseract.js'],
-  serverActions: {
-    bodySizeLimit: '50mb',
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '50mb',
+    },
   },
 };
 

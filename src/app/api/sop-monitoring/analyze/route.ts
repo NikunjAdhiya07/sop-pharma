@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     const departments = [...new Set(sops.map(s => s.department))];
     const newSuggestions = [];
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-3-pro-preview' });
 
     for (const dept of departments) {
       const deptSops = sops.filter(s => s.department === dept);
