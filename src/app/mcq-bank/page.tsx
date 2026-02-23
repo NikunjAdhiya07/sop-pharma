@@ -434,7 +434,7 @@ function MCQBankContent() {
         body: JSON.stringify({
           sopId: sopId,
           mcqBankId: bankId,
-          targetCount: 100,
+          targetCount: Math.max(100, Math.ceil(((mcqBanks.find(b => b._id === bankId)?.totalQuestions) || 0) + 50)),
           userInfo: JSON.parse(localStorage.getItem('user') || '{}')
         }),
       });
@@ -709,20 +709,30 @@ function MCQBankContent() {
   const filteredAndSortedMCQBanks = (() => {
     // First, filter by search term (case-insensitive)
     const searchLower = searchTerm.toLowerCase().trim();
-    let filtered = mcqBanks;
+    let filtered = mcqBanks || [];
     
+    // Apply search filter
     if (searchLower) {
-      filtered = mcqBanks.filter(bank => {
-        const nameMatch = bank.sopName.toLowerCase().includes(searchLower);
-        const identifierMatch = bank.sopIdentifier.toLowerCase().includes(searchLower);
-        const idMatch = bank.sopId.toLowerCase().includes(searchLower);
+      filtered = filtered.filter(bank => {
+        const nameMatch = (bank.sopName || '').toLowerCase().includes(searchLower);
+        const identifierMatch = (bank.sopIdentifier || '').toLowerCase().includes(searchLower);
+        const idMatch = (bank.sopId || '').toLowerCase().includes(searchLower);
         return nameMatch || identifierMatch || idMatch;
+      });
+    }
+
+    // Apply difficulty filter
+    if (difficultyFilter !== 'All') {
+      filtered = filtered.filter(bank => {
+        if (!bank.difficultyDistribution) return false;
+        const diffLower = difficultyFilter.toLowerCase() as keyof typeof bank.difficultyDistribution;
+        return (bank.difficultyDistribution[diffLower] || 0) > 0;
       });
     }
     
     // Helper for natural sorting (deals with numbers in strings correctly)
     const naturalCompare = (a: string, b: string) => {
-      return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+      return (a || '').localeCompare((b || ''), undefined, { numeric: true, sensitivity: 'base' });
     };
 
     // Then sort the filtered results
@@ -1421,7 +1431,7 @@ function MCQBankContent() {
                     ) : (
                       <>
                         <Plus className="h-4 w-4 mr-2" />
-                        Generate More (to 100)
+                        Generate More (Min 100)
                       </>
                     )}
                   </button>
