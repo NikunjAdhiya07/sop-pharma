@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
 import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
 import MCQBank from '@/models/MCQBank';
@@ -10,28 +9,28 @@ export async function GET(request: NextRequest) {
   try {
     await connectDB();
 
-    // Try to get session, but don't require it
-    let session: any = null;
-    let allowedDepartments: string[] = [];
-    
-    try {
-      session = await getServerSession();
-    } catch (error) {
-      console.log('Session not available, proceeding without authentication');
-    }
+    const { searchParams } = new URL(request.url);
+    const username = searchParams.get('username');
 
-    // Get user's allowed departments if authenticated
-    if (session?.user?.username) {
-      const user: any = await User.findOne({ username: session.user.username })
+    let allowedDepartments: string[] = [];
+    let isAdmin = false;
+
+    // Look up the user's allowed departments from DB using the username from localStorage
+    if (username) {
+      const user: any = await User.findOne({ username: username.toLowerCase() })
         .select('allowedDepartments role')
         .lean();
 
-      allowedDepartments = user?.allowedDepartments || [];
-      console.log(`🔐 User ${session.user.username} (${user?.role}) accessing tree with departments:`, allowedDepartments);
+      if (user) {
+        isAdmin = user.role === 'admin' || user.role === 'qa-head';
+        allowedDepartments = user.allowedDepartments || [];
+        console.log(`🔐 User "${username}" (${user.role}) — allowed departments:`, allowedDepartments);
+      } else {
+        console.log(`⚠️ Username "${username}" not found in DB — showing all departments`);
+      }
     } else {
-      console.log('📂 Unauthenticated access to MCQ tree - showing all departments');
+      console.log('📂 No username provided — showing all departments');
     }
-
 
     // Fetch all SOPs
     const sops = await SOP.find({})
@@ -49,12 +48,13 @@ export async function GET(request: NextRequest) {
     const tree = buildMCQTreeStructure(sops as any, mcqBanks as any);
     let treeArray = getTreeAsArray(tree);
 
-    // Filter tree by allowed departments (unless admin/qa-head with all access)
-    if (allowedDepartments.length > 0 && allowedDepartments.length < 7) {
-      treeArray = treeArray.filter(dept => 
+    // Apply department filter — skip for admin/qa-head (they see everything)
+    const isRestricted = !isAdmin && allowedDepartments.length > 0 && allowedDepartments.length < 7;
+    if (isRestricted) {
+      treeArray = treeArray.filter(dept =>
         allowedDepartments.includes(dept.name)
       );
-      console.log(`🔒 Filtered to ${treeArray.length} departments for user`);
+      console.log(`🔒 Filtered tree to ${treeArray.length} department(s) for user "${username}"`);
     }
 
     return NextResponse.json({
@@ -69,14 +69,14 @@ export async function GET(request: NextRequest) {
       },
       userAccess: {
         allowedDepartments,
-        isRestricted: allowedDepartments.length > 0 && allowedDepartments.length < 7
+        isRestricted,
       }
     });
 
   } catch (error) {
     console.error('Error building MCQ tree:', error);
     return NextResponse.json(
-      { 
+      {
         error: 'Failed to build MCQ tree',
         details: error instanceof Error ? error.message : 'Unknown error'
       },

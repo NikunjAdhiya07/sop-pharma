@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
 import connectDB from '@/lib/mongodb';
 import User from '@/models/User';
 
@@ -9,15 +8,6 @@ export async function PUT(
 ) {
   const { id } = await params;
   try {
-    const session = await getServerSession() as any;
-    
-    if (!session || (session.user.role !== 'admin' && session.user.role !== 'qa-head')) {
-      return NextResponse.json(
-        { error: 'Unauthorized - Admin or QA Head access required' },
-        { status: 403 }
-      );
-    }
-
     await connectDB();
 
     const { allowedDepartments } = await request.json();
