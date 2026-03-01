@@ -1,21 +1,62 @@
-'use client';
+"use client";
 
-import { useState, useEffect, Suspense, useCallback, useMemo, useRef } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { Search, Filter, Download, Eye, BookOpen, Award, Loader2, Plus, Trash2, FolderOpen, Upload, ArrowLeft, Grid, List, ArrowUpDown, SortAsc, SortDesc, CheckCircle2, Star, FileText, RefreshCw, Copy, AlertCircle, X, ChevronsUpDown, MoreHorizontal, MessageSquare, Maximize2, Minimize2, Users, UserPlus, Files, TrendingUp } from 'lucide-react';
-import PageHeader from '@/components/PageHeader';
-import MCQTreeView from '@/components/MCQTreeView';
-import TrainerUploadModal from '@/components/TrainerUploadModal';
-import TrainingMatrixUploadModal from '@/components/TrainingMatrixUploadModal';
-import { useCopyProtection, CopyProtected } from '@/lib/copyProtection';
-import { formatSOPDisplayName, cleanSOPName } from '@/lib/sopLibraryHelper';
-import { normalizeDepartmentName } from '@/lib/mcqTreeBuilder';
+import {
+  useState,
+  useEffect,
+  Suspense,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  Search,
+  Filter,
+  Download,
+  Eye,
+  BookOpen,
+  Award,
+  Loader2,
+  Plus,
+  Trash2,
+  FolderOpen,
+  Upload,
+  ArrowLeft,
+  Grid,
+  List,
+  ArrowUpDown,
+  SortAsc,
+  SortDesc,
+  CheckCircle2,
+  Star,
+  FileText,
+  RefreshCw,
+  Copy,
+  AlertCircle,
+  X,
+  ChevronsUpDown,
+  MoreHorizontal,
+  MessageSquare,
+  Maximize2,
+  Minimize2,
+  Users,
+  UserPlus,
+  Files,
+  TrendingUp,
+} from "lucide-react";
+import PageHeader from "@/components/PageHeader";
+import MCQTreeView from "@/components/MCQTreeView";
+import TrainerUploadModal from "@/components/TrainerUploadModal";
+import TrainingMatrixUploadModal from "@/components/TrainingMatrixUploadModal";
+import { useCopyProtection, CopyProtected } from "@/lib/copyProtection";
+import { formatSOPDisplayName, cleanSOPName } from "@/lib/sopLibraryHelper";
+import { normalizeDepartmentName } from "@/lib/mcqTreeBuilder";
 
 interface MCQ {
   aiIcon: string;
   question: string;
-  difficulty: 'Easy' | 'Medium' | 'Hard';
-  difficultyStars: '⭐' | '⭐⭐' | '⭐⭐⭐';
+  difficulty: "Easy" | "Medium" | "Hard";
+  difficultyStars: "⭐" | "⭐⭐" | "⭐⭐⭐";
   options: string[];
   correctAnswer: string;
   explanation: string;
@@ -43,29 +84,32 @@ interface MCQBank {
     hard: number;
   };
   createdAt: string;
-  language?: 'English' | 'Gujarati';
+  language?: "English" | "Gujarati";
 }
 
 function MCQBankContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const sopIdFromUrl = searchParams.get('sopId');
-  const deptFromUrl = searchParams.get('dept');
+  const sopIdFromUrl = searchParams.get("sopId");
+  const deptFromUrl = searchParams.get("dept");
 
   const [mcqBanks, setMcqBanks] = useState<MCQBank[]>([]);
   const [loading, setLoading] = useState(true);
   const [generatingMore, setGeneratingMore] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [difficultyFilter, setDifficultyFilter] = useState<string>('All');
+  const [searchTerm, setSearchTerm] = useState("");
+  const [difficultyFilter, setDifficultyFilter] = useState<string>("All");
   const [selectedMCQBank, setSelectedMCQBank] = useState<MCQBank | null>(null);
-  const [selectedMCQ, setSelectedMCQ] = useState<{ mcq: MCQ, index: number } | null>(null);
+  const [selectedMCQ, setSelectedMCQ] = useState<{
+    mcq: MCQ;
+    index: number;
+  } | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null); // e.g. "bankId-index"
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalBanks, setTotalBanks] = useState(0);
 
   // Recycled Questions State
-  const [activeTab, setActiveTab] = useState<'active' | 'recycled'>('active');
+  const [activeTab, setActiveTab] = useState<"active" | "recycled">("active");
   const [recycledQuestions, setRecycledQuestions] = useState<any[]>([]);
   const [loadingRecycled, setLoadingRecycled] = useState(false);
 
@@ -81,11 +125,13 @@ function MCQBankContent() {
   } | null>(null);
 
   // Store similar question details for inline display
-  const [similarQuestionDetails, setSimilarQuestionDetails] = useState<Record<number, number[]>>({});
+  const [similarQuestionDetails, setSimilarQuestionDetails] = useState<
+    Record<number, number[]>
+  >({});
 
   // Expansion State (Lifted from MCQTreeView for persistence)
   const loadExpansionState = useCallback((key: string): Set<string> => {
-    if (typeof window === 'undefined') return new Set<string>();
+    if (typeof window === "undefined") return new Set<string>();
     try {
       const saved = localStorage.getItem(key);
       return saved ? new Set<string>(JSON.parse(saved)) : new Set<string>();
@@ -95,7 +141,7 @@ function MCQBankContent() {
   }, []);
 
   const saveExpansionState = useCallback((key: string, state: Set<string>) => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
     try {
       const arr = Array.from(state);
       localStorage.setItem(key, JSON.stringify(arr));
@@ -104,9 +150,15 @@ function MCQBankContent() {
     }
   }, []);
 
-  const [expandedDepts, setExpandedDepts] = useState<Set<string>>(() => loadExpansionState('mcq-tree-expanded-depts'));
-  const [expandedSubcats, setExpandedSubcats] = useState<Set<string>>(() => loadExpansionState('mcq-tree-expanded-subcats'));
-  const [expandedSOPs, setExpandedSOPs] = useState<Set<string>>(() => loadExpansionState('mcq-tree-expanded-sops'));
+  const [expandedDepts, setExpandedDepts] = useState<Set<string>>(() =>
+    loadExpansionState("mcq-tree-expanded-depts"),
+  );
+  const [expandedSubcats, setExpandedSubcats] = useState<Set<string>>(() =>
+    loadExpansionState("mcq-tree-expanded-subcats"),
+  );
+  const [expandedSOPs, setExpandedSOPs] = useState<Set<string>>(() =>
+    loadExpansionState("mcq-tree-expanded-sops"),
+  );
 
   // Lifted fullScreenDept — survives re-renders caused by loading/state changes
   // This is the key to correct "Back" navigation from MCQ modal → department view
@@ -117,39 +169,45 @@ function MCQBankContent() {
 
   // Save expansion state whenever it changes
   useEffect(() => {
-    saveExpansionState('mcq-tree-expanded-depts', expandedDepts);
+    saveExpansionState("mcq-tree-expanded-depts", expandedDepts);
   }, [expandedDepts, saveExpansionState]);
 
   useEffect(() => {
-    saveExpansionState('mcq-tree-expanded-subcats', expandedSubcats);
+    saveExpansionState("mcq-tree-expanded-subcats", expandedSubcats);
   }, [expandedSubcats, saveExpansionState]);
 
   useEffect(() => {
-    saveExpansionState('mcq-tree-expanded-sops', expandedSOPs);
+    saveExpansionState("mcq-tree-expanded-sops", expandedSOPs);
   }, [expandedSOPs, saveExpansionState]);
-  const [viewMode, setViewMode] = useState<'grid' | 'tree'>('tree');
+  const [viewMode, setViewMode] = useState<"grid" | "tree">("tree");
   const [treeData, setTreeData] = useState<any>(null);
   const [loadingTree, setLoadingTree] = useState(false);
 
   // Sort state
-  const [sortBy, setSortBy] = useState<'name' | 'questions' | 'date' | 'identifier'>('identifier');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  const [filterReviewStatus, setFilterReviewStatus] = useState<'all' | 'checked' | 'similar' | 'reviewed'>('all');
+  const [sortBy, setSortBy] = useState<
+    "name" | "questions" | "date" | "identifier"
+  >("identifier");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [filterReviewStatus, setFilterReviewStatus] = useState<
+    "all" | "checked" | "similar" | "reviewed"
+  >("all");
   // Lazy rendering: show 30 at a time, more loaded on scroll
   const [visibleCount, setVisibleCount] = useState(30);
   const modalBodyRef = useRef<HTMLDivElement>(null);
   // Modal-level search (search within a SOP's questions)
-  const [modalSearch, setModalSearch] = useState('');
+  const [modalSearch, setModalSearch] = useState("");
   const [modalSearchInputVisible, setModalSearchInputVisible] = useState(false);
 
   // Trainer Assignment State
-  const [trainerMappings, setTrainerMappings] = useState<Record<string, string>>({});
+  const [trainerMappings, setTrainerMappings] = useState<
+    Record<string, string>
+  >({});
   const [showTrainerModal, setShowTrainerModal] = useState(false);
   const [showMatrixModal, setShowMatrixModal] = useState(false);
 
   const fetchTrainerMappings = async () => {
     try {
-      const response = await fetch('/api/departments/trainers');
+      const response = await fetch("/api/departments/trainers");
       const data = await response.json();
       if (data.success) {
         const mapping: Record<string, string> = {};
@@ -157,7 +215,9 @@ function MCQBankContent() {
         // 1. First add department-level trainers
         if (data.trainers) {
           data.trainers.forEach((t: any) => {
-            const normalizedDept = normalizeDepartmentName(t.departmentName).toLowerCase();
+            const normalizedDept = normalizeDepartmentName(
+              t.departmentName,
+            ).toLowerCase();
             mapping[normalizedDept] = t.trainerName;
           });
         }
@@ -172,7 +232,7 @@ function MCQBankContent() {
         setTrainerMappings(mapping);
       }
     } catch (error) {
-      console.error('Error fetching trainers:', error);
+      console.error("Error fetching trainers:", error);
     }
   };
 
@@ -182,35 +242,39 @@ function MCQBankContent() {
 
   // Sync state with URL for deep linking/back navigation
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
 
     const params = new URLSearchParams(window.location.search);
     let changed = false;
 
     if (selectedMCQBank) {
-      if (params.get('sopId') !== selectedMCQBank.sopId) {
-        params.set('sopId', selectedMCQBank.sopId);
+      if (params.get("sopId") !== selectedMCQBank.sopId) {
+        params.set("sopId", selectedMCQBank.sopId);
         changed = true;
       }
-    } else if (params.has('sopId')) {
-      params.delete('sopId');
+    } else if (params.has("sopId")) {
+      params.delete("sopId");
       changed = true;
     }
 
     if (fullScreenDept) {
-      if (params.get('dept') !== fullScreenDept.name) {
-        params.set('dept', fullScreenDept.name);
+      if (params.get("dept") !== fullScreenDept.name) {
+        params.set("dept", fullScreenDept.name);
         changed = true;
       }
-    } else if (params.has('dept')) {
-      params.delete('dept');
+    } else if (params.has("dept")) {
+      params.delete("dept");
       changed = true;
     }
 
     if (changed) {
       const newQuery = params.toString();
-      const newUrl = `${window.location.pathname}${newQuery ? '?' + newQuery : ''}`;
-      window.history.replaceState({ ...window.history.state, as: newUrl, url: newUrl }, '', newUrl);
+      const newUrl = `${window.location.pathname}${newQuery ? "?" + newQuery : ""}`;
+      window.history.replaceState(
+        { ...window.history.state, as: newUrl, url: newUrl },
+        "",
+        newUrl,
+      );
     }
   }, [selectedMCQBank?.sopId, fullScreenDept?.name]);
 
@@ -223,23 +287,30 @@ function MCQBankContent() {
   // Drag handlers for bank detail modal
   const handleMouseDown = (e: React.MouseEvent) => {
     // Prevent dragging if clicking a button or input
-    if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('input')) return;
+    if (
+      (e.target as HTMLElement).closest("button") ||
+      (e.target as HTMLElement).closest("input")
+    )
+      return;
 
     setIsDragging(true);
     setDragStart({
       x: e.clientX - modalPosition.x,
-      y: e.clientY - modalPosition.y
+      y: e.clientY - modalPosition.y,
     });
   };
 
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (isDragging) {
-      setModalPosition({
-        x: e.clientX - dragStart.x,
-        y: e.clientY - dragStart.y
-      });
-    }
-  }, [isDragging, dragStart]);
+  const handleMouseMove = useCallback(
+    (e: MouseEvent) => {
+      if (isDragging) {
+        setModalPosition({
+          x: e.clientX - dragStart.x,
+          y: e.clientY - dragStart.y,
+        });
+      }
+    },
+    [isDragging, dragStart],
+  );
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
@@ -248,11 +319,11 @@ function MCQBankContent() {
   // Add/remove mouse event listeners for dragging
   useEffect(() => {
     if (isDragging) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUp);
       return () => {
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('mouseup', handleMouseUp);
+        window.removeEventListener("mousemove", handleMouseMove);
+        window.removeEventListener("mouseup", handleMouseUp);
       };
     }
   }, [isDragging, handleMouseMove, handleMouseUp]);
@@ -269,7 +340,7 @@ function MCQBankContent() {
 
   useEffect(() => {
     fetchMCQBanks();
-    if (viewMode === 'tree') {
+    if (viewMode === "tree") {
       fetchTreeData();
     }
   }, [currentPage, viewMode]);
@@ -280,13 +351,13 @@ function MCQBankContent() {
       if (!treeData) setLoadingTree(true);
 
       // Get current user from localStorage for department-based filtering
-      const storedUser = localStorage.getItem('user');
+      const storedUser = localStorage.getItem("user");
       const currentUser = storedUser ? JSON.parse(storedUser) : null;
-      const username = currentUser?.username || '';
+      const username = currentUser?.username || "";
 
       // Per-user cache key so restricted users don't see each other's cached data
-      const CACHE_KEY = `mcq-tree-cache-v1-${username || 'guest'}`;
-      const CACHE_TIMESTAMP_KEY = `mcq-tree-cache-timestamp-${username || 'guest'}`;
+      const CACHE_KEY = `mcq-tree-cache-v1-${username || "guest"}`;
+      const CACHE_TIMESTAMP_KEY = `mcq-tree-cache-timestamp-${username || "guest"}`;
       const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
 
       // Check cache first (unless force refresh)
@@ -299,7 +370,11 @@ function MCQBankContent() {
           if (age < CACHE_DURATION) {
             const parsed = JSON.parse(cachedData);
             setTreeData(parsed);
-            console.log('📦 Using cached tree data (age:', Math.floor(age / 1000), 'seconds)');
+            console.log(
+              "📦 Using cached tree data (age:",
+              Math.floor(age / 1000),
+              "seconds)",
+            );
             setLoadingTree(false);
             return;
           }
@@ -309,7 +384,7 @@ function MCQBankContent() {
       // Fetch fresh data — pass username so API can apply department restrictions
       const treeUrl = username
         ? `/api/mcq-bank/tree?username=${encodeURIComponent(username)}`
-        : '/api/mcq-bank/tree';
+        : "/api/mcq-bank/tree";
       const response = await fetch(treeUrl);
       const data = await response.json();
 
@@ -320,13 +395,16 @@ function MCQBankContent() {
         localStorage.setItem(CACHE_KEY, JSON.stringify(data));
         localStorage.setItem(CACHE_TIMESTAMP_KEY, Date.now().toString());
 
-        console.log('📊 Tree data loaded and cached:', data.stats);
+        console.log("📊 Tree data loaded and cached:", data.stats);
         if (data.userAccess?.isRestricted) {
-          console.log('🔒 Department access restricted to:', data.userAccess.allowedDepartments);
+          console.log(
+            "🔒 Department access restricted to:",
+            data.userAccess.allowedDepartments,
+          );
         }
       }
     } catch (error) {
-      console.error('Error fetching tree data:', error);
+      console.error("Error fetching tree data:", error);
     } finally {
       setLoadingTree(false);
     }
@@ -335,7 +413,7 @@ function MCQBankContent() {
   // Auto-select MCQ bank when sopId is in URL
   useEffect(() => {
     if (sopIdFromUrl && mcqBanks.length > 0) {
-      const matchingBank = mcqBanks.find(bank => bank.sopId === sopIdFromUrl);
+      const matchingBank = mcqBanks.find((bank) => bank.sopId === sopIdFromUrl);
       if (matchingBank) {
         fetchFullBankDetails(matchingBank);
       }
@@ -345,7 +423,9 @@ function MCQBankContent() {
   // Auto-open department when dept is in URL
   useEffect(() => {
     if (deptFromUrl && treeData?.tree) {
-      const matchingDept = treeData.tree.find((d: any) => d.name === deptFromUrl);
+      const matchingDept = treeData.tree.find(
+        (d: any) => d.name === deptFromUrl,
+      );
       if (matchingDept) {
         setFullScreenDept(matchingDept);
       }
@@ -355,7 +435,9 @@ function MCQBankContent() {
   const fetchMCQBanks = async () => {
     try {
       // Fetch MCQ banks with summary mode to avoid timeouts but allow client-side filtering
-      const response = await fetch(`/api/mcq-bank?limit=1000&page=${currentPage}&summary=true`);
+      const response = await fetch(
+        `/api/mcq-bank?limit=1000&page=${currentPage}&summary=true`,
+      );
       const data = await response.json();
 
       if (data.success) {
@@ -366,16 +448,19 @@ function MCQBankContent() {
         }
       }
     } catch (error) {
-      console.error('Error fetching MCQ banks:', error);
+      console.error("Error fetching MCQ banks:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchFullBankDetails = async (bank: MCQBank, filter: 'all' | 'checked' | 'similar' | 'reviewed' = 'all') => {
+  const fetchFullBankDetails = async (
+    bank: MCQBank,
+    filter: "all" | "checked" | "similar" | "reviewed" = "all",
+  ) => {
     setFilterReviewStatus(filter);
     // Reset modal-level search and visible count when opening a new SOP
-    setModalSearch('');
+    setModalSearch("");
     setModalSearchInputVisible(false);
     setVisibleCount(30);
     setSimilarQuestionDetails({});
@@ -383,14 +468,15 @@ function MCQBankContent() {
     try {
       // Check if we have FULL question data (not just partial status flags)
       // Partial data from tree view only has isChecked/isReviewed, not question/options
-      const hasFullData = bank.mcqs &&
+      const hasFullData =
+        bank.mcqs &&
         bank.mcqs.length > 0 &&
         bank.mcqs[0].question &&
         bank.mcqs[0].options;
 
       if (hasFullData) {
         setSelectedMCQBank(bank);
-        setActiveTab('active'); // Reset to active tab when opening modal
+        setActiveTab("active"); // Reset to active tab when opening modal
         setSimilarityResults(null); // Clear previous similarity results
         return;
       }
@@ -398,32 +484,37 @@ function MCQBankContent() {
       setLoadingBankDetail(true);
       // Use the ID filter for pinpoint precision
       // timestamp to prevent browser caching
-      const response = await fetch(`/api/mcq-bank?id=${bank._id}&limit=1&t=${Date.now()}`, {
-        cache: 'no-store',
-        headers: {
-          'Pragma': 'no-cache',
-          'Cache-Control': 'no-cache'
-        }
-      });
+      const response = await fetch(
+        `/api/mcq-bank?id=${bank._id}&limit=1&t=${Date.now()}`,
+        {
+          cache: "no-store",
+          headers: {
+            Pragma: "no-cache",
+            "Cache-Control": "no-cache",
+          },
+        },
+      );
       const data = await response.json();
 
       if (data.success && data.mcqBanks.length > 0) {
         const fullBank = data.mcqBanks[0];
         setSelectedMCQBank(fullBank);
-        setActiveTab('active'); // Reset to active tab
+        setActiveTab("active"); // Reset to active tab
         setSimilarityResults(null); // Clear previous similarity results
 
         // Fetch similarity details for questions with isSimilar flag
         await fetchSimilarityDetails(fullBank._id);
 
         // Update the bank in our local list state
-        setMcqBanks(prev => prev.map(b => b._id === bank._id ? fullBank : b));
+        setMcqBanks((prev) =>
+          prev.map((b) => (b._id === bank._id ? fullBank : b)),
+        );
       } else {
-        alert('Failed to load questions for this bank');
+        alert("Failed to load questions for this bank");
       }
     } catch (error) {
-      console.error('Error fetching full bank details:', error);
-      alert('Error loading questions');
+      console.error("Error fetching full bank details:", error);
+      alert("Error loading questions");
     } finally {
       setLoadingBankDetail(false);
     }
@@ -434,23 +525,31 @@ function MCQBankContent() {
 
     setGeneratingMore(bankId);
     try {
-      const response = await fetch('/api/sop/generate-mcqs', {
-        method: 'POST',
+      const response = await fetch("/api/sop/generate-mcqs", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           sopId: sopId,
           mcqBankId: bankId,
-          targetCount: Math.max(100, Math.ceil(((mcqBanks.find(b => b._id === bankId)?.totalQuestions) || 0) + 50)),
-          userInfo: JSON.parse(localStorage.getItem('user') || '{}')
+          targetCount: Math.max(
+            100,
+            Math.ceil(
+              (mcqBanks.find((b) => b._id === bankId)?.totalQuestions || 0) +
+              50,
+            ),
+          ),
+          userInfo: JSON.parse(localStorage.getItem("user") || "{}"),
         }),
       });
 
       const data = await response.json();
 
       if (data.success) {
-        alert(`Successfully generated additional questions! Total now: ${data.mcqBank.totalQuestions}`);
+        alert(
+          `Successfully generated additional questions! Total now: ${data.mcqBank.totalQuestions}`,
+        );
         await fetchMCQBanks(); // Refresh list
 
         // If the bank that was updated is the one currently selected, update it
@@ -458,11 +557,13 @@ function MCQBankContent() {
           setSelectedMCQBank(data.mcqBank);
         }
       } else {
-        alert('Failed to generate more questions: ' + (data.details || data.error));
+        alert(
+          "Failed to generate more questions: " + (data.details || data.error),
+        );
       }
     } catch (error) {
-      console.error('Error generating more MCQs:', error);
-      alert('An error occurred while generating more questions.');
+      console.error("Error generating more MCQs:", error);
+      alert("An error occurred while generating more questions.");
     } finally {
       setGeneratingMore(null);
     }
@@ -473,16 +574,19 @@ function MCQBankContent() {
       setLoadingRecycled(true);
       // Add timestamp to prevent caching
       // Assuming sopId is valid ObjectId string
-      const response = await fetch(`/api/mcq-bank/eliminated?sopId=${sopId}&limit=50&t=${Date.now()}`, {
-        headers: { 'Cache-Control': 'no-cache' }
-      });
+      const response = await fetch(
+        `/api/mcq-bank/eliminated?sopId=${sopId}&limit=50&t=${Date.now()}`,
+        {
+          headers: { "Cache-Control": "no-cache" },
+        },
+      );
       const data = await response.json();
 
       if (data.success) {
         setRecycledQuestions(data.questions);
       }
     } catch (error) {
-      console.error('Error fetching recycled questions:', error);
+      console.error("Error fetching recycled questions:", error);
     } finally {
       setLoadingRecycled(false);
     }
@@ -496,9 +600,9 @@ function MCQBankContent() {
     setSimilarQuestionDetails({}); // Clear previous details
 
     try {
-      const response = await fetch('/api/similar-questions/detect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/similar-questions/detect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mcqBankId: bank._id,
           sopId: bank.sopId,
@@ -522,19 +626,23 @@ function MCQBankContent() {
           detailsMap[group.primary] = group.similar;
         });
 
-        console.log('📊 Similarity Details Map:', detailsMap);
-        console.log('📊 Groups:', groups);
+        console.log("📊 Similarity Details Map:", detailsMap);
+        console.log("📊 Groups:", groups);
 
         setSimilarQuestionDetails(detailsMap);
 
         // Create a summary string like "Q92 = Q71, Q67, Q2..."
         const summaryParts = groups.slice(0, 3).map((group: any) => {
-          const similarList = group.similar.slice(0, 3).map((i: number) => `Q${i + 1}`).join(', ');
-          const more = group.similar.length > 3 ? '...' : '';
+          const similarList = group.similar
+            .slice(0, 3)
+            .map((i: number) => `Q${i + 1}`)
+            .join(", ");
+          const more = group.similar.length > 3 ? "..." : "";
           return `Q${group.primary + 1} = ${similarList}${more}`;
         });
-        const moreSummary = groups.length > 3 ? ` +${groups.length - 3} more` : '';
-        const summary = summaryParts.join('; ') + moreSummary;
+        const moreSummary =
+          groups.length > 3 ? ` +${groups.length - 3} more` : "";
+        const summary = summaryParts.join("; ") + moreSummary;
 
         setSimilarityResults({
           count: data.flaggedCount || 0,
@@ -553,25 +661,34 @@ function MCQBankContent() {
           setSelectedMCQBank({ ...selectedMCQBank, mcqs: updatedMcqs });
         }
 
-
         if (data.flaggedCount > 0) {
           // Build detailed alert message
-          const detailsText = groups.slice(0, 10).map((group: any) => {
-            const similarList = group.similar.map((i: number) => `Q${i + 1}`).join(', ');
-            return `Q${group.primary + 1} = ${similarList}`;
-          }).join('\n');
-          const moreText = groups.length > 10 ? `\n... and ${groups.length - 10} more groups` : '';
+          const detailsText = groups
+            .slice(0, 10)
+            .map((group: any) => {
+              const similarList = group.similar
+                .map((i: number) => `Q${i + 1}`)
+                .join(", ");
+              return `Q${group.primary + 1} = ${similarList}`;
+            })
+            .join("\n");
+          const moreText =
+            groups.length > 10
+              ? `\n... and ${groups.length - 10} more groups`
+              : "";
 
-          alert(`Found ${data.flaggedCount} question(s) with similarities!\n\n${detailsText}${moreText}`);
+          alert(
+            `Found ${data.flaggedCount} question(s) with similarities!\n\n${detailsText}${moreText}`,
+          );
         } else {
-          alert('No similar questions found in this SOP.');
+          alert("No similar questions found in this SOP.");
         }
       } else {
         alert(`Failed to check similarities: ${data.error}`);
       }
     } catch (error) {
-      console.error('Error checking similarities:', error);
-      alert('Failed to check similarities. Please try again.');
+      console.error("Error checking similarities:", error);
+      alert("Failed to check similarities. Please try again.");
     } finally {
       setCheckingSimilarity(false);
     }
@@ -605,7 +722,7 @@ function MCQBankContent() {
         setSimilarQuestionDetails(detailsMap);
       }
     } catch (error) {
-      console.error('Error fetching similarity details:', error);
+      console.error("Error fetching similarity details:", error);
     }
   };
 
@@ -614,16 +731,19 @@ function MCQBankContent() {
       setUpdatingStatus(`${bankId}-${index}`);
 
       // Get user info from localStorage
-      const userInfo = localStorage.getItem('user');
+      const userInfo = localStorage.getItem("user");
       const headers: HeadersInit = {};
       if (userInfo) {
-        headers['x-user-info'] = userInfo;
+        headers["x-user-info"] = userInfo;
       }
 
-      const response = await fetch(`/api/mcq-bank/delete-question?bankId=${bankId}&index=${index}`, {
-        method: 'DELETE',
-        headers,
-      });
+      const response = await fetch(
+        `/api/mcq-bank/delete-question?bankId=${bankId}&index=${index}`,
+        {
+          method: "DELETE",
+          headers,
+        },
+      );
 
       const data = await response.json();
 
@@ -631,21 +751,32 @@ function MCQBankContent() {
         alert(`Question deleted successfully and moved to Recycled section.`);
         // Refresh the bank
         if (selectedMCQBank) {
-          await fetchFullBankDetails({ ...selectedMCQBank, _id: bankId }, filterReviewStatus);
+          await fetchFullBankDetails(
+            { ...selectedMCQBank, _id: bankId },
+            filterReviewStatus,
+          );
         }
       } else {
         alert(`Failed to delete question: ${data.error}`);
       }
     } catch (error) {
-      console.error('Error deleting question:', error);
-      alert('Failed to delete question. Please try again.');
+      console.error("Error deleting question:", error);
+      alert("Failed to delete question. Please try again.");
     } finally {
       setUpdatingStatus(null);
     }
   };
 
-  const handleReplaceQuestion = async (bankId: string, index: number, sopId: string) => {
-    if (!confirm('Replace this question? The active question will be moved to the Recycled section.')) {
+  const handleReplaceQuestion = async (
+    bankId: string,
+    index: number,
+    sopId: string,
+  ) => {
+    if (
+      !confirm(
+        "Replace this question? The active question will be moved to the Recycled section.",
+      )
+    ) {
       return;
     }
 
@@ -654,16 +785,19 @@ function MCQBankContent() {
 
       // 1. Delete the question (this archives it to EliminatedQuestions)
       // Get user info from localStorage
-      const userInfo = localStorage.getItem('user');
+      const userInfo = localStorage.getItem("user");
       const headers: HeadersInit = {};
       if (userInfo) {
-        headers['x-user-info'] = userInfo;
+        headers["x-user-info"] = userInfo;
       }
 
-      const deleteResponse = await fetch(`/api/mcq-bank/delete-question?bankId=${bankId}&index=${index}`, {
-        method: 'DELETE',
-        headers,
-      });
+      const deleteResponse = await fetch(
+        `/api/mcq-bank/delete-question?bankId=${bankId}&index=${index}`,
+        {
+          method: "DELETE",
+          headers,
+        },
+      );
 
       const deleteData = await deleteResponse.json();
 
@@ -675,11 +809,11 @@ function MCQBankContent() {
 
       // 2. Generate Replacement
       // Since we just deleted one, we want to insert a new one at the same index
-      // Using existing endpoint for generation. 
+      // Using existing endpoint for generation.
       // Note: generate-replacement endpoint expects mcqBankId, sopId, questionIndex
-      const genResponse = await fetch('/api/mcq-bank/generate-replacement', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const genResponse = await fetch("/api/mcq-bank/generate-replacement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mcqBankId: bankId,
           sopId: sopId,
@@ -690,28 +824,34 @@ function MCQBankContent() {
       const genData = await genResponse.json();
 
       if (genData.success) {
-        alert('Question replaced successfully!');
+        alert("Question replaced successfully!");
         // Refresh the current bank details to show new question
         // We need to refetch the whole bank
         if (selectedMCQBank) {
           // Create a temp object to pass ID
-          fetchFullBankDetails({ ...selectedMCQBank, _id: bankId }, filterReviewStatus);
+          fetchFullBankDetails(
+            { ...selectedMCQBank, _id: bankId },
+            filterReviewStatus,
+          );
         }
       } else {
-        alert('Question deleted but failed to generate replacement. Please try manually adding a question.');
+        alert(
+          "Question deleted but failed to generate replacement. Please try manually adding a question.",
+        );
         if (selectedMCQBank) {
-          fetchFullBankDetails({ ...selectedMCQBank, _id: bankId }, filterReviewStatus);
+          fetchFullBankDetails(
+            { ...selectedMCQBank, _id: bankId },
+            filterReviewStatus,
+          );
         }
       }
-
     } catch (error) {
-      console.error('Error replacing question:', error);
-      alert('Failed to replace question');
+      console.error("Error replacing question:", error);
+      alert("Failed to replace question");
     } finally {
       setUpdatingStatus(null);
     }
   };
-
 
   // Efficient search and filter function
   const filteredAndSortedMCQBanks = (() => {
@@ -721,26 +861,34 @@ function MCQBankContent() {
 
     // Apply search filter
     if (searchLower) {
-      filtered = filtered.filter(bank => {
-        const nameMatch = (bank.sopName || '').toLowerCase().includes(searchLower);
-        const identifierMatch = (bank.sopIdentifier || '').toLowerCase().includes(searchLower);
-        const idMatch = (bank.sopId || '').toLowerCase().includes(searchLower);
+      filtered = filtered.filter((bank) => {
+        const nameMatch = (bank.sopName || "")
+          .toLowerCase()
+          .includes(searchLower);
+        const identifierMatch = (bank.sopIdentifier || "")
+          .toLowerCase()
+          .includes(searchLower);
+        const idMatch = (bank.sopId || "").toLowerCase().includes(searchLower);
         return nameMatch || identifierMatch || idMatch;
       });
     }
 
     // Apply difficulty filter
-    if (difficultyFilter !== 'All') {
-      filtered = filtered.filter(bank => {
+    if (difficultyFilter !== "All") {
+      filtered = filtered.filter((bank) => {
         if (!bank.difficultyDistribution) return false;
-        const diffLower = difficultyFilter.toLowerCase() as keyof typeof bank.difficultyDistribution;
+        const diffLower =
+          difficultyFilter.toLowerCase() as keyof typeof bank.difficultyDistribution;
         return (bank.difficultyDistribution[diffLower] || 0) > 0;
       });
     }
 
     // Helper for natural sorting (deals with numbers in strings correctly)
     const naturalCompare = (a: string, b: string) => {
-      return (a || '').localeCompare((b || ''), undefined, { numeric: true, sensitivity: 'base' });
+      return (a || "").localeCompare(b || "", undefined, {
+        numeric: true,
+        sensitivity: "base",
+      });
     };
 
     // Then sort the filtered results
@@ -748,24 +896,27 @@ function MCQBankContent() {
       let comparison = 0;
 
       switch (sortBy) {
-        case 'identifier':
+        case "identifier":
           comparison = naturalCompare(a.sopIdentifier, b.sopIdentifier);
           break;
-        case 'name':
+        case "name":
           // Clean the names of identifier prefixes before comparing for a true "Name" sort
           const cleanA = cleanSOPName(a.sopName, a.sopIdentifier);
           const cleanB = cleanSOPName(b.sopName, b.sopIdentifier);
-          comparison = cleanA.localeCompare(cleanB, undefined, { sensitivity: 'base' });
+          comparison = cleanA.localeCompare(cleanB, undefined, {
+            sensitivity: "base",
+          });
           break;
-        case 'questions':
+        case "questions":
           comparison = (a.totalQuestions || 0) - (b.totalQuestions || 0);
           break;
-        case 'date':
-          comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        case "date":
+          comparison =
+            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
           break;
       }
 
-      return sortOrder === 'asc' ? comparison : -comparison;
+      return sortOrder === "asc" ? comparison : -comparison;
     });
 
     return sorted;
@@ -773,52 +924,60 @@ function MCQBankContent() {
 
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty) {
-      case 'Easy':
-        return 'bg-green-500/20 text-green-300 border-green-500';
-      case 'Medium':
-        return 'bg-yellow-500/20 text-yellow-300 border-yellow-500';
-      case 'Hard':
-        return 'bg-red-500/20 text-red-300 border-red-500';
+      case "Easy":
+        return "bg-green-500/20 text-green-300 border-green-500";
+      case "Medium":
+        return "bg-yellow-500/20 text-yellow-300 border-yellow-500";
+      case "Hard":
+        return "bg-red-500/20 text-red-300 border-red-500";
       default:
-        return 'bg-gray-500/20 text-gray-300 border-gray-500';
+        return "bg-gray-500/20 text-gray-300 border-gray-500";
     }
   };
 
   const deleteMCQBank = async (bankId: string) => {
-    if (!confirm('Are you sure you want to delete this MCQ Bank? This action cannot be undone.')) {
+    if (
+      !confirm(
+        "Are you sure you want to delete this MCQ Bank? This action cannot be undone.",
+      )
+    ) {
       return;
     }
 
     try {
       const response = await fetch(`/api/mcq-bank?id=${bankId}`, {
-        method: 'DELETE',
+        method: "DELETE",
       });
 
       const data = await response.json();
 
       if (data.success) {
-        alert('MCQ Bank deleted successfully');
+        alert("MCQ Bank deleted successfully");
         await fetchMCQBanks(); // Refresh list
       } else {
-        alert('Failed to delete MCQ Bank: ' + (data.details || data.error));
+        alert("Failed to delete MCQ Bank: " + (data.details || data.error));
       }
     } catch (error) {
-      console.error('Error deleting MCQ Bank:', error);
-      alert('An error occurred while deleting the question bank.');
+      console.error("Error deleting MCQ Bank:", error);
+      alert("An error occurred while deleting the question bank.");
     }
   };
 
   const exportMCQBank = (bank: MCQBank) => {
     const dataStr = JSON.stringify(bank, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const dataBlob = new Blob([dataStr], { type: "application/json" });
     const url = URL.createObjectURL(dataBlob);
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.href = url;
     link.download = `${bank.sopIdentifier}_MCQ_Bank.json`;
     link.click();
   };
 
-  const toggleChecked = async (bankId: string, index: number, currentStatus: boolean) => {
+  const toggleChecked = async (
+    bankId: string,
+    index: number,
+    currentStatus: boolean,
+  ) => {
     const statusKey = `${bankId}-${index}`;
     if (updatingStatus === statusKey) return;
 
@@ -836,30 +995,32 @@ function MCQBankContent() {
     }
 
     // Update the main list state
-    setMcqBanks(prev => prev.map(b => {
-      if (b._id === bankId && b.mcqs && b.mcqs.length > 0) {
-        const updatedMcqs = [...b.mcqs];
-        updatedMcqs[index] = { ...updatedMcqs[index], isChecked: nextStatus };
-        return { ...b, mcqs: updatedMcqs };
-      }
-      return b;
-    }));
+    setMcqBanks((prev) =>
+      prev.map((b) => {
+        if (b._id === bankId && b.mcqs && b.mcqs.length > 0) {
+          const updatedMcqs = [...b.mcqs];
+          updatedMcqs[index] = { ...updatedMcqs[index], isChecked: nextStatus };
+          return { ...b, mcqs: updatedMcqs };
+        }
+        return b;
+      }),
+    );
 
     try {
-      const response = await fetch('/api/mcq-bank/update-status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/mcq-bank/update-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           bankId,
           questionIndex: index,
-          isChecked: nextStatus
-        })
+          isChecked: nextStatus,
+        }),
       });
       const data = await response.json();
 
       if (!data.success) {
         // REVERT on failure
-        console.error('Update failed, reverting:', data.error);
+        console.error("Update failed, reverting:", data.error);
         const revertedStatus = currentStatus;
 
         if (selectedMCQBank && selectedMCQBank._id === bankId) {
@@ -868,17 +1029,22 @@ function MCQBankContent() {
           setSelectedMCQBank({ ...selectedMCQBank, mcqs: newMcqs });
         }
 
-        setMcqBanks(prev => prev.map(b => {
-          if (b._id === bankId && b.mcqs && b.mcqs.length > 0) {
-            const updatedMcqs = [...b.mcqs];
-            updatedMcqs[index] = { ...updatedMcqs[index], isChecked: revertedStatus };
-            return { ...b, mcqs: updatedMcqs };
-          }
-          return b;
-        }));
+        setMcqBanks((prev) =>
+          prev.map((b) => {
+            if (b._id === bankId && b.mcqs && b.mcqs.length > 0) {
+              const updatedMcqs = [...b.mcqs];
+              updatedMcqs[index] = {
+                ...updatedMcqs[index],
+                isChecked: revertedStatus,
+              };
+              return { ...b, mcqs: updatedMcqs };
+            }
+            return b;
+          }),
+        );
       }
     } catch (error) {
-      console.error('Error toggling checked status:', error);
+      console.error("Error toggling checked status:", error);
       // Revert skipped for brevity but recommended in prod
     } finally {
       setUpdatingStatus(null);
@@ -900,27 +1066,32 @@ function MCQBankContent() {
       setSelectedMCQBank({ ...selectedMCQBank, mcqs: newMcqs });
     }
 
-    setMcqBanks(prev => prev.map(b => {
-      if (b._id === bank._id) {
-        if (b.mcqs && b.mcqs.length > 0) {
-          const updatedMcqs = [...b.mcqs];
-          updatedMcqs[index] = { ...updatedMcqs[index], isReviewed: nextStatus };
-          return { ...b, mcqs: updatedMcqs };
+    setMcqBanks((prev) =>
+      prev.map((b) => {
+        if (b._id === bank._id) {
+          if (b.mcqs && b.mcqs.length > 0) {
+            const updatedMcqs = [...b.mcqs];
+            updatedMcqs[index] = {
+              ...updatedMcqs[index],
+              isReviewed: nextStatus,
+            };
+            return { ...b, mcqs: updatedMcqs };
+          }
         }
-      }
-      return b;
-    }));
+        return b;
+      }),
+    );
 
     try {
       // 1. Update flag in MCQBank
-      const response = await fetch('/api/mcq-bank/update-status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/mcq-bank/update-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           bankId: bank._id,
           questionIndex: index,
-          isReviewed: nextStatus
-        })
+          isReviewed: nextStatus,
+        }),
       });
 
       const data = await response.json();
@@ -928,9 +1099,9 @@ function MCQBankContent() {
         // 2. Sync with MCQReview collection (fire and forget)
         if (nextStatus) {
           // Flagging: create a review entry
-          fetch('/api/mcq-review', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+          fetch("/api/mcq-review", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               mcqBankId: bank._id,
               questionIndex: index,
@@ -938,21 +1109,24 @@ function MCQBankContent() {
               sopName: bank.sopName,
               sopIdentifier: bank.sopIdentifier,
               question: mcq,
-              flaggedBy: 'Trainer'
-            })
+              flaggedBy: "Trainer",
+            }),
           }).catch(console.error);
         } else {
           // Unflagging: delete the review entry
-          fetch(`/api/mcq-review?mcqBankId=${bank._id}&questionIndex=${index}`, {
-            method: 'DELETE'
-          }).catch(console.error);
+          fetch(
+            `/api/mcq-review?mcqBankId=${bank._id}&questionIndex=${index}`,
+            {
+              method: "DELETE",
+            },
+          ).catch(console.error);
         }
       } else {
         // Revert on failure (omitted for brevity)
-        console.error('Update failed:', data.error);
+        console.error("Update failed:", data.error);
       }
     } catch (error) {
-      console.error('Error toggling review status:', error);
+      console.error("Error toggling review status:", error);
     } finally {
       setUpdatingStatus(null);
     }
@@ -973,27 +1147,32 @@ function MCQBankContent() {
       setSelectedMCQBank({ ...selectedMCQBank, mcqs: newMcqs });
     }
 
-    setMcqBanks(prev => prev.map(b => {
-      if (b._id === bank._id) {
-        if (b.mcqs && b.mcqs.length > 0) {
-          const updatedMcqs = [...b.mcqs];
-          updatedMcqs[index] = { ...updatedMcqs[index], isSimilar: nextStatus };
-          return { ...b, mcqs: updatedMcqs };
+    setMcqBanks((prev) =>
+      prev.map((b) => {
+        if (b._id === bank._id) {
+          if (b.mcqs && b.mcqs.length > 0) {
+            const updatedMcqs = [...b.mcqs];
+            updatedMcqs[index] = {
+              ...updatedMcqs[index],
+              isSimilar: nextStatus,
+            };
+            return { ...b, mcqs: updatedMcqs };
+          }
         }
-      }
-      return b;
-    }));
+        return b;
+      }),
+    );
 
     try {
       // 1. Update flag in MCQBank
-      const response = await fetch('/api/mcq-bank/update-status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/mcq-bank/update-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           bankId: bank._id,
           questionIndex: index,
-          isSimilar: nextStatus
-        })
+          isSimilar: nextStatus,
+        }),
       });
 
       const data = await response.json();
@@ -1002,67 +1181,77 @@ function MCQBankContent() {
         if (nextStatus) {
           // AUTO-DETECT SIMILAR QUESTIONS
           // Trigger similarity detection for this specific MCQ bank
-          const detectResponse = await fetch('/api/similar-questions/detect', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+          const detectResponse = await fetch("/api/similar-questions/detect", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               mcqBankId: bank._id,
               sopId: bank.sopId,
               threshold: 30, // Lowered to 30 for better detection
               targetQuestionIndex: index, // Only detect for this specific question
-            })
+            }),
           });
 
           const detectData = await detectResponse.json();
 
           if (detectData.success && detectData.flaggedCount > 0) {
-            console.log(`Auto-detected ${detectData.flaggedCount} similar question(s) for Q${index + 1}`);
+            console.log(
+              `Auto-detected ${detectData.flaggedCount} similar question(s) for Q${index + 1}`,
+            );
           } else {
             // If no similar questions found, create a standalone record
-            await fetch('/api/similar-questions', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+            await fetch("/api/similar-questions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 sopId: bank.sopId,
                 sopName: bank.sopName,
                 sopIdentifier: bank.sopIdentifier,
-                department: bank.department || 'General',
+                department: bank.department || "General",
                 primaryQuestion: {
                   mcqBankId: bank._id,
                   questionIndex: index,
                   question: mcq,
                 },
                 similarQuestions: [],
-                flaggedBy: 'Manual'
-              })
+                flaggedBy: "Manual",
+              }),
             });
           }
         } else {
           // Unflagging: delete the similarity entry
           // Find and delete the similarity record for this question
-          fetch(`/api/similar-questions?mcqBankId=${bank._id}&questionIndex=${index}`, {
-            method: 'DELETE'
-          }).catch(console.error);
+          fetch(
+            `/api/similar-questions?mcqBankId=${bank._id}&questionIndex=${index}`,
+            {
+              method: "DELETE",
+            },
+          ).catch(console.error);
         }
       } else {
         // Revert on failure
-        console.error('Update failed:', data.error);
+        console.error("Update failed:", data.error);
         if (selectedMCQBank && selectedMCQBank._id === bank._id) {
           const newMcqs = [...selectedMCQBank.mcqs];
           newMcqs[index] = { ...newMcqs[index], isSimilar: currentStatus };
           setSelectedMCQBank({ ...selectedMCQBank, mcqs: newMcqs });
         }
-        setMcqBanks(prev => prev.map(b => {
-          if (b._id === bank._id && b.mcqs && b.mcqs.length > 0) {
-            const updatedMcqs = [...b.mcqs];
-            updatedMcqs[index] = { ...updatedMcqs[index], isSimilar: currentStatus };
-            return { ...b, mcqs: updatedMcqs };
-          }
-          return b;
-        }));
+        setMcqBanks((prev) =>
+          prev.map((b) => {
+            if (b._id === bank._id && b.mcqs && b.mcqs.length > 0) {
+              const updatedMcqs = [...b.mcqs];
+              updatedMcqs[index] = {
+                ...updatedMcqs[index],
+                isSimilar: currentStatus,
+              };
+              return { ...b, mcqs: updatedMcqs };
+            }
+            return b;
+          }),
+        );
       }
     } catch (error) {
-      console.error('Error toggling similar status:', error);
+      console.error("Error toggling similar status:", error);
     } finally {
       setUpdatingStatus(null);
     }
@@ -1080,101 +1269,124 @@ function MCQBankContent() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-2 md:p-4">
       <div className="max-w-7xl mx-auto">
         {/* Navigation - only show if not viewing from SOP Library */}
         {!sopIdFromUrl && <PageHeader />}
 
         {/* Header */}
-        <div className="mb-12">
+        <div className="mb-4">
           {/* Back button when viewing from SOP Library */}
           {sopIdFromUrl && selectedMCQBank && (
             <button
               onClick={() => router.back()}
-              className="flex items-center gap-2 text-gray-300 hover:text-white mb-4 transition-colors"
+              className="flex items-center gap-2 text-gray-300 hover:text-white mb-2 transition-colors text-sm"
             >
-              <ArrowLeft className="h-5 w-5" />
+              <ArrowLeft className="h-4 w-4" />
               Back to SOP Library
             </button>
           )}
 
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex-1 text-center">
-              <h1 className="text-5xl font-bold text-white mb-4 bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-600">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex-1 text-left">
+              <h1 className="text-2xl font-bold text-white mb-1 bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-600">
                 {sopIdFromUrl && selectedMCQBank ? (
-                  <>{formatSOPDisplayName(selectedMCQBank.sopName, selectedMCQBank.sopIdentifier)}</>
+                  <>
+                    {formatSOPDisplayName(
+                      selectedMCQBank.sopName,
+                      selectedMCQBank.sopIdentifier,
+                    )}
+                  </>
                 ) : (
                   <>MCQ Question Bank</>
                 )}
               </h1>
-              <p className="text-gray-300 text-lg">
+              <div className="text-gray-300 text-sm">
                 {sopIdFromUrl && selectedMCQBank ? (
-                  <div className="flex flex-col items-center gap-2">
-                    <span className="flex items-center gap-2 text-gray-300 tracking-tighter">
-                      {selectedMCQBank.sopIdentifier} - {selectedMCQBank.totalQuestions} questions available
+                  <div className="flex items-center gap-3">
+                    <span className="flex items-center gap-1.5 text-gray-300 tracking-tighter text-xs">
+                      {selectedMCQBank.sopIdentifier} -{" "}
+                      {selectedMCQBank.totalQuestions} questions available
                     </span>
-                    {selectedMCQBank.department && trainerMappings[normalizeDepartmentName(selectedMCQBank.department).toLowerCase()] && (
-                      <div className="flex items-center gap-2 px-3 py-1 bg-purple-500/10 border border-purple-500/20 rounded-full">
-                        <Users className="h-3.5 w-3.5 text-purple-400" />
-                        <span className="text-xs font-bold text-purple-300 uppercase tracking-widest">
-                          Trainer: {trainerMappings[normalizeDepartmentName(selectedMCQBank.department).toLowerCase()]}
-                        </span>
-                      </div>
-                    )}
+                    {selectedMCQBank.department &&
+                      trainerMappings[
+                      normalizeDepartmentName(
+                        selectedMCQBank.department,
+                      ).toLowerCase()
+                      ] && (
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-purple-500/10 border border-purple-500/20 rounded-full">
+                          <Users className="h-3 w-3 text-purple-400" />
+                          <span className="text-[10px] font-bold text-purple-300 uppercase tracking-widest">
+                            Trainer:{" "}
+                            {
+                              trainerMappings[
+                              normalizeDepartmentName(
+                                selectedMCQBank.department,
+                              ).toLowerCase()
+                              ]
+                            }
+                          </span>
+                        </div>
+                      )}
                   </div>
                 ) : (
-                  <>Browse and manage your generated MCQ banks {totalBanks > 0 && `(${totalBanks} total)`}</>
+                  <p>
+                    Browse and manage your generated MCQ banks{" "}
+                    {totalBanks > 0 && `(${totalBanks} total)`}
+                  </p>
                 )}
-              </p>
+              </div>
             </div>
             {!sopIdFromUrl && (
-              <div className="flex gap-3">
+              <div className="flex flex-wrap items-center justify-end gap-1.5 text-xs">
                 <button
                   onClick={() => fetchTreeData(true)}
                   disabled={loadingTree}
-                  className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold rounded-md hover:from-green-700 hover:to-emerald-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                   title="Refresh MCQ Bank data and clear cache"
                 >
-                  <RefreshCw className={`h-5 w-5 ${loadingTree ? 'animate-spin' : ''}`} />
-                  {loadingTree ? 'Refreshing...' : 'Refresh'}
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 ${loadingTree ? "animate-spin" : ""}`}
+                  />
+                  {loadingTree ? "Refreshing..." : "Refresh"}
                 </button>
                 <button
-                  onClick={() => window.location.href = '/similar-questions'}
-                  className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-orange-600 to-red-600 text-white font-semibold rounded-xl hover:from-orange-700 hover:to-red-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg whitespace-nowrap"
+                  onClick={() => (window.location.href = "/similar-questions")}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-orange-600 to-red-600 text-white font-semibold rounded-md hover:from-orange-700 hover:to-red-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap"
                   title="Review similar/duplicate questions"
                 >
-                  <Copy className="h-5 w-5" />
+                  <Copy className="h-3.5 w-3.5" />
                   Similar Questions
                 </button>
                 <button
-                  onClick={() => window.location.href = '/files-manager'}
-                  className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg whitespace-nowrap"
+                  onClick={() => (window.location.href = "/files-manager")}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-md hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap"
                 >
-                  <FolderOpen className="h-5 w-5" />
+                  <FolderOpen className="h-3.5 w-3.5" />
                   Files Manager
                 </button>
                 <button
-                  onClick={() => window.location.href = '/sop-upload'}
-                  className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg whitespace-nowrap"
+                  onClick={() => (window.location.href = "/sop-upload")}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-md hover:from-purple-700 hover:to-pink-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap"
                 >
-                  <Upload className="h-5 w-5" />
+                  <Upload className="h-3.5 w-3.5" />
                   Upload SOP
                 </button>
 
                 <button
-                  onClick={() => router.push('/training')}
-                  className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-semibold rounded-xl hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg whitespace-nowrap"
+                  onClick={() => router.push("/training")}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-semibold rounded-md hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap"
                   title="View AI Training & Test Dashboard"
                 >
-                  <TrendingUp className="h-5 w-5" />
+                  <TrendingUp className="h-3.5 w-3.5" />
                   Training Dashboard
                 </button>
                 <button
                   onClick={() => setShowMatrixModal(true)}
-                  className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg whitespace-nowrap"
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold rounded-md hover:from-emerald-700 hover:to-teal-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap"
                   title="Bulk upload training matrix DOC files"
                 >
-                  <Files className="h-5 w-5" />
+                  <Files className="h-3.5 w-3.5" />
                   Training Matrix
                 </button>
               </div>
@@ -1188,31 +1400,31 @@ function MCQBankContent() {
         />
 
         {/* Search, Filter, and Sort */}
-        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 shadow-2xl border border-white/20 mb-8">
-          <div className="flex flex-col gap-4">
+        <div className="bg-white/10 backdrop-blur-lg rounded-lg p-3 shadow-md border border-white/20 mb-4">
+          <div className="flex flex-col gap-2">
             {/* Search Bar */}
             <div className="flex-1 relative">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
                 type="text"
                 placeholder="Search by SOP name, identifier, or ID..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                className="w-full pl-8 pr-3 py-1.5 text-xs bg-white/10 border border-white/20 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-transparent transition-all"
               />
             </div>
 
             {/* Filters and Sort */}
-            <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+            <div className="flex flex-col md:flex-row gap-2 items-start md:items-center justify-between">
               {/* Difficulty Filters */}
-              <div className="flex gap-2 flex-wrap">
-                {['All', 'Easy', 'Medium', 'Hard'].map((difficulty) => (
+              <div className="flex gap-1.5 flex-wrap">
+                {["All", "Easy", "Medium", "Hard"].map((difficulty) => (
                   <button
                     key={difficulty}
                     onClick={() => setDifficultyFilter(difficulty)}
-                    className={`px-6 py-3 rounded-xl font-semibold transition-all ${difficultyFilter === difficulty
-                        ? 'bg-purple-600 text-white'
-                        : 'bg-white/10 text-gray-300 hover:bg-white/20'
+                    className={`px-2 py-1 text-xs rounded-md font-semibold transition-all ${difficultyFilter === difficulty
+                        ? "bg-purple-600 text-white"
+                        : "bg-white/10 text-gray-300 hover:bg-white/20"
                       }`}
                   >
                     {difficulty}
@@ -1222,35 +1434,44 @@ function MCQBankContent() {
 
               {/* Sort Options */}
               <div className="flex gap-2 items-center">
-                <span className="text-gray-300 text-sm font-semibold">Sort by:</span>
-                <div className="flex gap-2">
+                <span className="text-gray-300 text-xs font-semibold">
+                  Sort by:
+                </span>
+                <div className="flex gap-1.5 flex-wrap">
                   {[
-                    { value: 'identifier', label: 'ID' },
-                    { value: 'name', label: 'Name' },
-                    { value: 'questions', label: 'Questions' },
-                    { value: 'date', label: 'Date' }
+                    { value: "identifier", label: "ID" },
+                    { value: "name", label: "Name" },
+                    { value: "questions", label: "Questions" },
+                    { value: "date", label: "Date" },
                   ].map((sort) => (
                     <button
                       key={sort.value}
                       onClick={() => {
                         if (sortBy === sort.value) {
-                          setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                          setSortOrder(sortOrder === "asc" ? "desc" : "asc");
                         } else {
-                          setSortBy(sort.value as 'name' | 'questions' | 'date' | 'identifier');
-                          setSortOrder('asc');
+                          setSortBy(
+                            sort.value as
+                            | "name"
+                            | "questions"
+                            | "date"
+                            | "identifier",
+                          );
+                          setSortOrder("asc");
                         }
                       }}
-                      className={`px-4 py-2 rounded-lg font-semibold transition-all flex items-center gap-2 ${sortBy === sort.value
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-white/10 text-gray-300 hover:bg-white/20'
+                      className={`px-3 py-1.5 text-xs rounded-md font-semibold transition-all flex items-center gap-1 ${sortBy === sort.value
+                          ? "bg-blue-600 text-white"
+                          : "bg-white/10 text-gray-300 hover:bg-white/20"
                         }`}
                     >
                       {sort.label}
-                      {sortBy === sort.value && (
-                        sortOrder === 'asc' ?
-                          <SortAsc className="h-4 w-4" /> :
-                          <SortDesc className="h-4 w-4" />
-                      )}
+                      {sortBy === sort.value &&
+                        (sortOrder === "asc" ? (
+                          <SortAsc className="h-3 w-3" />
+                        ) : (
+                          <SortDesc className="h-3 w-3" />
+                        ))}
                     </button>
                   ))}
                 </div>
@@ -1261,23 +1482,23 @@ function MCQBankContent() {
 
         {/* View Mode Toggle */}
         {!sopIdFromUrl && (
-          <div className="flex justify-end mb-6">
-            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-1 border border-white/20 inline-flex">
+          <div className="flex justify-end mb-4">
+            <div className="bg-white/10 backdrop-blur-lg rounded-lg p-1 border border-white/20 inline-flex">
               <button
-                onClick={() => setViewMode('grid')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${viewMode === 'grid'
-                    ? 'bg-purple-600 text-white'
-                    : 'text-gray-300 hover:text-white'
+                onClick={() => setViewMode("grid")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all ${viewMode === "grid"
+                    ? "bg-purple-600 text-white"
+                    : "text-gray-300 hover:text-white"
                   }`}
               >
                 <Grid className="h-4 w-4" />
                 Grid View
               </button>
               <button
-                onClick={() => setViewMode('tree')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${viewMode === 'tree'
-                    ? 'bg-purple-600 text-white'
-                    : 'text-gray-300 hover:text-white'
+                onClick={() => setViewMode("tree")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all ${viewMode === "tree"
+                    ? "bg-purple-600 text-white"
+                    : "text-gray-300 hover:text-white"
                   }`}
               >
                 <List className="h-4 w-4" />
@@ -1288,11 +1509,13 @@ function MCQBankContent() {
         )}
 
         {/* Tree View */}
-        {viewMode === 'tree' && !sopIdFromUrl ? (
+        {viewMode === "tree" && !sopIdFromUrl ? (
           loadingTree ? (
             <div className="text-center py-16">
               <Loader2 className="h-12 w-12 text-purple-400 animate-spin mx-auto mb-4" />
-              <p className="text-gray-400 text-xl">Loading folder structure...</p>
+              <p className="text-gray-400 text-xl">
+                Loading folder structure...
+              </p>
             </div>
           ) : treeData ? (
             <MCQTreeView
@@ -1309,7 +1532,7 @@ function MCQBankContent() {
               fullScreenDept={fullScreenDept}
               setFullScreenDept={setFullScreenDept}
               trainerMappings={trainerMappings}
-              onViewMCQs={(sopNode, filterStatus = 'all') => {
+              onViewMCQs={(sopNode, filterStatus = "all") => {
                 // Find the first MCQ bank for this SOP
                 if (sopNode.mcqBanks && sopNode.mcqBanks.length > 0) {
                   fetchFullBankDetails(sopNode.mcqBanks[0], filterStatus);
@@ -1318,7 +1541,7 @@ function MCQBankContent() {
               onDownloadSOP={(sopNode) => {
                 // Open SOP file in new tab
                 if (sopNode.sopFileUrl) {
-                  window.open(sopNode.sopFileUrl, '_blank');
+                  window.open(sopNode.sopFileUrl, "_blank");
                 }
               }}
             />
@@ -1335,11 +1558,13 @@ function MCQBankContent() {
               <div className="text-center py-16">
                 <BookOpen className="h-16 w-16 text-gray-500 mx-auto mb-4" />
                 <p className="text-gray-400 text-xl">
-                  {searchTerm ? 'No MCQ banks match your search' : 'No MCQ banks found'}
+                  {searchTerm
+                    ? "No MCQ banks match your search"
+                    : "No MCQ banks found"}
                 </p>
                 {searchTerm && (
                   <button
-                    onClick={() => setSearchTerm('')}
+                    onClick={() => setSearchTerm("")}
                     className="mt-4 px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
                   >
                     Clear Search
@@ -1347,95 +1572,110 @@ function MCQBankContent() {
                 )}
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {filteredAndSortedMCQBanks.map((bank) => (
                   <div
                     key={bank._id}
-                    className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 shadow-xl border border-white/20 hover:border-purple-500/50 transition-all duration-300 transform hover:scale-[1.03] hover:shadow-2xl hover:shadow-purple-500/20 hover:bg-[#1E2338]"
+                    className="bg-white/10 backdrop-blur-lg rounded-xl p-4 shadow-lg border border-white/20 hover:border-purple-500/50 transition-all duration-300 transform hover:scale-[1.03] hover:shadow-xl hover:shadow-purple-500/20 hover:bg-[#1E2338]"
                   >
-                    <div className="flex items-start justify-between mb-4 gap-4">
+                    <div className="flex items-start justify-between mb-3 gap-2">
                       <div className="flex-1 min-w-0">
                         <h3
-                          className="text-sm font-bold text-white mb-2 leading-tight uppercase group-hover:text-purple-300 transition-colors line-clamp-2"
-                          title={formatSOPDisplayName(bank.sopName, bank.sopIdentifier)}
+                          className="text-xs font-bold text-white mb-1.5 leading-tight uppercase group-hover:text-purple-300 transition-colors line-clamp-2"
+                          title={formatSOPDisplayName(
+                            bank.sopName,
+                            bank.sopIdentifier,
+                          )}
                         >
-                          {formatSOPDisplayName(bank.sopName, bank.sopIdentifier)}
+                          {formatSOPDisplayName(
+                            bank.sopName,
+                            bank.sopIdentifier,
+                          )}
                         </h3>
-                        <p className="text-gray-400 text-[10px] font-mono opacity-60">
+                        <p className="text-gray-400 text-[9px] font-mono opacity-60 m-0">
                           {bank.sopIdentifier}
                         </p>
-                        {bank.department && trainerMappings[bank.department.toLowerCase()] && (
-                          <div className="mt-2 flex items-center gap-1.5">
-                            <Users className="h-3 w-3 text-purple-400 opacity-60" />
-                            <span className="text-[10px] font-bold text-purple-300 uppercase tracking-widest bg-purple-500/10 px-2 py-0.5 rounded-lg border border-purple-500/20">
-                              {trainerMappings[bank.department.toLowerCase()]}
-                            </span>
-                          </div>
-                        )}
+                        {bank.department &&
+                          trainerMappings[bank.department.toLowerCase()] && (
+                            <div className="mt-1.5 flex items-center gap-1">
+                              <Users className="h-2.5 w-2.5 text-purple-400 opacity-60" />
+                              <span className="text-[9px] font-bold text-purple-300 uppercase tracking-widest bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20">
+                                {trainerMappings[bank.department.toLowerCase()]}
+                              </span>
+                            </div>
+                          )}
                       </div>
-                      <Award className="h-5 w-5 text-purple-400 flex-shrink-0 mt-1" />
+                      <Award className="h-4 w-4 text-purple-400 flex-shrink-0 mt-0.5" />
                     </div>
 
-                    <div className="space-y-3 mb-6">
-                      <div className="flex items-center justify-between text-sm">
+                    <div className="space-y-2 mb-4">
+                      <div className="flex items-center justify-between text-xs">
                         <span className="text-gray-300">Total Questions:</span>
-                        <span className="text-white font-bold">{bank.totalQuestions || 0}</span>
+                        <span className="text-white font-bold">
+                          {bank.totalQuestions || 0}
+                        </span>
                       </div>
 
-                      <div className="space-y-2">
+                      <div className="space-y-1 text-[10px]">
                         <div className="flex items-center justify-between">
-                          <span className="text-green-300 text-sm">Easy:</span>
-                          <span className="text-white font-semibold">{bank.difficultyDistribution?.easy || 0}</span>
+                          <span className="text-green-300">Easy:</span>
+                          <span className="text-white font-semibold">
+                            {bank.difficultyDistribution?.easy || 0}
+                          </span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="text-yellow-300 text-sm">Medium:</span>
-                          <span className="text-white font-semibold">{bank.difficultyDistribution?.medium || 0}</span>
+                          <span className="text-yellow-300">Medium:</span>
+                          <span className="text-white font-semibold">
+                            {bank.difficultyDistribution?.medium || 0}
+                          </span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="text-red-300 text-sm">Hard:</span>
-                          <span className="text-white font-semibold">{bank.difficultyDistribution?.hard || 0}</span>
+                          <span className="text-red-300">Hard:</span>
+                          <span className="text-white font-semibold">
+                            {bank.difficultyDistribution?.hard || 0}
+                          </span>
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex flex-col gap-2">
-                      <div className="flex gap-2">
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex gap-1.5">
                         <button
                           onClick={() => fetchFullBankDetails(bank)}
-                          className="flex-1 py-2 px-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all flex items-center justify-center"
+                          className="flex-1 py-1 px-3 text-xs bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-md hover:from-purple-700 hover:to-pink-700 transition-all flex items-center justify-center"
                         >
-                          <Eye className="h-4 w-4 mr-2" />
+                          <Eye className="h-3 w-3 mr-1.5" />
                           View
                         </button>
                         <button
                           onClick={() => exportMCQBank(bank)}
-                          className="py-2 px-4 bg-white/10 text-white font-semibold rounded-lg hover:bg-white/20 transition-all"
+                          className="py-1 px-3 bg-white/10 text-white font-semibold rounded-md hover:bg-white/20 transition-all"
                           title="Download JSON"
                         >
-                          <Download className="h-4 w-4" />
+                          <Download className="h-3 w-3" />
                         </button>
                         <button
                           onClick={() => deleteMCQBank(bank._id)}
-                          className="py-2 px-4 bg-red-500/10 text-red-400 font-semibold rounded-lg hover:bg-red-500/20 border border-red-500/20 transition-all"
+                          className="py-1 px-3 bg-red-500/10 text-red-400 font-semibold rounded-md hover:bg-red-500/20 border border-red-500/20 transition-all"
                           title="Delete Bank"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-3 w-3" />
                         </button>
                       </div>
                       <button
                         onClick={() => generateMoreMCQs(bank._id, bank.sopId)}
                         disabled={!!generatingMore}
-                        className="w-full py-2 px-4 bg-white/10 border border-purple-500/30 text-purple-300 font-semibold rounded-lg hover:bg-purple-500/20 transition-all flex items-center justify-center disabled:opacity-50"
+                        className="w-full py-1 text-xs px-2 bg-white/10 border border-purple-500/30 text-purple-300 font-semibold rounded-md hover:bg-purple-500/20 transition-all flex items-center justify-center disabled:opacity-50"
                       >
                         {generatingMore === bank._id ? (
                           <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
                             Generating...
                           </>
                         ) : (
                           <>
-                            <Plus className="h-4 w-4 mr-2" />
-                            Generate More (Min 100)
+                            <Plus className="h-3 w-3 mr-1.5" />
+                            Generate More
                           </>
                         )}
                       </button>
@@ -1452,8 +1692,13 @@ function MCQBankContent() {
           <div className="mt-8 bg-white/10 backdrop-blur-lg rounded-2xl p-6 shadow-2xl border border-white/20">
             <div className="flex items-center justify-between">
               <div className="text-gray-300">
-                Showing <span className="text-white font-semibold">{filteredAndSortedMCQBanks.length}</span> of{' '}
-                <span className="text-white font-semibold">{totalBanks}</span> MCQ Bank(s)
+                Showing{" "}
+                <span className="text-white font-semibold">
+                  {filteredAndSortedMCQBanks.length}
+                </span>{" "}
+                of{" "}
+                <span className="text-white font-semibold">{totalBanks}</span>{" "}
+                MCQ Bank(s)
                 {searchTerm && (
                   <span className="ml-2 text-purple-300">(filtered)</span>
                 )}
@@ -1462,7 +1707,9 @@ function MCQBankContent() {
               {totalPages > 1 && (
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    onClick={() =>
+                      setCurrentPage((prev) => Math.max(1, prev - 1))
+                    }
                     disabled={currentPage === 1}
                     className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                   >
@@ -1487,8 +1734,8 @@ function MCQBankContent() {
                           key={pageNum}
                           onClick={() => setCurrentPage(pageNum)}
                           className={`w-10 h-10 rounded-lg font-semibold transition-all ${currentPage === pageNum
-                              ? 'bg-purple-600 text-white'
-                              : 'bg-white/10 text-gray-300 hover:bg-white/20'
+                              ? "bg-purple-600 text-white"
+                              : "bg-white/10 text-gray-300 hover:bg-white/20"
                             }`}
                         >
                           {pageNum}
@@ -1498,7 +1745,9 @@ function MCQBankContent() {
                   </div>
 
                   <button
-                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    onClick={() =>
+                      setCurrentPage((prev) => Math.min(totalPages, prev + 1))
+                    }
                     disabled={currentPage === totalPages}
                     className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                   >
@@ -1511,739 +1760,1215 @@ function MCQBankContent() {
         )}
 
         {/* MCQ Bank Detail Modal - Redesigned */}
-        {selectedMCQBank && (() => {
-          // Compute filtered questions inside the render block
-          const allMcqs = selectedMCQBank.mcqs || [];
-          const searchLower = modalSearch.trim().toLowerCase();
-          const filtered = allMcqs.filter((mcq, idx) => {
-            if (difficultyFilter !== 'All' && mcq.difficulty !== difficultyFilter) return false;
-            if (filterReviewStatus === 'checked' && !mcq.isChecked) return false;
-            if (filterReviewStatus === 'similar' && !mcq.isSimilar) return false;
-            if (filterReviewStatus === 'reviewed' && !mcq.isReviewed) return false;
-            if (searchLower) {
-              const qText = (mcq.question || '').toLowerCase();
-              const opts = (mcq.options || []).join(' ').toLowerCase();
-              const ref = (mcq.sopReference || '').toLowerCase();
-              if (!qText.includes(searchLower) && !opts.includes(searchLower) && !ref.includes(searchLower)) return false;
-            }
-            return true;
-          });
+        {selectedMCQBank &&
+          (() => {
+            // Compute filtered questions inside the render block
+            const allMcqs = selectedMCQBank.mcqs || [];
+            const searchLower = modalSearch.trim().toLowerCase();
+            const filtered = allMcqs.filter((mcq, idx) => {
+              if (
+                difficultyFilter !== "All" &&
+                mcq.difficulty !== difficultyFilter
+              )
+                return false;
+              if (filterReviewStatus === "checked" && !mcq.isChecked)
+                return false;
+              if (filterReviewStatus === "similar" && !mcq.isSimilar)
+                return false;
+              if (filterReviewStatus === "reviewed" && !mcq.isReviewed)
+                return false;
+              if (searchLower) {
+                const qText = (mcq.question || "").toLowerCase();
+                const opts = (mcq.options || []).join(" ").toLowerCase();
+                const ref = (mcq.sopReference || "").toLowerCase();
+                if (
+                  !qText.includes(searchLower) &&
+                  !opts.includes(searchLower) &&
+                  !ref.includes(searchLower)
+                )
+                  return false;
+              }
+              return true;
+            });
 
-          // Highlight helper
-          const highlight = (text: string) => {
-            if (!searchLower || !text) return <span>{text}</span>;
-            const idx = text.toLowerCase().indexOf(searchLower);
-            if (idx === -1) return <span>{text}</span>;
-            return <span>{text.slice(0, idx)}<mark className="bg-indigo-500/40 text-indigo-100 rounded px-0.5">{text.slice(idx, idx + searchLower.length)}</mark>{text.slice(idx + searchLower.length)}</span>;
-          };
+            // Highlight helper
+            const highlight = (text: string) => {
+              if (!searchLower || !text) return <span>{text}</span>;
+              const idx = text.toLowerCase().indexOf(searchLower);
+              if (idx === -1) return <span>{text}</span>;
+              return (
+                <span>
+                  {text.slice(0, idx)}
+                  <mark className="bg-indigo-500/40 text-indigo-100 rounded px-0.5">
+                    {text.slice(idx, idx + searchLower.length)}
+                  </mark>
+                  {text.slice(idx + searchLower.length)}
+                </span>
+              );
+            };
 
-          return (
-            <div className="fixed inset-0 z-[60] bg-[#0f0d1e] flex flex-col animate-in fade-in duration-300">
-              <div className="flex-1 flex flex-col overflow-hidden w-full h-full">
-                {/* ── PREMIUM STICKY HEADER ── */}
+            return (
+              <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-300">
                 <div
-                  className="sticky top-0 z-20 bg-[#13102a]/95 border-b border-indigo-500/10 flex-shrink-0 backdrop-blur-xl"
+                  className={`bg-[#0f0d1e] border border-indigo-500/20 shadow-2xl flex flex-col overflow-hidden transition-all duration-300 ${isMaximized
+                      ? "w-full h-full rounded-none"
+                      : "w-full max-w-[1400px] h-[90vh] rounded-[28px]"
+                    }`}
                 >
-                  {/* Brand / Navigation Row */}
-                  <div className="flex items-center justify-between px-6 py-4">
-                    <div className="flex items-center gap-4 min-w-0">
-                      <button
-                        onClick={() => setSelectedMCQBank(null)}
-                        className="p-2 rounded-xl bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 transition-all border border-white/5"
-                      >
-                        <ArrowLeft className="h-5 w-5" />
-                      </button>
+                  {/* ── PREMIUM STICKY HEADER ── */}
+                  <div className="sticky top-0 z-20 bg-[#13102a]/95 border-b border-indigo-500/10 flex-shrink-0 backdrop-blur-xl">
+                    {/* Brand / Navigation Row */}
+                    <div className="flex items-center justify-between px-6 py-4">
+                      <div className="flex items-center gap-4 min-w-0">
+                        <button
+                          onClick={() => setSelectedMCQBank(null)}
+                          className="p-2 rounded-xl bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 transition-all border border-white/5"
+                        >
+                          <ArrowLeft className="h-5 w-5" />
+                        </button>
 
-                      <div className="flex flex-col min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <span className="font-mono text-[10px] font-bold tracking-widest text-[#8B5CF6] uppercase">SOP Identifier</span>
-                          <span className="h-1 w-1 rounded-full bg-gray-600" />
-                          <span className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">{selectedMCQBank.language || 'English'} Version</span>
-                          {selectedMCQBank.department && trainerMappings[normalizeDepartmentName(selectedMCQBank.department).toLowerCase()] && (
-                            <>
-                              <span className="h-1 w-1 rounded-full bg-gray-600" />
-                              <span className="text-[10px] text-purple-400 font-bold uppercase tracking-wider flex items-center gap-1.5 bg-purple-500/10 px-2 py-0.5 rounded-lg border border-purple-500/20 shadow-sm animate-in fade-in slide-in-from-left-2 duration-1000">
-                                <Users className="h-3 w-3 opacity-70" />
-                                {trainerMappings[normalizeDepartmentName(selectedMCQBank.department).toLowerCase()]}
-                              </span>
-                            </>
-                          )}
+                        <div className="flex flex-col min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className="font-mono text-[10px] font-bold tracking-widest text-[#8B5CF6] uppercase">
+                              SOP Identifier
+                            </span>
+                            <span className="h-1 w-1 rounded-full bg-gray-600" />
+                            <span className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">
+                              {selectedMCQBank.language || "English"} Version
+                            </span>
+                            {selectedMCQBank.department &&
+                              trainerMappings[
+                              normalizeDepartmentName(
+                                selectedMCQBank.department,
+                              ).toLowerCase()
+                              ] && (
+                                <>
+                                  <span className="h-1 w-1 rounded-full bg-gray-600" />
+                                  <span className="text-[10px] text-purple-400 font-bold uppercase tracking-wider flex items-center gap-1.5 bg-purple-500/10 px-2 py-0.5 rounded-lg border border-purple-500/20 shadow-sm animate-in fade-in slide-in-from-left-2 duration-1000">
+                                    <Users className="h-3 w-3 opacity-70" />
+                                    {
+                                      trainerMappings[
+                                      normalizeDepartmentName(
+                                        selectedMCQBank.department,
+                                      ).toLowerCase()
+                                      ]
+                                    }
+                                  </span>
+                                </>
+                              )}
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <h2 className="text-xl font-bold text-gray-100 truncate flex-shrink-0 max-w-[200px] lg:max-w-md">
+                              {cleanSOPName(
+                                selectedMCQBank.sopName,
+                                selectedMCQBank.sopIdentifier,
+                              )}
+                            </h2>
+                            <span className="px-2 py-0.5 rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 text-xs font-bold font-mono">
+                              {selectedMCQBank.sopIdentifier}
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <h2 className="text-xl font-bold text-gray-100 truncate flex-shrink-0 max-w-[200px] lg:max-w-md">
-                            {cleanSOPName(selectedMCQBank.sopName, selectedMCQBank.sopIdentifier)}
-                          </h2>
-                          <span className="px-2 py-0.5 rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 text-xs font-bold font-mono">
-                            {selectedMCQBank.sopIdentifier}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
+                          <div className="flex -space-x-1.5">
+                            {[1, 2, 3].map((i) => (
+                              <div
+                                key={i}
+                                className="w-5 h-5 rounded-full border-2 border-slate-700 bg-gradient-to-br from-indigo-500 to-purple-500 text-[8px] flex items-center justify-center text-white font-bold"
+                              >
+                                {i}
+                              </div>
+                            ))}
+                          </div>
+                          <span className="text-[11px] text-gray-400 ml-1 font-medium">
+                            {filtered.length} Indexed MCQs
                           </span>
+                        </div>
+
+                        <div className="h-8 w-px bg-white/5 mx-2" />
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => {
+                              setModalSearchInputVisible((v) => !v);
+                              if (modalSearchInputVisible) setModalSearch("");
+                            }}
+                            className={`p-2 rounded-xl transition-all ${modalSearchInputVisible || modalSearch ? "bg-indigo-500/20 text-indigo-400 border border-indigo-500/30" : "text-gray-400 hover:text-white hover:bg-white/5 border border-transparent"}`}
+                          >
+                            <Search className="h-5 w-5" />
+                          </button>
+                          <button
+                            onClick={() =>
+                              handleCheckSimilarityForSOP(selectedMCQBank)
+                            }
+                            disabled={checkingSimilarity}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 transition-all border border-amber-500/20 hover:border-amber-500/30 disabled:opacity-50 text-xs font-bold uppercase tracking-wider"
+                          >
+                            {checkingSimilarity ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-4 w-4" />
+                            )}
+                            <span className="hidden sm:inline">
+                              {checkingSimilarity
+                                ? "Checking..."
+                                : "Check Similar"}
+                            </span>
+                          </button>
+                          <button
+                            onClick={() => setIsMaximized(!isMaximized)}
+                            className="p-2 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all border border-transparent"
+                            title={isMaximized ? "Restore down" : "Maximize"}
+                          >
+                            {isMaximized ? (
+                              <Minimize2 className="h-5 w-5" />
+                            ) : (
+                              <Maximize2 className="h-5 w-5" />
+                            )}
+                          </button>
+                          <button
+                            onClick={() => setSelectedMCQBank(null)}
+                            className="p-2 rounded-xl text-gray-400 hover:text-white hover:bg-[#FE4A49]/10 hover:text-[#FE4A49] transition-all border border-transparent hover:border-[#FE4A49]/20"
+                          >
+                            <X className="h-5 w-5" />
+                          </button>
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
-                        <div className="flex -space-x-1.5">
-                          {[1, 2, 3].map(i => <div key={i} className="w-5 h-5 rounded-full border-2 border-slate-700 bg-gradient-to-br from-indigo-500 to-purple-500 text-[8px] flex items-center justify-center text-white font-bold">{i}</div>)}
+                    {/* Sub-header: Search & Filtering */}
+                    <div className="px-6 pb-4 space-y-4">
+                      {/* Search bar expanded */}
+                      {modalSearchInputVisible && (
+                        <div className="relative animate-in slide-in-from-top-2 duration-300">
+                          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-indigo-400/60" />
+                          <input
+                            autoFocus
+                            type="text"
+                            placeholder="Search pharmaceutical concepts, references, or codes..."
+                            value={modalSearch}
+                            onChange={(e) => {
+                              setModalSearch(e.target.value);
+                              setVisibleCount(30);
+                            }}
+                            className="w-full pl-11 pr-12 py-3 bg-indigo-950/20 border border-indigo-500/30 rounded-2xl text-sm text-gray-100 placeholder-indigo-300/30 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 hover:border-indigo-500/50 transition-all shadow-inner"
+                          />
+                          {modalSearch && (
+                            <button
+                              onClick={() => setModalSearch("")}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-white bg-white/5 rounded-md"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          )}
                         </div>
-                        <span className="text-[11px] text-gray-400 ml-1 font-medium">{filtered.length} Indexed MCQs</span>
-                      </div>
+                      )}
 
-                      <div className="h-8 w-px bg-white/5 mx-2" />
+                      {/* Navigation & Status Filter */}
+                      <div className="flex items-center justify-between gap-4">
+                        <nav className="flex items-center gap-1.5 p-1.5 bg-indigo-950/30 border border-indigo-500/10 rounded-2xl shadow-inner">
+                          <button
+                            onClick={() => {
+                              setActiveTab("active");
+                              setVisibleCount(30);
+                            }}
+                            className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === "active" ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/20" : "text-gray-500 hover:text-gray-300 hover:bg-white/5"}`}
+                          >
+                            <Grid className="h-4 w-4" />
+                            Active ({selectedMCQBank.mcqs?.length ?? 0})
+                          </button>
+                          <button
+                            onClick={() => {
+                              setActiveTab("recycled");
+                              if (selectedMCQBank?.sopId)
+                                fetchRecycledQuestions(selectedMCQBank.sopId);
+                            }}
+                            className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === "recycled" ? "bg-gradient-to-r from-rose-600 to-orange-600 text-white shadow-lg shadow-rose-500/20" : "text-gray-500 hover:text-gray-300 hover:bg-white/5"}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Recycled{" "}
+                            {recycledQuestions.length > 0
+                              ? `(${recycledQuestions.length})`
+                              : ""}
+                          </button>
+                        </nav>
 
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => { setModalSearchInputVisible(v => !v); if (modalSearchInputVisible) setModalSearch(''); }}
-                          className={`p-2 rounded-xl transition-all ${modalSearchInputVisible || modalSearch ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'}`}
-                        >
-                          <Search className="h-5 w-5" />
-                        </button>
-                        <button
-                          onClick={() => handleCheckSimilarityForSOP(selectedMCQBank)}
-                          disabled={checkingSimilarity}
-                          className="flex items-center gap-2 px-4 py-2 rounded-xl text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 transition-all border border-amber-500/20 hover:border-amber-500/30 disabled:opacity-50 text-xs font-bold uppercase tracking-wider"
-                        >
-                          {checkingSimilarity ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                          <span className="hidden sm:inline">{checkingSimilarity ? 'Checking...' : 'Check Similar'}</span>
-                        </button>
-                        {/* Removed Maximize/Minimize button as the modal is now always full-screen */}
-                        <button
-                          onClick={() => setSelectedMCQBank(null)}
-                          className="p-2 rounded-xl text-gray-400 hover:text-white hover:bg-[#FE4A49]/10 hover:text-[#FE4A49] transition-all border border-transparent hover:border-[#FE4A49]/20"
-                        >
-                          <X className="h-5 w-5" />
-                        </button>
+                        {activeTab === "active" && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest hidden sm:inline mr-1">
+                              Status Filter
+                            </span>
+                            <div className="flex p-1 bg-indigo-950/30 border border-indigo-500/10 rounded-xl gap-1 shadow-inner">
+                              {(
+                                [
+                                  {
+                                    id: "all",
+                                    label: "All",
+                                    icon: <Grid className="h-3.5 w-3.5" />,
+                                    color: "bg-indigo-500",
+                                    activeClass: "text-indigo-400",
+                                  },
+                                  {
+                                    id: "checked",
+                                    label: "Approved",
+                                    icon: (
+                                      <CheckCircle2 className="h-3.5 w-3.5" />
+                                    ),
+                                    color: "bg-emerald-500",
+                                    activeClass: "text-emerald-400",
+                                  },
+                                  {
+                                    id: "similar",
+                                    label: "Similar",
+                                    icon: <Copy className="h-3.5 w-3.5" />,
+                                    color: "bg-amber-500",
+                                    activeClass: "text-amber-400",
+                                  },
+                                  {
+                                    id: "reviewed",
+                                    label: "Reviewed",
+                                    icon: <Star className="h-3.5 w-3.5" />,
+                                    color: "bg-blue-500",
+                                    activeClass: "text-blue-400",
+                                  },
+                                ] as const
+                              ).map((pill) => (
+                                <button
+                                  key={pill.id}
+                                  onClick={() => {
+                                    setFilterReviewStatus(pill.id as any);
+                                    setVisibleCount(30);
+                                  }}
+                                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all border ${filterReviewStatus === pill.id
+                                      ? `bg-white/5 border-white/10 ${pill.activeClass}`
+                                      : "border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/5"
+                                    }`}
+                                >
+                                  {pill.icon}
+                                  {pill.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
 
-                  {/* Sub-header: Search & Filtering */}
-                  <div className="px-6 pb-4 space-y-4">
-                    {/* Search bar expanded */}
-                    {modalSearchInputVisible && (
-                      <div className="relative animate-in slide-in-from-top-2 duration-300">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-indigo-400/60" />
-                        <input
-                          autoFocus
-                          type="text"
-                          placeholder="Search pharmaceutical concepts, references, or codes..."
-                          value={modalSearch}
-                          onChange={e => { setModalSearch(e.target.value); setVisibleCount(30); }}
-                          className="w-full pl-11 pr-12 py-3 bg-indigo-950/20 border border-indigo-500/30 rounded-2xl text-sm text-gray-100 placeholder-indigo-300/30 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 hover:border-indigo-500/50 transition-all shadow-inner"
-                        />
-                        {modalSearch && (
-                          <button onClick={() => setModalSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-white bg-white/5 rounded-md">
-                            <X className="h-3 w-3" />
-                          </button>
-                        )}
-                      </div>
-                    )}
+                  {/* ── RICH INTERFACE BODY ── */}
+                  <div
+                    ref={modalBodyRef}
+                    className="flex-1 overflow-y-auto custom-scrollbar bg-[#0f0d1e] relative w-full px-6"
+                    onScroll={(e) => {
+                      const el = e.currentTarget;
+                      if (
+                        el.scrollTop + el.clientHeight >=
+                        el.scrollHeight - 200
+                      ) {
+                        setVisibleCount((v) =>
+                          Math.min(v + 20, filtered.length),
+                        );
+                      }
+                    }}
+                  >
+                    <div className="px-6 py-6 border-x border-white/5">
+                      {activeTab === "active" ? (
+                        allMcqs.length > 0 ? (
+                          filtered.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-24 text-center">
+                              <div className="w-20 h-20 bg-slate-800/40 border border-white/10 rounded-3xl flex items-center justify-center mb-6 shadow-2xl">
+                                <Search className="h-8 w-8 text-indigo-400/40" />
+                              </div>
+                              <h3 className="text-xl font-bold text-gray-200 mb-2">
+                                No results found
+                              </h3>
+                              <p className="text-gray-500 max-w-xs">
+                                {modalSearch
+                                  ? `We couldn't find any questions matching "${modalSearch}" in this bank.`
+                                  : "Adjust your filters to see more questions."}
+                              </p>
+                              {modalSearch && (
+                                <button
+                                  onClick={() => setModalSearch("")}
+                                  className="mt-6 px-4 py-2 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-xl hover:bg-indigo-500/20 transition-all font-bold text-xs uppercase tracking-wider"
+                                >
+                                  Clear search query
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 p-4">
+                              {filtered
+                                .slice(0, visibleCount)
+                                .map((mcq, visibleIdx) => {
+                                  const originalIndex = allMcqs.indexOf(mcq);
+                                  const isUpdating =
+                                    updatingStatus ===
+                                    `${selectedMCQBank._id}-${originalIndex}`;
+                                  return (
+                                    <div
+                                      key={originalIndex}
+                                      className="group relative bg-[#1a1535] rounded-2xl border border-indigo-500/10 hover:border-indigo-500/25 transition-all duration-300 shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 overflow-hidden"
+                                      onClick={() =>
+                                        setSelectedMCQ({
+                                          mcq,
+                                          index: originalIndex,
+                                        })
+                                      }
+                                    >
+                                      {/* Interactive Accent Glow */}
+                                      <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
 
-                    {/* Navigation & Status Filter */}
-                    <div className="flex items-center justify-between gap-4">
-                      <nav className="flex items-center gap-1.5 p-1.5 bg-indigo-950/30 border border-indigo-500/10 rounded-2xl shadow-inner">
-                        <button
-                          onClick={() => { setActiveTab('active'); setVisibleCount(30); }}
-                          className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'active' ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/20' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}
-                        >
-                          <Grid className="h-4 w-4" />
-                          Active ({selectedMCQBank.mcqs?.length ?? 0})
-                        </button>
-                        <button
-                          onClick={() => { setActiveTab('recycled'); if (selectedMCQBank?.sopId) fetchRecycledQuestions(selectedMCQBank.sopId); }}
-                          className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'recycled' ? 'bg-gradient-to-r from-rose-600 to-orange-600 text-white shadow-lg shadow-rose-500/20' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          Recycled {recycledQuestions.length > 0 ? `(${recycledQuestions.length})` : ''}
-                        </button>
-                      </nav>
+                                      {/* Card Content Wrapper */}
+                                      <div className="relative flex flex-col sm:flex-row items-stretch min-h-[100px]">
+                                        {/* Sidebar: Navigation Meta */}
+                                        <div className="flex sm:flex-col items-center justify-between sm:justify-start w-full sm:w-12 p-3 gap-2 bg-white/[0.02] border-b sm:border-b-0 sm:border-r border-white/5">
+                                          <div className="flex flex-col items-center gap-1">
+                                            <span className="text-[8px] font-bold text-gray-500 uppercase tracking-widest font-mono">
+                                              Index
+                                            </span>
+                                            <div className="w-7 h-7 flex items-center justify-center bg-[#1a1625] border border-white/10 rounded-lg text-[10px] font-mono font-bold text-indigo-300 shadow-inner group-hover:border-indigo-500/30 transition-colors">
+                                              {originalIndex + 1}
+                                            </div>
+                                          </div>
 
-                      {activeTab === 'active' && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest hidden sm:inline mr-1">Status Filter</span>
-                          <div className="flex p-1 bg-indigo-950/30 border border-indigo-500/10 rounded-xl gap-1 shadow-inner">
-                            {([
-                              { id: 'all', label: 'All', icon: <Grid className="h-3.5 w-3.5" />, color: 'bg-indigo-500', activeClass: 'text-indigo-400' },
-                              { id: 'checked', label: 'Approved', icon: <CheckCircle2 className="h-3.5 w-3.5" />, color: 'bg-emerald-500', activeClass: 'text-emerald-400' },
-                              { id: 'similar', label: 'Similar', icon: <Copy className="h-3.5 w-3.5" />, color: 'bg-amber-500', activeClass: 'text-amber-400' },
-                              { id: 'reviewed', label: 'Reviewed', icon: <Star className="h-3.5 w-3.5" />, color: 'bg-blue-500', activeClass: 'text-blue-400' },
-                            ] as const).map(pill => (
-                              <button
-                                key={pill.id}
-                                onClick={() => { setFilterReviewStatus(pill.id as any); setVisibleCount(30); }}
-                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all border ${filterReviewStatus === pill.id
-                                    ? `bg-white/5 border-white/10 ${pill.activeClass}`
-                                    : 'border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/5'
-                                  }`}
-                              >
-                                {pill.icon}
-                                {pill.label}
-                              </button>
-                            ))}
+                                          <div className="h-px w-6 bg-white/5 hidden sm:block" />
+
+                                          <div className="flex flex-col items-center gap-1">
+                                            <span className="text-sm leading-none group-hover:scale-110 transition-transform duration-300 transform-gpu">
+                                              {mcq.aiIcon}
+                                            </span>
+                                          </div>
+                                        </div>
+
+                                        {/* Main Interaction Area */}
+                                        <div className="flex-1 flex flex-col p-3">
+                                          {/* Top Meta Area */}
+                                          <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center gap-2">
+                                              <span
+                                                className={`px-1.5 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-wider border ${mcq.difficulty === "Easy"
+                                                    ? "bg-indigo-500/20 text-indigo-400 border-indigo-500/30"
+                                                    : mcq.difficulty ===
+                                                      "Medium"
+                                                      ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                                      : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                                                  }`}
+                                              >
+                                                {mcq.difficulty}
+                                              </span>
+                                              {selectedMCQBank.language ===
+                                                "Gujarati" && (
+                                                  <span className="px-2 py-0.5 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 text-[9px] font-bold uppercase tracking-wider">
+                                                    GUJ
+                                                  </span>
+                                                )}
+                                            </div>
+
+                                            <div className="flex items-center gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
+                                              <div className="flex items-center gap-1">
+                                                {mcq.isSimilar && (
+                                                  <div
+                                                    className="p-1 rounded-md bg-amber-500/10 text-amber-500 border border-amber-500/20"
+                                                    title="Flagged as Similar"
+                                                  >
+                                                    <Copy className="h-3 w-3" />
+                                                  </div>
+                                                )}
+                                                {mcq.isChecked && (
+                                                  <div
+                                                    className="p-1 rounded-md bg-purple-500/20 text-purple-400 border border-purple-500/30"
+                                                    title="Approved Status"
+                                                  >
+                                                    <CheckCircle2 className="h-3 w-3" />
+                                                  </div>
+                                                )}
+                                                {mcq.isReviewed && (
+                                                  <div
+                                                    className="p-1 rounded-md bg-blue-500/10 text-blue-500 border border-blue-500/20"
+                                                    title="Review Completed"
+                                                  >
+                                                    <Star className="h-3 w-3 fill-current" />
+                                                  </div>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          {/* Question Text */}
+                                          <div className="mb-2">
+                                            <div className="flex items-start gap-2">
+                                              <span className="text-indigo-400 text-xs font-bold mt-0.5 select-none">
+                                                Q.
+                                              </span>
+                                              <h3
+                                                className={`text-sm font-semibold leading-snug tracking-tight text-gray-100 ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati text-base" : ""}`}
+                                              >
+                                                {searchLower
+                                                  ? highlight(mcq.question)
+                                                  : mcq.question}
+                                              </h3>
+                                            </div>
+                                          </div>
+
+                                          {/* Options Preview (Subtle grid) */}
+                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 mt-auto">
+                                            {(mcq.options || [])
+                                              .slice(0, 4)
+                                              .map((opt, oi) => {
+                                                const isCorrect =
+                                                  opt === mcq.correctAnswer;
+                                                return (
+                                                  <div
+                                                    key={oi}
+                                                    className={`flex items-center gap-2 p-1.5 rounded-lg transition-all border ${isCorrect
+                                                        ? "bg-purple-500/10 border-purple-500/20 text-purple-200"
+                                                        : "bg-[#1a1625]/50 border-white/5 text-gray-400 group-hover:bg-[#1a1625] group-hover:border-white/10"
+                                                      }`}
+                                                  >
+                                                    <span
+                                                      className={`w-4 h-4 flex-shrink-0 flex items-center justify-center rounded-md text-[8px] font-bold border ${isCorrect
+                                                          ? "bg-purple-500/20 border-purple-500/30 text-purple-300"
+                                                          : "bg-white/5 border-white/5 text-gray-500"
+                                                        }`}
+                                                    >
+                                                      {String.fromCharCode(
+                                                        65 + oi,
+                                                      )}
+                                                    </span>
+                                                    <span
+                                                      className={`text-[10px] truncate ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati text-xs" : ""}`}
+                                                    >
+                                                      {searchLower
+                                                        ? highlight(opt)
+                                                        : opt}
+                                                    </span>
+                                                    {isCorrect && (
+                                                      <CheckCircle2 className="h-3 w-3 ml-auto text-purple-500" />
+                                                    )}
+                                                  </div>
+                                                );
+                                              })}
+                                          </div>
+
+                                          {/* Similarity indicators / warnings */}
+                                          {mcq.isSimilar &&
+                                            similarQuestionDetails[
+                                            originalIndex
+                                            ] && (
+                                              <div className="mt-4 p-3 bg-amber-500/5 rounded-2xl border border-amber-500/20 flex flex-col sm:flex-row items-center gap-3 animate-in fade-in duration-500">
+                                                <div className="flex items-center gap-2">
+                                                  <div className="w-6 h-6 rounded-lg bg-amber-500/20 flex items-center justify-center">
+                                                    <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
+                                                  </div>
+                                                  <span className="text-[11px] font-semibold text-amber-400 uppercase tracking-wider whitespace-nowrap">
+                                                    Duplicate detected
+                                                  </span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 no-scrollbar flex-1 min-w-0">
+                                                  <span className="text-[10px] text-gray-500 whitespace-nowrap">
+                                                    Similar to indices:
+                                                  </span>
+                                                  {similarQuestionDetails[
+                                                    originalIndex
+                                                  ].map((i) => (
+                                                    <span
+                                                      key={i}
+                                                      className="px-1.5 py-0.5 rounded-md bg-white/5 border border-white/5 text-[10px] text-gray-400"
+                                                    >
+                                                      #{i + 1}
+                                                    </span>
+                                                  ))}
+                                                </div>
+                                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                                  <button
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      if (
+                                                        confirm(
+                                                          `Archive Q${originalIndex + 1}?`,
+                                                        )
+                                                      )
+                                                        handleDeleteQuestion(
+                                                          selectedMCQBank._id,
+                                                          originalIndex,
+                                                        );
+                                                    }}
+                                                    className="px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-500 text-[10px] font-bold border border-rose-500/20 hover:bg-rose-500/20 transition-all flex items-center gap-1"
+                                                  >
+                                                    <Trash2 className="h-3 w-3" />{" "}
+                                                    Archive
+                                                  </button>
+                                                  <button
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      if (
+                                                        confirm(
+                                                          `Regenerate Q${originalIndex + 1}?`,
+                                                        )
+                                                      )
+                                                        handleReplaceQuestion(
+                                                          selectedMCQBank._id,
+                                                          originalIndex,
+                                                          selectedMCQBank.sopId,
+                                                        );
+                                                    }}
+                                                    className="px-2.5 py-1 rounded-lg bg-indigo-500/10 text-indigo-400 text-[10px] font-bold border border-indigo-500/20 hover:bg-indigo-500/20 transition-all flex items-center gap-1"
+                                                  >
+                                                    <RefreshCw className="h-3 w-3" />{" "}
+                                                    Repair
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            )}
+                                        </div>
+
+                                        {/* Action Toolbar on Hover */}
+                                        <div
+                                          className="flex flex-col items-center justify-center gap-2 w-full sm:w-12 p-2 bg-indigo-600/5 sm:border-l border-t sm:border-t-0 border-white/5 opacity-0 group-hover:opacity-100 transition-all duration-300 transform sm:translate-x-full group-hover:translate-x-0 group-hover:bg-indigo-600/10"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          {/* Similar */}
+                                          <button
+                                            disabled={isUpdating}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              toggleSimilar(
+                                                selectedMCQBank,
+                                                originalIndex,
+                                                mcq,
+                                              );
+                                            }}
+                                            className={`p-2 rounded-xl transition-all ${mcq.isSimilar ? "bg-amber-500 text-white shadow-lg shadow-amber-500/30" : "bg-white/5 text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/20 border border-transparent"}`}
+                                          >
+                                            {isUpdating ? (
+                                              <Loader2 className="h-4 w-4 animate-spin" />
+                                            ) : (
+                                              <Copy className="h-4 w-4" />
+                                            )}
+                                          </button>
+                                          {/* Check/Approve */}
+                                          <button
+                                            disabled={isUpdating}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              toggleChecked(
+                                                selectedMCQBank._id,
+                                                originalIndex,
+                                                !!mcq.isChecked,
+                                              );
+                                            }}
+                                            className={`p-2 rounded-xl transition-all ${mcq.isChecked ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/30" : "bg-white/5 text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-500/20 border border-transparent"}`}
+                                          >
+                                            {isUpdating ? (
+                                              <Loader2 className="h-4 w-4 animate-spin" />
+                                            ) : (
+                                              <CheckCircle2 className="h-4 w-4" />
+                                            )}
+                                          </button>
+                                          {/* Star/Review */}
+                                          <button
+                                            disabled={isUpdating}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              toggleReview(
+                                                selectedMCQBank,
+                                                originalIndex,
+                                                mcq,
+                                              );
+                                            }}
+                                            className={`p-2 rounded-xl transition-all ${mcq.isReviewed ? "bg-blue-500 text-white shadow-lg shadow-blue-500/30" : "bg-white/5 text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 hover:border-blue-500/20 border border-transparent"}`}
+                                          >
+                                            {isUpdating ? (
+                                              <Loader2 className="h-4 w-4 animate-spin" />
+                                            ) : (
+                                              <Star
+                                                className={`h-4 w-4 ${mcq.isReviewed ? "fill-current" : ""}`}
+                                              />
+                                            )}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                            </div>
+                          )
+                        ) : (
+                          <div className="flex flex-col items-center justify-center py-24 text-center">
+                            <div className="w-20 h-20 bg-[#131722] border border-white/5 rounded-3xl flex items-center justify-center mb-6">
+                              <FileText className="h-8 w-8 text-gray-600" />
+                            </div>
+                            <p className="text-gray-500 uppercase tracking-widest text-[10px] font-bold">
+                              Catalogue Empty
+                            </p>
+                            <h3 className="text-xl font-bold text-gray-200 mt-2">
+                              No active questions found
+                            </h3>
                           </div>
+                        )
+                      ) : (
+                        <div className="space-y-4">
+                          {loadingRecycled ? (
+                            <div className="flex flex-col items-center justify-center py-24">
+                              <Loader2 className="h-10 w-10 animate-spin text-indigo-500/40" />
+                              <p className="text-gray-500 text-xs mt-4 uppercase tracking-widest font-bold">
+                                Querying Archive...
+                              </p>
+                            </div>
+                          ) : recycledQuestions.length > 0 ? (
+                            <div className="grid grid-cols-1 gap-4">
+                              {recycledQuestions.map((elim, i) => (
+                                <div
+                                  key={i}
+                                  className="group bg-[#0E121B] rounded-[24px] p-6 border border-rose-500/10 hover:border-rose-500/30 transition-all opacity-80 hover:opacity-100"
+                                >
+                                  <div className="flex items-start gap-5">
+                                    <div className="flex flex-col items-center gap-1.5">
+                                      <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-500 shadow-inner">
+                                        <Trash2 className="h-5 w-5" />
+                                      </div>
+                                      <span className="text-[10px] font-bold font-mono text-gray-500">
+                                        {typeof (elim as any)
+                                          .originalQuestionIndex === "number"
+                                          ? `Q${(elim as any).originalQuestionIndex + 1}`
+                                          : typeof (elim as any)
+                                            .originalIndex === "number"
+                                            ? `Q${(elim as any).originalIndex + 1}`
+                                            : "ARC"}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-3 mb-3 flex-wrap">
+                                        <span className="px-2 py-0.5 rounded-lg bg-rose-500/10 text-rose-500 border border-rose-500/20 text-[10px] font-bold uppercase tracking-wider">
+                                          Archived:{" "}
+                                          {new Date(
+                                            elim.eliminatedAt,
+                                          ).toLocaleDateString()}
+                                        </span>
+                                        {(elim as any).eliminatedBy &&
+                                          (elim as any).eliminatedBy !==
+                                          "Unknown User" && (
+                                            <span className="px-2 py-0.5 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-bold uppercase tracking-wider">
+                                              Actor:{" "}
+                                              {(elim as any).eliminatedBy}
+                                            </span>
+                                          )}
+                                        <span className="px-2 py-0.5 rounded-lg bg-indigo-950/40 text-indigo-400/60 border border-indigo-500/10 text-[10px] font-bold uppercase tracking-wider">
+                                          {elim.eliminationReason === "manual"
+                                            ? "Manual Delete"
+                                            : elim.eliminationReason}
+                                        </span>
+                                      </div>
+
+                                      <h3 className="text-lg font-semibold text-indigo-300/40 mb-4 line-through decoration-rose-500/40 leading-relaxed italic">
+                                        {elim.question.question}
+                                      </h3>
+
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pl-4 border-l-2 border-indigo-500/10">
+                                        {elim.question.options?.map(
+                                          (opt: string, idx: number) => (
+                                            <div
+                                              key={idx}
+                                              className={`text-xs p-2.5 rounded-xl border ${opt === elim.question.correctAnswer ? "bg-purple-500/10 text-purple-400 border-purple-500/20" : "text-indigo-400/40 bg-indigo-950/20 border-transparent"}`}
+                                            >
+                                              <span className="font-bold mr-2 text-[10px] underline decoration-indigo-500/20">
+                                                0{idx + 1}
+                                              </span>{" "}
+                                              {opt}
+                                            </div>
+                                          ),
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center justify-center py-24 text-center">
+                              <div className="w-20 h-20 bg-indigo-950/40 border border-indigo-500/20 rounded-3xl flex items-center justify-center mb-6">
+                                <X className="h-8 w-8 text-indigo-400/40" />
+                              </div>
+                              <p className="text-indigo-400/30 uppercase tracking-widest text-[10px] font-bold">
+                                Archive Integrity verified
+                              </p>
+                              <h3 className="text-xl font-bold text-indigo-300/40 mt-2">
+                                No recycled items found
+                              </h3>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
                   </div>
-                </div>
-
-                {/* ── RICH INTERFACE BODY ── */}
-                <div
-                  ref={modalBodyRef}
-                  className="flex-1 overflow-y-auto custom-scrollbar bg-[#0f0d1e] relative w-full px-6"
-                  onScroll={(e) => {
-                    const el = e.currentTarget;
-                    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
-                      setVisibleCount(v => Math.min(v + 20, filtered.length));
-                    }
-                  }}
-                >
-
-                  <div className="px-6 py-6 border-x border-white/5">
-                    {activeTab === 'active' ? (allMcqs.length > 0 ? (
-                      filtered.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-24 text-center">
-                          <div className="w-20 h-20 bg-slate-800/40 border border-white/10 rounded-3xl flex items-center justify-center mb-6 shadow-2xl">
-                            <Search className="h-8 w-8 text-indigo-400/40" />
-                          </div>
-                          <h3 className="text-xl font-bold text-gray-200 mb-2">No results found</h3>
-                          <p className="text-gray-500 max-w-xs">{modalSearch ? `We couldn't find any questions matching "${modalSearch}" in this bank.` : 'Adjust your filters to see more questions.'}</p>
-                          {modalSearch && <button onClick={() => setModalSearch('')} className="mt-6 px-4 py-2 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-xl hover:bg-indigo-500/20 transition-all font-bold text-xs uppercase tracking-wider">Clear search query</button>}
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 p-6">
-                          {filtered.slice(0, visibleCount).map((mcq, visibleIdx) => {
-                            const originalIndex = allMcqs.indexOf(mcq);
-                            const isUpdating = updatingStatus === `${selectedMCQBank._id}-${originalIndex}`;
-                            return (
-                              <div
-                                key={originalIndex}
-                                className="group relative bg-[#1a1535] rounded-2xl border border-indigo-500/10 hover:border-indigo-500/25 transition-all duration-300 shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 overflow-hidden"
-                                onClick={() => setSelectedMCQ({ mcq, index: originalIndex })}
-                              >
-                                {/* Interactive Accent Glow */}
-                                <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-
-                                {/* Card Content Wrapper */}
-                                <div className="relative flex flex-col sm:flex-row items-stretch min-h-[140px]">
-                                  {/* Sidebar: Navigation Meta */}
-                                  <div className="flex sm:flex-col items-center justify-between sm:justify-start w-full sm:w-16 p-4 gap-4 bg-white/[0.02] border-b sm:border-b-0 sm:border-r border-white/5">
-                                    <div className="flex flex-col items-center gap-1">
-                                      <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest font-mono">Index</span>
-                                      <div className="w-10 h-10 flex items-center justify-center bg-[#1a1625] border border-white/10 rounded-xl text-xs font-mono font-bold text-indigo-300 shadow-inner group-hover:border-indigo-500/30 transition-colors">
-                                        {originalIndex + 1}
-                                      </div>
-                                    </div>
-
-                                    <div className="h-px w-8 bg-white/5 hidden sm:block" />
-
-                                    <div className="flex flex-col items-center gap-1">
-                                      <span className="text-xl leading-none group-hover:scale-110 transition-transform duration-300 transform-gpu">{mcq.aiIcon}</span>
-                                    </div>
-                                  </div>
-
-                                  {/* Main Interaction Area */}
-                                  <div className="flex-1 flex flex-col p-5">
-                                    {/* Top Meta Area */}
-                                    <div className="flex items-center justify-between mb-3">
-                                      <div className="flex items-center gap-2">
-                                        <span className={`px-2 py-0.5 rounded-lg text-[9px] font-bold uppercase tracking-wider border ${mcq.difficulty === 'Easy' ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' :
-                                            mcq.difficulty === 'Medium' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
-                                              'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                                          }`}>
-                                          {mcq.difficulty}
-                                        </span>
-                                        {selectedMCQBank.language === 'Gujarati' && (
-                                          <span className="px-2 py-0.5 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 text-[9px] font-bold uppercase tracking-wider">GUJ</span>
-                                        )}
-                                      </div>
-
-                                      <div className="flex items-center gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
-                                        <div className="flex items-center gap-1">
-                                          {mcq.isSimilar && <div className="p-1 rounded-md bg-amber-500/10 text-amber-500 border border-amber-500/20" title="Flagged as Similar"><Copy className="h-3 w-3" /></div>}
-                                          {mcq.isChecked && <div className="p-1 rounded-md bg-purple-500/20 text-purple-400 border border-purple-500/30" title="Approved Status"><CheckCircle2 className="h-3 w-3" /></div>}
-                                          {mcq.isReviewed && <div className="p-1 rounded-md bg-blue-500/10 text-blue-500 border border-blue-500/20" title="Review Completed"><Star className="h-3 w-3 fill-current" /></div>}
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    {/* Question Text */}
-                                    <div className="mb-4">
-                                      <div className="flex items-start gap-2.5">
-                                        <span className="text-indigo-400 font-bold mt-0.5 select-none">Q.</span>
-                                        <h3 className={`text-base font-semibold leading-relaxed tracking-tight text-gray-100 ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati text-lg' : ''}`}>
-                                          {searchLower ? highlight(mcq.question) : mcq.question}
-                                        </h3>
-                                      </div>
-                                    </div>
-
-                                    {/* Options Preview (Subtle grid) */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-auto">
-                                      {(mcq.options || []).slice(0, 4).map((opt, oi) => {
-                                        const isCorrect = opt === mcq.correctAnswer;
-                                        return (
-                                          <div key={oi} className={`flex items-center gap-3 p-2 rounded-xl transition-all border ${isCorrect
-                                              ? 'bg-purple-500/10 border-purple-500/20 text-purple-200'
-                                              : 'bg-[#1a1625]/50 border-white/5 text-gray-400 group-hover:bg-[#1a1625] group-hover:border-white/10'
-                                            }`}>
-                                            <span className={`w-5 h-5 flex-shrink-0 flex items-center justify-center rounded-lg text-[9px] font-bold border ${isCorrect ? 'bg-purple-500/20 border-purple-500/30 text-purple-300' : 'bg-white/5 border-white/5 text-gray-500'
-                                              }`}>{String.fromCharCode(65 + oi)}</span>
-                                            <span className={`text-[11px] truncate ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati text-sm' : ''}`}>
-                                              {searchLower ? highlight(opt) : opt}
-                                            </span>
-                                            {isCorrect && <CheckCircle2 className="h-3 w-3 ml-auto text-purple-500" />}
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-
-                                    {/* Similarity indicators / warnings */}
-                                    {mcq.isSimilar && similarQuestionDetails[originalIndex] && (
-                                      <div className="mt-4 p-3 bg-amber-500/5 rounded-2xl border border-amber-500/20 flex flex-col sm:flex-row items-center gap-3 animate-in fade-in duration-500">
-                                        <div className="flex items-center gap-2">
-                                          <div className="w-6 h-6 rounded-lg bg-amber-500/20 flex items-center justify-center">
-                                            <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
-                                          </div>
-                                          <span className="text-[11px] font-semibold text-amber-400 uppercase tracking-wider whitespace-nowrap">Duplicate detected</span>
-                                        </div>
-                                        <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 no-scrollbar flex-1 min-w-0">
-                                          <span className="text-[10px] text-gray-500 whitespace-nowrap">Similar to indices:</span>
-                                          {similarQuestionDetails[originalIndex].map(i => (
-                                            <span key={i} className="px-1.5 py-0.5 rounded-md bg-white/5 border border-white/5 text-[10px] text-gray-400">#{i + 1}</span>
-                                          ))}
-                                        </div>
-                                        <div className="flex items-center gap-1.5 flex-shrink-0">
-                                          <button
-                                            onClick={(e) => { e.stopPropagation(); if (confirm(`Archive Q${originalIndex + 1}?`)) handleDeleteQuestion(selectedMCQBank._id, originalIndex); }}
-                                            className="px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-500 text-[10px] font-bold border border-rose-500/20 hover:bg-rose-500/20 transition-all flex items-center gap-1"
-                                          >
-                                            <Trash2 className="h-3 w-3" /> Archive
-                                          </button>
-                                          <button
-                                            onClick={(e) => { e.stopPropagation(); if (confirm(`Regenerate Q${originalIndex + 1}?`)) handleReplaceQuestion(selectedMCQBank._id, originalIndex, selectedMCQBank.sopId); }}
-                                            className="px-2.5 py-1 rounded-lg bg-indigo-500/10 text-indigo-400 text-[10px] font-bold border border-indigo-500/20 hover:bg-indigo-500/20 transition-all flex items-center gap-1"
-                                          >
-                                            <RefreshCw className="h-3 w-3" /> Repair
-                                          </button>
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  {/* Action Toolbar on Hover */}
-                                  <div className="flex flex-col items-center justify-center gap-3 w-full sm:w-16 p-4 bg-indigo-600/5 sm:border-l border-t sm:border-t-0 border-white/5 opacity-0 group-hover:opacity-100 transition-all duration-300 transform sm:translate-x-full group-hover:translate-x-0 group-hover:bg-indigo-600/10" onClick={e => e.stopPropagation()}>
-                                    {/* Similar */}
-                                    <button
-                                      disabled={isUpdating}
-                                      onClick={(e) => { e.stopPropagation(); toggleSimilar(selectedMCQBank, originalIndex, mcq); }}
-                                      className={`p-2 rounded-xl transition-all ${mcq.isSimilar ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30' : 'bg-white/5 text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/20 border border-transparent'}`}
-                                    >
-                                      {isUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
-                                    </button>
-                                    {/* Check/Approve */}
-                                    <button
-                                      disabled={isUpdating}
-                                      onClick={(e) => { e.stopPropagation(); toggleChecked(selectedMCQBank._id, originalIndex, !!mcq.isChecked); }}
-                                      className={`p-2 rounded-xl transition-all ${mcq.isChecked ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30' : 'bg-white/5 text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-500/20 border border-transparent'}`}
-                                    >
-                                      {isUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                                    </button>
-                                    {/* Star/Review */}
-                                    <button
-                                      disabled={isUpdating}
-                                      onClick={(e) => { e.stopPropagation(); toggleReview(selectedMCQBank, originalIndex, mcq); }}
-                                      className={`p-2 rounded-xl transition-all ${mcq.isReviewed ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/30' : 'bg-white/5 text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 hover:border-blue-500/20 border border-transparent'}`}
-                                    >
-                                      {isUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Star className={`h-4 w-4 ${mcq.isReviewed ? 'fill-current' : ''}`} />}
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )
-                    ) : (
-                      <div className="flex flex-col items-center justify-center py-24 text-center">
-                        <div className="w-20 h-20 bg-[#131722] border border-white/5 rounded-3xl flex items-center justify-center mb-6">
-                          <FileText className="h-8 w-8 text-gray-600" />
-                        </div>
-                        <p className="text-gray-500 uppercase tracking-widest text-[10px] font-bold">Catalogue Empty</p>
-                        <h3 className="text-xl font-bold text-gray-200 mt-2">No active questions found</h3>
+                  {/* Load more footer */}
+                  {activeTab === "active" && visibleCount < filtered.length && (
+                    <div className="p-6 bg-[#13102a] border-t border-indigo-500/10 flex items-center justify-center w-full">
+                      <div className="flex items-center gap-2">
+                        <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
+                          Displaying {visibleCount} of {filtered.length} units
+                        </span>
                       </div>
-                    )) : (
-                      <div className="space-y-4">
-                        {loadingRecycled ? (
-                          <div className="flex flex-col items-center justify-center py-24">
-                            <Loader2 className="h-10 w-10 animate-spin text-indigo-500/40" />
-                            <p className="text-gray-500 text-xs mt-4 uppercase tracking-widest font-bold">Querying Archive...</p>
-                          </div>
-                        ) : recycledQuestions.length > 0 ? (
-                          <div className="grid grid-cols-1 gap-4">
-                            {recycledQuestions.map((elim, i) => (
-                              <div key={i} className="group bg-[#0E121B] rounded-[24px] p-6 border border-rose-500/10 hover:border-rose-500/30 transition-all opacity-80 hover:opacity-100">
-                                <div className="flex items-start gap-5">
-                                  <div className="flex flex-col items-center gap-1.5">
-                                    <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-500 shadow-inner">
-                                      <Trash2 className="h-5 w-5" />
-                                    </div>
-                                    <span className="text-[10px] font-bold font-mono text-gray-500">
-                                      {typeof (elim as any).originalQuestionIndex === 'number' ? `Q${(elim as any).originalQuestionIndex + 1}` :
-                                        typeof (elim as any).originalIndex === 'number' ? `Q${(elim as any).originalIndex + 1}` : 'ARC'}
-                                    </span>
-                                  </div>
-
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-3 mb-3 flex-wrap">
-                                      <span className="px-2 py-0.5 rounded-lg bg-rose-500/10 text-rose-500 border border-rose-500/20 text-[10px] font-bold uppercase tracking-wider">
-                                        Archived: {new Date(elim.eliminatedAt).toLocaleDateString()}
-                                      </span>
-                                      {(elim as any).eliminatedBy && (elim as any).eliminatedBy !== 'Unknown User' && (
-                                        <span className="px-2 py-0.5 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-bold uppercase tracking-wider">
-                                          Actor: {(elim as any).eliminatedBy}
-                                        </span>
-                                      )}
-                                      <span className="px-2 py-0.5 rounded-lg bg-indigo-950/40 text-indigo-400/60 border border-indigo-500/10 text-[10px] font-bold uppercase tracking-wider">
-                                        {elim.eliminationReason === 'manual' ? 'Manual Delete' : elim.eliminationReason}
-                                      </span>
-                                    </div>
-
-                                    <h3 className="text-lg font-semibold text-indigo-300/40 mb-4 line-through decoration-rose-500/40 leading-relaxed italic">
-                                      {elim.question.question}
-                                    </h3>
-
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pl-4 border-l-2 border-indigo-500/10">
-                                      {elim.question.options?.map((opt: string, idx: number) => (
-                                        <div key={idx} className={`text-xs p-2.5 rounded-xl border ${opt === elim.question.correctAnswer ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : 'text-indigo-400/40 bg-indigo-950/20 border-transparent'}`}>
-                                          <span className="font-bold mr-2 text-[10px] underline decoration-indigo-500/20">0{idx + 1}</span> {opt}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="flex flex-col items-center justify-center py-24 text-center">
-                            <div className="w-20 h-20 bg-indigo-950/40 border border-indigo-500/20 rounded-3xl flex items-center justify-center mb-6">
-                              <X className="h-8 w-8 text-indigo-400/40" />
-                            </div>
-                            <p className="text-indigo-400/30 uppercase tracking-widest text-[10px] font-bold">Archive Integrity verified</p>
-                            <h3 className="text-xl font-bold text-indigo-300/40 mt-2">No recycled items found</h3>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                {/* Load more footer */}
-                {activeTab === 'active' && visibleCount < filtered.length && (
-                  <div className="p-6 bg-[#13102a] border-t border-indigo-500/10 flex items-center justify-center w-full">
-                    <div className="flex items-center gap-2">
-                      <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />
-                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Displaying {visibleCount} of {filtered.length} units</span>
-                    </div>
-                    <button
-                      onClick={() => setVisibleCount(v => Math.min(v + 30, filtered.length))}
-                      className="flex items-center gap-2 px-6 py-2.5 bg-indigo-950/40 border border-indigo-500/20 rounded-2xl text-indigo-300 hover:text-white hover:bg-indigo-600/20 hover:border-indigo-500/40 transition-all font-bold text-xs uppercase tracking-widest shadow-lg"
-                    >
-                      <ChevronsUpDown className="h-4 w-4" />
-                      Expand Catalog ({filtered.length - visibleCount} units)
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* MCQ Detail Modal — with Similar Questions Side-by-Side */}
-        {selectedMCQ && (() => {
-          // Bidirectional Similarity Lookup
-          // 1. Check if current question is a Primary node
-          let relatedIndices: number[] = similarQuestionDetails && similarQuestionDetails[selectedMCQ?.index] ? [...similarQuestionDetails[selectedMCQ.index]] : [];
-
-          // 2. If not found as primary, check if it exists as a "Similar" node in another group
-          if (relatedIndices.length === 0 && similarQuestionDetails) {
-            for (const [pIdxStr, sIndices] of Object.entries(similarQuestionDetails)) {
-              if (!Array.isArray(sIndices)) continue;
-              const pIdx = parseInt(pIdxStr);
-              if (sIndices.includes(selectedMCQ?.index)) {
-                // Found it! This question is similar to Primary(pIdx). 
-                // We want to show the Primary AND the other Similars as "related".
-                relatedIndices = [pIdx, ...sIndices.filter(i => i !== (selectedMCQ?.index))];
-                break;
-              }
-            }
-          }
-
-          const hasSimilar = relatedIndices.length > 0;
-          const similarIndices = relatedIndices;
-          const allMcqs = selectedMCQBank?.mcqs || [];
-
-          // Render a compact question card for side-by-side comparison
-          const renderCompactQuestion = (mcq: any, idx: number, label: string, accentColor: string) => {
-            if (!mcq) return null;
-            return (
-              <div className={`flex-1 min-w-[300px] max-w-[450px] rounded-2xl border p-5 space-y-4 ${accentColor}`}>
-                {/* Card Header */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl">{mcq.aiIcon || '📝'}</span>
-                    <div>
-                      <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">{label || 'Question'}</p>
-                      <p className="text-xs font-bold text-white">Q#{idx + 1}</p>
-                    </div>
-                  </div>
-                  <span className={`px-2 py-0.5 rounded-lg text-[9px] font-bold uppercase tracking-wider border ${getDifficultyColor(mcq.difficulty)}`}>
-                    {mcq.difficulty || 'Normal'}
-                  </span>
-                </div>
-
-                {/* Question Text */}
-                <h4 className={`text-sm font-semibold text-gray-100 leading-relaxed ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati text-base' : ''}`}>
-                  {mcq.question || 'Loading question content...'}
-                </h4>
-
-                {/* Options */}
-                <div className="space-y-1.5">
-                  {(mcq.options || []).map((opt: any, oi: number) => {
-                    const isCorrect = opt === mcq.correctAnswer;
-                    return (
-                      <div key={oi} className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-xs transition-all ${isCorrect ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' : 'bg-white/5 border-white/5 text-gray-400'
-                        }`}>
-                        <span className={`w-5 h-5 flex-shrink-0 flex items-center justify-center rounded-md text-[9px] font-bold border ${isCorrect ? 'bg-emerald-500/30 border-emerald-500/40 text-emerald-300' : 'bg-white/5 border-white/10 text-gray-500'
-                          }`}>{String.fromCharCode(65 + oi)}</span>
-                        <span className={`${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati text-sm' : ''}`}>{opt || ''}</span>
-                        {isCorrect && <CheckCircle2 className="h-3 w-3 ml-auto text-emerald-400" />}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex items-center gap-2 pt-2 border-t border-white/5">
-                  <button
-                    onClick={() => { if (confirm(`Archive Q${idx + 1}?`)) handleDeleteQuestion(selectedMCQBank!._id, idx); }}
-                    className="flex-1 px-3 py-2 rounded-xl bg-rose-500/10 text-rose-400 text-[10px] font-bold border border-rose-500/20 hover:bg-rose-500/20 transition-all flex items-center justify-center gap-1.5"
-                  >
-                    <Trash2 className="h-3 w-3" /> Archive
-                  </button>
-                  <button
-                    onClick={() => { if (confirm(`Regenerate Q${idx + 1}?`)) handleReplaceQuestion(selectedMCQBank!._id, idx, selectedMCQBank!.sopId); }}
-                    className="flex-1 px-3 py-2 rounded-xl bg-indigo-500/10 text-indigo-400 text-[10px] font-bold border border-indigo-500/20 hover:bg-indigo-500/20 transition-all flex items-center justify-center gap-1.5"
-                  >
-                    <RefreshCw className="h-3 w-3" /> Regenerate
-                  </button>
-                </div>
-              </div>
-            );
-          };
-
-          return (
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[70] animate-in fade-in duration-300" onClick={() => setSelectedMCQ(null)}>
-              <div
-                className={`bg-[#0f0d1e] rounded-[28px] ${hasSimilar ? 'max-w-6xl' : 'max-w-3xl'} w-full max-h-[92vh] flex flex-col border border-indigo-500/15 shadow-2xl shadow-black/60 overflow-hidden`}
-                onClick={e => e.stopPropagation()}
-              >
-                {/* Header */}
-                <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 px-6 py-4 flex-shrink-0 relative overflow-hidden">
-                  <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10" />
-                  <div className="relative flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/20 text-white font-mono font-bold shadow-lg">
-                        {String(selectedMCQ.index + 1).padStart(2, '0')}
-                      </div>
-                      <div>
-                        <h2 className="text-lg font-bold text-white tracking-tight leading-none mb-1">
-                          {hasSimilar ? 'Similarity Comparison' : 'Question Analytics'}
-                        </h2>
-                        <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest">
-                          SOP: {selectedMCQBank?.sopIdentifier}
-                          {hasSimilar && <span className="ml-3 text-amber-300">⚠ {similarIndices.length} similar question{similarIndices.length > 1 ? 's' : ''} found</span>}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setSelectedMCQ(null)}
-                      className="p-2 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-all border border-white/10 shadow-inner"
-                    >
-                      <X className="h-5 w-5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Body */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
-                  {hasSimilar ? (
-                    /* ── SIDE-BY-SIDE COMPARISON VIEW ── */
-                    <div className="space-y-5">
-                      <div className="flex items-center gap-3 px-1">
-                        <div className="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_10px_#f59e0b]" />
-                        <p className="text-sm text-gray-300">
-                          <span className="font-bold text-white">Q#{selectedMCQ.index + 1}</span> has been flagged as similar to{' '}
-                          <span className="font-bold text-amber-400">{similarIndices.length} other question{similarIndices.length > 1 ? 's' : ''}</span>.
-                          Compare them side by side below.
-                        </p>
-                      </div>
-
-                      <div className="flex gap-4 overflow-x-auto pb-2">
-                        {/* Primary Question */}
-                        {renderCompactQuestion(
-                          selectedMCQ.mcq,
-                          selectedMCQ.index,
-                          'Primary Question',
-                          'bg-indigo-500/5 border-indigo-500/20'
-                        )}
-
-                        {/* Similar Questions */}
-                        {similarIndices.map(simIdx => {
-                          const simMcq = allMcqs[simIdx];
-                          if (!simMcq) return null;
-                          return renderCompactQuestion(
-                            simMcq,
-                            simIdx,
-                            'Similar Match',
-                            'bg-amber-500/5 border-amber-500/20'
-                          );
-                        })}
-                      </div>
-
-                      {/* Quick Link */}
-                      <div className="flex items-center justify-center pt-4 border-t border-white/5">
-                        <button
-                          onClick={() => { setSelectedMCQ(null); router.push('/mcq-review'); }}
-                          className="flex items-center gap-3 px-6 py-3 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-bold transition-all border border-white/10 text-xs uppercase tracking-widest"
-                        >
-                          <Star className="h-4 w-4 text-amber-400 fill-amber-400" />
-                          Resolve in Review Center
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    /* ── STANDARD SINGLE QUESTION VIEW ── */
-                    <div className="space-y-8">
-                      {/* Question Section */}
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-3">
-                          <span className="text-4xl">{selectedMCQ.mcq.aiIcon}</span>
-                          <div className="flex flex-wrap gap-2">
-                            <span className={`px-3 py-1 rounded-xl text-[10px] font-bold uppercase tracking-widest border ${getDifficultyColor(selectedMCQ.mcq.difficulty)}`}>
-                              {selectedMCQ.mcq.difficultyStars} {selectedMCQ.mcq.difficulty}
-                            </span>
-                          </div>
-                        </div>
-                        <h3 className={`text-2xl font-bold text-gray-100 leading-tight tracking-tight ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati' : ''}`}>
-                          {selectedMCQ.mcq.question}
-                        </h3>
-                      </div>
-
-                      {/* Options */}
-                      <div className="space-y-3">
-                        <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] ml-1">Proposed Options</h4>
-                        <div className="space-y-2.5">
-                          {selectedMCQ.mcq.options.map((option, index) => {
-                            const isCorrect = option === selectedMCQ.mcq.correctAnswer;
-                            return (
-                              <div key={index} className={`group p-4 rounded-2xl flex items-center gap-4 transition-all border ${isCorrect ? 'bg-purple-600/10 border-purple-500/30 shadow-[0_0_20px_rgba(147,51,234,0.1)]' : 'bg-white/5 border-white/5 hover:border-white/10'
-                                }`}>
-                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold border transition-all ${isCorrect ? 'bg-gradient-to-br from-purple-600 to-indigo-600 text-white border-purple-400 shadow-lg shadow-purple-500/20' : 'bg-slate-900 text-gray-500 border-white/5'
-                                  }`}>{String.fromCharCode(65 + index)}</div>
-                                <span className={`${isCorrect ? 'text-purple-400 font-semibold' : 'text-gray-400'} text-base ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati' : ''}`}>{option}</span>
-                                {isCorrect && (
-                                  <div className="ml-auto flex items-center gap-2 px-3 py-1 bg-purple-500/20 rounded-lg text-purple-400 text-[10px] font-bold uppercase tracking-wider">
-                                    <CheckCircle2 className="h-3 w-3" /> Correct Answer
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Insights */}
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <div className="space-y-3">
-                          <h4 className="text-[10px] font-bold text-[#8B5CF6] uppercase tracking-[0.2em] flex items-center gap-2 ml-1">
-                            <MessageSquare className="h-3 w-3" /> Pedagogical Rationale
-                          </h4>
-                          <div className="bg-slate-800/30 p-5 rounded-[24px] border border-white/5 shadow-inner">
-                            <p className={`text-sm text-gray-400 leading-relaxed ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati text-base' : ''}`}>
-                              {selectedMCQ.mcq.explanation || 'No explanation provided for this question unit.'}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="space-y-3">
-                          <h4 className="text-[10px] font-bold text-blue-400 uppercase tracking-[0.2em] flex items-center gap-2 ml-1">
-                            <BookOpen className="h-3 w-3" /> Technical SOP Context
-                          </h4>
-                          <div className="bg-slate-800/30 p-5 rounded-[24px] border border-white/5 shadow-inner italic">
-                            <p className={`text-sm text-blue-400/80 leading-relaxed ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati text-base' : ''}`}>
-                              &quot;{selectedMCQ.mcq.sopReference || 'Direct reference content is being indexed...'}&quot;
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Status */}
-                      <div className="pt-6 border-t border-white/5 flex flex-wrap gap-4">
-                        <div className="flex-1 min-w-[200px] flex items-center gap-3 p-4 bg-white/5 rounded-2xl border border-white/5">
-                          <div className={`p-3 rounded-xl ${selectedMCQ.mcq.isChecked ? 'bg-emerald-500/20 text-emerald-400' : 'bg-gray-500/10 text-gray-500'}`}>
-                            <CheckCircle2 className="h-6 w-6" />
-                          </div>
-                          <div>
-                            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Quality Check</p>
-                            <p className={`text-sm font-bold ${selectedMCQ.mcq.isChecked ? 'text-emerald-400' : 'text-gray-400'}`}>
-                              {selectedMCQ.mcq.isChecked ? 'Successfully Approved' : 'Pending Verification'}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex-1 min-w-[200px] flex items-center gap-3 p-4 bg-white/5 rounded-2xl border border-white/5">
-                          <div className={`p-3 rounded-xl ${selectedMCQ.mcq.isReviewed ? 'bg-amber-500/20 text-amber-400' : 'bg-gray-500/10 text-gray-500'}`}>
-                            <Star className={`h-6 w-6 ${selectedMCQ.mcq.isReviewed ? 'fill-current' : ''}`} />
-                          </div>
-                          <div>
-                            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Priority Review</p>
-                            <p className={`text-sm font-bold ${selectedMCQ.mcq.isReviewed ? 'text-amber-400' : 'text-gray-400'}`}>
-                              {selectedMCQ.mcq.isReviewed ? 'Review Completed' : 'Standard Priority'}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Action Buttons */}
-                      <div className="pt-4 flex gap-3">
-                        <button onClick={() => router.push('/mcq-review')} className="flex-1 px-6 py-4 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-bold transition-all flex items-center justify-center gap-3 border border-white/10 group">
-                          <Star className="h-5 w-5 text-amber-400 fill-amber-400 group-hover:scale-110 transition-transform" />
-                          <span className="uppercase tracking-widest text-xs">Go to Review Center</span>
-                        </button>
-                        <button
-                          onClick={async () => {
-                            if (selectedMCQBank) {
-                              await handleReplaceQuestion(selectedMCQBank._id, selectedMCQ.index, selectedMCQBank.sopId);
-                              setSelectedMCQ(null);
-                            }
-                          }}
-                          disabled={updatingStatus === `${selectedMCQBank?._id}-${selectedMCQ.index}`}
-                          className="flex-1 px-6 py-4 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 text-white rounded-2xl font-bold transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_10px_30px_rgba(225,29,72,0.3)] group"
-                        >
-                          {updatingStatus === `${selectedMCQBank?._id}-${selectedMCQ.index}` ? (
-                            <><Loader2 className="h-5 w-5 animate-spin" /><span className="uppercase tracking-widest text-xs">Processing Replace...</span></>
-                          ) : (
-                            <><RefreshCw className="h-5 w-5 group-hover:rotate-180 transition-transform duration-500" /><span className="uppercase tracking-widest text-xs">Delete & Regenerate Question</span></>
-                          )}
-                        </button>
-                      </div>
-                      <p className="text-[10px] text-gray-500 text-center font-medium uppercase tracking-[0.2em]">
-                        Archiving moves this unit to the recycled section and triggers AI re-generation.
-                      </p>
+                      <button
+                        onClick={() =>
+                          setVisibleCount((v) =>
+                            Math.min(v + 30, filtered.length),
+                          )
+                        }
+                        className="flex items-center gap-2 px-6 py-2.5 bg-indigo-950/40 border border-indigo-500/20 rounded-2xl text-indigo-300 hover:text-white hover:bg-indigo-600/20 hover:border-indigo-500/40 transition-all font-bold text-xs uppercase tracking-widest shadow-lg"
+                      >
+                        <ChevronsUpDown className="h-4 w-4" />
+                        Expand Catalog ({filtered.length - visibleCount} units)
+                      </button>
                     </div>
                   )}
                 </div>
               </div>
-            </div>
-          );
-        })()}
+            );
+          })()}
+
+        {/* MCQ Detail Modal — with Similar Questions Side-by-Side */}
+        {selectedMCQ &&
+          (() => {
+            // Bidirectional Similarity Lookup
+            // 1. Check if current question is a Primary node
+            let relatedIndices: number[] =
+              similarQuestionDetails &&
+                similarQuestionDetails[selectedMCQ?.index]
+                ? [...similarQuestionDetails[selectedMCQ.index]]
+                : [];
+
+            // 2. If not found as primary, check if it exists as a "Similar" node in another group
+            if (relatedIndices.length === 0 && similarQuestionDetails) {
+              for (const [pIdxStr, sIndices] of Object.entries(
+                similarQuestionDetails,
+              )) {
+                if (!Array.isArray(sIndices)) continue;
+                const pIdx = parseInt(pIdxStr);
+                if (sIndices.includes(selectedMCQ?.index)) {
+                  // Found it! This question is similar to Primary(pIdx).
+                  // We want to show the Primary AND the other Similars as "related".
+                  relatedIndices = [
+                    pIdx,
+                    ...sIndices.filter((i) => i !== selectedMCQ?.index),
+                  ];
+                  break;
+                }
+              }
+            }
+
+            const hasSimilar = relatedIndices.length > 0;
+            const similarIndices = relatedIndices;
+            const allMcqs = selectedMCQBank?.mcqs || [];
+
+            // Render a compact question card for side-by-side comparison
+            const renderCompactQuestion = (
+              mcq: any,
+              idx: number,
+              label: string,
+              accentColor: string,
+            ) => {
+              if (!mcq) return null;
+              return (
+                <div
+                  className={`flex-1 min-w-[300px] max-w-[450px] rounded-2xl border p-5 space-y-4 ${accentColor}`}
+                >
+                  {/* Card Header */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">{mcq.aiIcon || "📝"}</span>
+                      <div>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">
+                          {label || "Question"}
+                        </p>
+                        <p className="text-xs font-bold text-white">
+                          Q#{idx + 1}
+                        </p>
+                      </div>
+                    </div>
+                    <span
+                      className={`px-2 py-0.5 rounded-lg text-[9px] font-bold uppercase tracking-wider border ${getDifficultyColor(mcq.difficulty)}`}
+                    >
+                      {mcq.difficulty || "Normal"}
+                    </span>
+                  </div>
+
+                  {/* Question Text */}
+                  <h4
+                    className={`text-sm font-semibold text-gray-100 leading-relaxed ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati text-base" : ""}`}
+                  >
+                    {mcq.question || "Loading question content..."}
+                  </h4>
+
+                  {/* Options */}
+                  <div className="space-y-1.5">
+                    {(mcq.options || []).map((opt: any, oi: number) => {
+                      const isCorrect = opt === mcq.correctAnswer;
+                      return (
+                        <div
+                          key={oi}
+                          className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-xs transition-all ${isCorrect
+                              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"
+                              : "bg-white/5 border-white/5 text-gray-400"
+                            }`}
+                        >
+                          <span
+                            className={`w-5 h-5 flex-shrink-0 flex items-center justify-center rounded-md text-[9px] font-bold border ${isCorrect
+                                ? "bg-emerald-500/30 border-emerald-500/40 text-emerald-300"
+                                : "bg-white/5 border-white/10 text-gray-500"
+                              }`}
+                          >
+                            {String.fromCharCode(65 + oi)}
+                          </span>
+                          <span
+                            className={`${selectedMCQBank?.language === "Gujarati" ? "font-gujarati text-sm" : ""}`}
+                          >
+                            {opt || ""}
+                          </span>
+                          {isCorrect && (
+                            <CheckCircle2 className="h-3 w-3 ml-auto text-emerald-400" />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-2 pt-2 border-t border-white/5">
+                    <button
+                      onClick={() => {
+                        if (confirm(`Archive Q${idx + 1}?`))
+                          handleDeleteQuestion(selectedMCQBank!._id, idx);
+                      }}
+                      className="flex-1 px-3 py-2 rounded-xl bg-rose-500/10 text-rose-400 text-[10px] font-bold border border-rose-500/20 hover:bg-rose-500/20 transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <Trash2 className="h-3 w-3" /> Archive
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm(`Regenerate Q${idx + 1}?`))
+                          handleReplaceQuestion(
+                            selectedMCQBank!._id,
+                            idx,
+                            selectedMCQBank!.sopId,
+                          );
+                      }}
+                      className="flex-1 px-3 py-2 rounded-xl bg-indigo-500/10 text-indigo-400 text-[10px] font-bold border border-indigo-500/20 hover:bg-indigo-500/20 transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <RefreshCw className="h-3 w-3" /> Regenerate
+                    </button>
+                  </div>
+                </div>
+              );
+            };
+
+            return (
+              <div
+                className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[70] animate-in fade-in duration-300"
+                onClick={() => setSelectedMCQ(null)}
+              >
+                <div
+                  className={`bg-[#0f0d1e] rounded-[28px] ${hasSimilar ? "max-w-6xl" : "max-w-3xl"} w-full max-h-[92vh] flex flex-col border border-indigo-500/15 shadow-2xl shadow-black/60 overflow-hidden`}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Header */}
+                  <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 px-6 py-4 flex-shrink-0 relative overflow-hidden">
+                    <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10" />
+                    <div className="relative flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/20 text-white font-mono font-bold shadow-lg">
+                          {String(selectedMCQ.index + 1).padStart(2, "0")}
+                        </div>
+                        <div>
+                          <h2 className="text-lg font-bold text-white tracking-tight leading-none mb-1">
+                            {hasSimilar
+                              ? "Similarity Comparison"
+                              : "Question Analytics"}
+                          </h2>
+                          <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest">
+                            SOP: {selectedMCQBank?.sopIdentifier}
+                            {hasSimilar && (
+                              <span className="ml-3 text-amber-300">
+                                ⚠ {similarIndices.length} similar question
+                                {similarIndices.length > 1 ? "s" : ""} found
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setSelectedMCQ(null)}
+                        className="p-2 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-all border border-white/10 shadow-inner"
+                      >
+                        <X className="h-5 w-5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Body */}
+                  <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+                    {hasSimilar ? (
+                      /* ── SIDE-BY-SIDE COMPARISON VIEW ── */
+                      <div className="space-y-5">
+                        <div className="flex items-center gap-3 px-1">
+                          <div className="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_10px_#f59e0b]" />
+                          <p className="text-sm text-gray-300">
+                            <span className="font-bold text-white">
+                              Q#{selectedMCQ.index + 1}
+                            </span>{" "}
+                            has been flagged as similar to{" "}
+                            <span className="font-bold text-amber-400">
+                              {similarIndices.length} other question
+                              {similarIndices.length > 1 ? "s" : ""}
+                            </span>
+                            . Compare them side by side below.
+                          </p>
+                        </div>
+
+                        <div className="flex gap-4 overflow-x-auto pb-2">
+                          {/* Primary Question */}
+                          {renderCompactQuestion(
+                            selectedMCQ.mcq,
+                            selectedMCQ.index,
+                            "Primary Question",
+                            "bg-indigo-500/5 border-indigo-500/20",
+                          )}
+
+                          {/* Similar Questions */}
+                          {similarIndices.map((simIdx) => {
+                            const simMcq = allMcqs[simIdx];
+                            if (!simMcq) return null;
+                            return renderCompactQuestion(
+                              simMcq,
+                              simIdx,
+                              "Similar Match",
+                              "bg-amber-500/5 border-amber-500/20",
+                            );
+                          })}
+                        </div>
+
+                        {/* Quick Link */}
+                        <div className="flex items-center justify-center pt-4 border-t border-white/5">
+                          <button
+                            onClick={() => {
+                              setSelectedMCQ(null);
+                              router.push("/mcq-review");
+                            }}
+                            className="flex items-center gap-3 px-6 py-3 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-bold transition-all border border-white/10 text-xs uppercase tracking-widest"
+                          >
+                            <Star className="h-4 w-4 text-amber-400 fill-amber-400" />
+                            Resolve in Review Center
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* ── STANDARD SINGLE QUESTION VIEW ── */
+                      <div className="space-y-8">
+                        {/* Question Section */}
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-3">
+                            <span className="text-4xl">
+                              {selectedMCQ.mcq.aiIcon}
+                            </span>
+                            <div className="flex flex-wrap gap-2">
+                              <span
+                                className={`px-3 py-1 rounded-xl text-[10px] font-bold uppercase tracking-widest border ${getDifficultyColor(selectedMCQ.mcq.difficulty)}`}
+                              >
+                                {selectedMCQ.mcq.difficultyStars}{" "}
+                                {selectedMCQ.mcq.difficulty}
+                              </span>
+                            </div>
+                          </div>
+                          <h3
+                            className={`text-2xl font-bold text-gray-100 leading-tight tracking-tight ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati" : ""}`}
+                          >
+                            {selectedMCQ.mcq.question}
+                          </h3>
+                        </div>
+
+                        {/* Options */}
+                        <div className="space-y-3">
+                          <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] ml-1">
+                            Proposed Options
+                          </h4>
+                          <div className="space-y-2.5">
+                            {selectedMCQ.mcq.options.map((option, index) => {
+                              const isCorrect =
+                                option === selectedMCQ.mcq.correctAnswer;
+                              return (
+                                <div
+                                  key={index}
+                                  className={`group p-4 rounded-2xl flex items-center gap-4 transition-all border ${isCorrect
+                                      ? "bg-purple-600/10 border-purple-500/30 shadow-[0_0_20px_rgba(147,51,234,0.1)]"
+                                      : "bg-white/5 border-white/5 hover:border-white/10"
+                                    }`}
+                                >
+                                  <div
+                                    className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold border transition-all ${isCorrect
+                                        ? "bg-gradient-to-br from-purple-600 to-indigo-600 text-white border-purple-400 shadow-lg shadow-purple-500/20"
+                                        : "bg-slate-900 text-gray-500 border-white/5"
+                                      }`}
+                                  >
+                                    {String.fromCharCode(65 + index)}
+                                  </div>
+                                  <span
+                                    className={`${isCorrect ? "text-purple-400 font-semibold" : "text-gray-400"} text-base ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati" : ""}`}
+                                  >
+                                    {option}
+                                  </span>
+                                  {isCorrect && (
+                                    <div className="ml-auto flex items-center gap-2 px-3 py-1 bg-purple-500/20 rounded-lg text-purple-400 text-[10px] font-bold uppercase tracking-wider">
+                                      <CheckCircle2 className="h-3 w-3" />{" "}
+                                      Correct Answer
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Insights */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                          <div className="space-y-3">
+                            <h4 className="text-[10px] font-bold text-[#8B5CF6] uppercase tracking-[0.2em] flex items-center gap-2 ml-1">
+                              <MessageSquare className="h-3 w-3" /> Pedagogical
+                              Rationale
+                            </h4>
+                            <div className="bg-slate-800/30 p-5 rounded-[24px] border border-white/5 shadow-inner">
+                              <p
+                                className={`text-sm text-gray-400 leading-relaxed ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati text-base" : ""}`}
+                              >
+                                {selectedMCQ.mcq.explanation ||
+                                  "No explanation provided for this question unit."}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="space-y-3">
+                            <h4 className="text-[10px] font-bold text-blue-400 uppercase tracking-[0.2em] flex items-center gap-2 ml-1">
+                              <BookOpen className="h-3 w-3" /> Technical SOP
+                              Context
+                            </h4>
+                            <div className="bg-slate-800/30 p-5 rounded-[24px] border border-white/5 shadow-inner italic">
+                              <p
+                                className={`text-sm text-blue-400/80 leading-relaxed ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati text-base" : ""}`}
+                              >
+                                &quot;
+                                {selectedMCQ.mcq.sopReference ||
+                                  "Direct reference content is being indexed..."}
+                                &quot;
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Status */}
+                        <div className="pt-6 border-t border-white/5 flex flex-wrap gap-4">
+                          <div className="flex-1 min-w-[200px] flex items-center gap-3 p-4 bg-white/5 rounded-2xl border border-white/5">
+                            <div
+                              className={`p-3 rounded-xl ${selectedMCQ.mcq.isChecked ? "bg-emerald-500/20 text-emerald-400" : "bg-gray-500/10 text-gray-500"}`}
+                            >
+                              <CheckCircle2 className="h-6 w-6" />
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
+                                Quality Check
+                              </p>
+                              <p
+                                className={`text-sm font-bold ${selectedMCQ.mcq.isChecked ? "text-emerald-400" : "text-gray-400"}`}
+                              >
+                                {selectedMCQ.mcq.isChecked
+                                  ? "Successfully Approved"
+                                  : "Pending Verification"}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-[200px] flex items-center gap-3 p-4 bg-white/5 rounded-2xl border border-white/5">
+                            <div
+                              className={`p-3 rounded-xl ${selectedMCQ.mcq.isReviewed ? "bg-amber-500/20 text-amber-400" : "bg-gray-500/10 text-gray-500"}`}
+                            >
+                              <Star
+                                className={`h-6 w-6 ${selectedMCQ.mcq.isReviewed ? "fill-current" : ""}`}
+                              />
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
+                                Priority Review
+                              </p>
+                              <p
+                                className={`text-sm font-bold ${selectedMCQ.mcq.isReviewed ? "text-amber-400" : "text-gray-400"}`}
+                              >
+                                {selectedMCQ.mcq.isReviewed
+                                  ? "Review Completed"
+                                  : "Standard Priority"}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="pt-4 flex gap-3">
+                          <button
+                            onClick={() => router.push("/mcq-review")}
+                            className="flex-1 px-6 py-4 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-bold transition-all flex items-center justify-center gap-3 border border-white/10 group"
+                          >
+                            <Star className="h-5 w-5 text-amber-400 fill-amber-400 group-hover:scale-110 transition-transform" />
+                            <span className="uppercase tracking-widest text-xs">
+                              Go to Review Center
+                            </span>
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (selectedMCQBank) {
+                                await handleReplaceQuestion(
+                                  selectedMCQBank._id,
+                                  selectedMCQ.index,
+                                  selectedMCQBank.sopId,
+                                );
+                                setSelectedMCQ(null);
+                              }
+                            }}
+                            disabled={
+                              updatingStatus ===
+                              `${selectedMCQBank?._id}-${selectedMCQ.index}`
+                            }
+                            className="flex-1 px-6 py-4 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 text-white rounded-2xl font-bold transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_10px_30px_rgba(225,29,72,0.3)] group"
+                          >
+                            {updatingStatus ===
+                              `${selectedMCQBank?._id}-${selectedMCQ.index}` ? (
+                              <>
+                                <Loader2 className="h-5 w-5 animate-spin" />
+                                <span className="uppercase tracking-widest text-xs">
+                                  Processing Replace...
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <RefreshCw className="h-5 w-5 group-hover:rotate-180 transition-transform duration-500" />
+                                <span className="uppercase tracking-widest text-xs">
+                                  Delete & Regenerate Question
+                                </span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-gray-500 text-center font-medium uppercase tracking-[0.2em]">
+                          Archiving moves this unit to the recycled section and
+                          triggers AI re-generation.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
       </div>
 
       {/* Non-blocking loading overlay for bank detail fetch — tree stays mounted */}
@@ -2251,7 +2976,9 @@ function MCQBankContent() {
         <div className="fixed inset-0 z-[55] bg-black/50 backdrop-blur-sm flex items-center justify-center pointer-events-all">
           <div className="flex flex-col items-center gap-3 bg-[#0f1117] border border-white/10 rounded-2xl px-8 py-6 shadow-2xl">
             <Loader2 className="h-8 w-8 text-purple-400 animate-spin" />
-            <p className="text-gray-300 text-sm font-medium">Loading questions...</p>
+            <p className="text-gray-300 text-sm font-medium">
+              Loading questions...
+            </p>
           </div>
         </div>
       )}
@@ -2261,11 +2988,13 @@ function MCQBankContent() {
 
 export default function MCQBankPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <Loader2 className="h-12 w-12 text-purple-400 animate-spin" />
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+          <Loader2 className="h-12 w-12 text-purple-400 animate-spin" />
+        </div>
+      }
+    >
       <MCQBankContent />
     </Suspense>
   );
