@@ -10,15 +10,15 @@ import MCQBank from '@/models/MCQBank';
 export async function GET(request: NextRequest) {
   try {
     await dbConnect();
-    
+
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status'); // 'pending' | 'reviewed'
     const sopId = searchParams.get('sopId');
     const department = searchParams.get('department');
     const id = searchParams.get('id'); // Get specific similar question by ID
-    
+
     const query: any = {};
-    
+
     if (id) {
       const similarQuestion = await SimilarQuestion.findById(id);
       if (!similarQuestion) {
@@ -27,36 +27,36 @@ export async function GET(request: NextRequest) {
           error: 'Similar question not found',
         }, { status: 404 });
       }
-      
+
       return NextResponse.json({
         success: true,
         similarQuestion,
       });
     }
-    
+
     if (status) {
       query.reviewStatus = status;
     }
-    
+
     if (sopId) {
       query.sopId = sopId;
     }
-    
+
     if (department) {
       query.department = department;
     }
-    
+
     const similarQuestions = await SimilarQuestion.find(query)
       .sort({ flaggedAt: -1 })
       .lean();
-    
+
     // Get statistics
     const stats = {
       total: await SimilarQuestion.countDocuments(),
       pending: await SimilarQuestion.countDocuments({ reviewStatus: 'pending' }),
       reviewed: await SimilarQuestion.countDocuments({ reviewStatus: 'reviewed' }),
     };
-    
+
     // Group by SOP for folder view
     const groupedBySOP: any = {};
     similarQuestions.forEach((sq: any) => {
@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
       }
       groupedBySOP[key].questions.push(sq);
     });
-    
+
     return NextResponse.json({
       success: true,
       similarQuestions,
@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     await dbConnect();
-    
+
     const body = await request.json();
     const {
       sopId,
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
       similarQuestions,
       flaggedBy,
     } = body;
-    
+
     // Validate required fields
     if (!sopId || !sopName || !sopIdentifier || !primaryQuestion || !similarQuestions) {
       return NextResponse.json({
@@ -115,20 +115,20 @@ export async function POST(request: NextRequest) {
         error: 'Missing required fields',
       }, { status: 400 });
     }
-    
+
     // Check if this question is already flagged
     const existing = await SimilarQuestion.findOne({
       'primaryQuestion.mcqBankId': primaryQuestion.mcqBankId,
       'primaryQuestion.questionIndex': primaryQuestion.questionIndex,
     });
-    
+
     if (existing) {
       return NextResponse.json({
         success: false,
         error: 'This question is already flagged as similar',
       }, { status: 400 });
     }
-    
+
     // Create new similar question record
     const newSimilarQuestion = await SimilarQuestion.create({
       sopId,
@@ -141,13 +141,13 @@ export async function POST(request: NextRequest) {
       flaggedBy: flaggedBy || 'System',
       reviewStatus: 'pending',
     });
-    
+
     // Update the isSimilar flag on the primary question
     await MCQBank.updateOne(
       { _id: primaryQuestion.mcqBankId },
       { $set: { [`mcqs.${primaryQuestion.questionIndex}.isSimilar`]: true } }
     );
-    
+
     // Update the isSimilar flag on all similar questions
     for (const sq of similarQuestions) {
       await MCQBank.updateOne(
@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
         { $set: { [`mcqs.${sq.questionIndex}.isSimilar`]: true } }
       );
     }
-    
+
     return NextResponse.json({
       success: true,
       similarQuestion: newSimilarQuestion,
@@ -177,7 +177,7 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     await dbConnect();
-    
+
     const body = await request.json();
     const {
       id,
@@ -187,26 +187,26 @@ export async function PUT(request: NextRequest) {
       reviewedBy,
       reviewNotes,
     } = body;
-    
+
     if (!id) {
       return NextResponse.json({
         success: false,
         error: 'Similar question ID is required',
       }, { status: 400 });
     }
-    
+
     const similarQuestion = await SimilarQuestion.findById(id);
-    
+
     if (!similarQuestion) {
       return NextResponse.json({
         success: false,
         error: 'Similar question not found',
       }, { status: 404 });
     }
-    
+
     // Import EliminatedQuestion for tracking
     const EliminatedQuestion = (await import('@/models/EliminatedQuestion')).default;
-    
+
     // Helper function to move question to eliminated
     const moveToEliminated = async (question: any, mcqBankId: any, questionIndex: number, similarityScore?: number, duplicateOf?: string) => {
       try {
@@ -216,7 +216,7 @@ export async function PUT(request: NextRequest) {
           questionIndex,
           similarityScore,
         });
-        
+
         const eliminatedDoc = await EliminatedQuestion.create({
           sopId: similarQuestion.sopId,
           sopName: similarQuestion.sopName,
@@ -230,7 +230,7 @@ export async function PUT(request: NextRequest) {
           similarityScore: similarityScore,
           replacedWith: 'Resolved via Similar Questions workflow',
         });
-        
+
         console.log('Successfully created eliminated question:', eliminatedDoc._id);
         return eliminatedDoc;
       } catch (error) {
@@ -238,53 +238,53 @@ export async function PUT(request: NextRequest) {
         throw error;
       }
     };
-    
+
     // Update the similar question record
     const updateData: any = {
       reviewStatus: 'reviewed',
       reviewedAt: new Date(),
       reviewedBy: reviewedBy || 'Admin',
     };
-    
+
     if (actionTaken) {
       updateData.actionTaken = actionTaken;
     }
-    
+
     if (keptQuestionIndex !== undefined) {
       updateData.keptQuestionIndex = keptQuestionIndex;
     }
-    
+
     if (mergedQuestion) {
       updateData.mergedQuestion = mergedQuestion;
     }
-    
+
     if (reviewNotes) {
       updateData.reviewNotes = reviewNotes;
     }
-    
+
     const updatedSimilarQuestion = await SimilarQuestion.findByIdAndUpdate(
       id,
       updateData,
       { new: true }
     );
-    
+
     // Track eliminated questions count
     let eliminatedCount = 0;
-    
+
     // Handle the action taken
     if (actionTaken === 'keep_primary') {
       // Remove all similar questions, keep primary
       // Move similar questions to eliminated
       for (const sq of similarQuestion.similarQuestions) {
         await moveToEliminated(
-          sq.question, 
-          sq.mcqBankId, 
-          sq.questionIndex, 
+          sq.question,
+          sq.mcqBankId,
+          sq.questionIndex,
           sq.similarityScore,
           `Primary: ${similarQuestion.primaryQuestion.question.question.substring(0, 100)}...`
         );
         eliminatedCount++;
-        
+
         // Remove from MCQ Bank
         const bank = await MCQBank.findById(sq.mcqBankId);
         if (bank) {
@@ -293,7 +293,7 @@ export async function PUT(request: NextRequest) {
           await bank.save();
         }
       }
-      
+
       // Remove isSimilar flag from primary
       await MCQBank.updateOne(
         { _id: similarQuestion.primaryQuestion.mcqBankId },
@@ -310,14 +310,14 @@ export async function PUT(request: NextRequest) {
         `Kept Similar: ${similarQuestion.similarQuestions[keptQuestionIndex]?.question?.question?.substring(0, 100)}...`
       );
       eliminatedCount++;
-      
+
       const primaryBank = await MCQBank.findById(similarQuestion.primaryQuestion.mcqBankId);
       if (primaryBank) {
         primaryBank.mcqs.splice(similarQuestion.primaryQuestion.questionIndex, 1);
         primaryBank.totalQuestions = primaryBank.mcqs.length;
         await primaryBank.save();
       }
-      
+
       // Remove other similar questions except the kept one
       for (let index = 0; index < similarQuestion.similarQuestions.length; index++) {
         const sq = similarQuestion.similarQuestions[index];
@@ -330,7 +330,7 @@ export async function PUT(request: NextRequest) {
             `Kept Similar: ${similarQuestion.similarQuestions[keptQuestionIndex]?.question?.question?.substring(0, 100)}...`
           );
           eliminatedCount++;
-          
+
           const bank = await MCQBank.findById(sq.mcqBankId);
           if (bank) {
             bank.mcqs.splice(sq.questionIndex, 1);
@@ -357,12 +357,12 @@ export async function PUT(request: NextRequest) {
           'Merged into new question'
         );
         eliminatedCount++;
-        
+
         await MCQBank.updateOne(
           { _id: similarQuestion.primaryQuestion.mcqBankId },
           { $set: { [`mcqs.${similarQuestion.primaryQuestion.questionIndex}`]: { ...mergedQuestion, isSimilar: false } } }
         );
-        
+
         // Remove all similar questions
         for (const sq of similarQuestion.similarQuestions) {
           await moveToEliminated(
@@ -373,7 +373,7 @@ export async function PUT(request: NextRequest) {
             'Merged into new question'
           );
           eliminatedCount++;
-          
+
           const bank = await MCQBank.findById(sq.mcqBankId);
           if (bank) {
             bank.mcqs.splice(sq.questionIndex, 1);
@@ -393,14 +393,14 @@ export async function PUT(request: NextRequest) {
         'All similar questions eliminated'
       );
       eliminatedCount++;
-      
+
       const primaryBank = await MCQBank.findById(similarQuestion.primaryQuestion.mcqBankId);
       if (primaryBank) {
         primaryBank.mcqs.splice(similarQuestion.primaryQuestion.questionIndex, 1);
         primaryBank.totalQuestions = primaryBank.mcqs.length;
         await primaryBank.save();
       }
-      
+
       for (const sq of similarQuestion.similarQuestions) {
         await moveToEliminated(
           sq.question,
@@ -410,7 +410,7 @@ export async function PUT(request: NextRequest) {
           'All similar questions eliminated'
         );
         eliminatedCount++;
-        
+
         const bank = await MCQBank.findById(sq.mcqBankId);
         if (bank) {
           bank.mcqs.splice(sq.questionIndex, 1);
@@ -419,9 +419,9 @@ export async function PUT(request: NextRequest) {
         }
       }
     }
-    
+
     console.log(`Similar questions resolved. Eliminated ${eliminatedCount} questions.`);
-    
+
     return NextResponse.json({
       success: true,
       similarQuestion: updatedSimilarQuestion,
@@ -444,14 +444,14 @@ export async function PUT(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     await dbConnect();
-    
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     const mcqBankId = searchParams.get('mcqBankId');
     const questionIndex = searchParams.get('questionIndex');
-    
+
     let similarQuestion;
-    
+
     // Support deletion by ID or by mcqBankId + questionIndex
     if (id) {
       similarQuestion = await SimilarQuestion.findById(id);
@@ -466,29 +466,29 @@ export async function DELETE(request: NextRequest) {
         error: 'Either ID or mcqBankId+questionIndex is required',
       }, { status: 400 });
     }
-    
+
     if (!similarQuestion) {
       return NextResponse.json({
         success: false,
         error: 'Similar question not found',
       }, { status: 404 });
     }
-    
+
     // Remove isSimilar flags from all questions
     await MCQBank.updateOne(
       { _id: similarQuestion.primaryQuestion.mcqBankId },
       { $set: { [`mcqs.${similarQuestion.primaryQuestion.questionIndex}.isSimilar`]: false } }
     );
-    
+
     for (const sq of similarQuestion.similarQuestions) {
       await MCQBank.updateOne(
         { _id: sq.mcqBankId },
         { $set: { [`mcqs.${sq.questionIndex}.isSimilar`]: false } }
       );
     }
-    
+
     await SimilarQuestion.findByIdAndDelete(similarQuestion._id);
-    
+
     return NextResponse.json({
       success: true,
       message: 'Similar question record deleted successfully',

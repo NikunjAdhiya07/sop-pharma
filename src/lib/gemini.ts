@@ -8,15 +8,15 @@ if (!GEMINI_API_KEY) {
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-// gemini-2.0-flash is the most stable and modern model for high-frequency tasks
-const DEFAULT_MODEL = 'gemini-2.0-flash';
+// gemini-1.5-flash is stable and widely available for high-frequency tasks
+const DEFAULT_MODEL = 'gemini-1.5-flash';
 
-export const geminiModel = genAI.getGenerativeModel({ 
+export const geminiModel = genAI.getGenerativeModel({
   model: DEFAULT_MODEL,
   generationConfig: {
     responseMimeType: "application/json",
-    maxOutputTokens: 32768, 
-    temperature: 0.1, 
+    maxOutputTokens: 32768,
+    temperature: 0.1,
   }
 });
 
@@ -67,7 +67,7 @@ export interface MCQGenerationResponse {
  */
 function cleanAndExtractJSON(text: string): string {
   let jsonText = text.trim();
-  
+
   // Remove markdown code blocks (multiple formats)
   if (jsonText.includes('```json')) {
     const parts = jsonText.split('```json');
@@ -80,11 +80,11 @@ function cleanAndExtractJSON(text: string): string {
       jsonText = parts[1].split('```')[0].trim();
     }
   }
-  
+
   // Find the first occurrence of { or [ (start of JSON)
   const firstBrace = jsonText.indexOf('{');
   const firstBracket = jsonText.indexOf('[');
-  
+
   let jsonStart = -1;
   if (firstBrace !== -1 && firstBracket !== -1) {
     jsonStart = Math.min(firstBrace, firstBracket);
@@ -93,16 +93,16 @@ function cleanAndExtractJSON(text: string): string {
   } else if (firstBracket !== -1) {
     jsonStart = firstBracket;
   }
-  
+
   // If we found a JSON start, extract from there
   if (jsonStart > 0) {
     jsonText = jsonText.substring(jsonStart);
   }
-  
+
   // Find the last occurrence of } or ] (end of JSON)
   const lastBrace = jsonText.lastIndexOf('}');
   const lastBracket = jsonText.lastIndexOf(']');
-  
+
   let jsonEnd = -1;
   if (lastBrace !== -1 && lastBracket !== -1) {
     jsonEnd = Math.max(lastBrace, lastBracket);
@@ -111,67 +111,67 @@ function cleanAndExtractJSON(text: string): string {
   } else if (lastBracket !== -1) {
     jsonEnd = lastBracket;
   }
-  
+
   // If we found a JSON end, extract up to there
   if (jsonEnd !== -1 && jsonEnd < jsonText.length - 1) {
     jsonText = jsonText.substring(0, jsonEnd + 1);
   }
-  
+
   // Remove any remaining leading/trailing non-JSON characters
   jsonText = jsonText.trim();
-  
+
   // Fix common JSON issues BEFORE normalization to preserve structure
   jsonText = jsonText
     .replace(/,(\s*[}\]])/g, '$1'); // Remove trailing commas
-  
+
   // Check for truncation and try to fix BEFORE whitespace normalization
   const openBraces = (jsonText.match(/{/g) || []).length;
   const closeBraces = (jsonText.match(/}/g) || []).length;
   const openBrackets = (jsonText.match(/\[/g) || []).length;
   const closeBrackets = (jsonText.match(/\]/g) || []).length;
-  
+
   // If there's an imbalance, we likely have truncated JSON
   if (openBraces > closeBraces || openBrackets > closeBrackets) {
     console.warn(`⚠️ Detected truncated JSON - attempting smart repair...`);
     console.warn(`   Open braces: ${openBraces}, Close braces: ${closeBraces}`);
     console.warn(`   Open brackets: ${openBrackets}, Close brackets: ${closeBrackets}`);
-    
+
     // Try to find the last complete object in an array
     // Look for pattern: { "mcqs": [ ... incomplete object
     // Use a more flexible regex that handles various whitespace
     const mcqsArrayMatch = jsonText.match(/\{[\s\n\r]*"mcqs"[\s\n\r]*:[\s\n\r]*\[/);
     if (mcqsArrayMatch) {
       console.warn(`   Found mcqs array at position ${mcqsArrayMatch.index}`);
-      
+
       // Find ALL complete MCQ objects
       const completeObjectPositions: number[] = [];
       let depth = 0;
       let inString = false;
       let escapeNext = false;
-      
+
       // Start after the "mcqs": [ part
       const arrayStart = mcqsArrayMatch.index! + mcqsArrayMatch[0].length;
-      
+
       for (let i = arrayStart; i < jsonText.length; i++) {
         const char = jsonText[i];
-        
+
         if (escapeNext) {
           escapeNext = false;
           continue;
         }
-        
+
         if (char === '\\') {
           escapeNext = true;
           continue;
         }
-        
+
         if (char === '"' && !escapeNext) {
           inString = !inString;
           continue;
         }
-        
+
         if (inString) continue;
-        
+
         if (char === '{') {
           depth++;
         } else if (char === '}') {
@@ -182,16 +182,16 @@ function cleanAndExtractJSON(text: string): string {
           }
         }
       }
-      
+
       // Use the last complete object position
       if (completeObjectPositions.length > 0) {
         const lastCompleteObjectEnd = completeObjectPositions[completeObjectPositions.length - 1];
         jsonText = jsonText.substring(0, lastCompleteObjectEnd + 1);
         console.warn(`✂️ Found ${completeObjectPositions.length} complete objects, truncating to last one at position ${lastCompleteObjectEnd}`);
-        
+
         // Now add the closing array and object brackets
         jsonText += ' ] }';
-        
+
         // Final cleanup after repair
         jsonText = jsonText
           .replace(/\n/g, ' ')
@@ -199,7 +199,7 @@ function cleanAndExtractJSON(text: string): string {
           .replace(/\t/g, ' ')
           .replace(/\s+/g, ' ')
           .trim();
-        
+
         return jsonText;
       } else {
         console.warn(`⚠️ No complete objects found in mcqs array (depth tracking failed)`);
@@ -208,7 +208,7 @@ function cleanAndExtractJSON(text: string): string {
       console.warn(`⚠️ Could not find mcqs array pattern in JSON`);
       console.warn(`   First 100 chars:`, jsonText.substring(0, 100));
     }
-    
+
     // Fallback: just add missing closing braces/brackets
     console.warn(`⚠️ Falling back to simple bracket addition`);
     if (openBraces > closeBraces) {
@@ -220,7 +220,7 @@ function cleanAndExtractJSON(text: string): string {
       jsonText += ']'.repeat(openBrackets - closeBrackets);
     }
   }
-  
+
   // Final whitespace normalization
   jsonText = jsonText
     .replace(/\n/g, ' ')
@@ -228,7 +228,7 @@ function cleanAndExtractJSON(text: string): string {
     .replace(/\t/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  
+
   return jsonText;
 }
 
@@ -244,18 +244,18 @@ async function generateSingleBatch(
   retryCount: number = 0
 ): Promise<GeneratedMCQ[]> {
   const MAX_RETRIES = 5;
-  
+
   // Coordinated check for global API lockout
   const now = Date.now();
   if (now < globalOverloadUntil) {
     const waitTime = globalOverloadUntil - now;
-    console.warn(`⏳ Global Gemini lockout active. Waiting ${Math.round(waitTime/1000)}s before starting batch ${batchIndex + 1}...`);
+    console.warn(`⏳ Global Gemini lockout active. Waiting ${Math.round(waitTime / 1000)}s before starting batch ${batchIndex + 1}...`);
     await new Promise(resolve => setTimeout(resolve, waitTime));
   }
-  
+
   // Only send recent questions to prevent prompt bloat
   const safeExistingQuestions = request.existingQuestions?.slice(-150) || [];
-  
+
   const forbiddenSection = safeExistingQuestions.length > 0
     ? `
 ⚠️ **FORBIDDEN QUESTIONS (DO NOT REPEAT)**:
@@ -334,14 +334,14 @@ Return ONLY the JSON. No additional text before or after.
         const isBusy = status === 503 || status === 429 || errorMessage.includes('503') || errorMessage.includes('429') || errorMessage.includes('overloaded') || errorMessage.includes('Service Unavailable') || errorMessage.includes('Too Many Requests');
 
         if (isBusy && apiCallRetries > 1) {
-          console.warn(`⚠️ Gemini API busy or rate-limited for batch ${batchIndex + 1}. Retrying in ${Math.round(apiCallDelay/1000)}s... (${apiCallRetries - 1} left)`);
+          console.warn(`⚠️ Gemini API busy or rate-limited for batch ${batchIndex + 1}. Retrying in ${Math.round(apiCallDelay / 1000)}s... (${apiCallRetries - 1} left)`);
           await new Promise(r => setTimeout(r, apiCallDelay));
           apiCallRetries--;
           apiCallDelay *= 2; // Exponential backoff
         } else {
           // If not a busy error, or no retries left, re-throw the original error
           console.error(`🚨 Gemini API Error in batch ${batchIndex + 1}:`, apiError);
-          
+
           if (errorMessage.includes('fetch failed') || errorMessage.includes('ETIMEDOUT') || errorMessage.includes('ECONNREFUSED')) {
             throw new Error(`Connection error: ${errorMessage}`);
           } else if (isBusy) {
@@ -356,20 +356,20 @@ Return ONLY the JSON. No additional text before or after.
     if (!result) {
       throw new Error(`Gemini API call failed after multiple retries for batch ${batchIndex + 1}.`);
     }
-    
+
     const response = await result.response;
     const rawText = response.text();
-    
+
     if (!rawText || rawText.trim().length === 0) {
       throw new Error(`Connection error: AI returned empty response.`);
     }
-    
+
     const jsonText = cleanAndExtractJSON(rawText);
-    
+
     if (!jsonText || jsonText.trim().length === 0) {
       throw new Error(`Unable to extract JSON from AI response.`);
     }
-    
+
     let parsed: { mcqs: GeneratedMCQ[] };
     try {
       parsed = JSON.parse(jsonText);
@@ -382,12 +382,12 @@ Return ONLY the JSON. No additional text before or after.
     }
 
     return parsed.mcqs.map((mcq, idx) => {
-      const hasValidCorrectAnswer = mcq.options && mcq.options.some((opt: string) => 
+      const hasValidCorrectAnswer = mcq.options && mcq.options.some((opt: string) =>
         opt.trim().toLowerCase() === (mcq.correctAnswer || '').trim().toLowerCase()
       );
-      
+
       const actualCorrectAnswer = hasValidCorrectAnswer ? mcq.correctAnswer : (mcq.options?.[0] || '');
-      
+
       return {
         ...mcq,
         aiIcon: mcq.aiIcon || '🔬',
@@ -404,10 +404,10 @@ Return ONLY the JSON. No additional text before or after.
 
   } catch (error: any) {
     console.error(`💥 Error in batch ${batchIndex + 1} (attempt ${retryCount + 1}/${MAX_RETRIES + 1}):`, error.message);
-    
+
     if (retryCount < MAX_RETRIES) {
       let delay = 2000;
-      
+
       if (error.message.includes('Connection error')) {
         delay = 5000 * Math.pow(1.5, retryCount);
       } else if (error.message.includes('Overloaded error')) {
@@ -420,15 +420,15 @@ Return ONLY the JSON. No additional text before or after.
       } else {
         delay = Math.min(2000 * Math.pow(2, retryCount), 15000);
       }
-      
-      console.log(`🔄 Retrying batch ${batchIndex + 1} in ${Math.round(delay/1000)}s...`);
+
+      console.log(`🔄 Retrying batch ${batchIndex + 1} in ${Math.round(delay / 1000)}s...`);
       await new Promise(resolve => setTimeout(resolve, delay));
       return generateSingleBatch(request, batchCount, batchIndex, totalBatches, retryCount + 1);
     }
-    
+
     return [];
   }
-  
+
   return [];
 }
 
@@ -436,7 +436,7 @@ export async function generateMCQsFromSOP(
   request: MCQGenerationRequest
 ): Promise<MCQGenerationResponse> {
   const currentCount = request.existingQuestions?.length || 0;
-  
+
   let TOTAL_TARGET;
   if (request.targetCount) {
     TOTAL_TARGET = request.targetCount;
@@ -449,19 +449,19 @@ export async function generateMCQsFromSOP(
   const BATCH_SIZE = 20;
   const NEEDED = Math.max(0, TOTAL_TARGET - currentCount);
   const NUM_BATCHES = Math.ceil(NEEDED / BATCH_SIZE);
-  const PARALLEL_BATCHES = 1; 
+  const PARALLEL_BATCHES = 1;
 
   console.log(`🚀 Starting generation for: ${request.sopName}. Progress: ${currentCount}/${TOTAL_TARGET}`);
-  
+
   let allMCQs: GeneratedMCQ[] = [];
   let currentExisting = [...(request.existingQuestions || [])];
   let processedBatchesCount = 0;
-  const MAX_BATCH_ATTEMPTS = Math.max(10, NUM_BATCHES * 4); 
+  const MAX_BATCH_ATTEMPTS = Math.max(10, NUM_BATCHES * 4);
 
   while (allMCQs.length < NEEDED && processedBatchesCount < MAX_BATCH_ATTEMPTS) {
     const remainingNeeded = NEEDED - allMCQs.length;
     const batchSize = Math.min(BATCH_SIZE, remainingNeeded);
-    
+
     const batch = await generateSingleBatch(
       { ...request, existingQuestions: currentExisting },
       batchSize,
@@ -478,7 +478,7 @@ export async function generateMCQsFromSOP(
       if (uniqueBatch.length > 0) {
         allMCQs = [...allMCQs, ...uniqueBatch];
         currentExisting = [...currentExisting, ...uniqueBatch.map(m => m.question)];
-        
+
         if (request.onBatchComplete) {
           try {
             await request.onBatchComplete(uniqueBatch);
@@ -488,7 +488,7 @@ export async function generateMCQsFromSOP(
         }
       }
     }
-    
+
     processedBatchesCount++;
     if (allMCQs.length < NEEDED) {
       await new Promise(resolve => setTimeout(resolve, 1000));

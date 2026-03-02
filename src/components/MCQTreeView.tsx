@@ -1248,7 +1248,7 @@ export default function MCQTreeView({
                                 {filtered.slice(0, 100).map((q) => (
                                   <div
                                     key={`${q._bankId}-${q._originalIndex}`}
-                                    className="group relative bg-[#131722] rounded-2xl border border-white/5 p-6 hover:border-indigo-500/40 transition-all duration-500 hover:shadow-[0_10px_30px_rgba(0,0,0,0.5)] overflow-hidden"
+                                    className="group relative bg-[#131722] rounded-2xl border border-white/5 p-6 hover:border-indigo-500/40 transition-all duration-500 hover:shadow-[0_10px_30px_rgba(0,0,0,0.5)] overflow-hidden min-w-0"
                                   >
                                     {/* Hover Backdrop Decor */}
                                     <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />

@@ -43,6 +43,7 @@ import {
   UserPlus,
   Files,
   TrendingUp,
+  Table,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import MCQTreeView from "@/components/MCQTreeView";
@@ -95,7 +96,6 @@ function MCQBankContent() {
 
   const [mcqBanks, setMcqBanks] = useState<MCQBank[]>([]);
   const [loading, setLoading] = useState(true);
-  const [generatingMore, setGeneratingMore] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [difficultyFilter, setDifficultyFilter] = useState<string>("All");
   const [selectedMCQBank, setSelectedMCQBank] = useState<MCQBank | null>(null);
@@ -104,6 +104,7 @@ function MCQBankContent() {
     index: number;
   } | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null); // e.g. "bankId-index"
+  const [actionFeedback, setActionFeedback] = useState<{ id: string, message: string, type: 'success' | 'error' } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalBanks, setTotalBanks] = useState(0);
@@ -520,55 +521,6 @@ function MCQBankContent() {
     }
   };
 
-  const generateMoreMCQs = async (bankId: string, sopId: string) => {
-    if (generatingMore) return;
-
-    setGeneratingMore(bankId);
-    try {
-      const response = await fetch("/api/sop/generate-mcqs", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          sopId: sopId,
-          mcqBankId: bankId,
-          targetCount: Math.max(
-            100,
-            Math.ceil(
-              (mcqBanks.find((b) => b._id === bankId)?.totalQuestions || 0) +
-              50,
-            ),
-          ),
-          userInfo: JSON.parse(localStorage.getItem("user") || "{}"),
-        }),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        alert(
-          `Successfully generated additional questions! Total now: ${data.mcqBank.totalQuestions}`,
-        );
-        await fetchMCQBanks(); // Refresh list
-
-        // If the bank that was updated is the one currently selected, update it
-        if (selectedMCQBank?._id === bankId) {
-          setSelectedMCQBank(data.mcqBank);
-        }
-      } else {
-        alert(
-          "Failed to generate more questions: " + (data.details || data.error),
-        );
-      }
-    } catch (error) {
-      console.error("Error generating more MCQs:", error);
-      alert("An error occurred while generating more questions.");
-    } finally {
-      setGeneratingMore(null);
-    }
-  };
-
   const fetchRecycledQuestions = async (sopId: string) => {
     try {
       setLoadingRecycled(true);
@@ -963,16 +915,6 @@ function MCQBankContent() {
     }
   };
 
-  const exportMCQBank = (bank: MCQBank) => {
-    const dataStr = JSON.stringify(bank, null, 2);
-    const dataBlob = new Blob([dataStr], { type: "application/json" });
-    const url = URL.createObjectURL(dataBlob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${bank.sopIdentifier}_MCQ_Bank.json`;
-    link.click();
-  };
-
   const toggleChecked = async (
     bankId: string,
     index: number,
@@ -1132,13 +1074,13 @@ function MCQBankContent() {
     }
   };
 
-  const toggleSimilar = async (bank: MCQBank, index: number, mcq: MCQ) => {
+  const toggleSimilar = async (bank: MCQBank, index: number, mcq: MCQ, forceStatus?: boolean) => {
     const statusKey = `${bank._id}-${index}`;
     if (updatingStatus === statusKey) return;
 
     setUpdatingStatus(statusKey);
     const currentStatus = !!mcq.isSimilar;
-    const nextStatus = !currentStatus;
+    const nextStatus = forceStatus !== undefined ? forceStatus : !currentStatus;
 
     // OPTIMISTIC UPDATE
     if (selectedMCQBank && selectedMCQBank._id === bank._id) {
@@ -1146,6 +1088,23 @@ function MCQBankContent() {
       newMcqs[index] = { ...newMcqs[index], isSimilar: nextStatus };
       setSelectedMCQBank({ ...selectedMCQBank, mcqs: newMcqs });
     }
+
+    setSimilarQuestionDetails((prev) => {
+      const updated = { ...prev };
+      if (!nextStatus) {
+        if (updated[index]) {
+          delete updated[index];
+        } else {
+          for (const key in updated) {
+            updated[key] = updated[key].filter((i) => i !== index);
+            if (updated[key].length === 0) {
+              delete updated[key];
+            }
+          }
+        }
+      }
+      return updated;
+    });
 
     setMcqBanks((prev) =>
       prev.map((b) => {
@@ -1227,10 +1186,19 @@ function MCQBankContent() {
               method: "DELETE",
             },
           ).catch(console.error);
+
+          if (!nextStatus) {
+            setActionFeedback({ id: statusKey, message: "Removed from similar", type: "success" });
+            setTimeout(() => setActionFeedback(null), 3000);
+          }
         }
       } else {
         // Revert on failure
         console.error("Update failed:", data.error);
+        if (!nextStatus) {
+          setActionFeedback({ id: statusKey, message: "Error removing similar", type: "error" });
+          setTimeout(() => setActionFeedback(null), 3000);
+        }
         if (selectedMCQBank && selectedMCQBank._id === bank._id) {
           const newMcqs = [...selectedMCQBank.mcqs];
           newMcqs[index] = { ...newMcqs[index], isSimilar: currentStatus };
@@ -1252,6 +1220,10 @@ function MCQBankContent() {
       }
     } catch (error) {
       console.error("Error toggling similar status:", error);
+      if (!nextStatus) {
+        setActionFeedback({ id: statusKey, message: "Network Error", type: "error" });
+        setTimeout(() => setActionFeedback(null), 3000);
+      }
     } finally {
       setUpdatingStatus(null);
     }
@@ -1423,8 +1395,8 @@ function MCQBankContent() {
                     key={difficulty}
                     onClick={() => setDifficultyFilter(difficulty)}
                     className={`px-2 py-1 text-xs rounded-md font-semibold transition-all ${difficultyFilter === difficulty
-                        ? "bg-purple-600 text-white"
-                        : "bg-white/10 text-gray-300 hover:bg-white/20"
+                      ? "bg-purple-600 text-white"
+                      : "bg-white/10 text-gray-300 hover:bg-white/20"
                       }`}
                   >
                     {difficulty}
@@ -1461,8 +1433,8 @@ function MCQBankContent() {
                         }
                       }}
                       className={`px-3 py-1.5 text-xs rounded-md font-semibold transition-all flex items-center gap-1 ${sortBy === sort.value
-                          ? "bg-blue-600 text-white"
-                          : "bg-white/10 text-gray-300 hover:bg-white/20"
+                        ? "bg-blue-600 text-white"
+                        : "bg-white/10 text-gray-300 hover:bg-white/20"
                         }`}
                     >
                       {sort.label}
@@ -1487,18 +1459,18 @@ function MCQBankContent() {
               <button
                 onClick={() => setViewMode("grid")}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all ${viewMode === "grid"
-                    ? "bg-purple-600 text-white"
-                    : "text-gray-300 hover:text-white"
+                  ? "bg-purple-600 text-white"
+                  : "text-gray-300 hover:text-white"
                   }`}
               >
-                <Grid className="h-4 w-4" />
-                Grid View
+                <Table className="h-4 w-4" />
+                Table View
               </button>
               <button
                 onClick={() => setViewMode("tree")}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all ${viewMode === "tree"
-                    ? "bg-purple-600 text-white"
-                    : "text-gray-300 hover:text-white"
+                  ? "bg-purple-600 text-white"
+                  : "text-gray-300 hover:text-white"
                   }`}
               >
                 <List className="h-4 w-4" />
@@ -1572,116 +1544,99 @@ function MCQBankContent() {
                 )}
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {filteredAndSortedMCQBanks.map((bank) => (
-                  <div
-                    key={bank._id}
-                    className="bg-white/10 backdrop-blur-lg rounded-xl p-4 shadow-lg border border-white/20 hover:border-purple-500/50 transition-all duration-300 transform hover:scale-[1.03] hover:shadow-xl hover:shadow-purple-500/20 hover:bg-[#1E2338]"
-                  >
-                    <div className="flex items-start justify-between mb-3 gap-2">
-                      <div className="flex-1 min-w-0">
-                        <h3
-                          className="text-xs font-bold text-white mb-1.5 leading-tight uppercase group-hover:text-purple-300 transition-colors line-clamp-2"
-                          title={formatSOPDisplayName(
-                            bank.sopName,
-                            bank.sopIdentifier,
-                          )}
+              <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-lg border border-white/20 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-white/5 border-b border-white/10 select-none">
+                        <th
+                          onClick={() => { if (sortBy === "identifier") setSortOrder(sortOrder === "asc" ? "desc" : "asc"); else { setSortBy("identifier"); setSortOrder("asc"); } }}
+                          className="px-4 py-3 text-xs font-semibold text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-white/10 transition-colors group"
                         >
-                          {formatSOPDisplayName(
-                            bank.sopName,
-                            bank.sopIdentifier,
-                          )}
-                        </h3>
-                        <p className="text-gray-400 text-[9px] font-mono opacity-60 m-0">
-                          {bank.sopIdentifier}
-                        </p>
-                        {bank.department &&
-                          trainerMappings[bank.department.toLowerCase()] && (
-                            <div className="mt-1.5 flex items-center gap-1">
-                              <Users className="h-2.5 w-2.5 text-purple-400 opacity-60" />
-                              <span className="text-[9px] font-bold text-purple-300 uppercase tracking-widest bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20">
-                                {trainerMappings[bank.department.toLowerCase()]}
-                              </span>
+                          <div className="flex items-center">
+                            ID
+                            {sortBy === "identifier" ? (sortOrder === "asc" ? <SortAsc className="h-3.5 w-3.5 ml-1.5 text-purple-400" /> : <SortDesc className="h-3.5 w-3.5 ml-1.5 text-purple-400" />) : <ArrowUpDown className="h-3.5 w-3.5 ml-1.5 opacity-0 group-hover:opacity-40 transition-opacity" />}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => { if (sortBy === "name") setSortOrder(sortOrder === "asc" ? "desc" : "asc"); else { setSortBy("name"); setSortOrder("asc"); } }}
+                          className="px-4 py-3 text-xs font-semibold text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-white/10 transition-colors group"
+                        >
+                          <div className="flex items-center">
+                            Name
+                            {sortBy === "name" ? (sortOrder === "asc" ? <SortAsc className="h-3.5 w-3.5 ml-1.5 text-purple-400" /> : <SortDesc className="h-3.5 w-3.5 ml-1.5 text-purple-400" />) : <ArrowUpDown className="h-3.5 w-3.5 ml-1.5 opacity-0 group-hover:opacity-40 transition-opacity" />}
+                          </div>
+                        </th>
+                        <th className="px-4 py-3 text-xs font-semibold text-gray-300 uppercase tracking-wider">Trainer</th>
+                        <th
+                          onClick={() => { if (sortBy === "questions") setSortOrder(sortOrder === "asc" ? "desc" : "asc"); else { setSortBy("questions"); setSortOrder("asc"); } }}
+                          className="px-4 py-3 text-xs font-semibold text-gray-300 uppercase tracking-wider text-center cursor-pointer hover:bg-white/10 transition-colors group"
+                        >
+                          <div className="flex items-center justify-center">
+                            Questions
+                            {sortBy === "questions" ? (sortOrder === "asc" ? <SortAsc className="h-3.5 w-3.5 ml-1.5 text-purple-400" /> : <SortDesc className="h-3.5 w-3.5 ml-1.5 text-purple-400" />) : <ArrowUpDown className="h-3.5 w-3.5 ml-1.5 opacity-0 group-hover:opacity-40 transition-opacity" />}
+                          </div>
+                        </th>
+                        <th className="px-4 py-3 text-xs font-semibold text-gray-300 uppercase tracking-wider text-center">Distribution</th>
+                        <th className="px-4 py-3 text-xs font-semibold text-gray-300 uppercase tracking-wider text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/10">
+                      {filteredAndSortedMCQBanks.map((bank) => (
+                        <tr key={bank._id} className="hover:bg-white/5 transition-colors group">
+                          <td className="px-4 py-3">
+                            <span className="text-xs font-mono text-purple-300">{bank.sopIdentifier}</span>
+                          </td>
+                          <td className="px-4 py-3 max-w-xs md:max-w-sm">
+                            <span className="text-xs font-bold text-white line-clamp-2" title={formatSOPDisplayName(bank.sopName, bank.sopIdentifier)}>
+                              {formatSOPDisplayName(bank.sopName, bank.sopIdentifier)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            {bank.department && trainerMappings[bank.department.toLowerCase()] ? (
+                              <div className="flex items-center gap-1">
+                                <Users className="h-3 w-3 text-purple-400 opacity-60 flex-shrink-0" />
+                                <span className="text-[10px] font-bold text-purple-300 uppercase tracking-widest bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 whitespace-nowrap">
+                                  {trainerMappings[bank.department.toLowerCase()]}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-gray-500 text-xs">-</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className="text-white font-bold text-sm">{bank.totalQuestions || 0}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-center gap-2 text-[10px]">
+                              <span className="bg-green-500/10 text-green-300 border border-green-500/20 px-1.5 py-0.5 rounded">E: {bank.difficultyDistribution?.easy || 0}</span>
+                              <span className="bg-yellow-500/10 text-yellow-300 border border-yellow-500/20 px-1.5 py-0.5 rounded">M: {bank.difficultyDistribution?.medium || 0}</span>
+                              <span className="bg-red-500/10 text-red-300 border border-red-500/20 px-1.5 py-0.5 rounded">H: {bank.difficultyDistribution?.hard || 0}</span>
                             </div>
-                          )}
-                      </div>
-                      <Award className="h-4 w-4 text-purple-400 flex-shrink-0 mt-0.5" />
-                    </div>
-
-                    <div className="space-y-2 mb-4">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-gray-300">Total Questions:</span>
-                        <span className="text-white font-bold">
-                          {bank.totalQuestions || 0}
-                        </span>
-                      </div>
-
-                      <div className="space-y-1 text-[10px]">
-                        <div className="flex items-center justify-between">
-                          <span className="text-green-300">Easy:</span>
-                          <span className="text-white font-semibold">
-                            {bank.difficultyDistribution?.easy || 0}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-yellow-300">Medium:</span>
-                          <span className="text-white font-semibold">
-                            {bank.difficultyDistribution?.medium || 0}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-red-300">Hard:</span>
-                          <span className="text-white font-semibold">
-                            {bank.difficultyDistribution?.hard || 0}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                      <div className="flex gap-1.5">
-                        <button
-                          onClick={() => fetchFullBankDetails(bank)}
-                          className="flex-1 py-1 px-3 text-xs bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-md hover:from-purple-700 hover:to-pink-700 transition-all flex items-center justify-center"
-                        >
-                          <Eye className="h-3 w-3 mr-1.5" />
-                          View
-                        </button>
-                        <button
-                          onClick={() => exportMCQBank(bank)}
-                          className="py-1 px-3 bg-white/10 text-white font-semibold rounded-md hover:bg-white/20 transition-all"
-                          title="Download JSON"
-                        >
-                          <Download className="h-3 w-3" />
-                        </button>
-                        <button
-                          onClick={() => deleteMCQBank(bank._id)}
-                          className="py-1 px-3 bg-red-500/10 text-red-400 font-semibold rounded-md hover:bg-red-500/20 border border-red-500/20 transition-all"
-                          title="Delete Bank"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      </div>
-                      <button
-                        onClick={() => generateMoreMCQs(bank._id, bank.sopId)}
-                        disabled={!!generatingMore}
-                        className="w-full py-1 text-xs px-2 bg-white/10 border border-purple-500/30 text-purple-300 font-semibold rounded-md hover:bg-purple-500/20 transition-all flex items-center justify-center disabled:opacity-50"
-                      >
-                        {generatingMore === bank._id ? (
-                          <>
-                            <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
-                            Generating...
-                          </>
-                        ) : (
-                          <>
-                            <Plus className="h-3 w-3 mr-1.5" />
-                            Generate More
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => fetchFullBankDetails(bank)}
+                                className="p-1.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded hover:from-purple-700 hover:to-pink-700 transition-all"
+                                title="View"
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => deleteMCQBank(bank._id)}
+                                className="p-1.5 bg-red-500/10 text-red-400 rounded hover:bg-red-500/20 border border-red-500/20 transition-all"
+                                title="Delete Bank"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </>
@@ -1734,8 +1689,8 @@ function MCQBankContent() {
                           key={pageNum}
                           onClick={() => setCurrentPage(pageNum)}
                           className={`w-10 h-10 rounded-lg font-semibold transition-all ${currentPage === pageNum
-                              ? "bg-purple-600 text-white"
-                              : "bg-white/10 text-gray-300 hover:bg-white/20"
+                            ? "bg-purple-600 text-white"
+                            : "bg-white/10 text-gray-300 hover:bg-white/20"
                             }`}
                         >
                           {pageNum}
@@ -1811,8 +1766,8 @@ function MCQBankContent() {
               <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-300">
                 <div
                   className={`bg-[#0f0d1e] border border-indigo-500/20 shadow-2xl flex flex-col overflow-hidden transition-all duration-300 ${isMaximized
-                      ? "w-full h-full rounded-none"
-                      : "w-full max-w-[1400px] h-[90vh] rounded-[28px]"
+                    ? "w-full h-full rounded-none"
+                    : "w-full max-w-[1400px] h-[90vh] rounded-[28px]"
                     }`}
                 >
                   {/* ── PREMIUM STICKY HEADER ── */}
@@ -2043,8 +1998,8 @@ function MCQBankContent() {
                                     setVisibleCount(30);
                                   }}
                                   className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all border ${filterReviewStatus === pill.id
-                                      ? `bg-white/5 border-white/10 ${pill.activeClass}`
-                                      : "border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/5"
+                                    ? `bg-white/5 border-white/10 ${pill.activeClass}`
+                                    : "border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/5"
                                     }`}
                                 >
                                   {pill.icon}
@@ -2111,7 +2066,7 @@ function MCQBankContent() {
                                   return (
                                     <div
                                       key={originalIndex}
-                                      className="group relative bg-[#1a1535] rounded-2xl border border-indigo-500/10 hover:border-indigo-500/25 transition-all duration-300 shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 overflow-hidden"
+                                      className="group relative bg-[#1a1535] rounded-2xl border border-indigo-500/10 hover:border-indigo-500/25 transition-all duration-300 shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 overflow-hidden min-w-0"
                                       onClick={() =>
                                         setSelectedMCQ({
                                           mcq,
@@ -2145,17 +2100,17 @@ function MCQBankContent() {
                                         </div>
 
                                         {/* Main Interaction Area */}
-                                        <div className="flex-1 flex flex-col p-3">
+                                        <div className="flex-1 flex flex-col p-3 min-w-0">
                                           {/* Top Meta Area */}
                                           <div className="flex items-center justify-between mb-2">
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2 flex-wrap">
                                               <span
                                                 className={`px-1.5 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-wider border ${mcq.difficulty === "Easy"
-                                                    ? "bg-indigo-500/20 text-indigo-400 border-indigo-500/30"
-                                                    : mcq.difficulty ===
-                                                      "Medium"
-                                                      ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                                                      : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                                                  ? "bg-indigo-500/20 text-indigo-400 border-indigo-500/30"
+                                                  : mcq.difficulty ===
+                                                    "Medium"
+                                                    ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                                    : "bg-rose-500/10 text-rose-400 border-rose-500/20"
                                                   }`}
                                               >
                                                 {mcq.difficulty}
@@ -2199,13 +2154,13 @@ function MCQBankContent() {
                                           </div>
 
                                           {/* Question Text */}
-                                          <div className="mb-2">
-                                            <div className="flex items-start gap-2">
-                                              <span className="text-indigo-400 text-xs font-bold mt-0.5 select-none">
+                                          <div className="mb-2 min-w-0">
+                                            <div className="flex items-start gap-2 min-w-0">
+                                              <span className="text-indigo-400 text-xs font-bold mt-0.5 select-none shrink-0">
                                                 Q.
                                               </span>
                                               <h3
-                                                className={`text-sm font-semibold leading-snug tracking-tight text-gray-100 ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati text-base" : ""}`}
+                                                className={`text-sm font-semibold leading-snug tracking-tight text-gray-100 flex-1 min-w-0 break-words ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati text-base" : ""}`}
                                               >
                                                 {searchLower
                                                   ? highlight(mcq.question)
@@ -2225,14 +2180,14 @@ function MCQBankContent() {
                                                   <div
                                                     key={oi}
                                                     className={`flex items-center gap-2 p-1.5 rounded-lg transition-all border ${isCorrect
-                                                        ? "bg-purple-500/10 border-purple-500/20 text-purple-200"
-                                                        : "bg-[#1a1625]/50 border-white/5 text-gray-400 group-hover:bg-[#1a1625] group-hover:border-white/10"
+                                                      ? "bg-purple-500/10 border-purple-500/20 text-purple-200"
+                                                      : "bg-[#1a1625]/50 border-white/5 text-gray-400 group-hover:bg-[#1a1625] group-hover:border-white/10"
                                                       }`}
                                                   >
                                                     <span
                                                       className={`w-4 h-4 flex-shrink-0 flex items-center justify-center rounded-md text-[8px] font-bold border ${isCorrect
-                                                          ? "bg-purple-500/20 border-purple-500/30 text-purple-300"
-                                                          : "bg-white/5 border-white/5 text-gray-500"
+                                                        ? "bg-purple-500/20 border-purple-500/30 text-purple-300"
+                                                        : "bg-white/5 border-white/5 text-gray-500"
                                                         }`}
                                                     >
                                                       {String.fromCharCode(
@@ -2240,7 +2195,7 @@ function MCQBankContent() {
                                                       )}
                                                     </span>
                                                     <span
-                                                      className={`text-[10px] truncate ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati text-xs" : ""}`}
+                                                      className={`text-[10px] flex-1 min-w-0 truncate ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati text-xs" : ""}`}
                                                     >
                                                       {searchLower
                                                         ? highlight(opt)
@@ -2259,70 +2214,40 @@ function MCQBankContent() {
                                             similarQuestionDetails[
                                             originalIndex
                                             ] && (
-                                              <div className="mt-4 p-3 bg-amber-500/5 rounded-2xl border border-amber-500/20 flex flex-col sm:flex-row items-center gap-3 animate-in fade-in duration-500">
-                                                <div className="flex items-center gap-2">
-                                                  <div className="w-6 h-6 rounded-lg bg-amber-500/20 flex items-center justify-center">
-                                                    <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
-                                                  </div>
-                                                  <span className="text-[11px] font-semibold text-amber-400 uppercase tracking-wider whitespace-nowrap">
-                                                    Duplicate detected
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setSelectedMCQ({ mcq, index: originalIndex });
+                                                }}
+                                                className="mt-3 w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 hover:border-amber-500/50 transition-all group/sim animate-in fade-in duration-500"
+                                              >
+                                                <div className="w-6 h-6 rounded-lg bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+                                                  <AlertCircle className="h-3.5 w-3.5 text-amber-400" />
+                                                </div>
+                                                <div className="flex-1 min-w-0 text-left">
+                                                  <span className="text-[11px] font-bold text-amber-400 block leading-none mb-0.5">
+                                                    {similarQuestionDetails[originalIndex].length} Similar Question{similarQuestionDetails[originalIndex].length > 1 ? "s" : ""} Found
+                                                  </span>
+                                                  <span className="text-[9px] text-amber-500/60 uppercase tracking-wider">
+                                                    Click to compare side by side →
                                                   </span>
                                                 </div>
-                                                <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 no-scrollbar flex-1 min-w-0">
-                                                  <span className="text-[10px] text-gray-500 whitespace-nowrap">
-                                                    Similar to indices:
-                                                  </span>
-                                                  {similarQuestionDetails[
-                                                    originalIndex
-                                                  ].map((i) => (
+                                                <div className="flex gap-1 flex-shrink-0">
+                                                  {similarQuestionDetails[originalIndex].slice(0, 3).map((i) => (
                                                     <span
                                                       key={i}
-                                                      className="px-1.5 py-0.5 rounded-md bg-white/5 border border-white/5 text-[10px] text-gray-400"
+                                                      className="px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-[9px] text-amber-400 font-bold"
                                                     >
-                                                      #{i + 1}
+                                                      Q{i + 1}
                                                     </span>
                                                   ))}
+                                                  {similarQuestionDetails[originalIndex].length > 3 && (
+                                                    <span className="px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-[9px] text-amber-400 font-bold">
+                                                      +{similarQuestionDetails[originalIndex].length - 3}
+                                                    </span>
+                                                  )}
                                                 </div>
-                                                <div className="flex items-center gap-1.5 flex-shrink-0">
-                                                  <button
-                                                    onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      if (
-                                                        confirm(
-                                                          `Archive Q${originalIndex + 1}?`,
-                                                        )
-                                                      )
-                                                        handleDeleteQuestion(
-                                                          selectedMCQBank._id,
-                                                          originalIndex,
-                                                        );
-                                                    }}
-                                                    className="px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-500 text-[10px] font-bold border border-rose-500/20 hover:bg-rose-500/20 transition-all flex items-center gap-1"
-                                                  >
-                                                    <Trash2 className="h-3 w-3" />{" "}
-                                                    Archive
-                                                  </button>
-                                                  <button
-                                                    onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      if (
-                                                        confirm(
-                                                          `Regenerate Q${originalIndex + 1}?`,
-                                                        )
-                                                      )
-                                                        handleReplaceQuestion(
-                                                          selectedMCQBank._id,
-                                                          originalIndex,
-                                                          selectedMCQBank.sopId,
-                                                        );
-                                                    }}
-                                                    className="px-2.5 py-1 rounded-lg bg-indigo-500/10 text-indigo-400 text-[10px] font-bold border border-indigo-500/20 hover:bg-indigo-500/20 transition-all flex items-center gap-1"
-                                                  >
-                                                    <RefreshCw className="h-3 w-3" />{" "}
-                                                    Repair
-                                                  </button>
-                                                </div>
-                                              </div>
+                                              </button>
                                             )}
                                         </div>
 
@@ -2614,14 +2539,14 @@ function MCQBankContent() {
                         <div
                           key={oi}
                           className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-xs transition-all ${isCorrect
-                              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"
-                              : "bg-white/5 border-white/5 text-gray-400"
+                            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"
+                            : "bg-white/5 border-white/5 text-gray-400"
                             }`}
                         >
                           <span
                             className={`w-5 h-5 flex-shrink-0 flex items-center justify-center rounded-md text-[9px] font-bold border ${isCorrect
-                                ? "bg-emerald-500/30 border-emerald-500/40 text-emerald-300"
-                                : "bg-white/5 border-white/10 text-gray-500"
+                              ? "bg-emerald-500/30 border-emerald-500/40 text-emerald-300"
+                              : "bg-white/5 border-white/10 text-gray-500"
                               }`}
                           >
                             {String.fromCharCode(65 + oi)}
@@ -2640,13 +2565,53 @@ function MCQBankContent() {
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="flex items-center gap-2 pt-2 border-t border-white/5">
+                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/5 mt-auto">
+                    <button
+                      onClick={() => {
+                        toggleSimilar(selectedMCQBank!, idx, mcq, false);
+                      }}
+                      disabled={updatingStatus === `${selectedMCQBank!._id}-${idx}` || actionFeedback?.id === `${selectedMCQBank!._id}-${idx}`}
+                      className={`px-3 py-2 rounded-xl text-[10px] font-bold border transition-all flex items-center justify-center gap-1.5 ${actionFeedback?.id === `${selectedMCQBank!._id}-${idx}`
+                          ? actionFeedback.type === 'error'
+                            ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                            : "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+                          : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20"
+                        }`}
+                    >
+                      {updatingStatus === `${selectedMCQBank!._id}-${idx}` ? (
+                        <>
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          Removing...
+                        </>
+                      ) : actionFeedback?.id === `${selectedMCQBank!._id}-${idx}` ? (
+                        <>
+                          {actionFeedback.type === 'error' ? <X className="h-3 w-3" /> : <CheckCircle2 className="h-3 w-3" />}
+                          {actionFeedback.message}
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="h-3 w-3" /> Not Similar
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => {
+                        toggleReview(selectedMCQBank!, idx, mcq);
+                      }}
+                      className={`px-3 py-2 rounded-xl text-[10px] font-bold border transition-all flex items-center justify-center gap-1.5 ${mcq.isReviewed
+                        ? "bg-amber-500/20 text-amber-300 border-amber-500/30 hover:bg-amber-500/30"
+                        : "bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20"
+                        }`}
+                    >
+                      <Star className={`h-3 w-3 ${mcq.isReviewed ? "fill-amber-300" : ""}`} />
+                      {mcq.isReviewed ? "Flagged for Review" : "Flag for Review"}
+                    </button>
                     <button
                       onClick={() => {
                         if (confirm(`Archive Q${idx + 1}?`))
                           handleDeleteQuestion(selectedMCQBank!._id, idx);
                       }}
-                      className="flex-1 px-3 py-2 rounded-xl bg-rose-500/10 text-rose-400 text-[10px] font-bold border border-rose-500/20 hover:bg-rose-500/20 transition-all flex items-center justify-center gap-1.5"
+                      className="px-3 py-2 rounded-xl bg-rose-500/10 text-rose-400 text-[10px] font-bold border border-rose-500/20 hover:bg-rose-500/20 transition-all flex items-center justify-center gap-1.5"
                     >
                       <Trash2 className="h-3 w-3" /> Archive
                     </button>
@@ -2659,7 +2624,7 @@ function MCQBankContent() {
                             selectedMCQBank!.sopId,
                           );
                       }}
-                      className="flex-1 px-3 py-2 rounded-xl bg-indigo-500/10 text-indigo-400 text-[10px] font-bold border border-indigo-500/20 hover:bg-indigo-500/20 transition-all flex items-center justify-center gap-1.5"
+                      className="px-3 py-2 rounded-xl bg-indigo-500/10 text-indigo-400 text-[10px] font-bold border border-indigo-500/20 hover:bg-indigo-500/20 transition-all flex items-center justify-center gap-1.5"
                     >
                       <RefreshCw className="h-3 w-3" /> Regenerate
                     </button>
@@ -2744,11 +2709,15 @@ function MCQBankContent() {
                           {similarIndices.map((simIdx) => {
                             const simMcq = allMcqs[simIdx];
                             if (!simMcq) return null;
-                            return renderCompactQuestion(
-                              simMcq,
-                              simIdx,
-                              "Similar Match",
-                              "bg-amber-500/5 border-amber-500/20",
+                            return (
+                              <div key={simIdx} className="contents">
+                                {renderCompactQuestion(
+                                  simMcq,
+                                  simIdx,
+                                  "Similar Match",
+                                  "bg-amber-500/5 border-amber-500/20",
+                                )}
+                              </div>
                             );
                           })}
                         </div>
@@ -2805,14 +2774,14 @@ function MCQBankContent() {
                                 <div
                                   key={index}
                                   className={`group p-4 rounded-2xl flex items-center gap-4 transition-all border ${isCorrect
-                                      ? "bg-purple-600/10 border-purple-500/30 shadow-[0_0_20px_rgba(147,51,234,0.1)]"
-                                      : "bg-white/5 border-white/5 hover:border-white/10"
+                                    ? "bg-purple-600/10 border-purple-500/30 shadow-[0_0_20px_rgba(147,51,234,0.1)]"
+                                    : "bg-white/5 border-white/5 hover:border-white/10"
                                     }`}
                                 >
                                   <div
                                     className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold border transition-all ${isCorrect
-                                        ? "bg-gradient-to-br from-purple-600 to-indigo-600 text-white border-purple-400 shadow-lg shadow-purple-500/20"
-                                        : "bg-slate-900 text-gray-500 border-white/5"
+                                      ? "bg-gradient-to-br from-purple-600 to-indigo-600 text-white border-purple-400 shadow-lg shadow-purple-500/20"
+                                      : "bg-slate-900 text-gray-500 border-white/5"
                                       }`}
                                   >
                                     {String.fromCharCode(65 + index)}
