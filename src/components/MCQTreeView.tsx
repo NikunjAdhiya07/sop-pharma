@@ -28,6 +28,10 @@ import {
   Minimize2,
   LayoutList,
   FolderOpen as FolderOpenIcon, // alias if needed, though FolderOpen is used
+  Archive,
+  Trash2,
+  Plus,
+  RotateCcw,
 } from "lucide-react";
 import Link from "next/link";
 import { normalizeDepartmentName } from "@/lib/mcqTreeBuilder";
@@ -213,7 +217,7 @@ interface MCQTreeViewProps {
   searchTerm?: string;
   onViewMCQs: (
     sopNode: SOPNode,
-    filterStatus?: "all" | "checked" | "similar" | "reviewed",
+    filterStatus?: "all" | "checked" | "pending" | "similar" | "reviewed",
   ) => void;
   onDownloadSOP: (sopNode: SOPNode) => void;
 
@@ -250,6 +254,92 @@ export default function MCQTreeView({
   const [isCinemaMode, setIsCinemaMode] = useState(false);
   // Expansion state is now managed by parent
   const [isUnorganizedExpanded, setIsUnorganizedExpanded] = useState(false);
+
+  // Archived / Removed SOPs state
+  const [archivedSOPs, setArchivedSOPs] = useState<any[]>([]);
+  const [showArchivedSection, setShowArchivedSection] = useState(false);
+
+  // Generate More state
+  const [generatingMore, setGeneratingMore] = useState<Record<string, boolean>>({});
+  const [generateMoreResults, setGenerateMoreResults] = useState<Record<string, { success: boolean; message: string }>>({});
+
+  // Delete SOP state
+  const [deleteModal, setDeleteModal] = useState<{ sopId: string; sopCode: string; sopName: string } | null>(null);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+
+  const handleDeleteSOP = async () => {
+    if (!deleteModal) return;
+    setDeleteLoading(true);
+    setDeleteError('');
+    try {
+      const res = await fetch('/api/mcq-bank/delete-sop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sopId: deleteModal.sopId, password: deletePassword }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDeleteModal(null);
+        setDeletePassword('');
+        window.location.reload();
+      } else {
+        setDeleteError(data.error || 'Failed to delete');
+      }
+    } catch {
+      setDeleteError('Network error');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  // Restore SOP state
+  const [restoringSOPs, setRestoringSOPs] = useState<Record<string, boolean>>({});
+  const [restoreResults, setRestoreResults] = useState<Record<string, { success: boolean; message: string }>>({});
+
+  const handleRestoreSOP = async (sopIdentifier: string) => {
+    setRestoringSOPs(prev => ({ ...prev, [sopIdentifier]: true }));
+    setRestoreResults(prev => {
+      const next = { ...prev };
+      delete next[sopIdentifier];
+      return next;
+    });
+    try {
+      const res = await fetch('/api/mcq-bank/restore-sop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sopIdentifier }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setRestoreResults(prev => ({ ...prev, [sopIdentifier]: { success: true, message: 'Restored!' } }));
+        setTimeout(() => window.location.reload(), 1000);
+      } else {
+        setRestoreResults(prev => ({ ...prev, [sopIdentifier]: { success: false, message: data.error || 'Failed' } }));
+      }
+    } catch {
+      setRestoreResults(prev => ({ ...prev, [sopIdentifier]: { success: false, message: 'Network error' } }));
+    } finally {
+      setRestoringSOPs(prev => ({ ...prev, [sopIdentifier]: false }));
+    }
+  };
+
+  // Fetch archived SOPs on mount
+  useEffect(() => {
+    const fetchArchived = async () => {
+      try {
+        const res = await fetch('/api/mcq-bank/archived');
+        const data = await res.json();
+        if (data.success && data.archivedSOPs) {
+          setArchivedSOPs(data.archivedSOPs);
+        }
+      } catch (err) {
+        console.error('Failed to fetch archived SOPs:', err);
+      }
+    };
+    fetchArchived();
+  }, []);
 
   // fullScreenDept is now lifted to parent — no local state needed
 
@@ -825,12 +915,118 @@ export default function MCQTreeView({
         })}
       </div>
 
+      {/* Removed / Obsolete SOPs Section */}
+      {archivedSOPs.length > 0 && (
+        <div className="mt-8">
+          <button
+            onClick={() => setShowArchivedSection(!showArchivedSection)}
+            className="w-full flex items-center justify-between px-6 py-4 bg-rose-500/5 border border-rose-500/10 rounded-2xl hover:bg-rose-500/10 transition-all group"
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                <Archive className="h-5 w-5" />
+              </div>
+              <div className="text-left">
+                <h3 className="text-sm font-black text-rose-300 uppercase tracking-widest">
+                  Removed / Obsolete SOPs
+                </h3>
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mt-0.5">
+                  {archivedSOPs.length} archived SOP{archivedSOPs.length !== 1 ? 's' : ''}
+                </p>
+              </div>
+            </div>
+            <ChevronRight className={`h-5 w-5 text-rose-400/60 transition-transform duration-300 ${showArchivedSection ? 'rotate-90' : ''}`} />
+          </button>
+
+          {showArchivedSection && (
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 animate-in fade-in slide-in-from-top-4 duration-500">
+              {archivedSOPs.map((sop: any) => (
+                <div
+                  key={sop.sopIdentifier}
+                  className="relative bg-[#131722] rounded-2xl border border-rose-500/10 p-5 hover:border-rose-500/20 transition-all group/card overflow-hidden"
+                >
+                  {/* Decorative accent */}
+                  <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-rose-500/40 via-rose-500/20 to-transparent" />
+
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="p-2 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                      <Trash2 className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-black text-rose-300 uppercase tracking-widest">
+                        {sop.sopIdentifier}
+                      </p>
+                      <p className="text-[10px] text-gray-500 truncate">
+                        {sop.sopName}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-black/20 rounded-lg p-2">
+                      <p className="text-gray-500 text-[8px] uppercase tracking-wider font-bold">Questions</p>
+                      <p className="text-sm font-bold text-gray-300">{sop.totalQuestions || 0}</p>
+                    </div>
+                    <div className="bg-black/20 rounded-lg p-2">
+                      <p className="text-gray-500 text-[8px] uppercase tracking-wider font-bold">Archived</p>
+                      <p className="text-sm font-bold text-gray-400">
+                        {sop.archivedAt ? new Date(sop.archivedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : 'N/A'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-full bg-rose-500/10 border border-rose-500/20 text-[8px] font-bold text-rose-400 uppercase tracking-widest">
+                        Obsolete
+                      </span>
+                      {sop.department && (
+                        <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-[8px] font-bold text-gray-500 uppercase tracking-widest">
+                          {sop.department}
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => handleRestoreSOP(sop.sopIdentifier)}
+                      disabled={restoringSOPs[sop.sopIdentifier]}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${
+                        restoreResults[sop.sopIdentifier]
+                          ? restoreResults[sop.sopIdentifier].success
+                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                            : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                          : restoringSOPs[sop.sopIdentifier]
+                            ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 cursor-wait'
+                            : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 hover:border-emerald-500/30 hover:shadow-lg hover:shadow-emerald-500/10'
+                      }`}
+                    >
+                      {restoringSOPs[sop.sopIdentifier] ? (
+                        <>
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          Restoring...
+                        </>
+                      ) : restoreResults[sop.sopIdentifier] ? (
+                        <>{restoreResults[sop.sopIdentifier].message}</>
+                      ) : (
+                        <>
+                          <RotateCcw className="h-3 w-3" />
+                          Retrieve
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Full-Screen Department Modal - Premium Overhaul */}
       {fullScreenDept &&
         (() => {
           const theme = getDeptTheme(fullScreenDept.name);
           return (
-            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 lg:p-8 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300">
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 lg:p-8 animate-in fade-in duration-300">
               {/* Backdrop Click Handler */}
               <div
                 className="absolute inset-0 cursor-pointer"
@@ -1772,10 +1968,125 @@ export default function MCQTreeView({
                                                 )}
                                               </p>
                                             </div>
-                                            <div className="p-1.5 rounded-md bg-white/5 text-gray-600 group-hover:bg-indigo-500/10 group-hover:text-indigo-400 transition-colors">
-                                              <ChevronRight className="h-3 w-3" />
-                                            </div>
                                           </div>
+                                            <div className="flex items-center gap-2">
+                                              {/* Case 1: No MCQ Bank at all → Generate fresh 100 */}
+                                              {sop.totalQuestions === 0 && (!sop.mcqBanks || sop.mcqBanks.length === 0) && (
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setGeneratingMore(prev => ({ ...prev, [sop.sopId]: true }));
+                                                    setGenerateMoreResults(prev => { const next = { ...prev }; delete next[sop.sopId]; return next; });
+                                                    fetch('/api/sop/generate-mcqs', {
+                                                      method: 'POST',
+                                                      headers: { 'Content-Type': 'application/json' },
+                                                      body: JSON.stringify({ sopId: sop.sopId, targetCount: 100 }),
+                                                    })
+                                                      .then(res => res.json())
+                                                      .then(data => {
+                                                        if (data.success) {
+                                                          setGenerateMoreResults(prev => ({ ...prev, [sop.sopId]: { success: true, message: `+${data.total || 100} Qs` } }));
+                                                          setTimeout(() => window.location.reload(), 800);
+                                                        } else {
+                                                          setGenerateMoreResults(prev => ({ ...prev, [sop.sopId]: { success: false, message: data.error || 'Error' } }));
+                                                        }
+                                                      })
+                                                      .catch(() => setGenerateMoreResults(prev => ({ ...prev, [sop.sopId]: { success: false, message: 'Network error' } })))
+                                                      .finally(() => setGeneratingMore(prev => ({ ...prev, [sop.sopId]: false })));
+                                                  }}
+                                                  disabled={generatingMore[sop.sopId]}
+                                                  className={`flex items-center gap-1 px-2 py-1 rounded-md text-[8px] font-bold uppercase tracking-wider border transition-all ${
+                                                    generateMoreResults[sop.sopId]
+                                                      ? generateMoreResults[sop.sopId].success
+                                                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                                        : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                                                      : generatingMore[sop.sopId]
+                                                        ? 'bg-amber-500/10 text-amber-400 border-amber-500/20 cursor-wait'
+                                                        : 'bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20 animate-pulse'
+                                                  }`}
+                                                  title="Generate 100 MCQs for this SOP"
+                                                >
+                                                  {generatingMore[sop.sopId] ? (
+                                                    <><Loader2 className="h-2.5 w-2.5 animate-spin" />Generating...</>
+                                                  ) : generateMoreResults[sop.sopId] ? (
+                                                    <>{generateMoreResults[sop.sopId].message}</>
+                                                  ) : (
+                                                    <><Plus className="h-2.5 w-2.5" />Gen 100 MCQs</>
+                                                  )}
+                                                </button>
+                                              )}
+                                              {/* Case 2: Has MCQ bank but under 100 → Top up */}
+                                              {sop.totalQuestions < 100 && sop.mcqBanks && sop.mcqBanks.length > 0 && (
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const bankId = sop.mcqBanks[0]._id || sop.mcqBanks[0];
+                                                    setGeneratingMore(prev => ({ ...prev, [sop.sopId]: true }));
+                                                    setGenerateMoreResults(prev => {
+                                                      const next = { ...prev };
+                                                      delete next[sop.sopId];
+                                                      return next;
+                                                    });
+                                                    fetch('/api/mcq-bank/generate-more', {
+                                                      method: 'POST',
+                                                      headers: { 'Content-Type': 'application/json' },
+                                                      body: JSON.stringify({ bankId, sopId: sop.sopId }),
+                                                    })
+                                                      .then(res => res.json())
+                                                      .then(data => {
+                                                        if (data.success) {
+                                                          setGenerateMoreResults(prev => ({
+                                                            ...prev,
+                                                            [sop.sopId]: { success: true, message: `+${data.generated}` },
+                                                          }));
+                                                          window.location.reload();
+                                                        } else {
+                                                          setGenerateMoreResults(prev => ({
+                                                            ...prev,
+                                                            [sop.sopId]: { success: false, message: 'Error' },
+                                                          }));
+                                                        }
+                                                      })
+                                                      .catch(() => {
+                                                        setGenerateMoreResults(prev => ({
+                                                          ...prev,
+                                                          [sop.sopId]: { success: false, message: 'Error' },
+                                                        }));
+                                                      })
+                                                      .finally(() => {
+                                                        setGeneratingMore(prev => ({ ...prev, [sop.sopId]: false }));
+                                                      });
+                                                  }}
+                                                  disabled={generatingMore[sop.sopId]}
+                                                  className={`flex items-center gap-1 px-2 py-1 rounded-md text-[8px] font-bold uppercase tracking-wider border transition-all ${
+                                                    generatingMore[sop.sopId]
+                                                      ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20 cursor-wait'
+                                                      : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20 hover:bg-indigo-500/20'
+                                                  }`}
+                                                  title={`Generate ${100 - sop.totalQuestions} more questions`}
+                                                >
+                                                  {generatingMore[sop.sopId] ? (
+                                                    <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                                  ) : (
+                                                    <Plus className="h-2.5 w-2.5" />
+                                                  )}
+                                                  +{100 - sop.totalQuestions}
+                                                </button>
+                                              )}
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setDeleteModal({ sopId: sop.sopId, sopCode: sop.sopCode, sopName: sop.sopName });
+                                                }}
+                                                className="p-1 rounded-md bg-transparent hover:bg-rose-500/10 text-gray-600 hover:text-rose-400 border border-transparent hover:border-rose-500/20 transition-all opacity-0 group-hover:opacity-100"
+                                                title={`Delete ${sop.sopCode}`}
+                                              >
+                                                <Trash2 className="h-3 w-3" />
+                                              </button>
+                                              <div className="p-1.5 rounded-md bg-white/5 text-gray-600 group-hover:bg-indigo-500/10 group-hover:text-indigo-400 transition-colors">
+                                                <ChevronRight className="h-3 w-3" />
+                                              </div>
+                                            </div>
                                         </div>
                                       );
                                     },
@@ -1967,8 +2278,141 @@ export default function MCQTreeView({
                                           <span className="text-gray-600">-</span>
                                         )}
                                       </td>
-                                      <td className="p-4 text-right">
-                                        <ChevronRight className="h-4 w-4 text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
+                                      <td className="p-4 text-right whitespace-nowrap">
+                                        <div className="flex items-center justify-end gap-2">
+                                          {/* Case 1: No MCQ Bank → Generate fresh 100 */}
+                                          {sop.totalQuestions === 0 && (!sop.mcqBanks || sop.mcqBanks.length === 0) && (
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setGeneratingMore(prev => ({ ...prev, [sop.sopId]: true }));
+                                                setGenerateMoreResults(prev => { const next = { ...prev }; delete next[sop.sopId]; return next; });
+                                                fetch('/api/sop/generate-mcqs', {
+                                                  method: 'POST',
+                                                  headers: { 'Content-Type': 'application/json' },
+                                                  body: JSON.stringify({ sopId: sop.sopId, targetCount: 100 }),
+                                                })
+                                                  .then(res => res.json())
+                                                  .then(data => {
+                                                    if (data.success) {
+                                                      setGenerateMoreResults(prev => ({ ...prev, [sop.sopId]: { success: true, message: `+${data.total || 100} Qs Generated!` } }));
+                                                      setTimeout(() => window.location.reload(), 800);
+                                                    } else {
+                                                      setGenerateMoreResults(prev => ({ ...prev, [sop.sopId]: { success: false, message: data.error || 'Failed' } }));
+                                                    }
+                                                  })
+                                                  .catch(() => setGenerateMoreResults(prev => ({ ...prev, [sop.sopId]: { success: false, message: 'Network error' } })))
+                                                  .finally(() => setGeneratingMore(prev => ({ ...prev, [sop.sopId]: false })));
+                                              }}
+                                              disabled={generatingMore[sop.sopId]}
+                                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-wider border transition-all ${
+                                                generateMoreResults[sop.sopId]
+                                                  ? generateMoreResults[sop.sopId].success
+                                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                                    : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                                                  : generatingMore[sop.sopId]
+                                                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/20 cursor-wait'
+                                                    : 'bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20 hover:border-amber-500/30 animate-pulse'
+                                              }`}
+                                              title="Generate 100 MCQs for this SOP (no bank exists yet)"
+                                            >
+                                              {generatingMore[sop.sopId] ? (
+                                                <>
+                                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                                  Generating...
+                                                </>
+                                              ) : generateMoreResults[sop.sopId] ? (
+                                                <>{generateMoreResults[sop.sopId].message}</>
+                                              ) : (
+                                                <>
+                                                  <Plus className="h-3 w-3" />
+                                                  Generate 100 MCQs
+                                                </>
+                                              )}
+                                            </button>
+                                          )}
+                                          {/* Case 2: Has bank but under 100 → Top up */}
+                                          {sop.totalQuestions < 100 && sop.mcqBanks && sop.mcqBanks.length > 0 && (
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                const bankId = sop.mcqBanks[0]._id || sop.mcqBanks[0];
+                                                const sopIdVal = sop.sopId;
+                                                setGeneratingMore(prev => ({ ...prev, [sop.sopId]: true }));
+                                                setGenerateMoreResults(prev => {
+                                                  const next = { ...prev };
+                                                  delete next[sop.sopId];
+                                                  return next;
+                                                });
+                                                fetch('/api/mcq-bank/generate-more', {
+                                                  method: 'POST',
+                                                  headers: { 'Content-Type': 'application/json' },
+                                                  body: JSON.stringify({ bankId, sopId: sopIdVal }),
+                                                })
+                                                  .then(res => res.json())
+                                                  .then(data => {
+                                                    if (data.success) {
+                                                      setGenerateMoreResults(prev => ({
+                                                        ...prev,
+                                                        [sop.sopId]: { success: true, message: `+${data.generated} Qs` },
+                                                      }));
+                                                      window.location.reload();
+                                                    } else {
+                                                      setGenerateMoreResults(prev => ({
+                                                        ...prev,
+                                                        [sop.sopId]: { success: false, message: data.error || 'Failed' },
+                                                      }));
+                                                    }
+                                                  })
+                                                  .catch(() => {
+                                                    setGenerateMoreResults(prev => ({
+                                                      ...prev,
+                                                      [sop.sopId]: { success: false, message: 'Network error' },
+                                                    }));
+                                                  })
+                                                  .finally(() => {
+                                                    setGeneratingMore(prev => ({ ...prev, [sop.sopId]: false }));
+                                                  });
+                                              }}
+                                              disabled={generatingMore[sop.sopId]}
+                                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-wider border transition-all ${
+                                                generateMoreResults[sop.sopId]
+                                                  ? generateMoreResults[sop.sopId].success
+                                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                                    : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                                                  : generatingMore[sop.sopId]
+                                                    ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20 cursor-wait'
+                                                    : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20 hover:bg-indigo-500/20 hover:border-indigo-500/30'
+                                              }`}
+                                              title={`Generate ${100 - sop.totalQuestions} more questions to reach 100`}
+                                            >
+                                              {generatingMore[sop.sopId] ? (
+                                                <>
+                                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                                  Generating...
+                                                </>
+                                              ) : generateMoreResults[sop.sopId] ? (
+                                                <>{generateMoreResults[sop.sopId].message}</>
+                                              ) : (
+                                                <>
+                                                  <Plus className="h-3 w-3" />
+                                                  +{100 - sop.totalQuestions} Qs
+                                                </>
+                                              )}
+                                            </button>
+                                          )}
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setDeleteModal({ sopId: sop.sopId, sopCode: sop.sopCode, sopName: sop.sopName });
+                                            }}
+                                            className="p-1.5 rounded-lg bg-rose-500/0 hover:bg-rose-500/10 text-gray-600 hover:text-rose-400 border border-transparent hover:border-rose-500/20 transition-all opacity-0 group-hover:opacity-100"
+                                            title={`Delete ${sop.sopCode}`}
+                                          >
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                          </button>
+                                          <ChevronRight className="h-4 w-4 text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                        </div>
                                       </td>
                                     </tr>
                                   );
@@ -1992,6 +2436,77 @@ export default function MCQTreeView({
             </div>
           );
         })()}
+      {/* Delete SOP Password Modal */}
+      {deleteModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => { setDeleteModal(null); setDeletePassword(''); setDeleteError(''); }}>
+          <div
+            className="bg-[#1a1625] rounded-2xl border border-white/10 shadow-2xl p-8 w-full max-w-md mx-4 animate-in fade-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-3 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                <Trash2 className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">Delete SOP</h3>
+                <p className="text-xs text-gray-400">This action cannot be undone</p>
+              </div>
+            </div>
+
+            <div className="bg-black/30 rounded-xl border border-white/5 p-4 mb-6">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{deleteModal.sopCode}</span>
+              </div>
+              <p className="text-sm text-gray-300 line-clamp-2">{deleteModal.sopName}</p>
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Enter Password to Confirm</label>
+              <input
+                type="password"
+                value={deletePassword}
+                onChange={(e) => { setDeletePassword(e.target.value); setDeleteError(''); }}
+                onKeyDown={(e) => { if (e.key === 'Enter' && deletePassword) handleDeleteSOP(); }}
+                placeholder="Enter admin password..."
+                className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-500/50 transition-all"
+                autoFocus
+              />
+              {deleteError && (
+                <p className="mt-2 text-xs text-rose-400 font-medium flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" />
+                  {deleteError}
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => { setDeleteModal(null); setDeletePassword(''); setDeleteError(''); }}
+                className="flex-1 px-4 py-3 bg-white/5 hover:bg-white/10 text-gray-300 rounded-xl border border-white/10 text-sm font-bold transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteSOP}
+                disabled={!deletePassword || deleteLoading}
+                className="flex-1 px-4 py-3 bg-rose-600 hover:bg-rose-500 disabled:bg-rose-600/30 disabled:text-rose-400/50 text-white rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-rose-500/20"
+              >
+                {deleteLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

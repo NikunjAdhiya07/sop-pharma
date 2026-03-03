@@ -44,6 +44,10 @@ import {
   Files,
   TrendingUp,
   Table,
+  Clock,
+  Edit2,
+  Save,
+  RotateCcw,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import MCQTreeView from "@/components/MCQTreeView";
@@ -105,6 +109,16 @@ function MCQBankContent() {
   } | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null); // e.g. "bankId-index"
   const [actionFeedback, setActionFeedback] = useState<{ id: string, message: string, type: 'success' | 'error' } | null>(null);
+
+  // Inline edit state for Question Analytics modal
+  const [editMode, setEditMode] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editDraft, setEditDraft] = useState<{
+    question: string;
+    options: string[];
+    correctAnswer: string;
+    explanation: string;
+  } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalBanks, setTotalBanks] = useState(0);
@@ -190,7 +204,7 @@ function MCQBankContent() {
   >("identifier");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [filterReviewStatus, setFilterReviewStatus] = useState<
-    "all" | "checked" | "similar" | "reviewed"
+    "all" | "checked" | "pending" | "similar" | "reviewed"
   >("all");
   // Lazy rendering: show 30 at a time, more loaded on scroll
   const [visibleCount, setVisibleCount] = useState(30);
@@ -457,7 +471,7 @@ function MCQBankContent() {
 
   const fetchFullBankDetails = async (
     bank: MCQBank,
-    filter: "all" | "checked" | "similar" | "reviewed" = "all",
+    filter: "all" | "checked" | "pending" | "similar" | "reviewed" = "all",
   ) => {
     setFilterReviewStatus(filter);
     // Reset modal-level search and visible count when opening a new SOP
@@ -1720,13 +1734,15 @@ function MCQBankContent() {
             // Compute filtered questions inside the render block
             const allMcqs = selectedMCQBank.mcqs || [];
             const searchLower = modalSearch.trim().toLowerCase();
-            const filtered = allMcqs.filter((mcq, idx) => {
+            let filtered = allMcqs.filter((mcq, idx) => {
               if (
                 difficultyFilter !== "All" &&
                 mcq.difficulty !== difficultyFilter
               )
                 return false;
               if (filterReviewStatus === "checked" && !mcq.isChecked)
+                return false;
+              if (filterReviewStatus === "pending" && (mcq.isChecked || mcq.isReviewed))
                 return false;
               if (filterReviewStatus === "similar" && !mcq.isSimilar)
                 return false;
@@ -1746,6 +1762,20 @@ function MCQBankContent() {
               return true;
             });
 
+            // Deduplicate questions by text in All view
+            if (filterReviewStatus === "all") {
+              const seen = new Set<string>();
+              const deduped: typeof filtered = [];
+              for (const mcq of filtered) {
+                const key = (mcq.question || "").trim().toLowerCase();
+                if (!seen.has(key)) {
+                  seen.add(key);
+                  deduped.push(mcq);
+                }
+              }
+              filtered = deduped;
+            }
+
             // Highlight helper
             const highlight = (text: string) => {
               if (!searchLower || !text) return <span>{text}</span>;
@@ -1763,7 +1793,7 @@ function MCQBankContent() {
             };
 
             return (
-              <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-300">
+              <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-300">
                 <div
                   className={`bg-[#0f0d1e] border border-indigo-500/20 shadow-2xl flex flex-col overflow-hidden transition-all duration-300 ${isMaximized
                     ? "w-full h-full rounded-none"
@@ -1976,6 +2006,13 @@ function MCQBankContent() {
                                     activeClass: "text-emerald-400",
                                   },
                                   {
+                                    id: "pending",
+                                    label: "Pending",
+                                    icon: <Clock className="h-3.5 w-3.5" />,
+                                    color: "bg-orange-500",
+                                    activeClass: "text-orange-400",
+                                  },
+                                  {
                                     id: "similar",
                                     label: "Similar",
                                     icon: <Copy className="h-3.5 w-3.5" />,
@@ -2179,7 +2216,7 @@ function MCQBankContent() {
                                                 return (
                                                   <div
                                                     key={oi}
-                                                    className={`flex items-center gap-2 p-1.5 rounded-lg transition-all border ${isCorrect
+                                                    className={`flex items-start gap-2 p-1.5 rounded-lg transition-all border ${isCorrect
                                                       ? "bg-purple-500/10 border-purple-500/20 text-purple-200"
                                                       : "bg-[#1a1625]/50 border-white/5 text-gray-400 group-hover:bg-[#1a1625] group-hover:border-white/10"
                                                       }`}
@@ -2195,7 +2232,7 @@ function MCQBankContent() {
                                                       )}
                                                     </span>
                                                     <span
-                                                      className={`text-[10px] flex-1 min-w-0 truncate ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati text-xs" : ""}`}
+                                                      className={`text-[10px] flex-1 min-w-0 break-words ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati text-xs" : ""}`}
                                                     >
                                                       {searchLower
                                                         ? highlight(opt)
@@ -2500,9 +2537,11 @@ function MCQBankContent() {
               accentColor: string,
             ) => {
               if (!mcq) return null;
+              const isApproved = !!mcq.isChecked;
+              const approvingKey = `${selectedMCQBank!._id}-${idx}`;
               return (
                 <div
-                  className={`flex-1 min-w-[300px] max-w-[450px] rounded-2xl border p-5 space-y-4 ${accentColor}`}
+                  className={`flex-1 min-w-[300px] max-w-[450px] rounded-2xl border p-5 space-y-4 ${accentColor} flex flex-col`}
                 >
                   {/* Card Header */}
                   <div className="flex items-center justify-between">
@@ -2517,11 +2556,18 @@ function MCQBankContent() {
                         </p>
                       </div>
                     </div>
-                    <span
-                      className={`px-2 py-0.5 rounded-lg text-[9px] font-bold uppercase tracking-wider border ${getDifficultyColor(mcq.difficulty)}`}
-                    >
-                      {mcq.difficulty || "Normal"}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {isApproved && (
+                        <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[9px] font-bold uppercase tracking-wider">
+                          <CheckCircle2 className="h-2.5 w-2.5" /> Approved
+                        </span>
+                      )}
+                      <span
+                        className={`px-2 py-0.5 rounded-lg text-[9px] font-bold uppercase tracking-wider border ${getDifficultyColor(mcq.difficulty)}`}
+                      >
+                        {mcq.difficulty || "Normal"}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Question Text */}
@@ -2564,26 +2610,61 @@ function MCQBankContent() {
                     })}
                   </div>
 
+                  {/* SOP Source Reference */}
+                  {mcq.sopReference && (
+                    <div className="rounded-xl bg-blue-500/5 border border-blue-500/15 p-3 space-y-1">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-blue-400/70 flex items-center gap-1">
+                        <BookOpen className="h-2.5 w-2.5" /> SOP Source Line
+                      </p>
+                      <p className="text-[10px] text-blue-300/80 leading-relaxed italic line-clamp-3">
+                        &quot;{mcq.sopReference}&quot;
+                      </p>
+                    </div>
+                  )}
+
                   {/* Action Buttons */}
                   <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/5 mt-auto">
+                    {/* Approve Button */}
+                    <button
+                      onClick={() => {
+                        toggleChecked(selectedMCQBank!._id, idx, isApproved);
+                      }}
+                      disabled={updatingStatus === approvingKey}
+                      className={`col-span-2 px-3 py-2.5 rounded-xl text-[10px] font-bold border transition-all flex items-center justify-center gap-1.5 ${isApproved
+                        ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30"
+                        : "bg-emerald-600/15 text-emerald-400 border-emerald-500/25 hover:bg-emerald-500/25 hover:border-emerald-400/40"
+                        }`}
+                    >
+                      {updatingStatus === approvingKey ? (
+                        <>
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          {isApproved ? "Revoking..." : "Approving..."}
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className={`h-3 w-3 ${isApproved ? "fill-emerald-400" : ""}`} />
+                          {isApproved ? "Approved ✓" : "Approve Question"}
+                        </>
+                      )}
+                    </button>
                     <button
                       onClick={() => {
                         toggleSimilar(selectedMCQBank!, idx, mcq, false);
                       }}
-                      disabled={updatingStatus === `${selectedMCQBank!._id}-${idx}` || actionFeedback?.id === `${selectedMCQBank!._id}-${idx}`}
-                      className={`px-3 py-2 rounded-xl text-[10px] font-bold border transition-all flex items-center justify-center gap-1.5 ${actionFeedback?.id === `${selectedMCQBank!._id}-${idx}`
+                      disabled={updatingStatus === approvingKey || actionFeedback?.id === approvingKey}
+                      className={`px-3 py-2 rounded-xl text-[10px] font-bold border transition-all flex items-center justify-center gap-1.5 ${actionFeedback?.id === approvingKey
                           ? actionFeedback.type === 'error'
                             ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
                             : "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
-                          : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20"
+                          : "bg-white/5 text-gray-400 border-white/10 hover:bg-white/10 hover:text-gray-200"
                         }`}
                     >
-                      {updatingStatus === `${selectedMCQBank!._id}-${idx}` ? (
+                      {updatingStatus === approvingKey ? (
                         <>
                           <Loader2 className="h-3 w-3 animate-spin" />
                           Removing...
                         </>
-                      ) : actionFeedback?.id === `${selectedMCQBank!._id}-${idx}` ? (
+                      ) : actionFeedback?.id === approvingKey ? (
                         <>
                           {actionFeedback.type === 'error' ? <X className="h-3 w-3" /> : <CheckCircle2 className="h-3 w-3" />}
                           {actionFeedback.message}
@@ -2636,7 +2717,7 @@ function MCQBankContent() {
             return (
               <div
                 className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[70] animate-in fade-in duration-300"
-                onClick={() => setSelectedMCQ(null)}
+                onClick={() => { setSelectedMCQ(null); setEditMode(false); setEditDraft(null); }}
               >
                 <div
                   className={`bg-[#0f0d1e] rounded-[28px] ${hasSimilar ? "max-w-6xl" : "max-w-3xl"} w-full max-h-[92vh] flex flex-col border border-indigo-500/15 shadow-2xl shadow-black/60 overflow-hidden`}
@@ -2668,7 +2749,7 @@ function MCQBankContent() {
                         </div>
                       </div>
                       <button
-                        onClick={() => setSelectedMCQ(null)}
+                        onClick={() => { setSelectedMCQ(null); setEditMode(false); setEditDraft(null); }}
                         className="p-2 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-all border border-white/10 shadow-inner"
                       >
                         <X className="h-5 w-5" />
@@ -2738,199 +2819,296 @@ function MCQBankContent() {
                       </div>
                     ) : (
                       /* ── STANDARD SINGLE QUESTION VIEW ── */
-                      <div className="space-y-8">
-                        {/* Question Section */}
-                        <div className="space-y-4">
+                      <div className="space-y-6">
+
+                        {/* Edit Mode Toggle Bar */}
+                        <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                            <span className="text-4xl">
-                              {selectedMCQ.mcq.aiIcon}
+                            <span className="text-4xl">{selectedMCQ.mcq.aiIcon}</span>
+                            <span className={`px-3 py-1 rounded-xl text-[10px] font-bold uppercase tracking-widest border ${getDifficultyColor(selectedMCQ.mcq.difficulty)}`}>
+                              {selectedMCQ.mcq.difficultyStars} {selectedMCQ.mcq.difficulty}
                             </span>
-                            <div className="flex flex-wrap gap-2">
-                              <span
-                                className={`px-3 py-1 rounded-xl text-[10px] font-bold uppercase tracking-widest border ${getDifficultyColor(selectedMCQ.mcq.difficulty)}`}
-                              >
-                                {selectedMCQ.mcq.difficultyStars}{" "}
-                                {selectedMCQ.mcq.difficulty}
-                              </span>
-                            </div>
                           </div>
-                          <h3
-                            className={`text-2xl font-bold text-gray-100 leading-tight tracking-tight ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati" : ""}`}
-                          >
-                            {selectedMCQ.mcq.question}
-                          </h3>
+                          {!editMode ? (
+                            <button
+                              onClick={() => {
+                                setEditDraft({
+                                  question: selectedMCQ.mcq.question,
+                                  options: [...selectedMCQ.mcq.options],
+                                  correctAnswer: selectedMCQ.mcq.correctAnswer,
+                                  explanation: selectedMCQ.mcq.explanation || '',
+                                });
+                                setEditMode(true);
+                              }}
+                              className="flex items-center gap-2 px-4 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 hover:border-indigo-500/40 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                              Edit Question
+                            </button>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => { setEditMode(false); setEditDraft(null); }}
+                                className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 border border-white/10 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all"
+                              >
+                                <RotateCcw className="h-3.5 w-3.5" />
+                                Cancel
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  if (!editDraft || !selectedMCQBank) return;
+                                  setEditSaving(true);
+                                  try {
+                                    const res = await fetch('/api/mcq-bank/edit-question', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({
+                                        bankId: selectedMCQBank._id,
+                                        questionIndex: selectedMCQ.index,
+                                        question: editDraft.question,
+                                        options: editDraft.options,
+                                        correctAnswer: editDraft.correctAnswer,
+                                        explanation: editDraft.explanation,
+                                      }),
+                                    });
+                                    const data = await res.json();
+                                    if (data.success) {
+                                      // Update local state immediately
+                                      const updatedBanks = mcqBanks.map(b => {
+                                        if (b._id !== selectedMCQBank._id) return b;
+                                        const updatedMcqs = [...b.mcqs];
+                                        updatedMcqs[selectedMCQ.index] = {
+                                          ...updatedMcqs[selectedMCQ.index],
+                                          question: editDraft.question,
+                                          options: editDraft.options,
+                                          correctAnswer: editDraft.correctAnswer,
+                                          explanation: editDraft.explanation,
+                                        };
+                                        return { ...b, mcqs: updatedMcqs };
+                                      });
+                                      setMcqBanks(updatedBanks);
+                                      // Also update selectedMCQ and selectedMCQBank
+                                      const updatedBank = updatedBanks.find(b => b._id === selectedMCQBank._id);
+                                      if (updatedBank) {
+                                        setSelectedMCQBank(updatedBank);
+                                        setSelectedMCQ({ mcq: updatedBank.mcqs[selectedMCQ.index], index: selectedMCQ.index });
+                                      }
+                                      setEditMode(false);
+                                      setEditDraft(null);
+                                    } else {
+                                      alert('Failed to save: ' + (data.error || 'Unknown error'));
+                                    }
+                                  } catch (err) {
+                                    alert('Network error while saving.');
+                                  } finally {
+                                    setEditSaving(false);
+                                  }
+                                }}
+                                disabled={editSaving}
+                                className="flex items-center gap-2 px-4 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all disabled:opacity-50"
+                              >
+                                {editSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                                {editSaving ? 'Saving...' : 'Save Changes'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Question Text */}
+                        <div className="space-y-2">
+                          <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] ml-1">Question</h4>
+                          {editMode && editDraft ? (
+                            <textarea
+                              value={editDraft.question}
+                              onChange={e => setEditDraft(d => d ? { ...d, question: e.target.value } : d)}
+                              rows={3}
+                              className="w-full bg-indigo-500/5 border border-indigo-500/30 rounded-2xl p-4 text-white text-base font-medium leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500/40 resize-none placeholder-gray-600 transition-all"
+                              placeholder="Enter the question text..."
+                            />
+                          ) : (
+                            <h3 className={`text-2xl font-bold text-gray-100 leading-tight tracking-tight ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati' : ''}`}>
+                              {selectedMCQ.mcq.question}
+                            </h3>
+                          )}
                         </div>
 
                         {/* Options */}
                         <div className="space-y-3">
                           <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] ml-1">
-                            Proposed Options
+                            {editMode ? 'Edit Options & Select Correct Answer' : 'Proposed Options'}
                           </h4>
                           <div className="space-y-2.5">
-                            {selectedMCQ.mcq.options.map((option, index) => {
-                              const isCorrect =
-                                option === selectedMCQ.mcq.correctAnswer;
+                            {(editMode && editDraft ? editDraft.options : selectedMCQ.mcq.options).map((option, index) => {
+                              const label = String.fromCharCode(65 + index);
+                              const isCorrect = editMode && editDraft
+                                ? editDraft.correctAnswer === option || editDraft.correctAnswer === label
+                                : option === selectedMCQ.mcq.correctAnswer;
                               return (
                                 <div
                                   key={index}
-                                  className={`group p-4 rounded-2xl flex items-center gap-4 transition-all border ${isCorrect
-                                    ? "bg-purple-600/10 border-purple-500/30 shadow-[0_0_20px_rgba(147,51,234,0.1)]"
-                                    : "bg-white/5 border-white/5 hover:border-white/10"
-                                    }`}
+                                  className={`group p-3 rounded-2xl flex items-center gap-3 transition-all border ${
+                                    isCorrect
+                                      ? 'bg-emerald-600/10 border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.08)]'
+                                      : 'bg-white/5 border-white/5 hover:border-white/10'
+                                  }`}
                                 >
-                                  <div
-                                    className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold border transition-all ${isCorrect
-                                      ? "bg-gradient-to-br from-purple-600 to-indigo-600 text-white border-purple-400 shadow-lg shadow-purple-500/20"
-                                      : "bg-slate-900 text-gray-500 border-white/5"
+                                  {/* Correct Answer Radio/Badge */}
+                                  {editMode && editDraft ? (
+                                    <button
+                                      onClick={() => setEditDraft(d => d ? { ...d, correctAnswer: option } : d)}
+                                      title={`Set option ${label} as correct answer`}
+                                      className={`w-8 h-8 flex-shrink-0 rounded-xl flex items-center justify-center text-xs font-bold border transition-all ${
+                                        isCorrect
+                                          ? 'bg-emerald-500 text-white border-emerald-400 shadow-lg shadow-emerald-500/20'
+                                          : 'bg-slate-900 text-gray-500 border-white/5 hover:border-emerald-500/30 hover:text-emerald-400'
                                       }`}
-                                  >
-                                    {String.fromCharCode(65 + index)}
-                                  </div>
-                                  <span
-                                    className={`${isCorrect ? "text-purple-400 font-semibold" : "text-gray-400"} text-base ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati" : ""}`}
-                                  >
-                                    {option}
-                                  </span>
+                                    >
+                                      {label}
+                                    </button>
+                                  ) : (
+                                    <div className={`w-8 h-8 flex-shrink-0 rounded-xl flex items-center justify-center text-xs font-bold border ${
+                                      isCorrect
+                                        ? 'bg-gradient-to-br from-purple-600 to-indigo-600 text-white border-purple-400 shadow-lg'
+                                        : 'bg-slate-900 text-gray-500 border-white/5'
+                                    }`}>
+                                      {label}
+                                    </div>
+                                  )}
+
+                                  {/* Option Text */}
+                                  {editMode && editDraft ? (
+                                    <input
+                                      type="text"
+                                      value={option}
+                                      onChange={e => {
+                                        const newOptions = [...editDraft.options];
+                                        const oldVal = newOptions[index];
+                                        newOptions[index] = e.target.value;
+                                        // If this was the correct answer, update correctAnswer too
+                                        const newCorrect = editDraft.correctAnswer === oldVal ? e.target.value : editDraft.correctAnswer;
+                                        setEditDraft(d => d ? { ...d, options: newOptions, correctAnswer: newCorrect } : d);
+                                      }}
+                                      className={`flex-1 bg-transparent border-0 text-sm font-medium focus:outline-none ${
+                                        isCorrect ? 'text-emerald-400' : 'text-gray-300'
+                                      } placeholder-gray-600`}
+                                      placeholder={`Option ${label}...`}
+                                    />
+                                  ) : (
+                                    <span className={`${isCorrect ? 'text-purple-400 font-semibold' : 'text-gray-400'} text-base flex-1 ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati' : ''}`}>
+                                      {option}
+                                    </span>
+                                  )}
+
                                   {isCorrect && (
-                                    <div className="ml-auto flex items-center gap-2 px-3 py-1 bg-purple-500/20 rounded-lg text-purple-400 text-[10px] font-bold uppercase tracking-wider">
-                                      <CheckCircle2 className="h-3 w-3" />{" "}
-                                      Correct Answer
+                                    <div className={`ml-auto flex items-center gap-2 px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${
+                                      editMode ? 'bg-emerald-500/20 text-emerald-400' : 'bg-purple-500/20 text-purple-400'
+                                    }`}>
+                                      <CheckCircle2 className="h-3 w-3" />
+                                      {editMode ? 'Correct' : 'Correct Answer'}
                                     </div>
                                   )}
                                 </div>
                               );
                             })}
                           </div>
+                          {editMode && (
+                            <p className="text-[10px] text-gray-500 ml-1">💡 Click a letter badge to mark it as the correct answer. Edit text directly in each row.</p>
+                          )}
                         </div>
 
                         {/* Insights */}
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                           <div className="space-y-3">
                             <h4 className="text-[10px] font-bold text-[#8B5CF6] uppercase tracking-[0.2em] flex items-center gap-2 ml-1">
-                              <MessageSquare className="h-3 w-3" /> Pedagogical
-                              Rationale
+                              <MessageSquare className="h-3 w-3" /> Pedagogical Rationale
                             </h4>
-                            <div className="bg-slate-800/30 p-5 rounded-[24px] border border-white/5 shadow-inner">
-                              <p
-                                className={`text-sm text-gray-400 leading-relaxed ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati text-base" : ""}`}
-                              >
-                                {selectedMCQ.mcq.explanation ||
-                                  "No explanation provided for this question unit."}
-                              </p>
+                            <div className="bg-slate-800/30 p-4 rounded-[24px] border border-white/5 shadow-inner">
+                              {editMode && editDraft ? (
+                                <textarea
+                                  value={editDraft.explanation}
+                                  onChange={e => setEditDraft(d => d ? { ...d, explanation: e.target.value } : d)}
+                                  rows={4}
+                                  className="w-full bg-transparent border-0 text-sm text-gray-400 leading-relaxed focus:outline-none resize-none placeholder-gray-600"
+                                  placeholder="Explanation / rationale for this question..."
+                                />
+                              ) : (
+                                <p className={`text-sm text-gray-400 leading-relaxed ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati text-base' : ''}`}>
+                                  {selectedMCQ.mcq.explanation || 'No explanation provided for this question unit.'}
+                                </p>
+                              )}
                             </div>
                           </div>
                           <div className="space-y-3">
                             <h4 className="text-[10px] font-bold text-blue-400 uppercase tracking-[0.2em] flex items-center gap-2 ml-1">
-                              <BookOpen className="h-3 w-3" /> Technical SOP
-                              Context
+                              <BookOpen className="h-3 w-3" /> Technical SOP Context
                             </h4>
-                            <div className="bg-slate-800/30 p-5 rounded-[24px] border border-white/5 shadow-inner italic">
-                              <p
-                                className={`text-sm text-blue-400/80 leading-relaxed ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati text-base" : ""}`}
-                              >
-                                &quot;
-                                {selectedMCQ.mcq.sopReference ||
-                                  "Direct reference content is being indexed..."}
-                                &quot;
+                            <div className="bg-slate-800/30 p-4 rounded-[24px] border border-white/5 shadow-inner italic">
+                              <p className={`text-sm text-blue-400/80 leading-relaxed ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati text-base' : ''}`}>
+                                &quot;{selectedMCQ.mcq.sopReference || 'Direct reference content is being indexed...'}&quot;
                               </p>
                             </div>
                           </div>
                         </div>
 
-                        {/* Status */}
-                        <div className="pt-6 border-t border-white/5 flex flex-wrap gap-4">
-                          <div className="flex-1 min-w-[200px] flex items-center gap-3 p-4 bg-white/5 rounded-2xl border border-white/5">
-                            <div
-                              className={`p-3 rounded-xl ${selectedMCQ.mcq.isChecked ? "bg-emerald-500/20 text-emerald-400" : "bg-gray-500/10 text-gray-500"}`}
-                            >
-                              <CheckCircle2 className="h-6 w-6" />
+                        {/* Status Badges */}
+                        <div className="pt-4 border-t border-white/5 flex flex-wrap gap-4">
+                          <div className="flex-1 min-w-[180px] flex items-center gap-3 p-4 bg-white/5 rounded-2xl border border-white/5">
+                            <div className={`p-3 rounded-xl ${selectedMCQ.mcq.isChecked ? 'bg-emerald-500/20 text-emerald-400' : 'bg-gray-500/10 text-gray-500'}`}>
+                              <CheckCircle2 className="h-5 w-5" />
                             </div>
                             <div>
-                              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                                Quality Check
-                              </p>
-                              <p
-                                className={`text-sm font-bold ${selectedMCQ.mcq.isChecked ? "text-emerald-400" : "text-gray-400"}`}
-                              >
-                                {selectedMCQ.mcq.isChecked
-                                  ? "Successfully Approved"
-                                  : "Pending Verification"}
+                              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Quality Check</p>
+                              <p className={`text-sm font-bold ${selectedMCQ.mcq.isChecked ? 'text-emerald-400' : 'text-gray-400'}`}>
+                                {selectedMCQ.mcq.isChecked ? 'Successfully Approved' : 'Pending Verification'}
                               </p>
                             </div>
                           </div>
-                          <div className="flex-1 min-w-[200px] flex items-center gap-3 p-4 bg-white/5 rounded-2xl border border-white/5">
-                            <div
-                              className={`p-3 rounded-xl ${selectedMCQ.mcq.isReviewed ? "bg-amber-500/20 text-amber-400" : "bg-gray-500/10 text-gray-500"}`}
-                            >
-                              <Star
-                                className={`h-6 w-6 ${selectedMCQ.mcq.isReviewed ? "fill-current" : ""}`}
-                              />
+                          <div className="flex-1 min-w-[180px] flex items-center gap-3 p-4 bg-white/5 rounded-2xl border border-white/5">
+                            <div className={`p-3 rounded-xl ${selectedMCQ.mcq.isReviewed ? 'bg-amber-500/20 text-amber-400' : 'bg-gray-500/10 text-gray-500'}`}>
+                              <Star className={`h-5 w-5 ${selectedMCQ.mcq.isReviewed ? 'fill-current' : ''}`} />
                             </div>
                             <div>
-                              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                                Priority Review
-                              </p>
-                              <p
-                                className={`text-sm font-bold ${selectedMCQ.mcq.isReviewed ? "text-amber-400" : "text-gray-400"}`}
-                              >
-                                {selectedMCQ.mcq.isReviewed
-                                  ? "Review Completed"
-                                  : "Standard Priority"}
+                              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Priority Review</p>
+                              <p className={`text-sm font-bold ${selectedMCQ.mcq.isReviewed ? 'text-amber-400' : 'text-gray-400'}`}>
+                                {selectedMCQ.mcq.isReviewed ? 'Review Completed' : 'Standard Priority'}
                               </p>
                             </div>
                           </div>
                         </div>
 
                         {/* Action Buttons */}
-                        <div className="pt-4 flex gap-3">
-                          <button
-                            onClick={() => router.push("/mcq-review")}
-                            className="flex-1 px-6 py-4 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-bold transition-all flex items-center justify-center gap-3 border border-white/10 group"
-                          >
-                            <Star className="h-5 w-5 text-amber-400 fill-amber-400 group-hover:scale-110 transition-transform" />
-                            <span className="uppercase tracking-widest text-xs">
-                              Go to Review Center
-                            </span>
-                          </button>
-                          <button
-                            onClick={async () => {
-                              if (selectedMCQBank) {
-                                await handleReplaceQuestion(
-                                  selectedMCQBank._id,
-                                  selectedMCQ.index,
-                                  selectedMCQBank.sopId,
-                                );
-                                setSelectedMCQ(null);
-                              }
-                            }}
-                            disabled={
-                              updatingStatus ===
-                              `${selectedMCQBank?._id}-${selectedMCQ.index}`
-                            }
-                            className="flex-1 px-6 py-4 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 text-white rounded-2xl font-bold transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_10px_30px_rgba(225,29,72,0.3)] group"
-                          >
-                            {updatingStatus ===
-                              `${selectedMCQBank?._id}-${selectedMCQ.index}` ? (
-                              <>
-                                <Loader2 className="h-5 w-5 animate-spin" />
-                                <span className="uppercase tracking-widest text-xs">
-                                  Processing Replace...
-                                </span>
-                              </>
-                            ) : (
-                              <>
-                                <RefreshCw className="h-5 w-5 group-hover:rotate-180 transition-transform duration-500" />
-                                <span className="uppercase tracking-widest text-xs">
-                                  Delete & Regenerate Question
-                                </span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-                        <p className="text-[10px] text-gray-500 text-center font-medium uppercase tracking-[0.2em]">
-                          Archiving moves this unit to the recycled section and
-                          triggers AI re-generation.
-                        </p>
+                        {!editMode && (
+                          <div className="pt-2 flex gap-3">
+                            <button
+                              onClick={() => router.push('/mcq-review')}
+                              className="flex-1 px-6 py-4 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-bold transition-all flex items-center justify-center gap-3 border border-white/10 group"
+                            >
+                              <Star className="h-5 w-5 text-amber-400 fill-amber-400 group-hover:scale-110 transition-transform" />
+                              <span className="uppercase tracking-widest text-xs">Go to Review Center</span>
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (selectedMCQBank) {
+                                  await handleReplaceQuestion(selectedMCQBank._id, selectedMCQ.index, selectedMCQBank.sopId);
+                                  setSelectedMCQ(null);
+                                }
+                              }}
+                              disabled={updatingStatus === `${selectedMCQBank?._id}-${selectedMCQ.index}`}
+                              className="flex-1 px-6 py-4 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 text-white rounded-2xl font-bold transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_10px_30px_rgba(225,29,72,0.3)] group"
+                            >
+                              {updatingStatus === `${selectedMCQBank?._id}-${selectedMCQ.index}` ? (
+                                <><Loader2 className="h-5 w-5 animate-spin" /><span className="uppercase tracking-widest text-xs">Processing Replace...</span></>
+                              ) : (
+                                <><RefreshCw className="h-5 w-5 group-hover:rotate-180 transition-transform duration-500" /><span className="uppercase tracking-widest text-xs">Delete & Regenerate Question</span></>
+                              )}
+                            </button>
+                          </div>
+                        )}
+                        {!editMode && (
+                          <p className="text-[10px] text-gray-500 text-center font-medium uppercase tracking-[0.2em]">
+                            Archiving moves this unit to the recycled section and triggers AI re-generation.
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>

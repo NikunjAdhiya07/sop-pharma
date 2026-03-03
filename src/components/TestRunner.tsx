@@ -57,6 +57,7 @@ export default function TestRunner({ questions, onComplete, onExit, title }: Tes
   const [flaggingQuestion, setFlaggingQuestion] = useState(false);
   const [visitedQuestions, setVisitedQuestions] = useState<Set<number>>(new Set([0]));
   const [currentTime, setCurrentTime] = useState<number>(0);
+  const [questionStartTime, setQuestionStartTime] = useState<number>(Date.now());
 
   useEffect(() => {
     setCurrentTime(Date.now());
@@ -67,8 +68,19 @@ export default function TestRunner({ questions, onComplete, onExit, title }: Tes
   }, [currentStep]);
 
   useEffect(() => {
+    // When question changes, reset the question timer
+    setQuestionStartTime(Date.now());
     setVisitedQuestions(prev => new Set(prev).add(currentQuestionIndex));
   }, [currentQuestionIndex]);
+
+  // Handle auto-advance logic on timeout
+  useEffect(() => {
+    if (currentStep !== 'testing') return;
+    const elapsed = Math.floor((currentTime - questionStartTime) / 1000);
+    if (elapsed >= 30) {
+      handleNext();
+    }
+  }, [currentTime, currentStep, questionStartTime]);
 
   const handleClearResponse = () => {
     const newAnswers = { ...userAnswers };
@@ -235,28 +247,31 @@ export default function TestRunner({ questions, onComplete, onExit, title }: Tes
   // TESTING UI
   if (currentStep === 'testing') {
     const q = questions[currentQuestionIndex];
-    const durationSeconds = Math.floor((currentTime - testStartTime) / 1000);
-    const MathMax = Math.max(0, durationSeconds);
-    const hrs = Math.floor(MathMax / 3600);
-    const mins = Math.floor((MathMax % 3600) / 60);
-    const secs = Math.floor(MathMax % 60);
-    const timeDisplay = `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    const durationSeconds = Math.floor((currentTime - questionStartTime) / 1000);
+    const timeLeft = Math.max(0, 30 - durationSeconds);
+    
+    // Test progress for top bar
+    const progress = ((currentQuestionIndex + 1) / questions.length) * 100;
 
     return (
-      <div className="h-screen flex flex-col bg-slate-950 text-white font-sans overflow-hidden">
+      <div className="h-screen flex flex-col bg-slate-900 text-white font-sans overflow-hidden">
         {/* Top Header Bar */}
-        <div className="flex items-center justify-between px-6 py-4 bg-slate-900 border-b border-white/10 shadow-md">
-          <div className="flex items-center gap-4">
-            <h1 className="text-xl font-bold tracking-wide">{title}</h1>
+        <div className="flex items-center justify-between px-6 py-4 bg-white/5 border-b border-white/10 shadow-md backdrop-blur-md relative">
+          <div className="absolute top-0 left-0 h-1 bg-gradient-to-r from-purple-500 via-pink-500 to-purple-500 transition-all duration-300" style={{ width: `${progress}%` }}></div>
+          <div className="flex items-center gap-4 pt-1">
+            <h1 className="text-xl font-bold tracking-wide text-white">{title}</h1>
+
             <div className="flex items-center gap-2 text-xs font-bold px-3 py-1 bg-black/30 rounded border border-white/5">
               <span className="text-emerald-400">+1 Correct</span>
               <span className="text-rose-400">-0 Incorrect</span>
             </div>
           </div>
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2 text-lg font-mono">
-              <Timer className="h-5 w-5 text-gray-400" />
-              <span>{timeDisplay}</span>
+            <div className="flex items-center gap-6 pt-1">
+            <div className={`flex items-center gap-2 text-lg font-bold font-mono px-4 py-1.5 rounded-full border ${
+              timeLeft <= 5 ? 'bg-rose-500/20 text-rose-400 border-rose-500/50 animate-pulse' : 'bg-white/10 text-purple-400 border-white/5'
+            }`}>
+              <Timer className={`h-5 w-5 ${timeLeft <= 5 ? 'text-rose-400' : 'text-purple-400'}`} />
+              <span>{timeLeft.toString().padStart(2, '0')}s</span>
             </div>
             <button
                onClick={() => {
@@ -271,7 +286,7 @@ export default function TestRunner({ questions, onComplete, onExit, title }: Tes
                    onComplete(calculateScore(), questions.length, detailedAnswers, Math.floor((endTime - testStartTime) / 1000));
                  }
                }}
-               className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded transition-colors"
+               className="bg-purple-600 hover:bg-purple-500 outline outline-2 outline-offset-2 outline-transparent hover:outline-purple-500/50 text-white font-bold py-2.5 px-6 rounded-lg transition-all"
             >
               Submit Test
             </button>
@@ -279,39 +294,47 @@ export default function TestRunner({ questions, onComplete, onExit, title }: Tes
         </div>
 
         {/* Main Content Area */}
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 overflow-hidden relative">
+          <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-pink-500/5 pointer-events-none z-0"></div>
           
           {/* Left Panel - Question Area */}
-          <div className="flex-1 flex flex-col bg-slate-900 border-r border-white/10">
+          <div className="flex-1 flex flex-col border-r border-white/10 z-10">
             <div className="flex-1 p-8 overflow-y-auto">
               <div className="flex items-center justify-between mb-8">
-                <h2 className="text-2xl font-bold">Question {currentQuestionIndex + 1}</h2>
-                <div className="px-4 py-1.5 bg-white/5 border border-white/10 rounded-md text-sm text-gray-300 font-medium tracking-wide">
-                  {q.sopName || q.sopIdentifier || 'General'}
+                <div className="flex items-center gap-3">
+                  <h2 className="text-2xl font-bold text-white">Question {currentQuestionIndex + 1}</h2>
+                  <span className="text-gray-500 font-mono">/ {questions.length}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="px-3 py-1 bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded-lg text-xs font-bold uppercase tracking-wider">
+                    {q.sopIdentifier}
+                  </span>
+                  <span className="px-3 py-1 bg-white/5 text-gray-400 border border-white/10 rounded-lg text-xs font-medium uppercase tracking-wide">
+                    {q.sopName || 'General'}
+                  </span>
                 </div>
               </div>
               
-              <div className="bg-white/5 rounded-xl p-8 border border-white/10 shadow-lg mb-8">
-                <p className="text-lg leading-relaxed mb-6 font-medium text-gray-100">
+              <div className="bg-white/10 backdrop-blur-xl rounded-3xl p-8 border border-white/20 shadow-2xl mb-8 relative">
+                <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none">
+                  <ClipboardCheck className="h-24 w-24 text-white" />
+                </div>
+                <p className="text-xl md:text-2xl leading-relaxed font-bold text-white relative z-10">
                   {q.question}
                 </p>
-                {/* Visual Placeholder for diagram if any */}
-                {/* <div className="w-full h-32 bg-black/40 rounded-lg border border-white/5 flex items-center justify-center text-gray-600 mb-8 text-sm">
-                  [ Diagram / Image Area from CDN ]
-                </div> */}
               </div>
 
               <div className="flex flex-col gap-4">
                 {q.options.map((option, idx) => (
                   <label
                     key={idx}
-                    className={`flex items-center p-5 rounded-xl border cursor-pointer transition-all ${
+                    className={`flex items-center p-5 rounded-2xl border-2 cursor-pointer transition-all duration-200 group ${
                       userAnswers[currentQuestionIndex] === option
-                        ? 'bg-blue-600/10 border-blue-500/50 shadow-[0_0_15px_rgba(37,99,235,0.1)]'
-                        : 'bg-white/5 border-white/10 hover:bg-white/[0.08] hover:border-white/20'
+                        ? 'bg-purple-600/30 border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.15)]'
+                        : 'bg-white/5 border-white/10 hover:bg-white/[0.07] hover:border-white/30'
                     }`}
                   >
-                    <div className="relative flex items-center justify-center w-6 h-6 mr-4">
+                    <div className="relative flex items-center justify-center w-6 h-6 mr-5">
                       <input
                         type="radio"
                         name={`question-${currentQuestionIndex}`}
@@ -321,52 +344,57 @@ export default function TestRunner({ questions, onComplete, onExit, title }: Tes
                       />
                       <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
                         userAnswers[currentQuestionIndex] === option 
-                          ? 'border-blue-500 bg-transparent' 
-                          : 'border-gray-500 bg-transparent'
+                          ? 'border-purple-500 bg-transparent' 
+                          : 'border-white/20 group-hover:border-white/40 bg-transparent'
                       }`}>
                         {userAnswers[currentQuestionIndex] === option && (
-                          <div className="w-3 h-3 rounded-full bg-blue-500" />
+                          <div className="w-3 h-3 rounded-full bg-purple-500 animate-in zoom-in duration-300" />
                         )}
                       </div>
                     </div>
-                    <span className="text-base text-gray-200">{option}</span>
+                    <span className={`text-lg transition-colors ${
+                      userAnswers[currentQuestionIndex] === option ? 'text-white font-semibold' : 'text-gray-300 group-hover:text-white'
+                    }`}>{option}</span>
                   </label>
                 ))}
               </div>
             </div>
 
             {/* Bottom Actions */}
-            <div className="flex items-center justify-between p-6 bg-slate-900 border-t border-white/10">
+            <div className="flex items-center justify-between p-6 bg-white/5 border-t border-white/10 backdrop-blur-md">
               <div className="flex items-center gap-4">
                 <button
                   onClick={handleClearResponse}
                   disabled={!userAnswers[currentQuestionIndex]}
-                  className="px-6 py-3 rounded-lg bg-white/5 border border-white/10 text-gray-300 font-medium hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-6 py-3 rounded-xl bg-white/5 border border-white/10 text-gray-300 font-medium hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Clear Response
                 </button>
                 <button
                   onClick={() => handleToggleReview(currentQuestionIndex)}
-                  className={`px-6 py-3 rounded-lg font-medium transition-colors border ${
+                  className={`px-6 py-3 rounded-xl font-medium transition-all border ${
                     markedForReview.has(currentQuestionIndex)
-                      ? 'bg-amber-500/10 border-amber-500/50 text-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.1)]'
-                      : 'bg-white/5 border-white/10 text-amber-500 hover:bg-amber-500/5 hover:border-amber-500/30'
+                      ? 'bg-amber-500/20 border-amber-500 text-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.2)]'
+                      : 'bg-white/5 border-white/10 text-amber-500 hover:bg-amber-500/10 hover:border-amber-500/50'
                   }`}
                 >
-                  {markedForReview.has(currentQuestionIndex) ? 'Unmark Review' : 'Mark for Review'}
+                  <div className="flex items-center gap-2">
+                    <Star className={`h-4 w-4 ${markedForReview.has(currentQuestionIndex) ? 'fill-amber-400' : ''}`} />
+                    {markedForReview.has(currentQuestionIndex) ? 'Unmark Review' : 'Mark for Review'}
+                  </div>
                 </button>
               </div>
               <div className="flex items-center gap-4">
                 <button
                   onClick={handlePrevious}
                   disabled={currentQuestionIndex === 0}
-                  className="px-6 py-3 rounded-lg bg-white/5 border border-white/10 text-gray-300 font-medium hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  className="px-6 py-3 rounded-xl bg-white/5 border border-white/10 text-gray-300 font-medium hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
-                  <ArrowLeft className="h-4 w-4" /> Prev
+                  <ArrowLeft className="h-4 w-4" /> Previous
                 </button>
                 <button
                   onClick={handleNext}
-                  className="px-8 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors flex items-center gap-2 shadow-lg hover:shadow-blue-500/20"
+                  className="px-8 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 hover:scale-105 active:scale-95 text-white font-bold transition-all flex items-center gap-2 shadow-lg shadow-purple-500/20"
                 >
                   Save & Next <ArrowRight className="h-4 w-4" />
                 </button>
@@ -375,46 +403,48 @@ export default function TestRunner({ questions, onComplete, onExit, title }: Tes
           </div>
 
           {/* Right Panel - Palette */}
-          <div className="w-80 bg-slate-900 border-l border-white/10 flex flex-col shrink-0">
-            <div className="p-4 border-b border-white/10">
-              <h3 className="font-bold text-lg mb-4 text-white">Question Palette</h3>
-              <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-xs font-medium text-gray-300">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-md bg-emerald-500 flex items-center justify-center text-white shadow-sm" />
+          <div className="w-80 border-l border-white/10 flex flex-col shrink-0 z-10 bg-white/5 backdrop-blur-md">
+            <div className="p-6 border-b border-white/10">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2 bg-purple-500/20 rounded-lg">
+                  <ClipboardList className="h-4 w-4 text-purple-400" />
+                </div>
+                <h3 className="font-bold text-lg text-white">Question Navigator</h3>
+              </div>
+              
+              <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest text-gray-400 pb-1">
+                <div className="flex items-center gap-1.5 opacity-90">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
                   <span>Answered</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-md bg-rose-500 flex items-center justify-center text-white shadow-sm" />
-                  <span>Not Answered</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-md bg-white/10 flex items-center justify-center text-gray-400" />
-                  <span>Not Visited</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center text-white shadow-sm" />
+                <div className="flex items-center gap-1.5 opacity-90">
+                  <div className="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]"></div>
                   <span>Review</span>
+                </div>
+                <div className="flex items-center gap-1.5 opacity-90">
+                  <div className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]"></div>
+                  <span>Current</span>
                 </div>
               </div>
             </div>
 
-            <div className="flex-1 p-5 overflow-y-auto bg-slate-900 border-b border-white/10">
+            <div className="flex-1 p-6 overflow-y-auto">
               <div className="grid grid-cols-5 gap-3">
                 {questions.map((_, idx) => {
                   const isAnswered = !!userAnswers[idx];
                   const isMarked = markedForReview.has(idx);
                   const isVisited = visitedQuestions.has(idx);
                   
-                  let bgClass = 'bg-white/5 text-gray-400 border border-white/10'; // Not visited
-                  let shapeClass = 'rounded-md';
+                  let bgClass = 'bg-white/5 text-gray-500 border-white/10 border'; // Not visited empty slot style
                   
-                  if (isMarked) {
-                    bgClass = 'bg-amber-500 text-white shadow-md shadow-amber-500/20';
-                    shapeClass = 'rounded-full'; // Make review circles
+                  if (isMarked && isAnswered) {
+                    bgClass = 'bg-amber-500/20 text-amber-400 border-amber-500/50 border-2'; 
+                  } else if (isMarked) {
+                    bgClass = 'bg-amber-500/20 text-amber-400 border-amber-500/50 border';
                   } else if (isAnswered) {
-                    bgClass = 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20';
+                    bgClass = 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50 border-2';
                   } else if (isVisited) {
-                    bgClass = 'bg-rose-500 text-white shadow-md shadow-rose-500/20';
+                    bgClass = 'bg-white/10 text-gray-300 border-white/30 border';
                   }
 
                   const isCurrent = currentQuestionIndex === idx;
@@ -423,21 +453,19 @@ export default function TestRunner({ questions, onComplete, onExit, title }: Tes
                     <button
                       key={idx}
                       onClick={() => setCurrentQuestionIndex(idx)}
-                      className={`h-10 flex items-center justify-center text-sm font-bold transition-all ${bgClass} ${shapeClass} hover:opacity-80 ${
-                        isCurrent ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900 border-transparent transform scale-110' : ''
+                      className={`h-11 flex items-center justify-center text-sm font-bold rounded-xl transition-all duration-300 hover:border-white/50 group relative ${bgClass} ${
+                        isCurrent ? 'bg-purple-600 border-purple-400 text-white shadow-[0_0_20px_rgba(168,85,247,0.4)] scale-110 !border-2 z-10' : ''
                       }`}
                     >
                       {idx + 1}
+                      {/* Tooltip */}
+                      <div className="absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 bg-white text-slate-900 text-[10px] font-black rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-xl uppercase tracking-tighter z-50">
+                        {isCurrent ? 'Current' : isMarked ? 'Flagged' : isAnswered ? 'Completed' : 'Pending'}
+                      </div>
                     </button>
                   );
                 })}
               </div>
-            </div>
-            
-            <div className="p-6 bg-slate-900/50">
-               <div className="w-full h-24 bg-white/5 rounded-lg border border-white/10 flex items-center justify-center text-gray-500 text-xs text-center p-4">
-                 Student Photo / Reg<br/>(Do not close this window)
-               </div>
             </div>
           </div>
         </div>
