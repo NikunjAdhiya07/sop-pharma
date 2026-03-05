@@ -1345,13 +1345,7 @@ function MCQBankContent() {
                   <Copy className="h-3.5 w-3.5" />
                   Similar Questions
                 </button>
-                <button
-                  onClick={() => (window.location.href = "/files-manager")}
-                  className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-md hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap"
-                >
-                  <FolderOpen className="h-3.5 w-3.5" />
-                  Files Manager
-                </button>
+
                 <button
                   onClick={() => (window.location.href = "/sop-upload")}
                   className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-md hover:from-purple-700 hover:to-pink-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap"
@@ -1359,31 +1353,7 @@ function MCQBankContent() {
                   <Upload className="h-3.5 w-3.5" />
                   Upload SOP
                 </button>
-                <button
-                  onClick={() => setShowTrainerModal(true)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-semibold rounded-md hover:from-cyan-700 hover:to-blue-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap"
-                  title="Import trainer list from Excel"
-                >
-                  <UserPlus className="h-3.5 w-3.5" />
-                  Trainers
-                </button>
 
-                <button
-                  onClick={() => router.push("/training")}
-                  className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-semibold rounded-md hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap"
-                  title="View AI Training & Test Dashboard"
-                >
-                  <TrendingUp className="h-3.5 w-3.5" />
-                  Training Dashboard
-                </button>
-                <button
-                  onClick={() => setShowMatrixModal(true)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold rounded-md hover:from-emerald-700 hover:to-teal-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap"
-                  title="Bulk upload training matrix DOC files"
-                >
-                  <Files className="h-3.5 w-3.5" />
-                  Training Matrix
-                </button>
               </div>
             )}
           </div>
