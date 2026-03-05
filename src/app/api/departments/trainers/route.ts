@@ -21,22 +21,32 @@ export async function GET(request: NextRequest) {
         { $sort: { _id: 1 } }
       ]);
       
-      // Format to match the DepartmentTrainer shape
       result = matrixTrainers.map((t: any) => ({
         departmentName: t._id,
         trainerName: t.employees.slice(0, 2).join(', ') + (t.employees.length > 2 ? '...' : '')
       }));
     }
 
-    // NEW: Also return SOP-specific trainer names
-    const sopTrainers = await TrainingMatrix.aggregate([
+    // Also return SOP-specific trainer names from DepartmentTrainer (sopIdentifier field)
+    const sopSpecificTrainers = await DepartmentTrainer.find({ sopIdentifier: { $exists: true, $ne: '' } });
+    const sopMapping: Record<string, string> = {};
+    
+    // From SOP-specific DepartmentTrainer records
+    sopSpecificTrainers.forEach((t: any) => {
+      if (t.sopIdentifier) {
+        sopMapping[t.sopIdentifier.toUpperCase()] = t.trainerName;
+      }
+    });
+
+    // Also from TrainingMatrix (fallback)
+    const matrixSopTrainers = await TrainingMatrix.aggregate([
       { $match: { employeeName: { $exists: true, $nin: [null, ''] } } },
       { $group: { _id: '$sopIdentifier', employees: { $addToSet: '$employeeName' } } }
     ]);
-
-    const sopMapping: Record<string, string> = {};
-    sopTrainers.forEach((t: any) => {
-      sopMapping[t._id.toUpperCase()] = t.employees.slice(0, 2).join(', ') + (t.employees.length > 2 ? '...' : '');
+    matrixSopTrainers.forEach((t: any) => {
+      if (!sopMapping[t._id?.toUpperCase()]) {
+        sopMapping[t._id?.toUpperCase()] = t.employees.slice(0, 2).join(', ') + (t.employees.length > 2 ? '...' : '');
+      }
     });
     
     return NextResponse.json({ 
@@ -65,62 +75,85 @@ export async function POST(request: NextRequest) {
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
-    const data = XLSX.utils.sheet_to_json(worksheet) as any[];
+    const data = XLSX.utils.sheet_to_json(worksheet, { defval: '' }) as any[];
 
     if (!data || data.length === 0) {
       return NextResponse.json({ error: 'File is empty' }, { status: 400 });
     }
 
-    // Expected headers (case insensitive or common variants)
-    const deptHeaders = ['Department Name', 'SOP Department', 'Department', 'Dept'];
-    const trainerHeaders = ['Trainer Name', 'Trainer'];
+    const colKeys = Object.keys(data[0] || {});
 
-    const findKey = (row: any, candidates: string[]) => {
-      const keys = Object.keys(row);
-      return keys.find(k => candidates.some(c => k.toLowerCase().trim() === c.toLowerCase()));
+    // User-specified column mappings from form data (sent from the frontend preview UI)
+    const deptColName = (formData.get('deptCol') as string) || '';
+    const trainerColName = (formData.get('trainerCol') as string) || '';
+    const sopColName = (formData.get('sopCol') as string) || '';
+
+    // Auto-detect fallback
+    const AUTO_DEPT_HEADERS = ['Department Name', 'SOP Department', 'Department', 'Dept'];
+    const AUTO_TRAINER_HEADERS = ['Trainer Name', 'Trainer', "Trainer's Name", 'Training Officer', 'Training Incharge'];
+    const AUTO_SOP_HEADERS = ['SOP Code', 'SOP No', 'SOP', 'SOP Identifier', 'Protocol ID', 'SOP Number'];
+
+    const findKey = (candidates: string[]): string | null => {
+      return colKeys.find(k => candidates.some(c => k.toLowerCase().trim() === c.toLowerCase())) || null;
     };
 
-    const deptKey = findKey(data[0], deptHeaders);
-    const trainerKey = findKey(data[0], trainerHeaders);
+    const deptKey = (deptColName && colKeys.includes(deptColName)) ? deptColName : findKey(AUTO_DEPT_HEADERS);
+    const trainerKey = (trainerColName && colKeys.includes(trainerColName)) ? trainerColName : findKey(AUTO_TRAINER_HEADERS);
+    const sopKey = (sopColName && colKeys.includes(sopColName)) ? sopColName : findKey(AUTO_SOP_HEADERS);
 
-    if (!deptKey || !trainerKey) {
+    if (!trainerKey) {
       return NextResponse.json({ 
-        error: `Missing required columns. Found: ${Object.keys(data[0]).join(', ')}. Need something like: "Department Name" and "Trainer Name"` 
+        error: `Cannot find trainer column. Columns found: ${colKeys.join(', ')}. Please select the correct trainer column.`,
+        availableColumns: colKeys,
       }, { status: 400 });
     }
 
-    const results = {
-      updated: 0,
-      created: 0,
-      errors: 0
-    };
+    if (!deptKey && !sopKey) {
+      return NextResponse.json({ 
+        error: `Cannot find department or SOP column. Columns found: ${colKeys.join(', ')}. Please select the correct column.`,
+        availableColumns: colKeys,
+      }, { status: 400 });
+    }
+
+    const results = { saved: 0, skipped: 0 };
 
     for (const row of data) {
-      const deptName = row[deptKey]?.toString().trim();
       const trainerName = row[trainerKey]?.toString().trim();
+      if (!trainerName) { results.skipped++; continue; }
 
-      if (!deptName || !trainerName) {
-        results.errors++;
-        continue;
+      // SOP-level assignment
+      if (sopKey) {
+        const sopCode = row[sopKey]?.toString().trim().toUpperCase();
+        if (sopCode) {
+          const deptName = deptKey ? row[deptKey]?.toString().trim() : '';
+          await DepartmentTrainer.findOneAndUpdate(
+            { sopIdentifier: sopCode },
+            { sopIdentifier: sopCode, trainerName, departmentName: deptName },
+            { upsert: true, new: true }
+          );
+          results.saved++;
+          continue;
+        }
       }
 
-      // Upsert: update if exists, create if not
-      const updated = await DepartmentTrainer.findOneAndUpdate(
-        { departmentName: { $regex: new RegExp(`^${deptName}$`, 'i') } },
-        { trainerName: trainerName },
-        { upsert: true, new: true }
-      );
+      // Department-level assignment
+      if (deptKey) {
+        const deptName = row[deptKey]?.toString().trim();
+        if (!deptName) { results.skipped++; continue; }
 
-      if (updated.createdAt.getTime() === updated.updatedAt.getTime()) {
-        results.created++;
-      } else {
-        results.updated++;
+        const escaped = deptName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        await DepartmentTrainer.findOneAndUpdate(
+          { departmentName: { $regex: new RegExp(`^${escaped}$`, 'i') } },
+          { trainerName, departmentName: deptName },
+          { upsert: true, new: true }
+        );
+        results.saved++;
       }
     }
 
     return NextResponse.json({ 
       success: true, 
-      message: `Processed ${data.length} rows: ${results.created} created, ${results.updated} updated, ${results.errors} skipped.`,
+      message: `Successfully saved ${results.saved} trainer assignment${results.saved !== 1 ? 's' : ''}${results.skipped > 0 ? ` (${results.skipped} rows skipped — no trainer name)` : ''}.`,
       results 
     });
 
@@ -140,8 +173,9 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'departmentName and trainerName are required' }, { status: 400 });
     }
 
+    const escaped = departmentName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const result = await DepartmentTrainer.findOneAndUpdate(
-      { departmentName: { $regex: new RegExp(`^${departmentName}$`, 'i') } },
+      { departmentName: { $regex: new RegExp(`^${escaped}$`, 'i') } },
       { departmentName, trainerName },
       { upsert: true, new: true }
     );

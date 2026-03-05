@@ -1358,6 +1358,14 @@ function MCQBankContent() {
                   <Upload className="h-3.5 w-3.5" />
                   Upload SOP
                 </button>
+                <button
+                  onClick={() => setShowTrainerModal(true)}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-semibold rounded-md hover:from-cyan-700 hover:to-blue-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap"
+                  title="Import trainer list from Excel"
+                >
+                  <UserPlus className="h-3.5 w-3.5" />
+                  Trainers
+                </button>
 
                 <button
                   onClick={() => router.push("/training")}
@@ -3129,6 +3137,14 @@ function MCQBankContent() {
           </div>
         </div>
       )}
+
+      {/* Modals */}
+      <TrainerUploadModal 
+        isOpen={showTrainerModal} 
+        onClose={() => setShowTrainerModal(false)}
+        onSuccess={() => fetchTrainerMappings()}
+      />
+
     </div>
   );
 }
