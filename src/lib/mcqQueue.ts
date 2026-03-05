@@ -116,6 +116,20 @@ class MCQGenerationQueue {
 
       console.log(`🚀 Starting MCQ generation for: ${sop.name}`);
 
+      // Guard: SOP must have readable content
+      if (!sop.content || sop.content.trim().length < 100) {
+        console.error(`❌ SOP ${sop.name} has insufficient content (${sop.content?.length || 0} chars). Marking as failed.`);
+        sop.status = 'failed';
+        await sop.save();
+        this.stats.failed++;
+        this.stats.errors.push({ fileName: sopId, error: 'SOP content is empty or too short to generate questions' });
+        this.processing.delete(sopId);
+        this.events.emit('completed', sopId);
+        this.events.emit(`completed:${sopId}`);
+        this.emitProgress();
+        return;
+      }
+
       // Check for existing bank
       let existingBank = mcqBankId 
         ? await MCQBank.findById(mcqBankId)
@@ -135,7 +149,7 @@ class MCQGenerationQueue {
       const result = await generateMCQsFromSOP({
         sopContent: sop.content,
         sopName: sop.name,
-        sopIdentifier: sop.identifier,
+        sopIdentifier: sop.identifier || sop.name,
         existingQuestions: existingQuestions,
         targetCount: targetCount || 100,
         isBulk: false,

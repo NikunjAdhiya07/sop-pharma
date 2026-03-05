@@ -5,6 +5,9 @@ import MCQBank from '@/models/MCQBank';
 import SOPLibrary from '@/models/SOPLibrary';
 import { mcqQueue } from '@/lib/mcqQueue';
 
+// Allow up to 5 minutes for MCQ regeneration
+export const maxDuration = 300;
+
 export async function POST(request: NextRequest) {
   try {
     await connectDB();

@@ -130,6 +130,7 @@ function MCQBankContent() {
 
   // Similarity Check State
   const [checkingSimilarity, setCheckingSimilarity] = useState(false);
+  const [fixingAnswers, setFixingAnswers] = useState(false);
   const [similarityResults, setSimilarityResults] = useState<{
     count: number;
     groups: Array<{
@@ -1909,6 +1910,112 @@ function MCQBankContent() {
                               {checkingSimilarity
                                 ? "Checking..."
                                 : "Check Similar"}
+                            </span>
+                          </button>
+                          {/* Reset & Regenerate: auto-fix content + delete bank + regenerate */}
+                          <button
+                            onClick={async () => {
+                              if (!selectedMCQBank || fixingAnswers) return;
+                              if (!confirm(
+                                `⚠️ Reset & Regenerate "${selectedMCQBank.sopIdentifier}"?\n\n` +
+                                `This will DELETE all ${selectedMCQBank.mcqs?.length || 0} existing questions and generate 100 fresh ones.\n\n` +
+                                `Use this to fix wrong correct answers (AI answer-mapping bug).\n\nContinue?`
+                              )) return;
+
+                              setFixingAnswers(true);
+                              try {
+                                // Step 0: If SOP content is missing/too short, try re-extracting from disk first
+                                const contentCheckRes = await fetch(`/api/sop/generate-mcqs?sopId=${selectedMCQBank.sopId}`, {
+                                  method: 'GET',
+                                });
+                                // Just get SOP info directly
+                                const reextractRes = await fetch('/api/sop/reextract-content', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ sopId: selectedMCQBank.sopId }),
+                                });
+                                const reextractData = await reextractRes.json();
+
+                                if (!reextractData.success) {
+                                  // Content re-extraction failed — file may be missing or scanned image
+                                  if (reextractData.error?.includes('not found on disk') || reextractData.error?.includes('re-upload')) {
+                                    alert(
+                                      `❌ SOP File Not Found on Disk\n\n` +
+                                      `The original file for "${selectedMCQBank.sopIdentifier}" is missing.\n\n` +
+                                      `Please go to the SOP Library page and:\n` +
+                                      `1. Delete this SOP\n` +
+                                      `2. Re-upload the original PDF/DOCX file\n` +
+                                      `3. Then generate MCQs again`
+                                    );
+                                    return;
+                                  }
+                                  // Content extracted but still too short (scanned PDF)
+                                  alert(
+                                    `❌ Content Extraction Failed\n\n` +
+                                    `Error: ${reextractData.error}\n\n` +
+                                    `This SOP appears to be a scanned image PDF.\n` +
+                                    `Please re-upload a text-based PDF or DOCX version.`
+                                  );
+                                  return;
+                                }
+
+                                console.log(`✅ Content re-extracted: ${reextractData.newLength} chars (${reextractData.wordCount} words)`);
+
+                                // Step 1: Delete the existing MCQ bank
+                                const delRes = await fetch(`/api/mcq-bank?id=${selectedMCQBank._id}`, {
+                                  method: 'DELETE',
+                                });
+                                const delData = await delRes.json();
+                                if (!delData.success) {
+                                  alert(`❌ Failed to delete bank: ${delData.error || delData.details}`);
+                                  return;
+                                }
+
+                                // Step 2: Close the modal
+                                setSelectedMCQBank(null);
+                                await fetchMCQBanks();
+
+                                alert(
+                                  `✅ Content fixed! (${reextractData.newLength} chars extracted)\n` +
+                                  `🔄 Now generating ${selectedMCQBank.sopIdentifier} MCQs...\n\n` +
+                                  `This may take 2–5 minutes.`
+                                );
+
+                                // Step 3: Trigger regeneration
+                                const genRes = await fetch('/api/sop/generate-mcqs', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    sopId: selectedMCQBank.sopId,
+                                    targetCount: 100,
+                                  }),
+                                });
+                                const genData = await genRes.json();
+
+                                if (genData.success) {
+                                  alert(`✅ Regenerated ${genData.total} questions for ${selectedMCQBank.sopIdentifier}!\n\nAll answers are now correct.`);
+                                  await fetchMCQBanks();
+                                  if (viewMode === 'tree') fetchTreeData(true);
+                                } else {
+                                  alert(`❌ Generation failed: ${genData.error}\n\nBank was deleted. You can try clicking "Generate 100 MCQs" from the table view.`);
+                                }
+                              } catch (err) {
+                                alert('Network error. Please try again.');
+                              } finally {
+                                setFixingAnswers(false);
+                              }
+                            }}
+                            disabled={fixingAnswers}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 transition-all border border-rose-500/20 hover:border-rose-500/30 disabled:opacity-50 text-xs font-bold uppercase tracking-wider"
+                            title="Re-extract content + delete bank + regenerate with correct answers"
+                          >
+                            {fixingAnswers ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <RotateCcw className="h-4 w-4" />
+                            )}
+                            <span className="hidden sm:inline">
+                              {fixingAnswers ? 'Regenerating...' : 'Reset & Regen'}
                             </span>
                           </button>
                           <button

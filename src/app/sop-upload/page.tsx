@@ -41,6 +41,7 @@ export default function SOPUploadPage() {
   const [success, setSuccess] = useState('');
   const [duplicateWarning, setDuplicateWarning] = useState(false);
   const [duplicateSOP, setDuplicateSOP] = useState<{ type: string, existingSOP: any } | null>(null);
+  const [generatedSopId, setGeneratedSopId] = useState<string | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -132,6 +133,7 @@ export default function SOPUploadPage() {
       setFile(null);
       setSopName('');
       setSopIdentifier('');
+      setGeneratedSopId(null);
       
     } catch (err) {
       // Extract detailed error message from API response
@@ -178,14 +180,18 @@ export default function SOPUploadPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'MCQ generation failed');
+        throw new Error(data.error || data.details || 'MCQ generation failed');
       }
 
-      setSuccess(`MCQ Bank generated successfully! ${data.mcqBank.totalQuestions} questions created.`);
+      // API returns { success, total, mcqBank } — use total or mcqs.length
+      const questionCount = data.total ?? data.mcqBank?.mcqs?.length ?? data.mcqBank?.totalQuestions ?? 0;
+      setGeneratedSopId(uploadedSOP.id);
+      setSuccess(`✅ MCQ Bank generated! ${questionCount} questions created for "${uploadedSOP.name}".`);
       setUploadedSOP(null);
       
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'MCQ generation failed');
+      const msg = err instanceof Error ? err.message : 'MCQ generation failed';
+      setError(`❌ ${msg}`);
     } finally {
       setGenerating(false);
     }
@@ -205,7 +211,7 @@ export default function SOPUploadPage() {
                 SOP → MCQ Bank Generator
               </h1>
               <p className="text-gray-300 text-lg">
-                Upload your SOP document and generate comprehensive MCQ banks powered by Gemini 3 Pro Preview
+                Upload your SOP document and generate comprehensive MCQ banks powered by Gemini 2.0 Flash
               </p>
             </div>
             <div className="flex gap-3">
@@ -383,9 +389,19 @@ export default function SOPUploadPage() {
         )}
 
         {success && (
-          <div className="bg-green-500/20 border border-green-500 rounded-xl p-4 mb-6 flex items-start">
-            <CheckCircle2 className="h-5 w-5 text-green-400 mr-3 mt-0.5 flex-shrink-0" />
-            <p className="text-green-200">{success}</p>
+          <div className="bg-green-500/20 border border-green-500 rounded-xl p-4 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-start">
+              <CheckCircle2 className="h-5 w-5 text-green-400 mr-3 mt-0.5 flex-shrink-0" />
+              <p className="text-green-200">{success}</p>
+            </div>
+            {success.includes('MCQ Bank generated') && generatedSopId && (
+              <button
+                onClick={() => router.push(`/mcq-bank?sopId=${generatedSopId}`)}
+                className="flex-shrink-0 px-6 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-semibold rounded-lg hover:from-emerald-600 hover:to-teal-600 transition-all shadow-md"
+              >
+                View MCQs →
+              </button>
+            )}
           </div>
         )}
 
@@ -417,10 +433,10 @@ export default function SOPUploadPage() {
               {generating ? (
                 <span className="flex items-center justify-center">
                   <Loader2 className="animate-spin mr-2 h-5 w-5" />
-                  Generating MEGA-EXHAUSTIVE Bank (Up to 500 MCQs)...
+                  Generating MCQ Bank (100 Questions)... This may take 2–5 min
                 </span>
               ) : (
-                'Generate MCQ Bank'
+                '⚡ Generate 100 MCQs'
               )}
             </button>
           </div>
@@ -445,7 +461,7 @@ export default function SOPUploadPage() {
               </div>
               <div>
                 <h3 className="text-white font-semibold mb-1">AI Processing</h3>
-                <p className="text-gray-300">Gemini 3 Pro Preview analyzes your SOP content</p>
+                <p className="text-gray-300">Gemini 2.0 Flash analyzes your SOP content</p>
               </div>
             </div>
             <div className="flex items-start">
@@ -454,7 +470,7 @@ export default function SOPUploadPage() {
               </div>
               <div>
                 <h3 className="text-white font-semibold mb-1">MCQ Generation</h3>
-                <p className="text-gray-300">MEGA-EXHAUSTIVE MCQ banks (up to 500 questions) are generated with Easy, Medium, and Hard difficulty levels</p>
+                <p className="text-gray-300">100 MCQs are generated with Easy, Medium, and Hard difficulty levels, with correct answer mapping</p>
               </div>
             </div>
             <div className="flex items-start">

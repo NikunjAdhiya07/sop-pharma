@@ -5,6 +5,9 @@ import MCQBank from '@/models/MCQBank';
 import { mcqQueue } from '@/lib/mcqQueue';
 import { logAction } from '@/lib/auditLogger';
 
+// Allow up to 5 minutes for MCQ generation (Gemini API can be slow)
+export const maxDuration = 300;
+
 export async function POST(request: NextRequest) {
   try {
     await connectDB();
@@ -27,6 +30,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Pre-flight content check: fail fast if content is empty/too short
+    if (!sop.content || sop.content.trim().length < 100) {
+      console.error(`❌ SOP ${sop.name} has insufficient content (${sop.content?.length || 0} chars). Cannot generate MCQs.`);
+      return NextResponse.json(
+        { error: `Cannot generate MCQs: SOP content is empty or too short (${sop.content?.length || 0} characters). Please re-upload the SOP file.` },
+        { status: 422 }
+      );
+    }
+
     // Check if it's already in the queue or being processed
     // If it's already there, we'll just wait for it to complete
     if (mcqQueue.isProcessing(sopId)) {
@@ -41,8 +53,6 @@ export async function POST(request: NextRequest) {
       });
       
       // Ensure the queue is running
-      // Note: In a real production app, you might have a worker process. 
-      // Here we start it if it's not already running.
       mcqQueue.start().catch(err => console.error('Error starting queue:', err));
     }
 
@@ -53,8 +63,13 @@ export async function POST(request: NextRequest) {
     const finalBank = await MCQBank.findOne({ sopId: sop._id });
 
     if (!finalBank || finalBank.mcqs.length === 0) {
+      // Check if SOP was marked as failed (content issue or AI issue)
+      const freshSop = await SOP.findById(sopId).select('status');
+      const reason = freshSop?.status === 'failed'
+        ? 'SOP content could not be processed by the AI. Please re-upload the SOP or check the content.'
+        : 'AI failed to generate questions or task failed.';
       return NextResponse.json(
-        { error: 'AI failed to generate questions or task failed.' },
+        { error: reason },
         { status: 500 }
       );
     }

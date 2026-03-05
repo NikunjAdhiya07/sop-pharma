@@ -8,13 +8,13 @@ if (!GEMINI_API_KEY) {
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-// gemini-1.5-flash is stable and widely available for high-frequency tasks
-const DEFAULT_MODEL = 'gemini-1.5-flash';
+// gemini-2.0-flash: currently available, fast and capable for MCQ generation
+// NOTE: gemini-1.5-flash was deprecated (404). gemini-2.5-pro-preview not yet publicly available.
+const DEFAULT_MODEL = 'gemini-2.0-flash';
 
 export const geminiModel = genAI.getGenerativeModel({
   model: DEFAULT_MODEL,
   generationConfig: {
-    responseMimeType: "application/json",
     maxOutputTokens: 32768,
     temperature: 0.1,
   }
@@ -382,23 +382,63 @@ Return ONLY the JSON. No additional text before or after.
     }
 
     return parsed.mcqs.map((mcq, idx) => {
-      const hasValidCorrectAnswer = mcq.options && mcq.options.some((opt: string) =>
-        opt.trim().toLowerCase() === (mcq.correctAnswer || '').trim().toLowerCase()
-      );
+      const options: string[] = mcq.options || [];
+      const rawAnswer: string = (mcq.correctAnswer || '').trim();
 
-      const actualCorrectAnswer = hasValidCorrectAnswer ? mcq.correctAnswer : (mcq.options?.[0] || '');
+      // --- Resolve the correct answer text from the options array ---
+      // The AI sometimes returns a letter ("A", "B", "C", "D") while options hold full text,
+      // or returns full text while options hold letters. Handle all cases.
+      let resolvedCorrectAnswer = '';
+
+      // Case 1: Exact match (letter vs letter, or full text vs full text)
+      const exactMatch = options.find(opt => opt.trim().toLowerCase() === rawAnswer.toLowerCase());
+      if (exactMatch) {
+        resolvedCorrectAnswer = exactMatch;
+      }
+      // Case 2: correctAnswer is a single letter (A/B/C/D) → map to option by index
+      else if (/^[A-Da-d]$/.test(rawAnswer)) {
+        const letterIndex = rawAnswer.toUpperCase().charCodeAt(0) - 65; // A=0, B=1, C=2, D=3
+        if (options[letterIndex]) {
+          resolvedCorrectAnswer = options[letterIndex];
+        }
+      }
+      // Case 3: correctAnswer starts with "A. " / "B. " / "C. " / "D. " → strip the prefix letter and search
+      else if (/^[A-Da-d]\.\s/.test(rawAnswer)) {
+        const withoutPrefix = rawAnswer.replace(/^[A-Da-d]\.\s*/, '').toLowerCase();
+        const prefixMatch = options.find(opt => opt.replace(/^[A-Da-d]\.\s*/, '').trim().toLowerCase() === withoutPrefix);
+        resolvedCorrectAnswer = prefixMatch || '';
+        // Also try by letter index fallback
+        if (!resolvedCorrectAnswer) {
+          const letterIndex = rawAnswer.toUpperCase().charCodeAt(0) - 65;
+          resolvedCorrectAnswer = options[letterIndex] || '';
+        }
+      }
+      // Case 4: options are single letters but correctAnswer is full text → find by letter prefix in answer
+      else {
+        const firstChar = rawAnswer[0]?.toUpperCase();
+        if (firstChar && /[A-D]/.test(firstChar) && options.some(o => /^[A-D]$/.test(o.trim()))) {
+          const letterMatch = options.find(o => o.trim().toUpperCase() === firstChar);
+          resolvedCorrectAnswer = letterMatch || '';
+        }
+      }
+
+      // Final fallback: use first option only if nothing resolved (logs warning for debugging)
+      if (!resolvedCorrectAnswer) {
+        console.warn(`⚠️ Q${idx + 1}: Could not resolve correctAnswer "${rawAnswer}" from options [${options.join(' | ')}]. Defaulting to option A.`);
+        resolvedCorrectAnswer = options[0] || '';
+      }
+
+      // Build optionVariants from scratch using the resolved answer to ensure isCorrect is accurate
+      const optionVariants = options.map((opt: string) => ({
+        text: opt,
+        isCorrect: opt === resolvedCorrectAnswer,
+      }));
 
       return {
         ...mcq,
         aiIcon: mcq.aiIcon || '🔬',
-        correctAnswer: actualCorrectAnswer,
-        optionVariants: (mcq.optionVariants || mcq.options?.map((opt: string) => ({
-          text: opt,
-          isCorrect: opt === actualCorrectAnswer
-        })) || []).map((v: any) => ({
-          ...v,
-          isCorrect: v.isCorrect !== undefined ? v.isCorrect : v.text === actualCorrectAnswer
-        }))
+        correctAnswer: resolvedCorrectAnswer,
+        optionVariants,
       };
     });
 
@@ -415,8 +455,9 @@ Return ONLY the JSON. No additional text before or after.
         if (nextLockout > globalOverloadUntil) {
           globalOverloadUntil = nextLockout;
         }
-        delay = (45000 * Math.pow(2, retryCount)) + (Math.random() * 15000);
-        delay = Math.min(delay, 300000);
+        // Cap at 75s — 300s was too punishing for free-tier transient overloads
+        delay = (20000 * Math.pow(2, retryCount)) + (Math.random() * 10000);
+        delay = Math.min(delay, 75000);
       } else {
         delay = Math.min(2000 * Math.pow(2, retryCount), 15000);
       }
@@ -446,10 +487,10 @@ export async function generateMCQsFromSOP(
     TOTAL_TARGET = currentCount + 50;
   }
 
-  const BATCH_SIZE = 20;
+  const BATCH_SIZE = 10;       // Smaller batches = shorter prompts = less chance of 429
   const NEEDED = Math.max(0, TOTAL_TARGET - currentCount);
   const NUM_BATCHES = Math.ceil(NEEDED / BATCH_SIZE);
-  const PARALLEL_BATCHES = 1;
+  const PARALLEL_BATCHES = 1;  // Always sequential to respect rate limits
 
   console.log(`🚀 Starting generation for: ${request.sopName}. Progress: ${currentCount}/${TOTAL_TARGET}`);
 
@@ -491,7 +532,8 @@ export async function generateMCQsFromSOP(
 
     processedBatchesCount++;
     if (allMCQs.length < NEEDED) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // 8s gap between batches = ~7 req/min, safely under the 15 RPM free-tier limit
+      await new Promise(resolve => setTimeout(resolve, 8000));
     }
   }
 

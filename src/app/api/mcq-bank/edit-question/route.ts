@@ -33,6 +33,8 @@ export async function POST(request: NextRequest) {
     }
     if (correctAnswer !== undefined) {
       updateQuery[`mcqs.${questionIndex}.correctAnswer`] = correctAnswer.trim();
+      // Also rebuild optionVariants.isCorrect to stay in sync with the new correctAnswer.
+      // We need the final options array to do this, so we fetch the bank first.
     }
     if (explanation !== undefined) {
       updateQuery[`mcqs.${questionIndex}.explanation`] = explanation.trim();
@@ -55,6 +57,22 @@ export async function POST(request: NextRequest) {
 
     const collection = db.collection('mcqbanks');
     const objectId = new mongoose.Types.ObjectId(bankId);
+
+    // If correctAnswer is changing, rebuild optionVariants too
+    if (correctAnswer !== undefined) {
+      const bankDoc = await collection.findOne({ _id: objectId });
+      const mcq = bankDoc?.mcqs?.[questionIndex];
+      if (mcq) {
+        // Use the final options (in case options were also updated in the same request)
+        const finalOptions: string[] = options !== undefined ? options.map((o: string) => o.trim()) : mcq.options || [];
+        const finalAnswer = correctAnswer.trim();
+        const rebuiltVariants = finalOptions.map((opt: string) => ({
+          text: opt,
+          isCorrect: opt === finalAnswer,
+        }));
+        updateQuery[`mcqs.${questionIndex}.optionVariants`] = rebuiltVariants;
+      }
+    }
 
     const result = await collection.updateOne(
       { _id: objectId },

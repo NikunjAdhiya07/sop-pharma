@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     const fileUrl = `/uploads/guidelines/${fileName}`;
 
     // 3. Extract checklist items using Gemini
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     const extractPrompt = `
       Extract a list of specific compliance requirements or quality standards from this SOP Guideline document.
       Focus on mandatory things every SOP must have or follow.
