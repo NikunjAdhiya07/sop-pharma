@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
       sopName: sop.name,
       sopIdentifier: sop.identifier || sop.name,
       existingQuestions: existingQuestions,
-      targetCount: remaining,
+      targetCount: TARGET_COUNT,
       isBulk: remaining > 10,
       language: sop.language || 'English',
     });

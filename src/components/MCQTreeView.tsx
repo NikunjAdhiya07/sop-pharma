@@ -1986,6 +1986,9 @@ export default function MCQTreeView({
                                                       .then(data => {
                                                         if (data.success) {
                                                           setGenerateMoreResults(prev => ({ ...prev, [sop.sopId]: { success: true, message: `+${data.total || 100} Qs` } }));
+                                                          Object.keys(localStorage).forEach(key => {
+                                                              if (key.startsWith('mcq-tree-cache')) localStorage.removeItem(key);
+                                                            });
                                                           setTimeout(() => window.location.reload(), 800);
                                                         } else {
                                                           setGenerateMoreResults(prev => ({ ...prev, [sop.sopId]: { success: false, message: data.error || 'Error' } }));
@@ -2002,7 +2005,7 @@ export default function MCQTreeView({
                                                         : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
                                                       : generatingMore[sop.sopId]
                                                         ? 'bg-amber-500/10 text-amber-400 border-amber-500/20 cursor-wait'
-                                                        : 'bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20 animate-pulse'
+                                                        : 'bg-amber-500/10 text-amber-400 border-amber-500/20 animate-pulse'
                                                   }`}
                                                   title="Generate 100 MCQs for this SOP"
                                                 >
@@ -2039,7 +2042,10 @@ export default function MCQTreeView({
                                                             ...prev,
                                                             [sop.sopId]: { success: true, message: `+${data.generated}` },
                                                           }));
-                                                          window.location.reload();
+                                                          Object.keys(localStorage).forEach(key => {
+                                                              if (key.startsWith('mcq-tree-cache')) localStorage.removeItem(key);
+                                                            });
+                                                          setTimeout(() => window.location.reload(), 800);
                                                         } else {
                                                           setGenerateMoreResults(prev => ({
                                                             ...prev,
