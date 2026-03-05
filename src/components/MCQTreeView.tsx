@@ -2302,6 +2302,9 @@ export default function MCQTreeView({
                                                   .then(data => {
                                                     if (data.success) {
                                                       setGenerateMoreResults(prev => ({ ...prev, [sop.sopId]: { success: true, message: `+${data.total || 100} Qs Generated!` } }));
+                                                      Object.keys(localStorage).forEach(key => {
+                                                        if (key.startsWith('mcq-tree-cache')) localStorage.removeItem(key);
+                                                      });
                                                       setTimeout(() => window.location.reload(), 800);
                                                     } else {
                                                       setGenerateMoreResults(prev => ({ ...prev, [sop.sopId]: { success: false, message: data.error || 'Failed' } }));
@@ -2362,7 +2365,10 @@ export default function MCQTreeView({
                                                         ...prev,
                                                         [sop.sopId]: { success: true, message: `+${data.generated} Qs` },
                                                       }));
-                                                      window.location.reload();
+                                                      Object.keys(localStorage).forEach(key => {
+                                                        if (key.startsWith('mcq-tree-cache')) localStorage.removeItem(key);
+                                                      });
+                                                      setTimeout(() => window.location.reload(), 800);
                                                     } else {
                                                       setGenerateMoreResults(prev => ({
                                                         ...prev,
