@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { extractMatrixFromDocBuffer } from '@/lib/matrixExtractor';
-import { extractMatrixFromExcelBuffer } from '@/lib/excelMatrixExtractor';
+import { parseDocxMatrix, parseExcelMatrix, saveMatrixEntries } from '@/lib/matrixParser';
+import connectDB from '@/lib/mongodb';
+import MatrixEntry from '@/models/MatrixEntry';
+
+export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,48 +14,52 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No files uploaded' }, { status: 400 });
     }
 
-    // Column mapping params (for Excel files)
-    const empCol = (formData.get('empCol') as string) || '';
-    const sopCol = (formData.get('sopCol') as string) || '';
-    const dateCol = (formData.get('dateCol') as string) || '';
-    const deptCol = (formData.get('deptCol') as string) || '';
-    const trainerCol = (formData.get('trainerCol') as string) || '';
+    const clearAll = formData.get('clearAll') === 'true';
+    await connectDB();
 
-    const results = [];
+    let cleared = false;
+    if (clearAll) {
+      const del = await MatrixEntry.deleteMany({});
+      console.log(`🗑️ Cleared MatrixEntry collection: ${del.deletedCount} docs deleted`);
+      cleared = true;
+    }
+
     let totalSuccess = 0;
     let totalFailed = 0;
     const allErrors: string[] = [];
+    const results: Array<{ fileName: string; success: number; failed: number }> = [];
 
     for (const file of files) {
-      console.log(`📂 Processing file: ${file.name}`);
+      console.log(`📂 Processing: ${file.name}`);
       const buffer = Buffer.from(await file.arrayBuffer());
-      const lowerName = file.name.toLowerCase();
+      const lower = file.name.toLowerCase();
 
-      let res: { success: number; failed: number; errors: string[] };
-
-      if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
-        // Excel: direct XLSX parsing — fast, no AI needed
-        res = await extractMatrixFromExcelBuffer(buffer, file.name, {
-          empCol, sopCol, dateCol, deptCol, trainerCol,
-        });
-      } else {
-        // DOCX: AI-powered extraction
-        res = await extractMatrixFromDocBuffer(buffer, file.name);
+      let entries;
+      try {
+        if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
+          entries = await parseExcelMatrix(buffer, file.name);
+        } else {
+          // .docx or .doc
+          entries = await parseDocxMatrix(buffer, file.name);
+        }
+        console.log(`  → Parsed ${entries.length} √-marked entries`);
+      } catch (parseErr: any) {
+        console.error(`  ✗ Parse failed: ${parseErr.message}`);
+        allErrors.push(`${file.name}: ${parseErr.message}`);
+        results.push({ fileName: file.name, success: 0, failed: 1 });
+        totalFailed++;
+        continue;
       }
 
-      totalSuccess += res.success;
-      totalFailed += res.failed;
-      allErrors.push(...res.errors);
+      const { success, failed, errors } = await saveMatrixEntries(entries, file.name);
+      console.log(`  ✅ Saved ${success} entries, ❌ Failed ${failed} entries`);
+      if (errors.length > 0) console.error(`  Errors:`, errors.slice(0, 3));
+      totalSuccess += success;
+      totalFailed += failed;
+      allErrors.push(...errors);
+      results.push({ fileName: file.name, success, failed });
 
-      results.push({
-        fileName: file.name,
-        success: res.success,
-        failed: res.failed,
-      });
-
-      if (files.length > 1) {
-        await new Promise(r => setTimeout(r, 500));
-      }
+      if (files.length > 1) await new Promise(r => setTimeout(r, 300));
     }
 
     return NextResponse.json({
@@ -61,15 +68,14 @@ export async function POST(request: NextRequest) {
         totalFiles: files.length,
         totalSuccess,
         totalFailed,
+        cleared,
       },
       results,
-      errors: allErrors.length > 5
-        ? allErrors.slice(0, 5).concat([`...and ${allErrors.length - 5} more errors`])
-        : allErrors,
+      errors: allErrors.slice(0, 10),
     });
 
   } catch (error: any) {
-    console.error('API Error in training matrix upload:', error);
+    console.error('Upload API error:', error);
     return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
   }
 }
