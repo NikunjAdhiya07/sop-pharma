@@ -1,8 +1,9 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 
 export interface IDepartmentTrainer extends Document {
-  departmentName: string;
+  departmentName?: string;
   trainerName: string;
+  sopIdentifier?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -10,8 +11,13 @@ export interface IDepartmentTrainer extends Document {
 const DepartmentTrainerSchema = new Schema<IDepartmentTrainer>({
   departmentName: {
     type: String,
-    required: true,
-    unique: true,
+    required: false,
+    trim: true,
+    index: true,
+  },
+  sopIdentifier: {
+    type: String,
+    required: false,
     trim: true,
     index: true,
   },

@@ -85,13 +85,24 @@ export default function TrainerUploadModal({ isOpen, onClose, onSuccess }: Train
     setAvailableColumns(cols);
     setPreviewRows(rows.slice(0, 6)); // Show up to 6 preview rows
 
-    // Auto-detect likely columns
-    const autoMatch = (candidates: string[]) =>
-      cols.find(c => candidates.some(cand => c.toLowerCase().includes(cand.toLowerCase()))) || '';
+    // Auto-detect likely columns in order of candidate preference
+    const autoMatch = (candidates: string[]) => {
+      // 1. First try exact match (case-insensitive) for each candidate in order
+      for (const cand of candidates) {
+        const exact = cols.find(c => c.toLowerCase().trim() === cand.toLowerCase());
+        if (exact) return exact;
+      }
+      // 2. Then try includes match for each candidate in order
+      for (const cand of candidates) {
+        const partial = cols.find(c => c.toLowerCase().includes(cand.toLowerCase()));
+        if (partial) return partial;
+      }
+      return '';
+    };
 
-    setDeptCol(autoMatch(['department', 'dept']));
-    setTrainerCol(autoMatch(['trainer', 'training officer', 'training incharge', 'incharge']));
-    setSopCol(autoMatch(['sop', 'protocol', 'identifier', 'code']));
+    setDeptCol(autoMatch(['department name', 'department', 'dept']));
+    setTrainerCol(autoMatch(['trainer name', 'trainer', 'training officer', 'training incharge', 'incharge']));
+    setSopCol(autoMatch(['sop no.', 'sop no', 'sop code', 'sop identifier', 'protocol id', 'code', 'sop']));
     setShowPreview(true);
   };
 

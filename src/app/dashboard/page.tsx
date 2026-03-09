@@ -18,7 +18,9 @@ import {
   Zap,
   Calendar,
   Database,
-  ArrowRight
+  ArrowRight,
+  Target,
+  CalendarRange
 } from 'lucide-react';
 // NotificationBell removed as per requirement
 
@@ -351,9 +353,50 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 </Link>
+
+                {/* 5. SOP Training Matrix */}
+                <Link href="/sop-training" className="block group h-full">
+                   <div className="h-full bg-gradient-to-b from-slate-800 to-slate-900 rounded-2xl p-8 border border-white/10 hover:border-indigo-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-indigo-500/10 flex flex-col items-start relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-32 bg-indigo-500/5 rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:bg-indigo-500/10"></div>
+                    
+                    <div className="bg-indigo-500/10 p-4 rounded-xl mb-6 group-hover:scale-110 transition-transform duration-300 border border-indigo-500/20">
+                      <Target className="h-8 w-8 text-indigo-400" />
+                    </div>
+                    
+                    <h3 className="text-2xl font-bold text-white mb-3">Training Matrix</h3>
+                    <p className="text-gray-400 text-sm leading-relaxed mb-8 flex-grow">
+                      Upload monthly training matrix · Allocate SOP tests · Track trainer performance · Manage acknowledgements.
+                    </p>
+                    
+                    <div className="flex items-center text-indigo-400 font-semibold group-hover:translate-x-2 transition-transform">
+                      Open Module <ArrowRight className="ml-2 h-4 w-4" />
+                    </div>
+                  </div>
+                </Link>
+
+                {/* 6. SOP Test Scheduler & Profiles */}
+                <Link href="/sop-scheduler" className="block group h-full">
+                  <div className="h-full bg-gradient-to-b from-slate-800 to-slate-900 rounded-2xl p-8 border border-white/10 hover:border-violet-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-violet-500/10 flex flex-col items-start relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-32 bg-violet-500/5 rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:bg-violet-500/10"></div>
+
+                    <div className="bg-violet-500/10 p-4 rounded-xl mb-6 group-hover:scale-110 transition-transform duration-300 border border-violet-500/20">
+                      <CalendarRange className="h-8 w-8 text-violet-400" />
+                    </div>
+
+                    <h3 className="text-2xl font-bold text-white mb-3">Test Scheduler & Profiles</h3>
+                    <p className="text-gray-400 text-sm leading-relaxed mb-8 flex-grow">
+                      Auto-generated trainer &amp; employee profiles from matrix data · This month's exam board · Full scheduling view.
+                    </p>
+
+                    <div className="flex items-center text-violet-400 font-semibold group-hover:translate-x-2 transition-transform">
+                      Open Scheduler <ArrowRight className="ml-2 h-4 w-4" />
+                    </div>
+                  </div>
+                </Link>
               </div>
             </div>
           )}
+
 
           {/* Main User Specific Actions (If they don't have manage SOPs) */}
           {!canManageSOPs && (

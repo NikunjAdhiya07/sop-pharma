@@ -89,12 +89,22 @@ export async function POST(request: NextRequest) {
     const sopColName = (formData.get('sopCol') as string) || '';
 
     // Auto-detect fallback
-    const AUTO_DEPT_HEADERS = ['Department Name', 'SOP Department', 'Department', 'Dept'];
+    const AUTO_DEPT_HEADERS = ['Department Name', 'Department', 'SOP Department', 'Dept'];
     const AUTO_TRAINER_HEADERS = ['Trainer Name', 'Trainer', "Trainer's Name", 'Training Officer', 'Training Incharge'];
-    const AUTO_SOP_HEADERS = ['SOP Code', 'SOP No', 'SOP', 'SOP Identifier', 'Protocol ID', 'SOP Number'];
+    const AUTO_SOP_HEADERS = ['SOP No.', 'SOP No', 'SOP Code', 'SOP Identifier', 'Protocol ID', 'SOP Number', 'SOP'];
 
     const findKey = (candidates: string[]): string | null => {
-      return colKeys.find(k => candidates.some(c => k.toLowerCase().trim() === c.toLowerCase())) || null;
+      // 1. Exact match in preferred order
+      for (const cand of candidates) {
+        const exact = colKeys.find(k => k.toLowerCase().trim() === cand.toLowerCase());
+        if (exact) return exact;
+      }
+      // 2. Includes match in preferred order
+      for (const cand of candidates) {
+        const partial = colKeys.find(k => k.toLowerCase().includes(cand.toLowerCase()));
+        if (partial) return partial;
+      }
+      return null;
     };
 
     const deptKey = (deptColName && colKeys.includes(deptColName)) ? deptColName : findKey(AUTO_DEPT_HEADERS);
@@ -128,7 +138,7 @@ export async function POST(request: NextRequest) {
           const deptName = deptKey ? row[deptKey]?.toString().trim() : '';
           await DepartmentTrainer.findOneAndUpdate(
             { sopIdentifier: sopCode },
-            { sopIdentifier: sopCode, trainerName, departmentName: deptName },
+            { $set: { sopIdentifier: sopCode, trainerName, departmentName: deptName } },
             { upsert: true, new: true }
           );
           results.saved++;
@@ -143,8 +153,11 @@ export async function POST(request: NextRequest) {
 
         const escaped = deptName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         await DepartmentTrainer.findOneAndUpdate(
-          { departmentName: { $regex: new RegExp(`^${escaped}$`, 'i') } },
-          { trainerName, departmentName: deptName },
+          { 
+            departmentName: { $regex: new RegExp(`^${escaped}$`, 'i') },
+            $or: [{ sopIdentifier: { $exists: false } }, { sopIdentifier: null }, { sopIdentifier: "" }]
+          },
+          { $set: { trainerName, departmentName: deptName } },
           { upsert: true, new: true }
         );
         results.saved++;
@@ -175,8 +188,11 @@ export async function PUT(request: NextRequest) {
 
     const escaped = departmentName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const result = await DepartmentTrainer.findOneAndUpdate(
-      { departmentName: { $regex: new RegExp(`^${escaped}$`, 'i') } },
-      { departmentName, trainerName },
+      { 
+        departmentName: { $regex: new RegExp(`^${escaped}$`, 'i') },
+        $or: [{ sopIdentifier: { $exists: false } }, { sopIdentifier: null }, { sopIdentifier: "" }]
+      },
+      { $set: { departmentName, trainerName } },
       { upsert: true, new: true }
     );
 

@@ -45,6 +45,66 @@ const DEPT_MAP: Record<string, string> = {
 const DESIGNATIONS = ['OFFICER', 'EXECUTIVE', 'ASSISTANT', 'MANAGER', 'SUPERVISOR', 'OPERATOR', 'TECHNICIAN', 'TRAINEE', 'HELPER', 'WORKER'];
 
 
+/** Robust date parser: handles ISO, "Jan 2024", "01/2024", "Week 42", partial dates, etc. */
+function parseTrainingDate(raw: string | null | undefined): Date {
+  if (!raw) return new Date(new Date().getFullYear(), 0, 1);
+  const s = raw.trim();
+  if (!s || s.toLowerCase() === 'null' || s.toLowerCase() === 'n/a' || s.toLowerCase() === 'unknown') {
+    return new Date(new Date().getFullYear(), 0, 1);
+  }
+
+  // Full ISO date YYYY-MM-DD or YYYY/MM/DD
+  const isoMatch = s.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (isoMatch) {
+    const d = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // DD/MM/YYYY or DD-MM-YYYY
+  const dmyMatch = s.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (dmyMatch) {
+    const d = new Date(parseInt(dmyMatch[3]), parseInt(dmyMatch[2]) - 1, parseInt(dmyMatch[1]));
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // Month Year: "Jan 2024", "January-24", "Jan-2024"
+  const months: Record<string, number> = {
+    jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+    jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+    january: 0, february: 1, march: 2, april: 3, june: 5,
+    july: 6, august: 7, september: 8, october: 9, november: 10, december: 11
+  };
+  const monthYearMatch = s.match(/([a-zA-Z]+)[\s\-/,]+(\d{2,4})/);
+  if (monthYearMatch) {
+    const mon = months[monthYearMatch[1].toLowerCase()];
+    let yr = parseInt(monthYearMatch[2]);
+    if (yr < 100) yr += 2000;
+    if (mon !== undefined && !isNaN(yr)) return new Date(yr, mon, 1);
+  }
+
+  // Year only: "2024"
+  const yearMatch = s.match(/^(20\d{2})$/);
+  if (yearMatch) return new Date(parseInt(yearMatch[1]), 0, 1);
+
+  // "Week 42" style: derive from current year
+  const weekMatch = s.match(/week\s*(\d+)/i);
+  if (weekMatch) {
+    const week = parseInt(weekMatch[1]);
+    const yr = new Date().getFullYear();
+    const jan1 = new Date(yr, 0, 1);
+    const d = new Date(jan1.getTime() + (week - 1) * 7 * 24 * 60 * 60 * 1000);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // Last try: JS native parse
+  const fallback = new Date(s);
+  if (!isNaN(fallback.getTime())) return fallback;
+
+  // Default: Jan 1st of current year
+  console.warn(`⚠️ Could not parse date: "${s}" — using default`);
+  return new Date(new Date().getFullYear(), 0, 1);
+}
+
 export async function extractMatrixFromDocBuffer(buffer: Buffer, fileName: string): Promise<{ success: number; failed: number; errors: string[] }> {
   try {
     console.log(`📑 Starting AI Extraction for: ${fileName}`);
@@ -74,43 +134,62 @@ export async function extractMatrixFromDocBuffer(buffer: Buffer, fileName: strin
 
     // 3. Extraction Prompt with Filename Context
     const prompt = `
-      Extract training matrix records from the HTML provided.
-      The output MUST be a JSON object with a "records" array.
-      
-      ### CONTEXT:
-      - Source Filename: ${fileName} (Use this to infer the Department if the document is vague)
-      - Key SOPs in System: [${sopContext}]
+You are an expert document parser for pharmaceutical training records.
+Extract ALL training matrix records from the document HTML below and return ONLY a JSON object.
 
-      ### EXTRACTION STRATEGY:
-      1. 🕵️ **DETECT LAYOUT**: Grid Matrix (Employee rows, SOP columns) or List.
-      2. 🏛️ **DEPARTMENT**: Look for "Department", "Section", or "Unit". If you find designations like "EXECUTIVE" or "OFFICER", ignore them and look for the functional area like "Microbiology" or "QA".
-      3. 📊 **SOP NAMES**: Extract SOP identifiers (e.g. QAGE75) from headers. Read the surrounding text to find titles like "SOP for Calibration".
-      4. 📅 **DATES**: Use the date inside the table (YYYY-MM-DD). If it's partial like "Jan 24", use 2024-01-01.
-      5. 👨‍🏫 **TRAINER**: Look for "Trainer", "Trained By", "Training Given By", "Instructor", or similar fields. This may appear as a column, header, or row label. Extract the person's full name.
+### CONTEXT:
+- Source Filename: ${fileName} (Use this to infer Department if not explicitly stated)
+- Known SOPs in System: [${sopContext}]
 
-      ### DATA SCHEMA:
-      {
-        "records": [
-          {
-            "employeeName": "string",
-            "department": "string",
-            "sopIdentifier": "string",
-            "sopName": "string",
-            "trainingDate": "YYYY-MM-DD",
-            "trainerName": "string or null"
-          }
-        ]
-      }
+### HOW TO READ TRAINING MATRICES:
+Pharmaceutical training matrices often appear as GRID TABLES where:
+- **Rows** = Employee names (listed down the left column)
+- **Columns** = SOP codes or SOP names (listed across the top header row)
+- **Cells** = Training date (e.g. "15/01/2024", "Jan-24", "01-2024") or a checkmark/tick
+- **Trainer** may appear in a dedicated row/column labeled "Trained By", "Trainer", "HOD", "Training Officer", "Training Incharge", etc.
+- If trainer appears in a header cell above the employee column, apply it to ALL records from that table.
 
-      ### HTML CONTENT:
-      ${fullHtmlSnippet}
-      
-      Return ONLY valid JSON.
+For GRID format: Create ONE record per (Employee × SOP) cell that has a date or tick mark in it.
+For LIST format (Employee, SOP, Date as separate rows): Extract each row directly.
+
+### IMPORTANT RULES:
+1. **employeeName**: Full name of the trainee (e.g. "Rahul Sharma"). NEVER use a job title or designation.
+2. **sopIdentifier**: The SOP code (e.g. "QAGE01", "PROD-42"). Extract from column headers.
+3. **sopName**: The SOP title if visible. Otherwise leave blank.
+4. **department**: The department name (e.g. "QA", "Microbiology"). Infer from filename if needed.
+5. **trainingDate**: The date in the cell. Use "YYYY-MM-DD" format. If only month/year is given (e.g. "Jan 24"), use "2024-01-01". If blank, use "2024-01-01".
+6. **trainerName**: The trainer's full name, if given anywhere in the table or document. Can be null.
+7. DO NOT skip any row/column combination that has a date or checkmark — include ALL of them.
+8. If the trainer name appears once at the top/side of the table, repeat it for all records from that table.
+
+### OUTPUT SCHEMA (return ONLY this JSON, no markdown):
+{
+  "records": [
+    {
+      "employeeName": "string",
+      "department": "string",
+      "sopIdentifier": "string",
+      "sopName": "string or null",
+      "trainingDate": "YYYY-MM-DD or partial date string",
+      "trainerName": "string or null"
+    }
+  ]
+}
+
+### DOCUMENT HTML:
+${fullHtmlSnippet}
+
+### PLAIN TEXT (for context):
+${fullTextSnippet.substring(0, 5000)}
+
+Return ONLY the JSON object. No explanation, no markdown fences.
     `;
 
     console.log(`📡 AI Processing ${fileName}...`);
     const result = await model.generateContent(prompt);
-    const jsonText = result.response.text().replace(/```json|```/g, '').trim();
+    const rawResponse = result.response.text();
+    console.log(`📄 AI Raw Response (first 500 chars): ${rawResponse.substring(0, 500)}`);
+    const jsonText = rawResponse.replace(/```json|```/g, '').trim();
     
     let parsed: { records: ExtractedMatrixRecord[] };
     try {
@@ -119,8 +198,17 @@ export async function extractMatrixFromDocBuffer(buffer: Buffer, fileName: strin
       console.log('JSON Parse failed. Trying to repair...');
       const firstBrace = jsonText.indexOf('{');
       const lastBrace = jsonText.lastIndexOf('}');
+      if (firstBrace === -1 || lastBrace === -1) {
+        throw new Error(`AI returned non-JSON response: ${jsonText.substring(0, 200)}`);
+      }
       parsed = JSON.parse(jsonText.substring(firstBrace, lastBrace + 1));
     }
+
+    if (!parsed?.records || !Array.isArray(parsed.records)) {
+      console.error('❌ AI parsed but no records array found:', JSON.stringify(parsed).substring(0, 200));
+      throw new Error('AI returned invalid structure — no records array');
+    }
+    console.log(`✅ AI extracted ${parsed.records.length} raw records from ${fileName}`);
 
     // 4. Advanced Post-Extraction Healing
     let success = 0;
@@ -225,12 +313,8 @@ export async function extractMatrixFromDocBuffer(buffer: Buffer, fileName: strin
           record.trainerName = documentTrainerName;
         }
 
-        console.log(`💾 Saving Record: ${record.employeeName} | ${record.sopIdentifier} | ${record.sopName} | Trainer: ${record.trainerName || 'N/A'}`);
-
-        const tDate = new Date(record.trainingDate);
-        if (isNaN(tDate.getTime())) {
-          failed++; continue;
-        }
+        const tDate = parseTrainingDate(record.trainingDate);
+        console.log(`💾 Saving: ${record.employeeName} | ${record.sopIdentifier} | ${record.sopName} | ${tDate.toISOString().split('T')[0]} | Trainer: ${record.trainerName || 'N/A'}`);
 
         await TrainingMatrix.findOneAndUpdate(
           { 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractMatrixFromDocBuffer } from '@/lib/matrixExtractor';
+import { extractMatrixFromExcelBuffer } from '@/lib/excelMatrixExtractor';
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,6 +11,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No files uploaded' }, { status: 400 });
     }
 
+    // Column mapping params (for Excel files)
+    const empCol = (formData.get('empCol') as string) || '';
+    const sopCol = (formData.get('sopCol') as string) || '';
+    const dateCol = (formData.get('dateCol') as string) || '';
+    const deptCol = (formData.get('deptCol') as string) || '';
+    const trainerCol = (formData.get('trainerCol') as string) || '';
+
     const results = [];
     let totalSuccess = 0;
     let totalFailed = 0;
@@ -18,21 +26,32 @@ export async function POST(request: NextRequest) {
     for (const file of files) {
       console.log(`📂 Processing file: ${file.name}`);
       const buffer = Buffer.from(await file.arrayBuffer());
-      const res = await extractMatrixFromDocBuffer(buffer, file.name);
-      
+      const lowerName = file.name.toLowerCase();
+
+      let res: { success: number; failed: number; errors: string[] };
+
+      if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
+        // Excel: direct XLSX parsing — fast, no AI needed
+        res = await extractMatrixFromExcelBuffer(buffer, file.name, {
+          empCol, sopCol, dateCol, deptCol, trainerCol,
+        });
+      } else {
+        // DOCX: AI-powered extraction
+        res = await extractMatrixFromDocBuffer(buffer, file.name);
+      }
+
       totalSuccess += res.success;
       totalFailed += res.failed;
       allErrors.push(...res.errors);
-      
+
       results.push({
         fileName: file.name,
         success: res.success,
-        failed: res.failed
+        failed: res.failed,
       });
 
-      // Add a small delay between files to avoid hitting API rate limits
       if (files.length > 1) {
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 500));
       }
     }
 
@@ -44,7 +63,9 @@ export async function POST(request: NextRequest) {
         totalFailed,
       },
       results,
-      errors: allErrors.length > 5 ? allErrors.slice(0, 5).concat([`...and ${allErrors.length - 5} more errors`]) : allErrors
+      errors: allErrors.length > 5
+        ? allErrors.slice(0, 5).concat([`...and ${allErrors.length - 5} more errors`])
+        : allErrors,
     });
 
   } catch (error: any) {
