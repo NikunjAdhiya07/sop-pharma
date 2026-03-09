@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Upload, RefreshCw, BarChart3, Users,
   Loader2, Search, Calendar, Building2, GraduationCap,
   FileText, ChevronDown, ChevronUp,
-  ClipboardList, Hash
+  ClipboardList, Hash, ArrowUpDown, ArrowUp, ArrowDown
 } from 'lucide-react';
 import TrainingMatrixUploadModal from '@/components/TrainingMatrixUploadModal';
 
@@ -292,6 +292,54 @@ export default function SOPTrainingPage() {
   );
 }
 
+// ─── Sort helper ──────────────────────────────────────────────────────────────
+
+type SortDir = 'asc' | 'desc' | null;
+
+function SortableHeader({
+  label, sortKey, currentKey, dir, onSort
+}: {
+  label: string;
+  sortKey: string;
+  currentKey: string;
+  dir: SortDir;
+  onSort: (key: string) => void;
+}) {
+  const active = currentKey === sortKey;
+  return (
+    <th
+      className="px-5 py-3.5 text-left cursor-pointer select-none group whitespace-nowrap"
+      onClick={() => onSort(sortKey)}
+    >
+      <div className="flex items-center gap-1.5">
+        <span className={`font-black text-[9px] uppercase tracking-[0.15em] transition-colors ${
+          active ? 'text-indigo-300' : 'text-slate-500 group-hover:text-slate-300'
+        }`}>{label}</span>
+        <span className={`transition-colors ${
+          active ? 'text-indigo-400' : 'text-slate-700 group-hover:text-slate-500'
+        }`}>
+          {!active || dir === null ? <ArrowUpDown className="h-3 w-3" /> :
+           dir === 'asc' ? <ArrowUp className="h-3 w-3" /> :
+           <ArrowDown className="h-3 w-3" />}
+        </span>
+      </div>
+    </th>
+  );
+}
+
+function useSortState<T>(items: T[], key: keyof T | null, dir: SortDir) {
+  return useMemo(() => {
+    if (!key || !dir) return items;
+    return [...items].sort((a, b) => {
+      const av = a[key]; const bv = b[key];
+      const n = typeof av === 'number' && typeof bv === 'number'
+        ? av - bv
+        : String(av).localeCompare(String(bv));
+      return dir === 'asc' ? n : -n;
+    });
+  }, [items, key, dir]);
+}
+
 // ─── Dashboard Tab ─────────────────────────────────────────────────────────────
 
 function DashboardTab({
@@ -305,6 +353,43 @@ function DashboardTab({
   setSelectedMonth: (m: number | 'all') => void;
 }) {
   const maxExams = Math.max(...monthlySummary.map(m => m.totalSopExams), 1);
+
+  // Dept table sort
+  const [deptSortKey, setDeptSortKey] = useState<keyof DeptBreakdown | null>(null);
+  const [deptSortDir, setDeptSortDir] = useState<SortDir>(null);
+  const [expandedDept, setExpandedDept] = useState<string | null>(null);
+
+  // Employee table sort
+  const [empSortKey, setEmpSortKey] = useState<keyof EmployeeRow | null>(null);
+  const [empSortDir, setEmpSortDir] = useState<SortDir>(null);
+  const [expandedEmpRow, setExpandedEmpRow] = useState<string | null>(null);
+
+  // Month table sort
+  const [monSortKey, setMonSortKey] = useState<keyof MonthSummary | null>(null);
+  const [monSortDir, setMonSortDir] = useState<SortDir>(null);
+
+  function cycleSort<K extends string>(key: K, cur: K | null, dir: SortDir,
+    setKey: (k: K | null) => void, setDir: (d: SortDir) => void) {
+    if (cur !== key) { setKey(key); setDir('asc'); }
+    else if (dir === 'asc') setDir('desc');
+    else { setKey(null); setDir(null); }
+  }
+
+  const sortedDepts    = useSortState(deptBreakdown, deptSortKey, deptSortDir);
+  const sortedEmpRows  = useSortState(employeeTable, empSortKey, empSortDir);
+  const sortedMonths   = useSortState(monthlySummary, monSortKey, monSortDir);
+
+  // Build a lookup: dept → employees with their SOP codes (for expanded rows)
+  const deptEmployeesMap = useMemo(() => {
+    const map = new Map<string, Map<string, string[]>>();
+    for (const row of employeeTable) {
+      if (!map.has(row.department)) map.set(row.department, new Map());
+      const empMap = map.get(row.department)!;
+      const existing = empMap.get(row.employeeName) || [];
+      empMap.set(row.employeeName, [...new Set([...existing, ...row.sopCodes])]);
+    }
+    return map;
+  }, [employeeTable]);
 
   return (
     <div className="space-y-6">
@@ -339,7 +424,6 @@ function DashboardTab({
                       : 'bg-black/20 border-white/5 hover:border-indigo-500/30 hover:bg-indigo-600/5'
                   }`}
                 >
-                  {/* Mini bar chart */}
                   <div className="w-full h-12 flex items-end justify-center mb-3">
                     <div
                       className={`w-6 rounded-t-md transition-all duration-500 ${
@@ -366,19 +450,22 @@ function DashboardTab({
           </div>
         )}
 
-        {/* Month-wise table */}
+        {/* Month-wise sortable table */}
         {monthlySummary.length > 0 && (
           <div className="mt-6 overflow-x-auto rounded-2xl border border-white/5">
             <table className="w-full text-xs">
               <thead className="bg-white/[0.03] border-b border-white/5">
                 <tr>
-                  {['Month', 'Year', 'Total SOP Trainings'].map(h => (
-                    <th key={h} className="px-5 py-3.5 text-left font-black text-[9px] text-slate-500 uppercase tracking-[0.15em]">{h}</th>
-                  ))}
+                  <SortableHeader label="Month" sortKey="monthName" currentKey={monSortKey||''} dir={monSortDir}
+                    onSort={k => cycleSort(k as keyof MonthSummary, monSortKey, monSortDir, setMonSortKey, setMonSortDir)} />
+                  <SortableHeader label="Year" sortKey="year" currentKey={monSortKey||''} dir={monSortDir}
+                    onSort={k => cycleSort(k as keyof MonthSummary, monSortKey, monSortDir, setMonSortKey, setMonSortDir)} />
+                  <SortableHeader label="Total SOP Trainings" sortKey="totalSopExams" currentKey={monSortKey||''} dir={monSortDir}
+                    onSort={k => cycleSort(k as keyof MonthSummary, monSortKey, monSortDir, setMonSortKey, setMonSortDir)} />
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/[0.04]">
-                {monthlySummary.map(m => (
+                {sortedMonths.map(m => (
                   <tr
                     key={`${m.year}-${m.month}`}
                     className={`hover:bg-white/[0.02] cursor-pointer transition-colors ${selectedMonth === m.month ? 'bg-indigo-600/5' : ''}`}
@@ -389,10 +476,8 @@ function DashboardTab({
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
                         <div className="flex-1 max-w-[120px] h-1.5 bg-white/5 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 rounded-full"
-                            style={{ width: `${(m.totalSopExams / maxExams) * 100}%` }}
-                          />
+                          <div className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 rounded-full"
+                            style={{ width: `${(m.totalSopExams / maxExams) * 100}%` }} />
                         </div>
                         <span className="font-black text-indigo-300">{m.totalSopExams}</span>
                       </div>
@@ -405,7 +490,7 @@ function DashboardTab({
         )}
       </div>
 
-      {/* ── Section 2: Department SOP Table ────────────────────────────────── */}
+      {/* ── Section 2: Department SOP Table (sortable + expandable) ────────── */}
       {deptBreakdown.length > 0 && (
         <div className="bg-white/[0.025] border border-white/5 rounded-3xl p-6">
           <h2 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-5 flex items-center gap-2">
@@ -416,102 +501,213 @@ function DashboardTab({
                 Filtered by selected month
               </span>
             )}
+            <span className="ml-auto text-[10px] normal-case text-slate-600 font-medium">Click row to expand · Click header to sort</span>
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 mb-5">
             {deptBreakdown.map(d => (
               <DeptCard key={d.department} dept={d} />
             ))}
           </div>
-          {/* Dept table */}
           <div className="overflow-x-auto rounded-2xl border border-white/5">
             <table className="w-full text-xs">
               <thead className="bg-white/[0.03] border-b border-white/5">
                 <tr>
-                  {['Department', 'Employees', 'SOP Exams This Month', 'Unique SOP Codes'].map(h => (
-                    <th key={h} className="px-5 py-3.5 text-left font-black text-[9px] text-slate-500 uppercase tracking-[0.15em]">{h}</th>
-                  ))}
+                  {/* expand toggle column */}
+                  <th className="w-10 px-3 py-3.5" />
+                  <SortableHeader label="Department" sortKey="department" currentKey={deptSortKey||''} dir={deptSortDir}
+                    onSort={k => cycleSort(k as keyof DeptBreakdown, deptSortKey, deptSortDir, setDeptSortKey, setDeptSortDir)} />
+                  <SortableHeader label="Employees" sortKey="employeeCount" currentKey={deptSortKey||''} dir={deptSortDir}
+                    onSort={k => cycleSort(k as keyof DeptBreakdown, deptSortKey, deptSortDir, setDeptSortKey, setDeptSortDir)} />
+                  <SortableHeader label="SOP Exams" sortKey="totalSopExams" currentKey={deptSortKey||''} dir={deptSortDir}
+                    onSort={k => cycleSort(k as keyof DeptBreakdown, deptSortKey, deptSortDir, setDeptSortKey, setDeptSortDir)} />
+                  <SortableHeader label="Unique SOP Codes" sortKey="uniqueSops" currentKey={deptSortKey||''} dir={deptSortDir}
+                    onSort={k => cycleSort(k as keyof DeptBreakdown, deptSortKey, deptSortDir, setDeptSortKey, setDeptSortDir)} />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/[0.04]">
-                {deptBreakdown.map(d => (
-                  <tr key={d.department} className="hover:bg-white/[0.015] transition-colors">
-                    <td className="px-5 py-3.5 font-bold text-white">{d.department}</td>
-                    <td className="px-5 py-3.5">
-                      <span className="flex items-center gap-1.5">
-                        <Users className="h-3 w-3 text-slate-600" />
-                        <span className="font-bold text-slate-300">{d.employeeCount}</span>
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span className="font-black text-indigo-300">{d.totalSopExams}</span>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span className="px-2 py-0.5 bg-cyan-500/10 border border-cyan-500/20 rounded-md text-cyan-400 font-bold">{d.uniqueSops}</span>
-                    </td>
-                  </tr>
-                ))}
+              <tbody>
+                {sortedDepts.map(d => {
+                  const isExp = expandedDept === d.department;
+                  const empMap = deptEmployeesMap.get(d.department);
+                  const empEntries = empMap ? Array.from(empMap.entries()) : [];
+                  return (
+                    <React.Fragment key={d.department}>
+                      <tr
+                        className={`border-b border-white/[0.04] cursor-pointer transition-colors ${
+                          isExp ? 'bg-cyan-500/5 border-cyan-500/10' : 'hover:bg-white/[0.015]'
+                        }`}
+                        onClick={() => setExpandedDept(isExp ? null : d.department)}
+                      >
+                        <td className="pl-4 pr-2 py-3.5">
+                          <div className={`w-5 h-5 rounded-md flex items-center justify-center transition-colors ${
+                            isExp ? 'bg-cyan-500/20 text-cyan-400' : 'bg-white/5 text-slate-500'
+                          }`}>
+                            {isExp ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                          </div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <div className="flex items-center gap-2">
+                            <div className="h-6 w-6 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
+                              <Building2 className="h-3 w-3 text-cyan-400" />
+                            </div>
+                            <span className="font-bold text-white">{d.department}</span>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span className="flex items-center gap-1.5">
+                            <Users className="h-3 w-3 text-slate-600" />
+                            <span className="font-bold text-slate-300">{d.employeeCount}</span>
+                          </span>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span className="font-black text-indigo-300">{d.totalSopExams}</span>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span className="px-2 py-0.5 bg-cyan-500/10 border border-cyan-500/20 rounded-md text-cyan-400 font-bold">{d.uniqueSops}</span>
+                        </td>
+                      </tr>
+                      {/* Expanded employee details */}
+                      {isExp && (
+                        <tr key={`${d.department}-exp`} className="border-b border-cyan-500/10">
+                          <td colSpan={5} className="px-4 pb-4 pt-2 bg-cyan-500/[0.03]">
+                            <div className="ml-8 space-y-2">
+                              <p className="text-[9px] font-black text-cyan-600 uppercase tracking-widest mb-3">
+                                {empEntries.length} employees in {d.department}
+                              </p>
+                              {empEntries.map(([name, sops]) => (
+                                <div key={name} className="flex items-start gap-3 p-3 bg-black/20 rounded-xl border border-white/[0.04]">
+                                  <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center font-black text-xs shrink-0">
+                                    {name.charAt(0)}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-bold text-white text-xs">{name}</p>
+                                    <div className="flex flex-wrap gap-1 mt-1.5">
+                                      {sops.map(sop => (
+                                        <span key={sop} className="px-1.5 py-0.5 bg-indigo-500/10 border border-indigo-500/20 rounded text-indigo-400 font-mono font-black text-[9px]">
+                                          {sop}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <span className="shrink-0 text-[10px] font-black text-violet-300 bg-violet-500/10 border border-violet-500/20 rounded-lg px-2 py-1">
+                                    {sops.length} SOPs
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
       )}
 
-      {/* ── Section 3: Employee-Level SOP Training Table ─────────────────── */}
+      {/* ── Section 3: Employee-Level SOP Training Table (sortable + expandable) */}
       {employeeTable.length > 0 && (
         <div className="bg-white/[0.025] border border-white/5 rounded-3xl p-6">
           <h2 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-5 flex items-center gap-2">
             <ClipboardList className="h-3.5 w-3.5 text-violet-400" />
             Employee SOP Training Details
+            <span className="ml-auto text-[10px] normal-case text-slate-600 font-medium">Click row to expand all SOP codes · Click header to sort</span>
           </h2>
           <div className="overflow-x-auto rounded-2xl border border-white/5">
             <table className="w-full text-xs">
               <thead className="bg-white/[0.03] border-b border-white/5">
                 <tr>
-                  {['Employee Name', 'Department', 'Month', 'SOP Codes', 'Total SOP Exams'].map(h => (
-                    <th key={h} className="px-5 py-3.5 text-left font-black text-[9px] text-slate-500 uppercase tracking-[0.15em] whitespace-nowrap">{h}</th>
-                  ))}
+                  <th className="w-10 px-3 py-3.5" />
+                  <SortableHeader label="Employee Name" sortKey="employeeName" currentKey={empSortKey||''} dir={empSortDir}
+                    onSort={k => cycleSort(k as keyof EmployeeRow, empSortKey, empSortDir, setEmpSortKey, setEmpSortDir)} />
+                  <SortableHeader label="Department" sortKey="department" currentKey={empSortKey||''} dir={empSortDir}
+                    onSort={k => cycleSort(k as keyof EmployeeRow, empSortKey, empSortDir, setEmpSortKey, setEmpSortDir)} />
+                  <SortableHeader label="Month" sortKey="month" currentKey={empSortKey||''} dir={empSortDir}
+                    onSort={k => cycleSort(k as keyof EmployeeRow, empSortKey, empSortDir, setEmpSortKey, setEmpSortDir)} />
+                  <th className="px-5 py-3.5 text-left font-black text-[9px] text-slate-500 uppercase tracking-[0.15em]">SOP Codes (preview)</th>
+                  <SortableHeader label="Total" sortKey="totalSopExams" currentKey={empSortKey||''} dir={empSortDir}
+                    onSort={k => cycleSort(k as keyof EmployeeRow, empSortKey, empSortDir, setEmpSortKey, setEmpSortDir)} />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/[0.04]">
-                {employeeTable.map((row, i) => (
-                  <tr key={`${row.employeeName}-${row.month}-${i}`}
-                    className="hover:bg-white/[0.015] transition-colors">
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-2.5">
-                        <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center font-black text-xs shrink-0">
-                          {row.employeeName.charAt(0)}
-                        </div>
-                        <span className="font-bold text-white">{row.employeeName}</span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span className="px-2 py-0.5 bg-slate-800/50 rounded-md text-slate-400 font-bold text-[10px]">{row.department}</span>
-                    </td>
-                    <td className="px-5 py-3.5 font-bold text-slate-300">
-                      {row.monthName} {row.year}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <div className="flex flex-wrap gap-1 max-w-[320px]">
-                        {row.sopCodes.slice(0, 6).map(sop => (
-                          <span key={sop}
-                            className="px-1.5 py-0.5 bg-indigo-500/10 border border-indigo-500/20 rounded text-indigo-400 font-mono font-black text-[9px]">
-                            {sop}
+              <tbody>
+                {sortedEmpRows.map((row, i) => {
+                  const rowKey = `${row.employeeName}-${row.department}-${row.month}-${i}`;
+                  const isExp = expandedEmpRow === rowKey;
+                  return (
+                    <React.Fragment key={rowKey}>
+                      <tr
+                        className={`border-b border-white/[0.04] cursor-pointer transition-colors ${
+                          isExp ? 'bg-violet-500/5 border-violet-500/10' : 'hover:bg-white/[0.015]'
+                        }`}
+                        onClick={() => setExpandedEmpRow(isExp ? null : rowKey)}
+                      >
+                        <td className="pl-4 pr-2 py-3.5">
+                          <div className={`w-5 h-5 rounded-md flex items-center justify-center transition-colors ${
+                            isExp ? 'bg-violet-500/20 text-violet-400' : 'bg-white/5 text-slate-500'
+                          }`}>
+                            {isExp ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                          </div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <div className="flex items-center gap-2.5">
+                            <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center font-black text-xs shrink-0">
+                              {row.employeeName.charAt(0)}
+                            </div>
+                            <span className="font-bold text-white">{row.employeeName}</span>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span className="px-2 py-0.5 bg-slate-800/50 rounded-md text-slate-400 font-bold text-[10px]">{row.department}</span>
+                        </td>
+                        <td className="px-5 py-3.5 font-bold text-slate-300 whitespace-nowrap">
+                          {row.monthName} {row.year}
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <div className="flex flex-wrap gap-1 max-w-[280px]">
+                            {row.sopCodes.slice(0, 4).map(sop => (
+                              <span key={sop}
+                                className="px-1.5 py-0.5 bg-indigo-500/10 border border-indigo-500/20 rounded text-indigo-400 font-mono font-black text-[9px]">
+                                {sop}
+                              </span>
+                            ))}
+                            {row.sopCodes.length > 4 && (
+                              <span className="px-1.5 py-0.5 bg-violet-500/10 border border-violet-500/20 rounded text-violet-400 text-[9px] font-bold">
+                                +{row.sopCodes.length - 4} more ↓
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span className="inline-flex items-center justify-center min-w-[36px] h-7 bg-violet-500/10 text-violet-300 border border-violet-500/20 rounded-lg font-black text-sm">
+                            {row.totalSopExams}
                           </span>
-                        ))}
-                        {row.sopCodes.length > 6 && (
-                          <span className="px-1.5 py-0.5 bg-white/5 rounded text-slate-500 text-[9px] font-bold">
-                            +{row.sopCodes.length - 6} more
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span className="inline-flex items-center justify-center min-w-[36px] h-7 bg-violet-500/10 text-violet-300 border border-violet-500/20 rounded-lg font-black text-sm">
-                        {row.totalSopExams}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                        </td>
+                      </tr>
+                      {/* Expanded: full SOP list */}
+                      {isExp && (
+                        <tr key={`${rowKey}-exp`} className="border-b border-violet-500/10">
+                          <td colSpan={6} className="px-4 pb-4 pt-2 bg-violet-500/[0.03]">
+                            <div className="ml-8">
+                              <p className="text-[9px] font-black text-violet-600 uppercase tracking-widest mb-2">
+                                All {row.sopCodes.length} SOP codes for {row.employeeName} — {row.monthName} {row.year}
+                              </p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {row.sopCodes.map((sop, si) => (
+                                  <span key={sop}
+                                    className="flex items-center gap-1 px-2 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-indigo-300 font-mono font-black text-[10px]">
+                                    <span className="text-slate-600 text-[8px]">{si + 1}.</span>
+                                    {sop}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
