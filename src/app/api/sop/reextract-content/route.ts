@@ -18,16 +18,32 @@ export async function POST(request: NextRequest) {
   try {
     await connectDB();
 
-    const { sopId } = await request.json();
+    const { sopId, sopIdentifier } = await request.json();
 
-    if (!sopId) {
+    if (!sopId && !sopIdentifier) {
       return NextResponse.json(
-        { success: false, error: 'sopId is required' },
+        { success: false, error: 'sopId or sopIdentifier is required' },
         { status: 400 }
       );
     }
 
-    const sop = await SOP.findById(sopId);
+    // Find SOP — by ID first, with identifier-based fallback
+    let sop = sopId ? await SOP.findById(sopId).catch(() => null) : null;
+
+    // If sopIdentifier is provided, check for mismatch
+    if (sop && sopIdentifier &&
+        sop.identifier.toUpperCase().trim() !== sopIdentifier.toUpperCase().trim()) {
+      console.warn(`⚠️ reextract-content: sopId points to "${sop.identifier}" but requested identifier is "${sopIdentifier}". Falling back to identifier lookup.`);
+      sop = null;
+    }
+    // Fallback: find by identifier
+    if (!sop && sopIdentifier) {
+      sop = await SOP.findOne({ identifier: sopIdentifier });
+      if (sop) {
+        console.log(`✅ reextract-content: Found SOP by identifier "${sopIdentifier}" (_id: ${sop._id})`);
+      }
+    }
+
     if (!sop) {
       return NextResponse.json(
         { success: false, error: 'SOP not found' },

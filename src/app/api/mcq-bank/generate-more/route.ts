@@ -55,14 +55,39 @@ export async function POST(request: NextRequest) {
     const remaining = TARGET_COUNT - currentCount;
     console.log(`\n🚀 Generating ${remaining} more questions for ${bank.sopIdentifier} (${currentCount}/${TARGET_COUNT})...`);
 
-    // Find the SOP for content
-    const sop = await SOP.findById(sopId);
+    // Find the SOP for content — CRITICAL: validate identifier matches bank's sopIdentifier
+    // to prevent generating questions from the wrong SOP when the sopId in the bank is stale.
+    let sop = await SOP.findById(sopId);
+
+    // Safety check: verify the SOP's identifier matches the bank's sopIdentifier
+    if (sop && bank.sopIdentifier && sop.identifier &&
+        sop.identifier.toUpperCase().trim() !== bank.sopIdentifier.toUpperCase().trim()) {
+      console.warn(`⚠️ SOP mismatch detected! Bank sopIdentifier: ${bank.sopIdentifier}, but SOP found by sopId has identifier: ${sop.identifier}. Falling back to identifier lookup.`);
+      sop = null; // Force fallback
+    }
+
+    // Fallback: find SOP by the bank's sopIdentifier directly
+    if (!sop) {
+      sop = await SOP.findOne({ identifier: bank.sopIdentifier });
+      if (sop) {
+        console.log(`✅ Found correct SOP by identifier: ${bank.sopIdentifier} (_id: ${sop._id})`);
+        // Fix the stale sopId in the bank so future calls use the correct SOP
+        await bankCollection.updateOne(
+          { _id: bank._id },
+          { $set: { sopId: sop._id } }
+        );
+        console.log(`🔧 Fixed stale sopId in MCQ bank ${bank._id}: now pointing to ${sop._id}`);
+      }
+    }
+
     if (!sop) {
       return NextResponse.json(
-        { success: false, error: 'SOP not found — cannot generate questions without SOP content' },
+        { success: false, error: `SOP not found for identifier "${bank.sopIdentifier}" — cannot generate questions without SOP content` },
         { status: 404 }
       );
     }
+
+    console.log(`📄 Using SOP: ${sop.identifier} (_id: ${sop._id}) for bank: ${bank.sopIdentifier}`);
 
     // Get existing questions to avoid duplicates
     const existingQuestions = (bank.mcqs || []).map((m: any) => m.question);

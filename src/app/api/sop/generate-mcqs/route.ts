@@ -12,17 +12,33 @@ export async function POST(request: NextRequest) {
   try {
     await connectDB();
 
-    const { sopId, mcqBankId, targetCount, userInfo } = await request.json();
+    const { sopId, mcqBankId, targetCount, userInfo, sopIdentifier } = await request.json();
 
-    if (!sopId) {
+    if (!sopId && !sopIdentifier) {
       return NextResponse.json(
-        { error: 'SOP ID is required' },
+        { error: 'SOP ID or identifier is required' },
         { status: 400 }
       );
     }
 
-    // Find SOP
-    const sop = await SOP.findById(sopId);
+    // Find SOP — first try by ID, then fall back to identifier if mismatch or not found
+    let sop = sopId ? await SOP.findById(sopId).catch(() => null) : null;
+
+    // If sopIdentifier is provided, validate that the found SOP has the right identifier
+    if (sop && sopIdentifier &&
+        sop.identifier.toUpperCase().trim() !== sopIdentifier.toUpperCase().trim()) {
+      console.warn(`⚠️ generate-mcqs: sopId points to SOP "${sop.identifier}" but requested identifier is "${sopIdentifier}". Falling back to identifier lookup.`);
+      sop = null;
+    }
+
+    // Fallback: find by identifier
+    if (!sop && sopIdentifier) {
+      sop = await SOP.findOne({ identifier: sopIdentifier });
+      if (sop) {
+        console.log(`✅ generate-mcqs: Found SOP by identifier "${sopIdentifier}" (_id: ${sop._id})`);
+      }
+    }
+
     if (!sop) {
       return NextResponse.json(
         { error: 'SOP not found' },

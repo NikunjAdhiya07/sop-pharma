@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     console.log(`\n🔄 Generating replacement question for Q${questionIndex + 1}...`);
 
     // Find the MCQ bank and SOP
-    const [bank, sop] = await Promise.all([
+    const [bank, sopById] = await Promise.all([
       MCQBank.findById(mcqBankId),
       SOP.findById(sopId),
     ]);
@@ -37,13 +37,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // CRITICAL: validate that the SOP found by sopId actually matches the bank's sopIdentifier.
+    // If there is a mismatch (stale sopId), fall back to finding the SOP by identifier.
+    let sop = sopById;
+    if (sop && bank.sopIdentifier && sop.identifier &&
+        sop.identifier.toUpperCase().trim() !== bank.sopIdentifier.toUpperCase().trim()) {
+      console.warn(`⚠️ SOP mismatch in generate-replacement! Bank sopIdentifier: ${bank.sopIdentifier}, SOP-by-id identifier: ${sop.identifier}. Falling back to identifier lookup.`);
+      sop = null;
+    }
+    if (!sop) {
+      sop = await SOP.findOne({ identifier: bank.sopIdentifier });
+      if (sop) {
+        console.log(`✅ Found correct SOP by identifier: ${bank.sopIdentifier} (_id: ${sop._id})`);
+        // Fix the stale sopId in the bank
+        bank.sopId = sop._id as any;
+        await bank.save();
+        console.log(`🔧 Fixed stale sopId in MCQ bank ${bank._id}`);
+      }
+    }
+
     if (!sop) {
       return NextResponse.json(
-        { success: false, error: 'SOP not found' },
+        { success: false, error: `SOP not found for identifier "${bank.sopIdentifier}"` },
         { status: 404 }
       );
     }
 
+    console.log(`📄 Using SOP: ${sop.identifier} for replacement in bank: ${bank.sopIdentifier}`);
     console.log(`📝 Using Gemini to generate replacement for SOP: ${sop.name}`);
 
     // Get existing questions to avoid duplicates
@@ -53,13 +73,12 @@ export async function POST(request: NextRequest) {
     console.log(`📊 Current bank has ${currentCount} questions`);
 
     // Generate 1 new question using the existing gemini library
-    // targetCount should be currentCount + 1 to generate 1 additional question
     const result = await generateMCQsFromSOP({
       sopContent: sop.content,
       sopName: sop.name,
       sopIdentifier: sop.identifier || sop.name,
       existingQuestions: existingQuestions,
-      targetCount: currentCount + 1, // Generate 1 more than current
+      targetCount: currentCount + 1,
       isBulk: false,
       language: sop.language || 'English',
     });

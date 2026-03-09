@@ -1902,7 +1902,10 @@ function MCQBankContent() {
                                 const reextractRes = await fetch('/api/sop/reextract-content', {
                                   method: 'POST',
                                   headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ sopId: selectedMCQBank.sopId }),
+                                  body: JSON.stringify({ 
+                                    sopId: selectedMCQBank.sopId,
+                                    sopIdentifier: selectedMCQBank.sopIdentifier,
+                                  }),
                                 });
                                 const reextractData = await reextractRes.json();
 
@@ -1957,6 +1960,7 @@ function MCQBankContent() {
                                   headers: { 'Content-Type': 'application/json' },
                                   body: JSON.stringify({
                                     sopId: selectedMCQBank.sopId,
+                                    sopIdentifier: selectedMCQBank.sopIdentifier,
                                     targetCount: 100,
                                   }),
                                 });
