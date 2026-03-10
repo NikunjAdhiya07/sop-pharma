@@ -5,9 +5,12 @@ import {
   Upload, RefreshCw, BarChart3, Users,
   Loader2, Search, Calendar, Building2, GraduationCap,
   FileText, ChevronDown, ChevronUp,
-  ClipboardList, Hash, ArrowUpDown, ArrowUp, ArrowDown
+  ClipboardList, Hash, ArrowUpDown, ArrowUp, ArrowDown,
+  PlayCircle, CheckCircle2, AlertCircle, BookOpen, X, ChevronRight,
+  Award, BookOpenCheck, BarChart2, RotateCcw, Trophy
 } from 'lucide-react';
 import TrainingMatrixUploadModal from '@/components/TrainingMatrixUploadModal';
+import MyResultsTab from '@/components/MyResultsTab';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -48,7 +51,7 @@ interface Filters {
   availableMonths: Array<{ month: number; monthName: string }>;
 }
 
-type ActiveTab = 'dashboard' | 'matrix' | 'profiles';
+type ActiveTab = 'dashboard' | 'matrix' | 'profiles' | 'start' | 'results';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -118,9 +121,11 @@ export default function SOPTrainingPage() {
   useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
 
   const TABS = [
-    { id: 'dashboard', label: 'Dashboard',        icon: BarChart3      },
-    { id: 'matrix',    label: 'Training Matrix',   icon: FileText       },
-    { id: 'profiles',  label: 'Trainer Profiles',  icon: Users          },
+    { id: 'dashboard', label: 'Dashboard',       icon: BarChart3   },
+    { id: 'matrix',    label: 'Training Matrix',  icon: FileText    },
+    { id: 'profiles',  label: 'Trainer Profiles', icon: Users       },
+    { id: 'start',     label: 'Start Training',   icon: PlayCircle  },
+    { id: 'results',   label: 'My Results',        icon: Trophy      },
   ] as const;
 
   // ── KPI Cards ──────────────────────────────────────────────────────────────
@@ -231,14 +236,18 @@ export default function SOPTrainingPage() {
       <div className="max-w-[1600px] mx-auto px-8 py-6 space-y-6">
 
         {/* Tabs */}
-        <div className="flex gap-1 bg-white/[0.03] p-1 rounded-2xl border border-white/5 w-fit">
+        <div className="flex gap-1 bg-white/[0.03] p-1 rounded-2xl border border-white/5 w-fit flex-wrap">
           {TABS.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               onClick={() => setActiveTab(id as ActiveTab)}
               className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest transition-all ${
                 activeTab === id
-                  ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/30'
+                  ? id === 'start'
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-500/30'
+                    : id === 'results'
+                      ? 'bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-lg shadow-violet-500/30'
+                      : 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/30'
                   : 'text-slate-500 hover:text-white hover:bg-white/5'
               }`}
             >
@@ -277,6 +286,16 @@ export default function SOPTrainingPage() {
             expanded={expandedEmp}
             setExpanded={setExpandedEmp}
           />
+        )}
+
+        {/* ═══════════════════ START TRAINING TAB ═════════════════════════ */}
+        {activeTab === 'start' && (
+          <StartTrainingTab />
+        )}
+
+        {/* ═══════════════════ MY RESULTS TAB ══════════════════════════════ */}
+        {activeTab === 'results' && (
+          <MyResultsTab />
         )}
       </div>
 
@@ -1038,5 +1057,377 @@ function EmptyState() {
     </div>
   );
 }
+// ─── Start Training Tab ────────────────────────────────────────────────────────
 
+interface EmployeeOption {
+  employeeName: string;
+  departments: string[];
+  designations: string[];
+}
 
+interface SopResult {
+  sopCode: string;
+  monthName: string;
+  month: number;
+  year: number;
+  designation?: string;
+  hasExam: boolean;
+  examId?: string;
+  sopName?: string;
+  questionCount?: number;
+}
+
+function StartTrainingTab() {
+  // Form state
+  const [empSearch, setEmpSearch] = useState('');
+  const [selectedEmp,  setSelectedEmp]  = useState('');
+  const [selectedDept, setSelectedDept] = useState('');
+  const [selectedRole, setSelectedRole] = useState('');
+
+  // Data from API
+  const [allEmployees, setAllEmployees] = useState<EmployeeOption[]>([]);
+  const [roles, setRoles]               = useState<string[]>([]);
+  const [sopResults, setSopResults]     = useState<SopResult[] | null>(null);
+
+  // Loading states
+  const [loadingEmps,  setLoadingEmps]  = useState(false);
+  const [loadingRoles, setLoadingRoles] = useState(false);
+  const [loadingSops,  setLoadingSops]  = useState(false);
+  const [error, setError] = useState('');
+
+  // Fetch all employees once
+  useEffect(() => {
+    setLoadingEmps(true);
+    fetch('/api/training/employees')
+      .then(r => r.json())
+      .then(d => { if (d.success) setAllEmployees(d.employees || []); })
+      .catch(console.error)
+      .finally(() => setLoadingEmps(false));
+  }, []);
+
+  // Filter employees by search
+  const filteredEmployees = useMemo(() => {
+    if (!empSearch) return allEmployees;
+    const q = empSearch.toLowerCase();
+    return allEmployees.filter(e => e.employeeName.toLowerCase().includes(q));
+  }, [allEmployees, empSearch]);
+
+  // Departments for the selected employee
+  const availableDepts = useMemo(() => {
+    const emp = allEmployees.find(e => e.employeeName === selectedEmp);
+    return emp ? emp.departments : [];
+  }, [allEmployees, selectedEmp]);
+
+  // Fetch roles when employee + dept selected
+  useEffect(() => {
+    if (!selectedEmp || !selectedDept) { setRoles([]); return; }
+    setLoadingRoles(true);
+    fetch(`/api/training/roles?employeeName=${encodeURIComponent(selectedEmp)}&department=${encodeURIComponent(selectedDept)}`)
+      .then(r => r.json())
+      .then(d => { if (d.success) setRoles(d.roles || []); })
+      .catch(console.error)
+      .finally(() => setLoadingRoles(false));
+  }, [selectedEmp, selectedDept]);
+
+  // Auto-select dept if only one
+  useEffect(() => {
+    if (availableDepts.length === 1) setSelectedDept(availableDepts[0]);
+    else setSelectedDept('');
+    setSopResults(null);
+    setSelectedRole('');
+  }, [selectedEmp, availableDepts.length]);
+
+  const handleFindSOPs = async () => {
+    if (!selectedEmp || !selectedDept) return;
+    setLoadingSops(true);
+    setError('');
+    setSopResults(null);
+    try {
+      const params = new URLSearchParams({
+        employeeName: selectedEmp,
+        department: selectedDept,
+      });
+      const res  = await fetch(`/api/training/employee-sops?${params}`);
+      const data = await res.json();
+      if (data.success) {
+        setSopResults(data.sops || []);
+      } else {
+        setError(data.error || 'Failed to fetch SOPs');
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoadingSops(false);
+    }
+  };
+
+  const reset = () => {
+    setSelectedEmp(''); setSelectedDept(''); setSelectedRole('');
+    setSopResults(null); setError(''); setEmpSearch('');
+  };
+
+  const sopWithExam    = sopResults?.filter(s => s.hasExam) ?? [];
+  const sopWithoutExam = sopResults?.filter(s => !s.hasExam) ?? [];
+
+  return (
+    <div className="space-y-6 max-w-4xl">
+
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <div className="bg-gradient-to-br from-emerald-600/10 to-teal-600/5 border border-emerald-500/20 rounded-3xl p-6">
+        <div className="flex items-center gap-4">
+          <div className="p-3 bg-emerald-500/20 rounded-2xl border border-emerald-500/30">
+            <PlayCircle className="h-6 w-6 text-emerald-400" />
+          </div>
+          <div>
+            <h2 className="text-lg font-black text-white">Start Your Training</h2>
+            <p className="text-slate-400 text-xs mt-0.5">
+              Enter your details below. The system will automatically fetch all SOPs assigned to you,
+              and show which exams you can take right now.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Step 1: Form ───────────────────────────────────────────────────── */}
+      <div className="bg-white/[0.025] border border-white/5 rounded-3xl p-6 space-y-5">
+        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+          <span className="inline-flex h-5 w-5 rounded-full bg-emerald-600/20 text-emerald-400 text-[10px] items-center justify-center font-black">1</span>
+          Your Details
+        </p>
+
+        {/* Employee Name */}
+        <div className="space-y-2">
+          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Employee Name *</label>
+          {loadingEmps ? (
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading employees...
+            </div>
+          ) : (
+            <div className="relative">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500 pointer-events-none" />
+              <input
+                type="text"
+                value={selectedEmp || empSearch}
+                onChange={e => { setEmpSearch(e.target.value); setSelectedEmp(''); setSopResults(null); }}
+                placeholder="Search your name…"
+                className="w-full bg-black/40 border border-white/10 rounded-xl pl-10 pr-10 py-3 text-sm font-bold text-white placeholder-slate-600 outline-none focus:ring-2 ring-emerald-500/40 transition-all"
+              />
+              {selectedEmp && (
+                <button onClick={reset} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+              {/* Dropdown */}
+              {!selectedEmp && empSearch && filteredEmployees.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-[#0c0a1e] border border-white/10 rounded-xl shadow-2xl overflow-hidden max-h-52 overflow-y-auto">
+                  {filteredEmployees.map(emp => (
+                    <button
+                      key={emp.employeeName}
+                      onClick={() => { setSelectedEmp(emp.employeeName); setEmpSearch(''); }}
+                      className="w-full px-4 py-3 text-left hover:bg-white/5 transition-colors border-b border-white/[0.04] last:border-0"
+                    >
+                      <p className="text-sm font-bold text-white">{emp.employeeName}</p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">{emp.departments.join(', ')}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {!selectedEmp && empSearch && filteredEmployees.length === 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-[#0c0a1e] border border-white/10 rounded-xl p-4 text-center">
+                  <p className="text-xs text-slate-500">No employee found for "{empSearch}"</p>
+                </div>
+              )}
+            </div>
+          )}
+          {selectedEmp && (
+            <div className="flex items-center gap-2 mt-1">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+              <span className="text-xs font-bold text-emerald-400">{selectedEmp}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Department */}
+        {selectedEmp && (
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Department *</label>
+            {availableDepts.length === 1 ? (
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                <span className="text-sm font-bold text-emerald-400">{availableDepts[0]}</span>
+                <span className="text-[10px] text-slate-600">(auto-selected)</span>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {availableDepts.map(dept => (
+                  <button
+                    key={dept}
+                    onClick={() => { setSelectedDept(dept === selectedDept ? '' : dept); setSopResults(null); }}
+                    className={`flex items-center gap-2 p-3 rounded-xl border text-left transition-all text-xs font-bold ${
+                      selectedDept === dept
+                        ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-300'
+                        : 'bg-white/[0.03] border-white/10 text-slate-400 hover:border-emerald-500/30 hover:text-white'
+                    }`}
+                  >
+                    <Building2 className="h-3.5 w-3.5 shrink-0" />
+                    {dept}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Role / Designation */}
+        {selectedEmp && selectedDept && (
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+              Role / Designation <span className="text-slate-600 normal-case font-medium">(optional)</span>
+            </label>
+            {loadingRoles ? (
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading roles...
+              </div>
+            ) : roles.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {roles.map(role => (
+                  <button
+                    key={role}
+                    onClick={() => setSelectedRole(role === selectedRole ? '' : role)}
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all ${
+                      selectedRole === role
+                        ? 'bg-violet-600/20 border-violet-500/40 text-violet-300'
+                        : 'bg-white/[0.03] border-white/10 text-slate-400 hover:border-violet-500/30 hover:text-white'
+                    }`}
+                  >
+                    {role}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-600">No specific designation data found in matrix.</p>
+            )}
+          </div>
+        )}
+
+        {/* Submit Button */}
+        <button
+          disabled={!selectedEmp || !selectedDept || loadingSops}
+          onClick={handleFindSOPs}
+          className="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 text-sm"
+        >
+          {loadingSops
+            ? <><Loader2 className="h-4 w-4 animate-spin" /> Fetching your SOPs…</>
+            : <><BookOpen className="h-4 w-4" /> Find My Required SOPs</>
+          }
+        </button>
+      </div>
+
+      {/* ── Step 2: Results ────────────────────────────────────────────────── */}
+      {error && (
+        <div className="flex items-center gap-3 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl text-rose-400 text-xs">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          {error}
+        </div>
+      )}
+
+      {sopResults !== null && (
+        <div className="space-y-4">
+          {/* Summary badge */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+              <span className="inline-flex h-5 w-5 rounded-full bg-emerald-600/20 text-emerald-400 text-[10px] items-center justify-center font-black">2</span>
+              Required SOPs for {selectedEmp} — {selectedDept}
+            </p>
+            <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-emerald-400 text-[10px] font-black">
+              {sopResults.length} total
+            </span>
+            <span className="px-2 py-0.5 bg-indigo-500/10 border border-indigo-500/20 rounded-full text-indigo-400 text-[10px] font-black">
+              {sopWithExam.length} exam{sopWithExam.length !== 1 ? 's' : ''} available
+            </span>
+            {sopWithoutExam.length > 0 && (
+              <span className="px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 rounded-full text-amber-400 text-[10px] font-black">
+                {sopWithoutExam.length} pending exam generation
+              </span>
+            )}
+          </div>
+
+          {sopResults.length === 0 ? (
+            <div className="text-center py-12 bg-white/[0.02] border border-white/5 rounded-2xl">
+              <BookOpen className="h-8 w-8 text-slate-700 mx-auto mb-2" />
+              <p className="text-slate-500 font-bold text-sm">No SOPs found for this employee + department combination.</p>
+              <p className="text-slate-700 text-xs mt-1">Check that the training matrix was uploaded correctly.</p>
+            </div>
+          ) : (
+            <div className="bg-white/[0.02] border border-white/5 rounded-3xl overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-white/[0.03] border-b border-white/5">
+                  <tr>
+                    <th className="px-5 py-3.5 text-left font-black text-[9px] text-slate-500 uppercase tracking-[0.15em]">SOP Code</th>
+                    <th className="px-5 py-3.5 text-left font-black text-[9px] text-slate-500 uppercase tracking-[0.15em]">SOP Name</th>
+                    <th className="px-5 py-3.5 text-left font-black text-[9px] text-slate-500 uppercase tracking-[0.15em]">Month</th>
+                    <th className="px-5 py-3.5 text-left font-black text-[9px] text-slate-500 uppercase tracking-[0.15em]">Exam</th>
+                    <th className="px-5 py-3.5 text-left font-black text-[9px] text-slate-500 uppercase tracking-[0.15em]">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sopResults.map((sop, i) => (
+                    <tr
+                      key={`${sop.sopCode}-${sop.month}-${i}`}
+                      className="border-b border-white/[0.04] hover:bg-white/[0.015] transition-colors"
+                    >
+                      <td className="px-5 py-3.5">
+                        <span className="px-2 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-indigo-300 font-mono font-black text-[11px]">
+                          {sop.sopCode}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 text-slate-300 font-medium max-w-[220px]">
+                        {sop.sopName
+                          ? <span className="font-bold text-white">{sop.sopName}</span>
+                          : <span className="text-slate-600 italic">Name not found</span>
+                        }
+                      </td>
+                      <td className="px-5 py-3.5 text-slate-400 font-bold whitespace-nowrap">
+                        {sop.monthName} {sop.year}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        {sop.hasExam ? (
+                          <div className="flex items-center gap-1.5">
+                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                            <span className="text-emerald-400 font-bold text-[10px]">
+                              {sop.questionCount} Qs
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
+                            <span className="text-amber-500/80 font-bold text-[10px]">No exam yet</span>
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        {sop.hasExam ? (
+                          <a
+                            href={`/sop-training/exam?sopCode=${encodeURIComponent(sop.sopCode)}&employee=${encodeURIComponent(selectedEmp)}&department=${encodeURIComponent(selectedDept)}&month=${sop.month}&year=${sop.year}`}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg font-bold text-[10px] transition-all shadow-md shadow-emerald-500/20"
+                          >
+                            <PlayCircle className="h-3 w-3" />
+                            Start Exam
+                          </a>
+                        ) : (
+                          <span className="px-3 py-1.5 bg-white/5 text-slate-600 rounded-lg font-bold text-[10px] cursor-not-allowed border border-white/5">
+                            Unavailable
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
