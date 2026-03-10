@@ -503,9 +503,13 @@ function DashboardTab({
             )}
             <span className="ml-auto text-[10px] normal-case text-slate-600 font-medium">Click row to expand · Click header to sort</span>
           </h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 mb-5">
+          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-5 items-start">
             {deptBreakdown.map(d => (
-              <DeptCard key={d.department} dept={d} />
+              <DeptCard 
+                key={d.department} 
+                dept={d} 
+                employees={deptEmployeesMap.has(d.department) ? Array.from(deptEmployeesMap.get(d.department)!.entries()) : []}
+              />
             ))}
           </div>
           <div className="overflow-x-auto rounded-2xl border border-white/5">
@@ -724,28 +728,69 @@ function DashboardTab({
 
 // ─── Dept Card ─────────────────────────────────────────────────────────────────
 
-function DeptCard({ dept }: { dept: DeptBreakdown }) {
+function DeptCard({ dept, employees = [] }: { dept: DeptBreakdown, employees?: [string, string[]][] }) {
+  const [expanded, setExpanded] = useState(false);
+
   return (
-    <div className="bg-white/[0.03] border border-white/5 rounded-2xl p-5 space-y-3 hover:border-cyan-500/20 transition-all">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="font-black text-white text-sm leading-tight">{dept.department}</p>
-          <p className="text-[10px] text-slate-500 mt-0.5">{dept.employeeCount} employee{dept.employeeCount !== 1 ? 's' : ''}</p>
+    <div className={`bg-white/[0.03] border rounded-2xl flex flex-col transition-all ${
+      expanded ? 'border-cyan-500/30 bg-cyan-500/[0.02] shadow-xl shadow-cyan-900/10' : 'border-white/5 hover:border-cyan-500/20'
+    }`}>
+      {/* Clickable Header */}
+      <div className="p-5 cursor-pointer" onClick={() => setExpanded(!expanded)}>
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="font-black text-white text-sm leading-tight group-hover:text-cyan-400 transition-colors">{dept.department}</p>
+            <p className="text-[10px] text-slate-500 mt-0.5">{dept.employeeCount} employee{dept.employeeCount !== 1 ? 's' : ''}</p>
+          </div>
+          <div className={`p-2 rounded-lg transition-colors ${
+            expanded ? 'bg-cyan-500/20 text-cyan-400' : 'bg-cyan-500/10 text-cyan-400'
+          }`}>
+            {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <Building2 className="h-3.5 w-3.5" />}
+          </div>
         </div>
-        <div className="p-2 bg-cyan-500/10 rounded-lg">
-          <Building2 className="h-3.5 w-3.5 text-cyan-400" />
+        <div className="grid grid-cols-2 gap-2 text-center mt-4">
+          <div className="bg-indigo-500/5 rounded-xl py-2 border border-indigo-500/10">
+            <p className="text-sm font-black text-indigo-300">{dept.totalSopExams}</p>
+            <p className="text-[9px] text-slate-600 uppercase">SOP Exams</p>
+          </div>
+          <div className="bg-cyan-500/5 rounded-xl py-2 border border-cyan-500/10">
+            <p className="text-sm font-black text-cyan-300">{dept.uniqueSops}</p>
+            <p className="text-[9px] text-slate-600 uppercase">Unique SOPs</p>
+          </div>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-2 text-center">
-        <div className="bg-indigo-500/5 rounded-xl py-2">
-          <p className="text-sm font-black text-indigo-300">{dept.totalSopExams}</p>
-          <p className="text-[9px] text-slate-600 uppercase">SOP Exams</p>
+
+      {/* Expanded Content */}
+      {expanded && employees.length > 0 && (
+        <div className="px-5 pb-5 pt-1 border-t border-white/[0.04] max-h-72 overflow-y-auto">
+          <p className="text-[9px] font-black text-cyan-600 uppercase tracking-widest mb-3 mt-3 sticky flex items-center gap-2">
+            <Users className="h-3 w-3" />
+            {employees.length} employees
+          </p>
+          <div className="space-y-2">
+            {employees.map(([name, sops]) => (
+              <div key={name} className="flex items-start gap-3 p-3 bg-black/40 rounded-xl border border-white/[0.04]">
+                <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center font-black text-xs shrink-0 text-white">
+                  {name.charAt(0)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-white text-xs">{name}</p>
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {sops.map(sop => (
+                      <span key={sop} className="px-1.5 py-0.5 bg-indigo-500/10 border border-indigo-500/20 rounded text-indigo-400 font-mono font-black text-[9px]">
+                        {sop}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <span className="shrink-0 text-[10px] font-black text-violet-300 bg-violet-500/10 border border-violet-500/20 rounded-lg px-2 py-1">
+                  {sops.length}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="bg-cyan-500/5 rounded-xl py-2">
-          <p className="text-sm font-black text-cyan-300">{dept.uniqueSops}</p>
-          <p className="text-[9px] text-slate-600 uppercase">Unique SOPs</p>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
