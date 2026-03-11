@@ -7,10 +7,12 @@ import {
   FileText, ChevronDown, ChevronUp,
   ClipboardList, Hash, ArrowUpDown, ArrowUp, ArrowDown,
   PlayCircle, CheckCircle2, AlertCircle, BookOpen, X, ChevronRight,
-  Award, BookOpenCheck, BarChart2, RotateCcw, Trophy
+  Award, BookOpenCheck, BarChart2, RotateCcw, Trophy, Shield, CalendarClock
 } from 'lucide-react';
 import TrainingMatrixUploadModal from '@/components/TrainingMatrixUploadModal';
 import MyResultsTab from '@/components/MyResultsTab';
+import RolesTab from '@/components/RolesTab';
+import ExamSchedulesTab from '@/components/ExamSchedulesTab';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -51,7 +53,7 @@ interface Filters {
   availableMonths: Array<{ month: number; monthName: string }>;
 }
 
-type ActiveTab = 'dashboard' | 'matrix' | 'profiles' | 'start' | 'results';
+type ActiveTab = 'dashboard' | 'matrix' | 'schedules' | 'profiles' | 'start' | 'results' | 'roles';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -81,6 +83,7 @@ export default function SOPTrainingPage() {
   const [monthlySummary, setMonthlySummary] = useState<MonthSummary[]>([]);
   const [deptBreakdown, setDeptBreakdown] = useState<DeptBreakdown[]>([]);
   const [employeeTable, setEmployeeTable] = useState<EmployeeRow[]>([]);
+  const [sopNamesMap, setSopNamesMap] = useState<Record<string, { id: string, name: string }>>({});
   const [filters, setFilters] = useState<Filters>({ departments: [], years: [], availableMonths: [] });
 
   // Profile/matrix tab states
@@ -105,14 +108,11 @@ export default function SOPTrainingPage() {
         setMonthlySummary(json.monthlySummary || []);
         setDeptBreakdown(json.deptBreakdown || []);
         setEmployeeTable(json.employeeTable || []);
+        setSopNamesMap(json.sopNamesMap || {});
         setFilters(json.filters || { departments: [], years: [], availableMonths: [] });
 
-        // Auto-select current month if data exists for it
-        if (selectedMonth === 'all' && json.monthlySummary?.length > 0) {
-          const cur = currentMonthNum();
-          const hasCur = json.monthlySummary.some((m: MonthSummary) => m.month === cur);
-          if (hasCur) setSelectedMonth(cur);
-        }
+        // Auto-select current month if data exists for it (ONLY on first load)
+        // We'll skip forcing it so that "All Months" actually works.
       }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
@@ -123,17 +123,19 @@ export default function SOPTrainingPage() {
   const TABS = [
     { id: 'dashboard', label: 'Dashboard',       icon: BarChart3   },
     { id: 'matrix',    label: 'Training Matrix',  icon: FileText    },
+    { id: 'schedules', label: 'Exam Tracking',    icon: CalendarClock },
     { id: 'profiles',  label: 'Trainer Profiles', icon: Users       },
     { id: 'start',     label: 'Start Training',   icon: PlayCircle  },
-    { id: 'results',   label: 'My Results',        icon: Trophy      },
+    { id: 'roles',     label: 'Manage Roles',     icon: Shield      },
+    { id: 'results',   label: 'My Results',       icon: Trophy      },
   ] as const;
 
   // ── KPI Cards ──────────────────────────────────────────────────────────────
   const kpiCards = [
-    { label: 'Total SOP Trainings',  value: kpi.totalSopExams,  color: 'text-violet-300',  bg: 'from-violet-600/20 to-violet-600/5',   icon: ClipboardList },
-    { label: 'Employees',            value: kpi.totalEmployees, color: 'text-indigo-300',  bg: 'from-indigo-600/20 to-indigo-600/5',   icon: Users         },
-    { label: 'Departments',          value: kpi.totalDepts,     color: 'text-cyan-300',    bg: 'from-cyan-600/20 to-cyan-600/5',       icon: Building2     },
-    { label: 'Unique SOP Codes',     value: kpi.totalSopCodes,  color: 'text-emerald-300', bg: 'from-emerald-600/20 to-emerald-600/5', icon: Hash          },
+    { label: 'Total SOP Trainings',  value: kpi.totalSopExams,  color: 'text-violet-300',  bg: 'from-violet-600/20 to-violet-600/5',   icon: ClipboardList, targetTab: 'dashboard' as ActiveTab },
+    { label: 'Employees',            value: kpi.totalEmployees, color: 'text-indigo-300',  bg: 'from-indigo-600/20 to-indigo-600/5',   icon: Users,         targetTab: 'profiles' as ActiveTab },
+    { label: 'Departments',          value: kpi.totalDepts,     color: 'text-cyan-300',    bg: 'from-cyan-600/20 to-cyan-600/5',       icon: Building2,     targetTab: 'dashboard' as ActiveTab },
+    { label: 'Unique SOP Codes',     value: kpi.totalSopCodes,  color: 'text-emerald-300', bg: 'from-emerald-600/20 to-emerald-600/5', icon: Hash,          targetTab: 'matrix' as ActiveTab },
   ];
 
   return (
@@ -182,8 +184,8 @@ export default function SOPTrainingPage() {
                 className="bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-white outline-none cursor-pointer"
               >
                 <option value="all">All Months</option>
-                {filters.availableMonths.map(m => (
-                  <option key={m.month} value={m.month}>{m.monthName}</option>
+                {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map((mName, i) => (
+                  <option key={i + 1} value={i + 1}>{mName}</option>
                 ))}
               </select>
 
@@ -216,17 +218,18 @@ export default function SOPTrainingPage() {
 
           {/* KPI Strip */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
-            {kpiCards.map(({ label, value, color, bg, icon: Icon }) => (
-              <div key={label}
-                className={`relative overflow-hidden bg-gradient-to-br ${bg} border border-white/5 rounded-2xl px-5 py-4`}>
+            {kpiCards.map(({ label, value, color, bg, icon: Icon, targetTab }) => (
+              <button key={label}
+                onClick={() => setActiveTab(targetTab)}
+                className={`relative group overflow-hidden bg-gradient-to-br ${bg} border border-white/5 rounded-2xl px-5 py-4 text-left transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-white/5`}>
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className={`text-2xl font-black ${color}`}>{value}</p>
-                    <p className="text-[9px] font-bold text-slate-600 uppercase tracking-widest mt-1">{label}</p>
+                    <p className={`text-2xl font-black ${color} group-hover:brightness-125 transition-all`}>{value}</p>
+                    <p className="text-[9px] font-bold text-slate-600 group-hover:text-slate-400 uppercase tracking-widest mt-1 transition-all">{label}</p>
                   </div>
-                  <Icon className={`h-8 w-8 ${color} opacity-20`} />
+                  <Icon className={`h-8 w-8 ${color} opacity-20 group-hover:opacity-40 group-hover:scale-110 transition-all`} />
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -263,6 +266,7 @@ export default function SOPTrainingPage() {
             monthlySummary={monthlySummary}
             deptBreakdown={deptBreakdown}
             employeeTable={employeeTable}
+            sopNamesMap={sopNamesMap}
             selectedMonth={selectedMonth}
             setSelectedMonth={setSelectedMonth}
           />
@@ -272,15 +276,24 @@ export default function SOPTrainingPage() {
         {activeTab === 'matrix' && (
           <MatrixTab
             employeeTable={employeeTable}
+            sopNamesMap={sopNamesMap}
             search={matrixSearch}
             setSearch={setMatrixSearch}
           />
+        )}
+
+        {/* ═══════════════════ SCHEDULES TAB ═══════════════════════════════ */}
+        {activeTab === 'schedules' && (
+          <div className="animation-fade-in">
+            <ExamSchedulesTab />
+          </div>
         )}
 
         {/* ═══════════════════ PROFILES TAB ════════════════════════════════ */}
         {activeTab === 'profiles' && (
           <ProfilesTab
             employeeTable={employeeTable}
+            sopNamesMap={sopNamesMap}
             search={empSearch}
             setSearch={setEmpSearch}
             expanded={expandedEmp}
@@ -296,6 +309,11 @@ export default function SOPTrainingPage() {
         {/* ═══════════════════ MY RESULTS TAB ══════════════════════════════ */}
         {activeTab === 'results' && (
           <MyResultsTab />
+        )}
+
+        {/* ═══════════════════ ROLES TAB ═══════════════════════════════════ */}
+        {activeTab === 'roles' && (
+          <RolesTab />
         )}
       </div>
 
@@ -362,12 +380,13 @@ function useSortState<T>(items: T[], key: keyof T | null, dir: SortDir) {
 // ─── Dashboard Tab ─────────────────────────────────────────────────────────────
 
 function DashboardTab({
-  loading, monthlySummary, deptBreakdown, employeeTable, selectedMonth, setSelectedMonth
+  loading, monthlySummary, deptBreakdown, employeeTable, sopNamesMap, selectedMonth, setSelectedMonth
 }: {
   loading: boolean;
   monthlySummary: MonthSummary[];
   deptBreakdown: DeptBreakdown[];
   employeeTable: EmployeeRow[];
+  sopNamesMap: Record<string, { id: string, name: string }>;
   selectedMonth: number | 'all';
   setSelectedMonth: (m: number | 'all') => void;
 }) {
@@ -458,7 +477,7 @@ function DashboardTab({
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">
                       {m.monthName.substring(0, 3)} {m.year}
                     </p>
-                    <p className="text-[9px] text-slate-700 mt-0.5">SOP trainings</p>
+                    <p className="text-[9px] text-slate-700 mt-0.5">SOPs scheduled</p>
                   </div>
                   {isSelected && (
                     <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-indigo-400 shadow-[0_0_6px_#818cf8]" />
@@ -479,7 +498,7 @@ function DashboardTab({
                     onSort={k => cycleSort(k as keyof MonthSummary, monSortKey, monSortDir, setMonSortKey, setMonSortDir)} />
                   <SortableHeader label="Year" sortKey="year" currentKey={monSortKey||''} dir={monSortDir}
                     onSort={k => cycleSort(k as keyof MonthSummary, monSortKey, monSortDir, setMonSortKey, setMonSortDir)} />
-                  <SortableHeader label="Total SOP Trainings" sortKey="totalSopExams" currentKey={monSortKey||''} dir={monSortDir}
+                  <SortableHeader label="Total SOPs" sortKey="totalSopExams" currentKey={monSortKey||''} dir={monSortDir}
                     onSort={k => cycleSort(k as keyof MonthSummary, monSortKey, monSortDir, setMonSortKey, setMonSortDir)} />
                 </tr>
               </thead>
@@ -528,6 +547,7 @@ function DashboardTab({
                 key={d.department} 
                 dept={d} 
                 employees={deptEmployeesMap.has(d.department) ? Array.from(deptEmployeesMap.get(d.department)!.entries()) : []}
+                sopNamesMap={sopNamesMap}
               />
             ))}
           </div>
@@ -603,12 +623,18 @@ function DashboardTab({
                                   </div>
                                   <div className="flex-1 min-w-0">
                                     <p className="font-bold text-white text-xs">{name}</p>
-                                    <div className="flex flex-wrap gap-1 mt-1.5">
-                                      {sops.map(sop => (
-                                        <span key={sop} className="px-1.5 py-0.5 bg-indigo-500/10 border border-indigo-500/20 rounded text-indigo-400 font-mono font-black text-[9px]">
-                                          {sop}
-                                        </span>
-                                      ))}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-2">
+                                      {sops.map(sop => {
+                                        const sopData = sopNamesMap[sop] || { id: sop, name: "Unknown SOP" };
+                                        return (
+                                          <a href={`/mcq-bank?search=${sopData.id}`} key={sop}
+                                            className="group flex flex-col p-2.5 bg-black/40 hover:bg-indigo-600/10 border border-white/5 hover:border-indigo-500/30 rounded-xl transition-all"
+                                          >
+                                            <span className="text-indigo-400 group-hover:text-indigo-300 font-mono font-black text-[10px] tracking-widest">{sopData.id}</span>
+                                            <span className="text-slate-400 group-hover:text-slate-300 text-[10px] truncate mt-0.5" title={sopData.name}>{sopData.name}</span>
+                                          </a>
+                                        );
+                                      })}
                                     </div>
                                   </div>
                                   <span className="shrink-0 text-[10px] font-black text-violet-300 bg-violet-500/10 border border-violet-500/20 rounded-lg px-2 py-1">
@@ -687,15 +713,20 @@ function DashboardTab({
                           {row.monthName} {row.year}
                         </td>
                         <td className="px-5 py-3.5">
-                          <div className="flex flex-wrap gap-1 max-w-[280px]">
-                            {row.sopCodes.slice(0, 4).map(sop => (
-                              <span key={sop}
-                                className="px-1.5 py-0.5 bg-indigo-500/10 border border-indigo-500/20 rounded text-indigo-400 font-mono font-black text-[9px]">
-                                {sop}
-                              </span>
-                            ))}
+                          <div className="flex flex-col gap-1.5 max-w-[400px]">
+                            {row.sopCodes.slice(0, 4).map(sop => {
+                              const sopData = sopNamesMap[sop] || { id: sop, name: "Unknown SOP" };
+                              return (
+                                <a href={`/mcq-bank?search=${sopData.id}`} key={sop}
+                                  className="group flex flex-col px-2.5 py-1.5 bg-black/40 hover:bg-indigo-600/10 border border-white/5 hover:border-indigo-500/30 rounded-lg transition-all"
+                                >
+                                  <span className="text-indigo-400 group-hover:text-indigo-300 font-mono font-black text-[10px] tracking-widest">{sopData.id}</span>
+                                  <span className="text-slate-400 group-hover:text-slate-300 text-[10px] truncate max-w-[250px]" title={sopData.name}>{sopData.name}</span>
+                                </a>
+                              );
+                            })}
                             {row.sopCodes.length > 4 && (
-                              <span className="px-1.5 py-0.5 bg-violet-500/10 border border-violet-500/20 rounded text-violet-400 text-[9px] font-bold">
+                              <span className="px-1.5 py-0.5 bg-violet-500/10 border border-violet-500/20 rounded w-fit text-violet-400 text-[9px] font-bold">
                                 +{row.sopCodes.length - 4} more ↓
                               </span>
                             )}
@@ -715,14 +746,19 @@ function DashboardTab({
                               <p className="text-[9px] font-black text-violet-600 uppercase tracking-widest mb-2">
                                 All {row.sopCodes.length} SOP codes for {row.employeeName} — {row.monthName} {row.year}
                               </p>
-                              <div className="flex flex-wrap gap-1.5">
-                                {row.sopCodes.map((sop, si) => (
-                                  <span key={sop}
-                                    className="flex items-center gap-1 px-2 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-indigo-300 font-mono font-black text-[10px]">
-                                    <span className="text-slate-600 text-[8px]">{si + 1}.</span>
-                                    {sop}
-                                  </span>
-                                ))}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 mt-2">
+                                {row.sopCodes.map((sop, si) => {
+                                  const sopData = sopNamesMap[sop] || { id: sop, name: "Unknown SOP" };
+                                  return (
+                                    <a href={`/mcq-bank?search=${sopData.id}`} key={sop}
+                                      className="group relative flex flex-col p-3 pl-8 bg-black/40 hover:bg-indigo-600/10 border border-white/5 hover:border-indigo-500/30 rounded-xl transition-all"
+                                    >
+                                      <span className="absolute left-3 top-3 text-[10px] text-slate-600 font-bold group-hover:text-indigo-400">{si + 1}.</span>
+                                      <span className="text-indigo-400 group-hover:text-indigo-300 font-mono font-black text-[11px] tracking-widest">{sopData.id}</span>
+                                      <span className="text-slate-400 group-hover:text-slate-300 text-xs truncate mt-1" title={sopData.name}>{sopData.name}</span>
+                                    </a>
+                                  );
+                                })}
                               </div>
                             </div>
                           </td>
@@ -747,7 +783,7 @@ function DashboardTab({
 
 // ─── Dept Card ─────────────────────────────────────────────────────────────────
 
-function DeptCard({ dept, employees = [] }: { dept: DeptBreakdown, employees?: [string, string[]][] }) {
+function DeptCard({ dept, employees = [], sopNamesMap }: { dept: DeptBreakdown, employees?: [string, string[]][], sopNamesMap: Record<string, { id: string, name: string }> }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -795,11 +831,15 @@ function DeptCard({ dept, employees = [] }: { dept: DeptBreakdown, employees?: [
                 <div className="flex-1 min-w-0">
                   <p className="font-bold text-white text-xs">{name}</p>
                   <div className="flex flex-wrap gap-1 mt-1.5">
-                    {sops.map(sop => (
-                      <span key={sop} className="px-1.5 py-0.5 bg-indigo-500/10 border border-indigo-500/20 rounded text-indigo-400 font-mono font-black text-[9px]">
-                        {sop}
-                      </span>
-                    ))}
+                    {sops.map(sop => {
+                      const sopData = sopNamesMap[sop] || { id: sop, name: "Unknown SOP" };
+                      return (
+                        <a href={`/mcq-bank?search=${sopData.id}`} key={sop} className="flex flex-col px-2 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded text-indigo-400 hover:text-indigo-200 hover:bg-indigo-500/30 transition-colors group">
+                          <span className="font-mono font-black text-[10px] group-hover:text-indigo-300">{sopData.id}</span>
+                          <span className="text-[10px] text-slate-500 truncate max-w-[200px] group-hover:text-indigo-400/80 mt-0.5">{sopData.name}</span>
+                        </a>
+                      );
+                    })}
                   </div>
                 </div>
                 <span className="shrink-0 text-[10px] font-black text-violet-300 bg-violet-500/10 border border-violet-500/20 rounded-lg px-2 py-1">
@@ -817,9 +857,10 @@ function DeptCard({ dept, employees = [] }: { dept: DeptBreakdown, employees?: [
 // ─── Matrix Tab ───────────────────────────────────────────────────────────────
 
 function MatrixTab({
-  employeeTable, search, setSearch
+  employeeTable, sopNamesMap, search, setSearch
 }: {
   employeeTable: EmployeeRow[];
+  sopNamesMap: Record<string, { id: string, name: string }>;
   search: string;
   setSearch: (s: string) => void;
 }) {
@@ -887,15 +928,22 @@ function MatrixTab({
                   <td className="px-5 py-4 text-slate-400 font-bold">{row.monthName}</td>
                   <td className="px-5 py-4 text-slate-500">{row.year}</td>
                   <td className="px-5 py-4">
-                    <div className="flex flex-wrap gap-1 max-w-[300px]">
-                      {row.sopCodes.slice(0, 5).map(sop => (
-                        <span key={sop}
-                          className="px-1.5 py-0.5 bg-indigo-500/10 border border-indigo-500/20 rounded text-indigo-400 font-mono font-black text-[9px]">
-                          {sop}
-                        </span>
-                      ))}
+                    <div className="flex flex-col gap-1.5 max-w-[400px]">
+                      {row.sopCodes.slice(0, 5).map(sop => {
+                        const sopData = sopNamesMap[sop] || { id: sop, name: "Unknown SOP" };
+                        return (
+                          <a href={`/mcq-bank?search=${sopData.id}`} key={sop}
+                            className="group flex flex-col px-2.5 py-1.5 bg-black/40 hover:bg-indigo-600/10 border border-white/5 hover:border-indigo-500/30 rounded-lg transition-all"
+                          >
+                            <span className="text-indigo-400 group-hover:text-indigo-300 font-mono font-black text-[10px] tracking-widest">{sopData.id}</span>
+                            <span className="text-slate-400 group-hover:text-slate-300 text-[10px] truncate max-w-[300px]" title={sopData.name}>{sopData.name}</span>
+                          </a>
+                        );
+                      })}
                       {row.sopCodes.length > 5 && (
-                        <span className="text-slate-600 text-[9px] font-bold">+{row.sopCodes.length - 5}</span>
+                        <span className="text-slate-500 text-[9px] font-bold uppercase tracking-widest mt-1">
+                          + {row.sopCodes.length - 5} More SOPs
+                        </span>
                       )}
                     </div>
                   </td>
@@ -915,9 +963,10 @@ function MatrixTab({
 // ─── Profiles Tab ─────────────────────────────────────────────────────────────
 
 function ProfilesTab({
-  employeeTable, search, setSearch, expanded, setExpanded
+  employeeTable, sopNamesMap, search, setSearch, expanded, setExpanded
 }: {
   employeeTable: EmployeeRow[];
+  sopNamesMap: Record<string, { id: string, name: string }>;
   search: string;
   setSearch: (s: string) => void;
   expanded: string | null;
@@ -1025,13 +1074,18 @@ function ProfilesTab({
                         <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
                           {bm.monthName} {bm.year} · {bm.sopCodes.length} SOPs
                         </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {bm.sopCodes.map(sop => (
-                            <span key={sop}
-                              className="px-2 py-0.5 bg-indigo-500/10 border border-indigo-500/20 rounded-md text-indigo-400 font-mono font-black text-[10px]">
-                              {sop}
-                            </span>
-                          ))}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+                          {bm.sopCodes.map(sop => {
+                            const sopData = sopNamesMap[sop] || { id: sop, name: "Unknown SOP" };
+                            return (
+                              <a href={`/mcq-bank?search=${sopData.id}`} key={sop}
+                                className="group flex flex-col p-3 bg-black/40 hover:bg-indigo-600/10 border border-white/5 hover:border-indigo-500/30 rounded-xl transition-all"
+                              >
+                                <span className="text-indigo-400 group-hover:text-indigo-300 font-mono font-black text-[11px] tracking-widest">{sopData.id}</span>
+                                <span className="text-slate-400 group-hover:text-slate-300 text-xs truncate mt-1" title={sopData.name}>{sopData.name}</span>
+                              </a>
+                            );
+                          })}
                         </div>
                       </div>
                     ))}

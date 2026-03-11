@@ -1,0 +1,1 @@
+const mongoose = require('mongoose'); mongoose.connect('mongodb://127.0.0.1:27017/sop-pharma').then(async () => { const db = mongoose.connection.db; const mcq = await db.collection('mcqbanks').findOne({ sopIdentifier: new RegExp('MAGE06', 'i') }); console.log(mcq ? mcq.sopIdentifier + ' | ' + mcq.sopName : 'Not found'); mongoose.disconnect(); })

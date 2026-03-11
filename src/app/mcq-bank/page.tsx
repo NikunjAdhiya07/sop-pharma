@@ -97,6 +97,7 @@ function MCQBankContent() {
   const searchParams = useSearchParams();
   const sopIdFromUrl = searchParams.get("sopId");
   const deptFromUrl = searchParams.get("dept");
+  const searchFromUrl = searchParams.get("search");
 
   const [mcqBanks, setMcqBanks] = useState<MCQBank[]>([]);
   const [loading, setLoading] = useState(true);
@@ -447,6 +448,14 @@ function MCQBankContent() {
       }
     }
   }, [deptFromUrl, treeData]);
+
+  // Handle 'search' query parameter
+  useEffect(() => {
+    if (searchFromUrl) {
+      setSearchTerm(searchFromUrl);
+      setViewMode("grid"); // Force grid view so search results are visible immediately
+    }
+  }, [searchFromUrl]);
 
   const fetchMCQBanks = async () => {
     try {

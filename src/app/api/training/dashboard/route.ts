@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import MatrixEntry from '@/models/MatrixEntry';
+import MCQBank from '@/models/MCQBank';
 
 const MONTH_NAMES_FULL = [
   'January','February','March','April','May','June',
@@ -44,7 +45,13 @@ export async function GET(request: NextRequest) {
       {
         $group: {
           _id: { month: '$month', monthName: '$monthName', year: '$year' },
-          totalSopExams: { $sum: 1 },
+          sopCodes: { $addToSet: '$sopCode' },
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          totalSopExams: { $size: '$sopCodes' },
         }
       },
       { $sort: { '_id.year': 1, '_id.month': 1 } },
@@ -150,12 +157,31 @@ export async function GET(request: NextRequest) {
 
     const kpi = kpiAgg[0] || { totalSopExams: 0, totalEmployees: 0, totalDepts: 0, totalSopCodes: 0 };
 
+    const uniqueSopCodesList = await MatrixEntry.distinct('sopCode', baseMatch);
+    const sopsFromBank = await MCQBank.find().select('sopIdentifier sopName').lean();
+
+    const sopNamesMap = uniqueSopCodesList.reduce((acc: Record<string, { id: string, name: string }>, code: string) => {
+      const cleanCode = code.trim();
+      const matched = sopsFromBank.find((b: any) => {
+        const cleanBankId = b.sopIdentifier.trim();
+        return cleanBankId === cleanCode || cleanBankId.startsWith(`${cleanCode}-`);
+      });
+
+      if (matched) {
+        acc[code] = { id: matched.sopIdentifier.trim(), name: matched.sopName.trim() };
+      } else {
+        acc[code] = { id: cleanCode, name: 'Unknown SOP' };
+      }
+      return acc;
+    }, {});
+
     return NextResponse.json({
       success: true,
       kpi,
       monthlySummary,
       deptBreakdown: deptAgg,
       employeeTable: empAgg,
+      sopNamesMap,
       filters: {
         departments,
         years,
