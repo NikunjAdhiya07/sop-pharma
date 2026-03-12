@@ -1,0 +1,2 @@
+﻿src/app/api/training/exam-schedules/route.ts(21,19): error TS2352: Conversion of type '(FlattenMaps<any> & Required<{ _id: unknown; }> & { __v: number; })[]' to type '{ _id: any; name: string; employeeId?: string | undefined; }[]' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'name' is missing in type 'FlattenMaps<any> & Required<{ _id: unknown; }> & { __v: number; }' but required in type '{ _id: any; name: string; employeeId?: string | undefined; }'.

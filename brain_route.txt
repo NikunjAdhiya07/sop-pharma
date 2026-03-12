@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import MatrixEntry from '@/models/MatrixEntry';
 import MCQBank from '@/models/MCQBank';
@@ -15,12 +15,12 @@ export async function GET(request: NextRequest) {
     // 1. Fetch all Matrix Entries
     const matrixEntries = await MatrixEntry.find().lean();
 
-    // 2. Map Users by name (normalised) → _id
+    // 2. Map Users by name (normalised) â†’ _id
     //    Also support employeeId if present in both MatrixEntry and User
     const distinctNames = [...new Set(matrixEntries.map(e => e.employeeName?.trim()))].filter(Boolean);
     const users = await User.find({ name: { $in: distinctNames } })
       .select('_id name employeeId')
-      .lean() as unknown as Array<{ _id: any; name: string; employeeId?: string }>;
+      .lean() as Array<{ _id: any; name: string; employeeId?: string }>;
 
     const userToIdMap: Record<string, string> = {};
     for (const u of users) {
@@ -28,34 +28,29 @@ export async function GET(request: NextRequest) {
     }
 
     // 3. Fetch all TestResults for those users and build a completion map
-    //    Key: `${userId}_${sopIdentifier}` → best result info
+    //    Key: `${userId}_${sopIdentifier}` â†’ best result info
     const userIds = Object.values(userToIdMap);
     const results = await TestResult.find({ userId: { $in: userIds } })
       .select('userId isPassed completedAt score questions')
-      .lean();
+      .lean() as Array<{ userId: any; isPassed: boolean; completedAt: Date; score: number; questions: any[] }>;
 
     const completedExamsMap: Record<string, { completedAt: Date; isPassed: boolean; score: number }> = {};
     for (const r of results) {
-      const uId = r.userId?.toString();
-      if (!uId) continue;
-      
-      const questions = (r.questions as any[]) || [];
-      if (questions.length === 0) continue;
+      const uId = r.userId.toString();
+      if (!r.questions?.length) continue;
 
-      // Extract unique SOP identifiers from the test result questions
-      const sops = [...new Set(
-        questions
-          .map((q: any) => q.sopIdentifier)
-          .filter((id): id is string => typeof id === 'string' && id.length > 0)
-      )];
+      const sopIds = [
+        ...new Set(
+          r.questions
+            .map((q: any) => q.sopIdentifier?.trim())
+            .filter(Boolean)
+        ),
+      ] as string[];
 
-      for (const rawSop of sops) {
-        const cleanSop = rawSop.trim();
-        const key = `${uId}_${cleanSop}`;
+      for (const sopId of sopIds) {
+        const key = `${uId}_${sopId}`;
         const existing = completedExamsMap[key];
-        
-        // Prefer retaining a passed result. If none exists yet, just store the first result.
-        // Amongst passing results, prefer the highest score.
+        // Prefer a passing result; amongst equal statuses prefer higher score
         if (!existing || (!existing.isPassed && r.isPassed) || (existing.isPassed === r.isPassed && r.score > existing.score)) {
           completedExamsMap[key] = {
             completedAt: r.completedAt,
@@ -66,7 +61,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 4. SOP metadata from MCQBank — build prefix match lookup once
+    // 4. SOP metadata from MCQBank â€” build prefix match lookup once
     const sopsFromBank = await MCQBank.find()
       .select('sopIdentifier sopName totalQuestions')
       .lean() as Array<{ sopIdentifier: string; sopName: string; totalQuestions?: number }>;
