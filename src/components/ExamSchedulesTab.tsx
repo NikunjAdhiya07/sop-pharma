@@ -31,7 +31,7 @@ interface Meta {
   generatedAt: string;
 }
 
-export type SortCol = 'trainerName' | 'sopDetails' | 'department' | 'date' | 'result';
+export type SortCol = 'trainerName' | 'sopDetails' | 'department' | 'date' | 'result' | 'status';
 type SubTab = 'due' | 'overdue' | 'upcoming' | 'completed';
 
 export default function ExamSchedulesTab() {
@@ -46,6 +46,7 @@ export default function ExamSchedulesTab() {
   const [meta, setMeta] = useState<Meta | null>(null);
 
   const [search, setSearch] = useState('');
+  const [selectedUser, setSelectedUser] = useState<string>('');
   const [sortCol, setSortCol] = useState<SortCol>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
@@ -77,12 +78,23 @@ export default function ExamSchedulesTab() {
     activeSubTab === 'upcoming'  ? upcomingExams :
     completedExams;
 
-  const filtered = useMemo(() =>
-    currentRecords.filter(r =>
-      [r.trainerName, r.sopName, r.sopCode, r.department]
-        .some(v => v?.toLowerCase().includes(search.toLowerCase()))
-    ),
-  [currentRecords, search]);
+  useEffect(() => {
+    setSelectedUser('');
+  }, [activeSubTab]);
+
+  const uniqueUsers = useMemo(() => {
+    const users = new Set(currentRecords.map(r => r.trainerName).filter(Boolean));
+    return Array.from(users).sort((a, b) => a.localeCompare(b));
+  }, [currentRecords]);
+
+  const filtered = useMemo(() => {
+    return currentRecords.filter(r => {
+      const matchesSearch = [r.trainerName, r.sopName, r.sopCode, r.department]
+        .some(v => v?.toLowerCase().includes(search.toLowerCase()));
+      const matchesUser = selectedUser ? r.trainerName === selectedUser : true;
+      return matchesSearch && matchesUser;
+    });
+  }, [currentRecords, search, selectedUser]);
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
@@ -91,6 +103,7 @@ export default function ExamSchedulesTab() {
       if (sortCol === 'sopDetails')  return dir * (a.sopCode || '').localeCompare(b.sopCode || '');
       if (sortCol === 'department')  return dir * (a.department || '').localeCompare(b.department || '');
       if (sortCol === 'result')      return dir * (a.status || '').localeCompare(b.status || '');
+      if (sortCol === 'status')      return dir * ((a.urgency || a.status || '').localeCompare(b.urgency || b.status || ''));
       if (sortCol === 'date') {
         const nA = activeSubTab === 'completed'
           ? (a.completedAt ? new Date(a.completedAt).getTime() : 0)
@@ -224,15 +237,41 @@ export default function ExamSchedulesTab() {
             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
               {TABS.find(t => t.id === activeSubTab)?.label} — {sorted.length} Records
             </span>
-            <div className="relative w-full sm:w-72">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-              <input
-                type="text"
-                placeholder="Search employee, SOP code, department..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="w-full bg-black/40 border border-white/10 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors"
-              />
+            <div className="flex items-center gap-3 w-full sm:w-auto">
+              {/* User Dropdown Filter */}
+              <div className="relative w-full sm:w-auto">
+                <Users className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                <select
+                  value={selectedUser}
+                  onChange={e => setSelectedUser(e.target.value)}
+                  className="w-full sm:w-auto appearance-none bg-black/40 border border-white/10 rounded-xl pl-9 pr-8 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                >
+                  <option value="">All Employees</option>
+                  {uniqueUsers.map(u => {
+                    const count = currentRecords.filter(r => r.trainerName === u).length;
+                    return (
+                      <option key={u} value={u}>
+                        {u} ({count} {count === 1 ? 'exam' : 'exams'})
+                      </option>
+                    );
+                  })}
+                </select>
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <ArrowDown className="h-3 w-3 text-slate-500" />
+                </div>
+              </div>
+
+              {/* Search */}
+              <div className="relative w-full sm:w-72">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                <input
+                  type="text"
+                  placeholder="Search employee, SOP code, department..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors"
+                />
+              </div>
             </div>
           </div>
 
@@ -257,7 +296,9 @@ export default function ExamSchedulesTab() {
                       Result {renderSortIcon('result')}
                     </th>
                   )}
-                  <th className="px-6 py-4 font-black text-[9px] text-slate-500 uppercase tracking-[0.2em]">Status</th>
+                  <th onClick={() => handleSort('status')} className="px-6 py-4 font-black text-[9px] text-slate-500 uppercase tracking-[0.2em] cursor-pointer hover:bg-white/5 transition-colors group">
+                    Status {renderSortIcon('status')}
+                  </th>
                 </tr>
               </thead>
               <tbody>
