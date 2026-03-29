@@ -53,6 +53,10 @@ async function connectDB(): Promise<typeof mongoose> {
           // Check for specific network errors
           if (error.message?.includes('ENOTFOUND')) {
             console.error('🌐 DNS resolution failed. Check your internet connection or MongoDB Atlas hostname.');
+          } else if (error.message?.includes('querySrv')) {
+            console.error(
+              '🔌 SRV DNS lookup failed (common with mongodb+srv://). Try: use a reliable DNS (e.g. 8.8.8.8), turn off VPN/proxy or "secure DNS" that blocks SRV, or in Atlas use the standard connection string (mongodb://host:27017,...) instead of mongodb+srv://.'
+            );
           } else if (error.message?.includes('ETIMEDOUT')) {
             console.error('⏱️ Connection timed out. Check firewall settings or MongoDB Atlas IP whitelist.');
           } else if (error.message?.includes('authentication failed')) {

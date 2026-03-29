@@ -1,45 +1,27 @@
-import { mkdir, writeFile, readFile, unlink, readdir } from 'fs/promises';
+import { readFile, unlink, readdir } from 'fs/promises';
 import path from 'path';
 import { existsSync } from 'fs';
+import { persistUploadPath } from '@/lib/persistUploadPath';
 
 /**
- * Utility for managing folder-based file storage
- * Mirrors the department folder structure in the uploads directory
+ * Folder-based uploads under uploads/sops/… — binaries are written so
+ * serve-docx / view-docx / download can resolve files on disk.
  */
 
 const UPLOADS_BASE = path.join(process.cwd(), 'uploads', 'sops');
 
 /**
- * Create nested folder structure
- */
-export async function createFolderStructure(folderPath: string): Promise<string> {
-  const fullPath = path.join(UPLOADS_BASE, folderPath);
-  await mkdir(fullPath, { recursive: true });
-  return fullPath;
-}
-
-/**
- * Save file to folder with mirrored structure
+ * Save file under uploads/sops/{folderPath}/ and return the web-relative path (leading segment uploads/...).
  */
 export async function saveFileToFolder(
   fileBuffer: Buffer,
   folderPath: string,
   filename: string
 ): Promise<string> {
-  // Create folder structure if it doesn't exist
-  const fullFolderPath = await createFolderStructure(folderPath);
-  
-  // Sanitize filename
   const sanitizedFilename = filename.replace(/[^a-zA-Z0-9.-]/g, '_');
-  
-  // Full file path
-  const filePath = path.join(fullFolderPath, sanitizedFilename);
-  
-  // Write file
-  await writeFile(filePath, fileBuffer);
-  
-  // Return relative path for database storage
-  return path.join('uploads', 'sops', folderPath, sanitizedFilename).replace(/\\/g, '/');
+  const rel = path.join('uploads', 'sops', folderPath, sanitizedFilename).replace(/\\/g, '/');
+  await persistUploadPath(rel, fileBuffer);
+  return rel;
 }
 
 /**
@@ -50,11 +32,11 @@ export async function getFileFromFolder(
   filename: string
 ): Promise<Buffer | null> {
   const filePath = path.join(UPLOADS_BASE, folderPath, filename);
-  
+
   if (!existsSync(filePath)) {
     return null;
   }
-  
+
   return await readFile(filePath);
 }
 
@@ -66,11 +48,11 @@ export async function deleteFileFromFolder(
   filename: string
 ): Promise<boolean> {
   const filePath = path.join(UPLOADS_BASE, folderPath, filename);
-  
+
   if (!existsSync(filePath)) {
     return false;
   }
-  
+
   await unlink(filePath);
   return true;
 }
@@ -80,13 +62,13 @@ export async function deleteFileFromFolder(
  */
 export async function listFilesInFolder(folderPath: string): Promise<string[]> {
   const fullPath = path.join(UPLOADS_BASE, folderPath);
-  
+
   if (!existsSync(fullPath)) {
     return [];
   }
-  
+
   const files = await readdir(fullPath);
-  return files.filter(file => !file.startsWith('.'));
+  return files.filter((file) => !file.startsWith('.'));
 }
 
 /**
@@ -116,13 +98,13 @@ export interface FolderPathInfo {
 }
 
 export function parseFolderPath(folderPath: string): FolderPathInfo {
-  const parts = folderPath.split('/').filter(p => p.length > 0);
-  
+  const parts = folderPath.split('/').filter((p) => p.length > 0);
+
   return {
     department: parts[0] || '',
     subfolders: parts.slice(1),
     level: parts.length - 1,
     parentFolder: parts.length > 1 ? parts[parts.length - 2] : null,
-    fullPath: folderPath
+    fullPath: folderPath,
   };
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Upload, 
@@ -12,7 +12,13 @@ import {
   FolderOpen,
   Sparkles,
   Database,
-  AlertTriangle
+  AlertTriangle,
+  Eye,
+  X,
+  FileCode2,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
 } from 'lucide-react';
 
 interface FileItem {
@@ -20,6 +26,8 @@ interface FileItem {
   fileName: string;
   sopName: string;
   sopIdentifier: string;
+  identifier: string;
+  fileUrl: string;
   department: string;
   fileType: 'pdf' | 'docx';
   fileSize: number;
@@ -37,6 +45,14 @@ interface BulkGenerationProgress {
   errors: Array<{ fileName: string; error: string }>;
 }
 
+interface PreviewState {
+  open: boolean;
+  file: FileItem | null;
+  html: string;
+  loading: boolean;
+  error: string;
+}
+
 export default function FilesManagerPage() {
   const router = useRouter();
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -47,18 +63,34 @@ export default function FilesManagerPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(true);
+  const [zoom, setZoom] = useState(100);
+  const [preview, setPreview] = useState<PreviewState>({
+    open: false,
+    file: null,
+    html: '',
+    loading: false,
+    error: '',
+  });
 
-  // Fetch all uploaded files
   useEffect(() => {
     fetchFiles();
   }, []);
+
+  // Lock body scroll when modal open
+  useEffect(() => {
+    if (preview.open) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [preview.open]);
 
   const fetchFiles = async () => {
     try {
       setLoading(true);
       const response = await fetch('/api/files/list');
       const data = await response.json();
-      
       if (response.ok) {
         setFiles(data.files || []);
       } else {
@@ -71,17 +103,32 @@ export default function FilesManagerPage() {
     }
   };
 
+  const handlePreview = (file: FileItem) => {
+    const params = new URLSearchParams();
+    if (file.fileUrl) params.set('path', file.fileUrl);
+    if (file.identifier) params.set('identifier', file.identifier);
+
+    if (file.fileType === 'docx') {
+      window.open(`/dashboard/view-word?${params.toString()}`, '_blank');
+    } else if (file.fileType === 'pdf') {
+      window.open(`/dashboard/view-doc?${params.toString()}`, '_blank');
+    }
+  };
+
+  const closePreview = () => {
+    // Legacy state clear
+    setPreview({ open: false, file: null, html: '', loading: false, error: '' });
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newFiles = Array.from(e.target.files || []);
     const validFiles = newFiles.filter(file => {
       const extension = file.name.split('.').pop()?.toLowerCase();
       return extension === 'pdf' || extension === 'docx' || extension === 'doc';
     });
-
     if (validFiles.length !== newFiles.length) {
       setError('Some files were skipped. Only PDF and DOC/DOCX files are allowed.');
     }
-
     setSelectedFiles(prev => [...prev, ...validFiles]);
     setError('');
   };
@@ -95,28 +142,22 @@ export default function FilesManagerPage() {
       setError('Please select at least one file');
       return;
     }
-
     setUploading(true);
     setError('');
     setSuccess('');
-
     try {
       const formData = new FormData();
       selectedFiles.forEach(file => {
         formData.append('files', file);
       });
-
       const response = await fetch('/api/files/bulk-upload', {
         method: 'POST',
         body: formData,
       });
-
       const data = await response.json();
-
       if (!response.ok) {
         throw new Error(data.error || 'Bulk upload failed');
       }
-
       setSuccess(`Successfully uploaded ${data.uploadedCount} file(s)`);
       setSelectedFiles([]);
       await fetchFiles();
@@ -132,59 +173,37 @@ export default function FilesManagerPage() {
       setError('No files available for MCQ generation');
       return;
     }
-
-    // Confirm action
     const confirmed = window.confirm(
       `This will generate approximately 100 MCQs from each of the ${files.length} uploaded file(s). This may take several minutes. Continue?`
     );
-
     if (!confirmed) return;
-
     setBulkGenerating(true);
     setError('');
     setSuccess('');
-    setProgress({
-      total: files.length,
-      completed: 0,
-      failed: 0,
-      current: '',
-      errors: []
-    });
-
+    setProgress({ total: files.length, completed: 0, failed: 0, current: '', errors: [] });
     try {
       const response = await fetch('/api/files/bulk-generate-mcqs', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
       });
-
       if (!response.ok) {
         const data = await response.json();
         throw new Error(data.error || 'Bulk generation failed');
       }
-
-      // Stream progress updates
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
-
       if (reader) {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-
           const chunk = decoder.decode(value);
           const lines = chunk.split('\n').filter(line => line.trim());
-
           for (const line of lines) {
             if (line.startsWith('data: ')) {
               try {
                 const progressData = JSON.parse(line.slice(6));
                 setProgress(progressData);
-
                 if (progressData.completed + progressData.failed === progressData.total) {
-                  // Generation complete
-                  const totalMCQs = progressData.completed * 100; // Approximate
                   setSuccess(
                     `Bulk generation complete! Generated MCQs from ${progressData.completed} file(s). ` +
                     `${progressData.failed > 0 ? `${progressData.failed} file(s) failed.` : ''}`
@@ -206,20 +225,13 @@ export default function FilesManagerPage() {
   };
 
   const handleDeleteFile = async (fileId: string) => {
-    if (!window.confirm('Are you sure you want to delete this file?')) {
-      return;
-    }
-
+    if (!window.confirm('Are you sure you want to delete this file?')) return;
     try {
-      const response = await fetch(`/api/files/delete?id=${fileId}`, {
-        method: 'DELETE',
-      });
-
+      const response = await fetch(`/api/files/delete?id=${fileId}`, { method: 'DELETE' });
       if (!response.ok) {
         const data = await response.json();
         throw new Error(data.error || 'Delete failed');
       }
-
       setSuccess('File deleted successfully');
       await fetchFiles();
     } catch (err) {
@@ -245,6 +257,7 @@ export default function FilesManagerPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-8">
       <div className="max-w-7xl mx-auto">
+
         {/* Header */}
         <div className="mb-12">
           <div className="flex items-center justify-between mb-4">
@@ -253,7 +266,7 @@ export default function FilesManagerPage() {
                 📁 Files Manager
               </h1>
               <p className="text-gray-300 text-lg">
-                Upload multiple SOP files and generate MCQs in bulk
+                Upload multiple SOP files, preview DOCX files, and generate MCQs in bulk
               </p>
             </div>
             <div className="flex gap-3">
@@ -281,9 +294,7 @@ export default function FilesManagerPage() {
             <FolderOpen className="h-7 w-7 text-purple-400" />
             Bulk Upload Files
           </h2>
-
           <div className="space-y-6">
-            {/* File Input */}
             <div>
               <input
                 type="file"
@@ -310,7 +321,6 @@ export default function FilesManagerPage() {
               </label>
             </div>
 
-            {/* Selected Files List */}
             {selectedFiles.length > 0 && (
               <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                 <h3 className="text-white font-semibold mb-3">
@@ -326,9 +336,7 @@ export default function FilesManagerPage() {
                         <FileText className="h-5 w-5 text-blue-400" />
                         <div>
                           <p className="text-white font-medium">{file.name}</p>
-                          <p className="text-gray-400 text-sm">
-                            {formatFileSize(file.size)}
-                          </p>
+                          <p className="text-gray-400 text-sm">{formatFileSize(file.size)}</p>
                         </div>
                       </div>
                       <button
@@ -343,7 +351,6 @@ export default function FilesManagerPage() {
               </div>
             )}
 
-            {/* Upload Button */}
             <button
               onClick={handleBulkUpload}
               disabled={uploading || selectedFiles.length === 0}
@@ -368,7 +375,6 @@ export default function FilesManagerPage() {
             <p className="text-red-200 whitespace-pre-line">{error}</p>
           </div>
         )}
-
         {success && (
           <div className="bg-green-500/20 border border-green-500 rounded-xl p-4 mb-6 flex items-start">
             <CheckCircle2 className="h-5 w-5 text-green-400 mr-3 mt-0.5 flex-shrink-0" />
@@ -462,7 +468,11 @@ export default function FilesManagerPage() {
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-start gap-4 flex-1">
-                      <FileText className="h-6 w-6 text-blue-400 mt-1" />
+                      {file.fileType === 'docx' ? (
+                        <FileCode2 className="h-6 w-6 text-blue-400 mt-1 flex-shrink-0" />
+                      ) : (
+                        <FileText className="h-6 w-6 text-red-400 mt-1 flex-shrink-0" />
+                      )}
                       <div className="flex-1">
                         <h3 className="text-white font-semibold text-lg mb-1">
                           {file.sopName}
@@ -487,20 +497,38 @@ export default function FilesManagerPage() {
                             Uploaded: <span className="text-gray-300">{new Date(file.uploadedAt).toLocaleDateString()}</span>
                           </p>
                         </div>
-                        <div className="mt-3">
+                        <div className="mt-3 flex items-center gap-3">
                           <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold border ${getStatusColor(file.status)}`}>
                             {file.status.toUpperCase()}
+                          </span>
+                          <span className={`inline-block px-2 py-0.5 rounded text-xs font-mono font-semibold ${
+                            file.fileType === 'docx'
+                              ? 'text-blue-300 bg-blue-500/20'
+                              : 'text-red-300 bg-red-500/20'
+                          }`}>
+                            {file.fileType.toUpperCase()}
                           </span>
                         </div>
                       </div>
                     </div>
-                    <button
-                      onClick={() => handleDeleteFile(file._id)}
-                      className="p-2 hover:bg-red-500/20 rounded-lg transition-colors"
-                      title="Delete file"
-                    >
-                      <Trash2 className="h-5 w-5 text-red-400" />
-                    </button>
+
+                      <div className="flex items-center gap-2 ml-4">
+                        <button
+                          onClick={() => handlePreview(file)}
+                          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 transform hover:scale-105 active:scale-95 shadow-md"
+                          title={`Preview ${file.fileType.toUpperCase()} file`}
+                        >
+                          <Eye className="h-4 w-4" />
+                          Preview
+                        </button>
+                      <button
+                        onClick={() => handleDeleteFile(file._id)}
+                        className="p-2 hover:bg-red-500/20 rounded-lg transition-colors"
+                        title="Delete file"
+                      >
+                        <Trash2 className="h-5 w-5 text-red-400" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}

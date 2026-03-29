@@ -42,21 +42,56 @@ body {
 /* Custom scrollbar - Light Mode utility */
 .light-scrollbar::-webkit-scrollbar {
   width: 8px;
+  height: 8px;
 }
 
 .light-scrollbar::-webkit-scrollbar-track {
-  background: #f1f5f9; /* slate-100 */
+  background: #f1f5f9;
 }
 
 .light-scrollbar::-webkit-scrollbar-thumb {
-  background: #cbd5e1; /* slate-300 */
+  background: #cbd5e1;
   border-radius: 4px;
 }
 
 .light-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8; /* slate-400 */
+  background: #94a3b8;
+}
+
+/* Custom scrollbar - Default for dashboard */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #e5e7eb;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #9333ea;
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #7e22ce;
 }
 
 .font-gujarati {
   font-family: var(--font-gujarati), sans-serif;
+}
+
+/* DOCX in-browser fallback (docx-preview): className "docx-preview-wrapper" → outer div "…-wrapper" */
+.docx-preview-surface .docx-preview-wrapper-wrapper {
+  background: #d1d5db;
+}
+.docx-preview-surface section.docx-preview-wrapper {
+  color: #111827;
+}
+.docx-preview-surface .docx-preview-wrapper table {
+  border-collapse: collapse;
+}
+.docx-preview-surface .docx-preview-wrapper img {
+  max-width: 100%;
+  height: auto;
 }

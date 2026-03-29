@@ -86,8 +86,8 @@ export async function performSOPLibrarySync() {
   console.log(`🔍 Sync: Found ${existingSOPLibraries.length} existing library entries`);
   const sopLibraryMap = new Map(existingSOPLibraries.map(s => [s.sopIdentifier, s]));
 
-  // Fetch all MCQ Banks
-  const mcqBanks = await MCQBank.find({}).lean();
+  // Fetch all MCQ Banks (select mcqs to get accurate count)
+  const mcqBanks = await MCQBank.find({}).select('_id sopId totalQuestions mcqs').lean();
   console.log(`🔍 Sync: Found ${mcqBanks.length} MCQ banks`);
   const mcqBankMap = new Map(mcqBanks.map(m => [m.sopId.toString(), m]));
 
@@ -110,12 +110,15 @@ export async function performSOPLibrarySync() {
       const sopName = cleanSOPName(sop);
       
       if (existingSopLibrary) {
-        // Check if we actually need to update
+        const actualMCQCount = mcqBank ? (mcqBank.mcqs?.length ?? mcqBank.totalQuestions ?? 0) : 0;
+        const storedMCQCount = existingSopLibrary.metadata?.totalMCQs ?? 0;
+
         const needsUpdate = 
           existingSopLibrary.sopName !== sopName ||
           existingSopLibrary.department !== departmentName ||
-          (mcqBank && !existingSopLibrary.mcqBankId) ||
-          existingSopLibrary.folderPath !== sop.folderPath;
+          (mcqBank && String(existingSopLibrary.mcqBankId || '') !== String(mcqBank._id)) ||
+          existingSopLibrary.folderPath !== sop.folderPath ||
+          storedMCQCount !== actualMCQCount;
 
         if (needsUpdate) {
           const updateDoc: any = {
@@ -127,9 +130,13 @@ export async function performSOPLibrarySync() {
             subfolderLevel: sop.subfolderLevel,
           };
 
-          if (mcqBank && !existingSopLibrary.mcqBankId) {
+          if (mcqBank) {
             updateDoc.mcqBankId = mcqBank._id;
-            updateDoc['metadata.totalMCQs'] = mcqBank.totalQuestions;
+            updateDoc['metadata.totalMCQs'] = actualMCQCount;
+          } else if (existingSopLibrary.mcqBankId) {
+            updateDoc.mcqBankId = null;
+            updateDoc['metadata.totalMCQs'] = 0;
+            updateDoc['completionStatus.hasMCQs'] = false;
           }
 
           bulkOps.push({
@@ -160,7 +167,7 @@ export async function performSOPLibrarySync() {
               subfolderLevel: sop.subfolderLevel,
               metadata: {
                 views: 0,
-                totalMCQs: mcqBank?.totalQuestions || 0,
+                totalMCQs: mcqBank ? (mcqBank.mcqs?.length ?? mcqBank.totalQuestions ?? 0) : 0,
               },
             }
           }

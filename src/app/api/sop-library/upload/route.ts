@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import connectDB from '@/lib/mongodb';
 import SOPLibrary from '@/models/SOPLibrary';
 import { generateFilePath, validateFileType, getAllowedExtensions } from '@/lib/sopLibraryHelper';
 import { uploadToBunny, generateBunnyPath } from '@/lib/bunnyStorage';
+import { persistUploadPath } from '@/lib/persistUploadPath';
 
 // Check if Bunny Storage is configured
 const isBunnyConfigured = () => {
   return Boolean(
-    process.env.BUNNY_STORAGE_ZONE_NAME &&
-    process.env.BUNNY_API_KEY &&
-    process.env.BUNNY_CDN_HOSTNAME
+    (process.env.BUNNY_STORAGE_ZONE || process.env.BUNNY_STORAGE_ZONE_NAME) &&
+    (process.env.BUNNY_STORAGE_PASSWORD || process.env.BUNNY_API_KEY) &&
+    (process.env.BUNNY_PULL_ZONE_URL || process.env.BUNNY_CDN_HOSTNAME)
   );
 };
 
@@ -91,42 +91,34 @@ export async function POST(request: NextRequest) {
         const bunnyUrl = await uploadToBunny(buffer, bunnyPath);
         
         if (bunnyUrl) {
-          filePath = `bunny://${bunnyPath}`; // Store as bunny:// URI
+          filePath = `bunny://${bunnyPath}`;
           storageType = 'bunny';
         } else {
-          // Fallback to local storage if Bunny upload fails
-          console.warn(`Bunny upload failed for ${file.name}, falling back to local storage`);
+          // Bunny failed — virtual path only (no disk write)
+          console.warn(`Bunny upload failed for ${file.name}, using virtual path`);
           filePath = generateFilePath(
             sopLibrary.sopIdentifier,
             sopLibrary.departmentCode,
             fileType,
             file.name
           );
-          
-          const dirPath = join(process.cwd(), filePath.substring(0, filePath.lastIndexOf('/')));
-          if (!existsSync(dirPath)) {
-            await mkdir(dirPath, { recursive: true });
-          }
-          await writeFile(join(process.cwd(), filePath), buffer);
         }
       } else {
-        // Local storage
+        // No Bunny — virtual path only (no disk write)
         filePath = generateFilePath(
           sopLibrary.sopIdentifier,
           sopLibrary.departmentCode,
           fileType,
           file.name
         );
+      }
 
-        // Create directory if it doesn't exist
-        const dirPath = join(process.cwd(), filePath.substring(0, filePath.lastIndexOf('/')));
-        if (!existsSync(dirPath)) {
-          await mkdir(dirPath, { recursive: true });
+      if (!filePath.startsWith('bunny://') && !filePath.startsWith('http://') && !filePath.startsWith('https://')) {
+        try {
+          await persistUploadPath(filePath, buffer);
+        } catch (persistErr) {
+          console.error('sop-library upload: failed to persist file:', persistErr);
         }
-
-        // Save file locally
-        const fullPath = join(process.cwd(), filePath);
-        await writeFile(fullPath, buffer);
       }
 
       // Get file extension

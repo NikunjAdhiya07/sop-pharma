@@ -13,6 +13,7 @@ interface QueueTask {
   targetCount?: number;
   mcqBankId?: string;
   priority?: number; // Higher priority = processed first
+  language?: 'English' | 'Gujarati';
 }
 
 interface QueueProgress {
@@ -130,18 +131,20 @@ class MCQGenerationQueue {
         return;
       }
 
-      // Check for existing bank
+      const effectiveLanguage = task.language || sop.language || 'English';
+
+      // Check for existing bank matching the same language
       let existingBank = mcqBankId 
         ? await MCQBank.findById(mcqBankId)
-        : await MCQBank.findOne({ sopId: sop._id });
+        : await MCQBank.findOne({ sopId: sop._id, language: effectiveLanguage });
       
       let existingQuestions: string[] = [];
       if (existingBank) {
         existingQuestions = existingBank.mcqs.map(m => m.question);
-        console.log(`🔄 Generating MORE questions for ${sop.name}. Current count: ${existingQuestions.length}`);
+        console.log(`🔄 Generating MORE ${effectiveLanguage} questions for ${sop.name}. Current count: ${existingQuestions.length}`);
       }
 
-      // Update SOP status to processing
+      // Update SOP status
       sop.status = 'processing';
       await sop.save();
 
@@ -153,11 +156,11 @@ class MCQGenerationQueue {
         existingQuestions: existingQuestions,
         targetCount: targetCount || 100,
         isBulk: false,
-        language: sop.language || 'English',
+        language: effectiveLanguage,
         onBatchComplete: async (batchMcqs: any[]) => {
           if (batchMcqs.length > 0) {
-            // Get the freshest bank state
-            const currentBank = await MCQBank.findOne({ sopId: sop._id });
+            // Get the freshest bank state (match by language)
+            const currentBank = await MCQBank.findOne({ sopId: sop._id, language: effectiveLanguage });
             
             if (!currentBank) {
               // Create new bank
@@ -174,7 +177,7 @@ class MCQGenerationQueue {
                   hard: batchMcqs.filter(m => m.difficulty === 'Hard').length,
                 },
                 aiModel: 'gemini-3-pro-preview',
-                language: sop.language || 'English',
+                language: effectiveLanguage,
               });
               console.log(`💾 Created NEW bank with first batch of ${batchMcqs.length} questions for ${sop.name}`);
             } else {
@@ -203,8 +206,8 @@ class MCQGenerationQueue {
         }
       });
 
-      // Fetch final state
-      const finalBank = await MCQBank.findOne({ sopId: sop._id });
+      // Fetch final state (match by language)
+      const finalBank = await MCQBank.findOne({ sopId: sop._id, language: effectiveLanguage });
 
       // Update SOP status
       if ((!finalBank || finalBank.mcqs.length === 0) && result.mcqs.length === 0) {

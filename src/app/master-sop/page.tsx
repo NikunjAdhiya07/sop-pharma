@@ -158,7 +158,14 @@ export default function MasterSOPPage() {
 
   const handleDownloadDocument = async (sop: any) => {
     try {
-      const response = await fetch(`/api/files/download?path=${encodeURIComponent(sop.sopDocument.filePath)}`);
+      const dl = new URLSearchParams();
+      dl.set('path', sop.sopDocument.filePath);
+      dl.set('identifier', sop.sopIdentifier);
+      const response = await fetch(`/api/files/download?${dl.toString()}`);
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error || response.statusText);
+      }
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');

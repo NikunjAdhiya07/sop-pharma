@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
 import { parseDocument, validateDocumentContent } from '@/lib/documentParser';
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
+import { resolveSopLanguageForUpload } from '@/lib/detectSopLanguage';
 import crypto from 'crypto';
 import User from '@/models/User';
 import { Notification } from '@/models/Notification';
+import { uploadToBunny, generateSOPDocumentPath } from '@/lib/bunnyStorage';
+import { persistUploadPath } from '@/lib/persistUploadPath';
 
 export async function POST(request: NextRequest) {
   console.log('📤 Upload API called');
@@ -22,7 +23,13 @@ export async function POST(request: NextRequest) {
     const sopName = formData.get('sopName') as string;
     const sopIdentifier = formData.get('sopIdentifier') as string;
     const department = formData.get('department') as string || 'General';
-    const language = (formData.get('language') as 'English' | 'Gujarati') || 'English';
+    const languageRaw = ((formData.get('language') as string) || 'auto').trim();
+    const batchLanguage: 'English' | 'Gujarati' | 'auto' =
+      languageRaw.toLowerCase() === 'auto'
+        ? 'auto'
+        : languageRaw === 'Gujarati'
+          ? 'Gujarati'
+          : 'English';
     const overwrite = formData.get('overwrite') === 'true';
 
     console.log('📝 Form data received:', {
@@ -77,7 +84,32 @@ export async function POST(request: NextRequest) {
     const checksum = crypto.createHash('sha256').update(buffer).digest('hex');
     console.log('🔐 File Checksum:', checksum);
 
-    // Duplicate Check
+    // Parse document (needed for auto language + validation before duplicate check)
+    console.log('📖 Parsing document...');
+    const parsed = await parseDocument(buffer, fileType);
+    console.log('✅ Document parsed, word count:', parsed.metadata.wordCount);
+
+    console.log('✔️ Validating content...');
+    const validation = validateDocumentContent(parsed.content);
+    if (!validation.isValid) {
+      console.error('❌ Content validation failed:', validation.error);
+      return NextResponse.json(
+        { error: validation.error },
+        { status: 400 }
+      );
+    }
+    console.log('✅ Content validated');
+
+    const baseName = (file.name || '').replace(/^.*[/\\]/, '');
+    const language: 'English' | 'Gujarati' = resolveSopLanguageForUpload({
+      batchLanguage,
+      text: parsed.content,
+      relativePath: '',
+      baseName,
+    });
+    console.log('🌐 Resolved language:', language, batchLanguage === 'auto' ? '(auto)' : '(fixed)');
+
+    // Duplicate Check (uses resolved language so EN/GU rows stay separate)
     if (!overwrite) {
       console.log('🔍 Checking for duplicates...');
       const duplicateSOP = await SOP.findOne({
@@ -113,40 +145,43 @@ export async function POST(request: NextRequest) {
       console.log('✅ No duplicates found');
     }
 
-    // Parse document
-    console.log('📖 Parsing document...');
-    const parsed = await parseDocument(buffer, fileType);
-    console.log('✅ Document parsed, word count:', parsed.metadata.wordCount);
-
-    // Validate content
-    console.log('✔️ Validating content...');
-    const validation = validateDocumentContent(parsed.content);
-    if (!validation.isValid) {
-      console.error('❌ Content validation failed:', validation.error);
-      return NextResponse.json(
-        { error: validation.error },
-        { status: 400 }
-      );
-    }
-    console.log('✅ Content validated');
-
-    // Save file to disk
-    console.log('💾 Saving file to disk...');
-    // Save file to disk
-    console.log('💾 Saving file to disk...');
-    
-    // Sanitize department name for folder
     const sanitizedDept = department.replace(/[^a-zA-Z0-9-_]/g, '_');
-    const uploadsDir = path.join(process.cwd(), 'uploads', 'sops', sanitizedDept);
-    
-    await mkdir(uploadsDir, { recursive: true });
-
     const fileName = `${sopIdentifier}_${Date.now()}.${fileExtension}`;
-    const filePath = path.join(uploadsDir, fileName);
-    await writeFile(filePath, buffer);
-    console.log('✅ File saved:', fileName, 'in', sanitizedDept);
+    let fileUrl: string;
 
-    const fileUrl = `/uploads/sops/${sanitizedDept}/${fileName}`;
+    const useBunny = Boolean(
+      (process.env.BUNNY_STORAGE_ZONE || process.env.BUNNY_STORAGE_ZONE_NAME) &&
+      (process.env.BUNNY_STORAGE_PASSWORD || process.env.BUNNY_API_KEY) &&
+      (process.env.BUNNY_PULL_ZONE_URL || process.env.BUNNY_CDN_HOSTNAME)
+    );
+
+    if (useBunny) {
+      console.log('💾 Uploading to Bunny Storage...');
+      const bunnyPath = generateSOPDocumentPath(department, sopIdentifier, file.name || fileName);
+      const cdnUrl = await uploadToBunny(buffer, bunnyPath);
+      if (cdnUrl) {
+        fileUrl = cdnUrl;
+        console.log('✅ File stored in Bunny:', cdnUrl);
+      } else {
+        console.warn('⚠️ Bunny upload failed, falling back to local uploads/');
+        fileUrl = `/uploads/sops/${sanitizedDept}/${fileName}`;
+      }
+    } else {
+      fileUrl = `/uploads/sops/${sanitizedDept}/${fileName}`;
+      console.log('✅ Local file path (saved under project uploads/):', fileName);
+    }
+
+    const storedRemotely =
+      fileUrl.startsWith('http://') ||
+      fileUrl.startsWith('https://') ||
+      fileUrl.startsWith('bunny://');
+    if (!storedRemotely) {
+      try {
+        await persistUploadPath(fileUrl, buffer);
+      } catch (persistErr) {
+        console.error('⚠️ Failed to persist SOP file to disk:', persistErr);
+      }
+    }
 
     // Extract dates and metadata from content
     console.log('📅 Extracting dates from document...');
@@ -159,21 +194,16 @@ export async function POST(request: NextRequest) {
     
     let sop;
     if (overwrite) {
-      // Find and update existing SOP by identifier or name to preserve history
-      // Prioritize identifier match
+      // Find and update existing SOP by identifier AND language so Gujarati never overwrites English
       sop = await SOP.findOneAndUpdate(
-        { 
-           $or: [
-             { identifier: sopIdentifier },
-             { name: sopName }
-           ]
-        },
+        { identifier: sopIdentifier, language: language },
         {
           name: sopName,
           identifier: sopIdentifier,
           department: department,
           fileUrl,
           fileType,
+          originalFileName: file.name,
           content: parsed.content,
           language: language,
           checksum: checksum,
@@ -198,6 +228,7 @@ export async function POST(request: NextRequest) {
         department: department,
         fileUrl,
         fileType,
+        originalFileName: file.name,
         content: parsed.content,
         language: language,
         checksum: checksum,
@@ -248,6 +279,7 @@ export async function POST(request: NextRequest) {
         identifier: sop.identifier,
         status: sop.status,
         wordCount: sop.metadata?.wordCount,
+        language: sop.language,
       },
     };
     

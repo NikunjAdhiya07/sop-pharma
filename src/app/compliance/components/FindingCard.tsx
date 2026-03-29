@@ -108,8 +108,12 @@ export default function FindingCard({
   onToggleApplicable,
   isApplicable = false,
 }: FindingCardProps) {
-  const severityStyle = severityConfig[severity];
-  const statusStyle = statusConfig[status];
+  // Normalise status key: AI sometimes returns "non_compliant" or "notApplicable" variants
+  const normStatus = (status || '')
+    .toLowerCase()
+    .replace(/_/g, '-') as keyof typeof statusConfig;
+  const severityStyle = severityConfig[severity as keyof typeof severityConfig] ?? severityConfig.informational;
+  const statusStyle  = statusConfig[normStatus] ?? statusConfig.partial;
   const [guidelineExpanded, setGuidelineExpanded] = useState(false);
 
   // Helper to get breadcrumb from reference

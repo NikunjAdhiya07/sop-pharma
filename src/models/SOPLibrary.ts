@@ -62,6 +62,8 @@ export interface ISOPLibrary extends Document {
   folderPath?: string;
   parentFolder?: string;
   subfolderLevel?: number;
+  /** Physical / logical location — optional; dashboard registry + Excel import */
+  location?: string;
   
   createdAt: Date;
   updatedAt: Date;
@@ -185,6 +187,10 @@ const SOPLibrarySchema = new Schema<ISOPLibrary>({
   departmentCode: {
     type: String,
     required: true,
+    trim: true,
+  },
+  location: {
+    type: String,
     trim: true,
   },
   mcqBankId: {

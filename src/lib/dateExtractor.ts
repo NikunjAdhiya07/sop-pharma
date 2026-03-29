@@ -15,34 +15,55 @@ interface ExtractedDates {
  */
 function parseSOPDate(dateStr: string): Date | null {
   if (!dateStr) return null;
-
-  // Remove common prefixes
   dateStr = dateStr.trim();
 
-  // Try different date formats
+  // Handle textual months like 12 May 2023 or 12-May-2023
+  const textMonthMatch = dateStr.match(/(\d{1,2})[\s\-\.\/]+([a-zA-Z]{3,9})[\s\-\.\/]+(\d{2,4})/);
+  if (textMonthMatch) {
+    const day = parseInt(textMonthMatch[1], 10);
+    const monthStr = textMonthMatch[2].toLowerCase();
+    let year = parseInt(textMonthMatch[3], 10);
+    if (year < 100) year += 2000;
+
+    const monthMap: Record<string, number> = {
+      jan: 0, january: 0,
+      feb: 1, february: 1,
+      mar: 2, march: 2,
+      apr: 3, april: 3,
+      may: 4,
+      jun: 5, june: 5,
+      jul: 6, july: 6,
+      aug: 7, august: 7,
+      sep: 8, september: 8,
+      oct: 9, october: 9,
+      nov: 10, november: 10,
+      dec: 11, december: 11
+    };
+
+    const monthNum = Object.keys(monthMap).find(k => monthStr.startsWith(k));
+    if (monthNum !== undefined) {
+      const date = new Date(year, monthMap[monthNum], day);
+      if (!isNaN(date.getTime())) return date;
+    }
+  }
+
+  // numeric formats
   const formats = [
-    // DD/MM/YYYY
-    /(\d{1,2})\/(\d{1,2})\/(\d{4})/,
-    // DD-MM-YYYY
-    /(\d{1,2})-(\d{1,2})-(\d{4})/,
-    // YYYY-MM-DD
-    /(\d{4})-(\d{1,2})-(\d{1,2})/,
-    // DD.MM.YYYY
-    /(\d{1,2})\.(\d{1,2})\.(\d{4})/,
+    /(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4}|\d{2})/,
+    /(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/,
   ];
 
   for (const format of formats) {
     const match = dateStr.match(format);
     if (match) {
-      // Check if it's YYYY-MM-DD format
       if (match[1].length === 4) {
-        const date = new Date(`${match[1]}-${match[2]}-${match[3]}`);
+        const date = new Date(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10));
         if (!isNaN(date.getTime())) return date;
       } else {
-        // DD/MM/YYYY or DD-MM-YYYY format
-        const day = parseInt(match[1]);
-        const month = parseInt(match[2]) - 1; // JS months are 0-indexed
-        const year = parseInt(match[3]);
+        const day = parseInt(match[1], 10);
+        const month = parseInt(match[2], 10) - 1;
+        let year = parseInt(match[3], 10);
+        if (year < 100) year += 2000;
         const date = new Date(year, month, day);
         if (!isNaN(date.getTime())) return date;
       }
@@ -62,30 +83,39 @@ export function extractDatesFromContent(content: string): ExtractedDates {
   const normalizedContent = content.toLowerCase();
 
   // Common patterns for date fields in SOPs
+  // dateRegex: allow any whitespace incl. newlines between date parts, so table-cell boundary splits still match
+  const dateRegex = '([0-9]{1,2}[\\/\\-\\.\\s\\n]+(?:[0-9]{1,2}|[a-zA-Z]{3,9})[\\/\\-\\.\\s\\n]+(?:[0-9]{4}|[0-9]{2}))';
+  
   const patterns = {
     effective: [
-      // With colon or whitespace separator
-      /eff(?:ective)?\.?\s*date[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{4})/i,
-      // Table format without colon
-      /eff\.?\s+date\s+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{4})/i,
-      /effective\s*from[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{4})/i,
-      /date\s*of\s*issue[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{4})/i,
-      /issue\s*date[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{4})/i,
+      // Standard forms: EFF. DATE: / EFF DATE / EFFECTIVE DATE
+      new RegExp(`eff(?:ective)?\.?\\s*date[.:\\s]+${dateRegex}`, 'i'),
+      // Table split: "EFF. DATE" in one cell, date in next — flattened with space
+      new RegExp(`eff\.?\\s+dt\.?\\s+${dateRegex}`, 'i'),
+      new RegExp(`eff\.?\\s+date\.?\\s+${dateRegex}`, 'i'),
+      // Forms with colon or no separator
+      new RegExp(`effective\\s*from[.:\\s]+${dateRegex}`, 'i'),
+      new RegExp(`date\\s*of\\s*issue[.:\\s]+${dateRegex}`, 'i'),
+      new RegExp(`issue\\s*date[.:\\s]+${dateRegex}`, 'i'),
+      new RegExp(`date\\s*of\\s*implementation[.:\\s]+${dateRegex}`, 'i'),
     ],
     review: [
-      // With colon or whitespace separator
-      /review\.?\s*(?:dt|date)[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{4})/i,
-      // Table format without colon
-      /review\s+dt\.?\s+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{4})/i,
-      /next\s*review[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{4})/i,
-      /review\s*due[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{4})/i,
-      /date\s*of\s*review[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{4})/i,
+      // Standard: REVIEW DT. / REVIEW DATE
+      new RegExp(`review\.?\\s*(?:dt|date)\.?[.:\\s]+${dateRegex}`, 'i'),
+      // Table split: "REVIEW DT." in one cell, date in next
+      new RegExp(`review\\s+dt\.?\\s+${dateRegex}`, 'i'),
+      new RegExp(`review\\s+date\.?\\s+${dateRegex}`, 'i'),
+      new RegExp(`review\\s*dt\.?[:\\s]+${dateRegex}`, 'i'),
+      new RegExp(`next\\s*review[.:\\s]+${dateRegex}`, 'i'),
+      new RegExp(`review\\s*due[.:\\s]+${dateRegex}`, 'i'),
+      new RegExp(`date\\s*of\\s*review[.:\\s]+${dateRegex}`, 'i'),
+      new RegExp(`expir(?:y|ation)\.?\\s*date[.:\\s]+${dateRegex}`, 'i'),
     ],
     expiry: [
-      /expir(?:y|ation)\.?\s*date[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{4})/i,
-      /expiry\s+date\s+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{4})/i,
-      /valid\s*until[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{4})/i,
-      /valid\s+until\s+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{4})/i,
+      new RegExp(`expir(?:y|ation)\.?\\s*date[.:\\s]+${dateRegex}`, 'i'),
+      new RegExp(`expiry\\s+date\.?\\s+${dateRegex}`, 'i'),
+      new RegExp(`valid\\s*until[.:\\s]+${dateRegex}`, 'i'),
+      new RegExp(`valid\\s+until\\s+${dateRegex}`, 'i'),
     ],
     version: [
       /version[:\s]+([0-9]+\.?[0-9]*)/i,

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import PageHeader from '@/components/PageHeader';
+import DocxPreviewClient from '@/app/dashboard/components/DocxPreviewClient';
 import { ArrowLeft, FileText, Loader2, Download, Calendar, Hash } from 'lucide-react';
 
 interface MasterSOP {
@@ -34,8 +35,6 @@ export default function ViewDocumentPage() {
 
   const [sop, setSop] = useState<MasterSOP | null>(null);
   const [loading, setLoading] = useState(true);
-  const [documentContent, setDocumentContent] = useState<string>('');
-  const [loadingContent, setLoadingContent] = useState(false);
 
   useEffect(() => {
     if (sopId) {
@@ -58,8 +57,6 @@ export default function ViewDocumentPage() {
 
       if (data.success) {
         setSop(data.sop);
-        // Fetch document content
-        await fetchDocumentContent(data.sop.sopDocument.filePath);
       } else {
         console.error('[Frontend] API returned error:', data.error);
         alert(`Error: ${data.error}. Please check the console for details.`);
@@ -72,32 +69,18 @@ export default function ViewDocumentPage() {
     }
   };
 
-  const fetchDocumentContent = async (filePath: string) => {
-    try {
-      setLoadingContent(true);
-      console.log('Fetching document content from:', filePath);
-      const response = await fetch(`/api/files/view-docx?path=${encodeURIComponent(filePath)}`);
-      const data = await response.json();
-
-      console.log('Document content response:', data);
-
-      if (data.success) {
-        setDocumentContent(data.html);
-      } else {
-        console.error('Failed to load document:', data.error);
-      }
-    } catch (error) {
-      console.error('Error fetching document content:', error);
-    } finally {
-      setLoadingContent(false);
-    }
-  };
-
   const handleDownload = async () => {
     if (!sop) return;
     
     try {
-      const response = await fetch(`/api/files/download?path=${encodeURIComponent(sop.sopDocument.filePath)}`);
+      const dl = new URLSearchParams();
+      dl.set('path', sop.sopDocument.filePath);
+      dl.set('identifier', sop.sopIdentifier);
+      const response = await fetch(`/api/files/download?${dl.toString()}`);
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error || response.statusText);
+      }
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -217,23 +200,16 @@ export default function ViewDocumentPage() {
           </div>
         </div>
 
-        {/* Document Content */}
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-8">
-          {loadingContent ? (
-            <div className="flex items-center justify-center py-20">
-              <Loader2 className="h-12 w-12 text-green-400 animate-spin" />
-            </div>
-          ) : (
-            <div 
-              className="prose prose-invert prose-lg max-w-none"
-              dangerouslySetInnerHTML={{ __html: documentContent }}
-              style={{
-                color: '#e5e7eb',
-                fontSize: '16px',
-                lineHeight: '1.8'
-              }}
-            />
-          )}
+        {/* Document — Word Online / docx-preview (no plain-text HTML) */}
+        <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden p-2 sm:p-4">
+          <DocxPreviewClient
+            pathParam={sop.sopDocument.filePath}
+            identifierParam={sop.sopIdentifier}
+            languageParam="English"
+            layout="embedded"
+            backHref="/master-sop"
+            backLabel="Back to Master SOP"
+          />
         </div>
       </div>
     </div>

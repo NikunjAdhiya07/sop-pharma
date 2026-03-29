@@ -88,16 +88,29 @@ export async function GET(request: NextRequest) {
       return true;
     });
 
-    // Enhance each SOP with master repo data for consistent status calculation
+    // Enhance each SOP with master repo data and fix stale MCQ counts
     sopLibraries.forEach((sop: any) => {
       const masterData = masterRepoMap.get(sop.sopIdentifier?.toUpperCase());
       if (masterData?.metadata) {
-        // Attach master repo dates (these are the source of truth for SOP Monitoring)
         sop.masterRepoData = {
           reviewDate: masterData.metadata.reviewDate,
           expiryDate: masterData.metadata.expiryDate,
           version: masterData.metadata.version
         };
+      }
+
+      // Fix stale totalMCQs using actual mcqs array from populated mcqBankId
+      if (sop.mcqBankId && Array.isArray(sop.mcqBankId.mcqs)) {
+        const actualCount = sop.mcqBankId.mcqs.length;
+        sop.metadata = sop.metadata || {};
+        sop.metadata.totalMCQs = actualCount;
+        sop.completionStatus = sop.completionStatus || {};
+        sop.completionStatus.hasMCQs = actualCount > 0;
+      } else if (!sop.mcqBankId) {
+        sop.metadata = sop.metadata || {};
+        sop.metadata.totalMCQs = 0;
+        sop.completionStatus = sop.completionStatus || {};
+        sop.completionStatus.hasMCQs = false;
       }
     });
 

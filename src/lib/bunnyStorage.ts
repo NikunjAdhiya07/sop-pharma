@@ -6,10 +6,10 @@
  */
 
 // Environment variables should be set in .env.local:
-// BUNNY_STORAGE_ZONE_NAME - The storage zone name
-// BUNNY_API_KEY - The API key for storage operations
-// BUNNY_CDN_HOSTNAME - The CDN hostname (e.g., your-zone.b-cdn.net)
-// BUNNY_STORAGE_HOSTNAME - Usually storage.bunnycdn.com
+// BUNNY_STORAGE_ZONE      - The storage zone name
+// BUNNY_STORAGE_PASSWORD  - The API/password key for storage operations
+// BUNNY_PULL_ZONE_URL     - The CDN pull zone URL (e.g. https://sop-pharma-indiana.b-cdn.net)
+// BUNNY_STORAGE_HOSTNAME  - Usually storage.bunnycdn.com
 
 interface BunnyConfig {
   storageZone: string;
@@ -19,10 +19,24 @@ interface BunnyConfig {
 }
 
 function getConfig(): BunnyConfig {
-  const storageZone = process.env.BUNNY_STORAGE_ZONE_NAME || '';
-  const apiKey = process.env.BUNNY_API_KEY || '';
-  const cdnHostname = process.env.BUNNY_CDN_HOSTNAME || '';
-  const storageHostname = process.env.BUNNY_STORAGE_HOSTNAME || 'storage.bunnycdn.com';
+  // Support both old and new env variable naming conventions
+  const storageZone =
+    process.env.BUNNY_STORAGE_ZONE ||
+    process.env.BUNNY_STORAGE_ZONE_NAME ||
+    '';
+  const apiKey =
+    process.env.BUNNY_STORAGE_PASSWORD ||
+    process.env.BUNNY_API_KEY ||
+    '';
+  // cdnHostname: accept full URL or just hostname
+  const rawCdn =
+    process.env.BUNNY_PULL_ZONE_URL ||
+    process.env.BUNNY_CDN_HOSTNAME ||
+    '';
+  // Strip protocol if a full URL was provided
+  const cdnHostname = rawCdn.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const storageHostname =
+    process.env.BUNNY_STORAGE_HOSTNAME || 'storage.bunnycdn.com';
 
   if (!storageZone || !apiKey || !cdnHostname) {
     console.warn('[BunnyStorage] Missing Bunny configuration in environment variables');
@@ -54,12 +68,14 @@ export function getBunnyCdnUrl(filePath: string): string {
  * Check if a file path is a Bunny Storage path (starts with bunny:// or is a full bunny URL)
  */
 export function isBunnyPath(filePath: string): boolean {
-  const config = getConfig();
-  return (
-    filePath.startsWith('bunny://') ||
-    filePath.includes(config.cdnHostname) ||
-    filePath.includes('b-cdn.net')
-  );
+  const t = (filePath || '').trim();
+  if (!t) return false;
+  if (t.startsWith('bunny://')) return true;
+  if (t.includes('b-cdn.net')) return true;
+  const { cdnHostname } = getConfig();
+  /** Empty hostname would make `.includes('')` true for every path — must guard. */
+  if (cdnHostname && t.includes(cdnHostname)) return true;
+  return false;
 }
 
 /**
@@ -71,7 +87,7 @@ export function extractBunnyPath(filePath: string): string {
   }
   
   const config = getConfig();
-  if (filePath.includes(config.cdnHostname)) {
+  if (config.cdnHostname && filePath.includes(config.cdnHostname)) {
     try {
       const url = new URL(filePath);
       return url.pathname.slice(1); // Remove leading slash
@@ -197,4 +213,46 @@ export function generateBunnyPath(
   const sanitizedName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
   
   return `sop-files/${sanitizedId}/${fileType}s/${timestamp}-${sanitizedName}`;
+}
+
+/**
+ * Generate path for SOP document uploads (department folders)
+ * e.g. sop-documents/QA/QAGE01-01_1730123456789.docx
+ */
+export function generateSOPDocumentPath(
+  department: string,
+  sopIdentifier: string,
+  fileName: string
+): string {
+  const sanitizedDept = department.replace(/[^a-zA-Z0-9-_]/g, '_');
+  const sanitizedId = sopIdentifier.replace(/[^a-zA-Z0-9-]/g, '_');
+  const timestamp = Date.now();
+  const ext = fileName.includes('.') ? fileName.split('.').pop() : 'docx';
+  return `sop-documents/${sanitizedDept}/${sanitizedId}_${timestamp}.${ext}`;
+}
+
+/**
+ * Fetch file content from Bunny (CDN URL or bunny:// path).
+ * Used by view-docx when the SOP file is stored in Bunny.
+ */
+export async function fetchBunnyFile(filePathOrUrl: string): Promise<Buffer | null> {
+  let url: string;
+  if (filePathOrUrl.startsWith('http://') || filePathOrUrl.startsWith('https://')) {
+    url = filePathOrUrl;
+  } else if (filePathOrUrl.startsWith('bunny://')) {
+    const path = filePathOrUrl.replace(/^bunny:\/\//, '');
+    url = getBunnyCdnUrl(path);
+  } else {
+    url = getBunnyCdnUrl(filePathOrUrl);
+  }
+  if (!url) return null;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(120_000) });
+    if (!res.ok) return null;
+    const ab = await res.arrayBuffer();
+    return Buffer.from(ab);
+  } catch (err) {
+    console.error('[BunnyStorage] fetchBunnyFile error:', err);
+    return null;
+  }
 }

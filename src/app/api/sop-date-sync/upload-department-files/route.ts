@@ -462,9 +462,10 @@ function parseSOPDatesFromContent(content: string, department: string): Array<{
         
         // Match Effective Date column
         if ((lowerPart.includes('effective') && lowerPart.includes('date')) ||
-            lowerPart === 'effective date' || lowerPart === 'eff. date' || lowerPart === 'eff date') {
+            lowerPart === 'effective date' || lowerPart === 'eff. date' || lowerPart === 'eff date' ||
+            (lowerPart.includes('issue') && lowerPart.includes('date')) || lowerPart === 'date of issue') {
           effectiveDateColIndex = idx;
-          console.log(`  ✓ Effective Date column at index ${idx}`);
+          console.log(`  ✓ Effective Date/Issue Date column at index ${idx}`);
         }
         
         // Match Review Date column

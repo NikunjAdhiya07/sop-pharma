@@ -30,27 +30,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`🔄 Regenerating MCQs for: ${sop.name} (${sop.language})`);
+    const bankLanguage = sop.language || 'English';
+    console.log(`🔄 Regenerating ${bankLanguage} MCQs for: ${sop.name} (${sop.language})`);
 
-    // Delete existing MCQ bank
-    const existingBank = await MCQBank.findOne({ sopId: sop._id });
+    // Delete only the MCQ bank for this SOP's language so English and Gujarati banks coexist
+    const existingBank = await MCQBank.findOne({ sopId: sop._id, language: bankLanguage });
     if (existingBank) {
-      console.log(`🗑️ Deleting existing MCQ bank with ${existingBank.totalQuestions} questions...`);
+      console.log(`🗑️ Deleting existing ${bankLanguage} MCQ bank with ${existingBank.totalQuestions} questions...`);
       await MCQBank.deleteOne({ _id: existingBank._id });
       
-      // Also update SOPLibrary to remove the MCQ bank reference
       await SOPLibrary.updateOne(
         { sopId: sop._id },
         { $unset: { mcqBankId: "" } }
       );
     }
 
-    // Add to queue for regeneration
-    console.log('🚀 Adding to MCQ generation queue...');
+    // Add to queue for regeneration (same language only)
+    console.log(`🚀 Adding to MCQ generation queue (${bankLanguage})...`);
     mcqQueue.addTask({
       sopId: sop._id.toString(),
       targetCount: 100,
       priority: 10,
+      language: bankLanguage,
     });
 
     // Start the queue
@@ -59,8 +60,8 @@ export async function POST(request: NextRequest) {
     // Wait for completion
     await mcqQueue.waitForTask(sop._id.toString());
 
-    // Fetch the newly generated bank
-    const newBank = await MCQBank.findOne({ sopId: sop._id });
+    // Fetch the newly generated bank (same language)
+    const newBank = await MCQBank.findOne({ sopId: sop._id, language: bankLanguage });
 
     if (!newBank) {
       return NextResponse.json(

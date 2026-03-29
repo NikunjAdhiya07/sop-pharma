@@ -182,6 +182,7 @@ interface SOPNode {
   sopCode: string;
   sopName: string;
   sopFileUrl: string;
+  sopFileUrlGujarati?: string;
   sopFileType: "pdf" | "docx";
   mcqBanks: any[];
   totalQuestions: number;
@@ -823,20 +824,33 @@ export default function MCQTreeView({
           </div>
         )}
 
-      {/* Departments Grid - 4 columns for compact view */}
+      {/* Department capsules: use full tree for accurate, unfiltered totals */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {filteredTree.map((dept) => {
+        {tree.map((dept) => {
           const theme = getDeptTheme(dept.name);
+          const subcategoryCount = dept.subcategories?.length ?? 0;
+          const totalSOPs = dept.totalSOPs ?? dept.subcategories?.reduce(
+            (acc, sub) => acc + (sub.sops?.length ?? 0),
+            0
+          ) ?? 0;
+          const totalQuestions = dept.totalQuestions ?? dept.subcategories?.reduce(
+            (acc, sub) => acc + (sub.totalQuestions ?? sub.sops?.reduce((s, sop) => s + (sop.totalQuestions ?? 0), 0) ?? 0),
+            0
+          ) ?? 0;
+          const normalizedKey = normalizeDepartmentName(dept.name).toLowerCase();
+          const trainerName =
+            trainerMappings[normalizedKey] ||
+            trainerMappings[dept.name.toLowerCase()] ||
+            trainerMappings[dept.name];
 
           return (
             <div
               key={dept.name}
               className={`rounded-xl border border-white/5 ${theme.borderHover} bg-gradient-to-br ${theme.subcatBg} transition-all duration-300 transform hover:scale-[1.03] shadow-lg hover:shadow-xl overflow-hidden cursor-pointer group`}
             >
-              {/* Department Header */}
               <button
                 onClick={() => setFullScreenDept(dept)}
-                className={`w-full px-4 py-4 flex flex-col gap-3 bg-transparent transition-all`}
+                className="w-full px-4 py-4 flex flex-col gap-3 bg-transparent transition-all text-left"
               >
                 <div className="flex items-center justify-between w-full">
                   <div className="flex items-center gap-3">
@@ -845,7 +859,7 @@ export default function MCQTreeView({
                     >
                       <Folder className="h-5 w-5" />
                     </div>
-                    <div className="text-left">
+                    <div>
                       <h3
                         className={`text-base font-bold text-white ${theme.textHover} transition-colors`}
                       >
@@ -853,37 +867,25 @@ export default function MCQTreeView({
                       </h3>
                       <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                         <p className="text-[10px] text-gray-400">
-                          {dept.subcategories.length} Subcategor
-                          {dept.subcategories.length !== 1 ? "ies" : "y"}
+                          {subcategoryCount} Subcategor
+                          {subcategoryCount !== 1 ? "ies" : "y"}
                         </p>
-                        {(() => {
-                          const normalizedKey = normalizeDepartmentName(
-                            dept.name,
-                          ).toLowerCase();
-                          const trainerName =
-                            trainerMappings[normalizedKey] ||
-                            trainerMappings[dept.name.toLowerCase()] ||
-                            trainerMappings[dept.name];
-                          if (!trainerName) return null;
-                          return (
-                            <div className="flex items-center gap-1.5">
-                              <span className="h-1 w-1 rounded-full bg-gray-600" />
-                              <div
-                                className={`px-1.5 py-0.5 rounded border ${theme.badge} text-[8px] font-black uppercase tracking-wider animate-in fade-in zoom-in duration-500`}
-                              >
-                                <span className="opacity-60 mr-1">
-                                  Trainer:
-                                </span>
-                                {trainerName}
-                              </div>
+                        {trainerName && (
+                          <div className="flex items-center gap-1.5">
+                            <span className="h-1 w-1 rounded-full bg-gray-600" />
+                            <div
+                              className={`px-1.5 py-0.5 rounded border ${theme.badge} text-[8px] font-black uppercase tracking-wider`}
+                            >
+                              <span className="opacity-60 mr-1">Trainer:</span>
+                              {trainerName}
                             </div>
-                          );
-                        })()}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
                   <div
-                    className={`h-6 w-6 rounded-full flex items-center justify-center border border-white/10 ${theme.text}`}
+                    className={`h-6 w-6 rounded-full flex items-center justify-center border border-white/10 ${theme.text} flex-shrink-0`}
                   >
                     <ChevronRight className="h-3 w-3" />
                   </div>
@@ -892,20 +894,20 @@ export default function MCQTreeView({
                 <div className="grid grid-cols-2 gap-2 w-full mt-1">
                   <div className="bg-black/20 rounded-lg p-2 text-left">
                     <p className="text-gray-400 text-[9px] uppercase tracking-wider font-medium mb-0.5">
-                      Total SOPs
+                      TOTAL SOPS
                     </p>
                     <span className="text-lg font-bold text-white leading-none">
-                      {dept.totalSOPs}
+                      {totalSOPs}
                     </span>
                   </div>
                   <div className="bg-black/20 rounded-lg p-2 text-left">
                     <p className="text-gray-400 text-[9px] uppercase tracking-wider font-medium mb-0.5">
-                      Questions
+                      QUESTIONS
                     </p>
                     <span
                       className={`text-lg font-bold leading-none ${theme.text}`}
                     >
-                      {dept.totalQuestions}
+                      {totalQuestions}
                     </span>
                   </div>
                 </div>

@@ -11,6 +11,18 @@ export async function POST(request: NextRequest) {
   try {
     await connectDB();
 
+    let bodyLanguage: 'English' | 'Gujarati' | undefined;
+    try {
+      const rawText = await request.text();
+      if (rawText) {
+        const body = JSON.parse(rawText);
+        bodyLanguage = body.language;
+      }
+    } catch (e) {
+      console.warn('⚠️ Could not parse request body for language:', e);
+    }
+    console.log(`🌐 Bulk process language from request body: "${bodyLanguage || 'not provided'}"`);
+
     const filesDir = path.join(process.cwd(), 'files');
     
     // Read all files from the files directory
@@ -112,21 +124,25 @@ export async function POST(request: NextRequest) {
             const { extractDatesFromContent } = await import('@/lib/dateExtractor');
             const extractedDates = extractDatesFromContent(content);
 
-            // Check if SOP already exists
-            let sop = await SOP.findOne({ identifier: sopIdentifier });
-            
+            // Resolve language so Gujarati uploads don't overwrite English SOPs
+            const effectiveLanguage = bodyLanguage || 'English';
+            console.log(`🌐 Effective language for "${sopName}": ${effectiveLanguage} (body=${bodyLanguage})`);
+
+            // Find or create SOP by identifier AND language so English and Gujarati coexist
+            let sop = await SOP.findOne({ identifier: sopIdentifier, language: effectiveLanguage });
+
             if (!sop) {
-              // Create new SOP
+              // Create new SOP for this language (keeps English SOP intact when adding Gujarati)
               sop = await SOP.create({
                 name: sopName,
                 identifier: sopIdentifier,
                 department: department,
+                language: effectiveLanguage,
                 fileUrl: `/files/${fileName}`,
                 fileType: ext === 'doc' ? 'docx' : ext,
                 content: content,
                 status: 'processing',
                 mcqCount: 0,
-                // Add extracted dates
                 effectiveDate: extractedDates.effectiveDate,
                 reviewDate: extractedDates.reviewDate,
                 expiryDate: extractedDates.expiryDate,
@@ -136,11 +152,11 @@ export async function POST(request: NextRequest) {
                   wordCount: wordCount,
                 },
               });
+              console.log(`📝 Created new ${effectiveLanguage} SOP for: ${sopName}`);
             } else {
-              // Update existing SOP
+              // Update existing SOP for this language only
               sop.status = 'processing';
               sop.content = content;
-              // Update dates if extracted
               if (extractedDates.effectiveDate) sop.effectiveDate = extractedDates.effectiveDate;
               if (extractedDates.reviewDate) sop.reviewDate = extractedDates.reviewDate;
               if (extractedDates.expiryDate) sop.expiryDate = extractedDates.expiryDate;
@@ -150,19 +166,18 @@ export async function POST(request: NextRequest) {
                 wordCount: wordCount,
               };
               await sop.save();
+              console.log(`🔄 Updated existing ${effectiveLanguage} SOP for: ${sopName}`);
             }
 
-            // Check if MCQ bank already exists
-            let existingBank = await MCQBank.findOne({ sopId: sop._id });
+            // Check if MCQ bank already exists for this SOP + language combo
+            let existingBank = await MCQBank.findOne({ sopId: sop._id, language: effectiveLanguage });
             let existingQuestions: string[] = [];
-            let isFirstBatch = true;
 
             if (existingBank) {
               existingQuestions = existingBank.mcqs.map(m => m.question);
-              isFirstBatch = false;
-              console.log(`🔄 Regenerating MCQs for: ${sopName}. Current count: ${existingQuestions.length}`);
+              console.log(`🔄 Regenerating ${effectiveLanguage} MCQs for: ${sopName}. Current count: ${existingQuestions.length}`);
             } else {
-              console.log(`📝 Will create MCQ bank with first batch for: ${sopName}`);
+              console.log(`📝 Will create ${effectiveLanguage} MCQ bank for: ${sopName}`);
             }
 
             // Generate MCQs using Gemini with incremental saving callback
@@ -172,12 +187,12 @@ export async function POST(request: NextRequest) {
               sopIdentifier: sopIdentifier,
               existingQuestions: existingQuestions,
               isBulk: true,
-              language: sop.language || 'English',
+              language: effectiveLanguage,
               onBatchComplete: async (batchMcqs: any[]) => {
                 // Save each batch immediately to the database
                 if (batchMcqs.length > 0) {
-                  // Reload the bank to get the latest version
-                  const currentBank = await MCQBank.findOne({ sopId: sop._id });
+                  // Reload the bank to get the latest version (match by language)
+                  const currentBank = await MCQBank.findOne({ sopId: sop._id, language: effectiveLanguage });
                   
                   if (!currentBank) {
                     // First batch - create the bank
@@ -194,7 +209,7 @@ export async function POST(request: NextRequest) {
                         hard: batchMcqs.filter(m => m.difficulty === 'Hard').length,
                       },
                       aiModel: 'gemini-3-pro-preview',
-                      language: sop.language || 'English',
+                      language: effectiveLanguage,
                     });
                     console.log(`💾 Created MCQ bank with first batch of ${batchMcqs.length} MCQs`);
                   } else {
@@ -226,7 +241,7 @@ export async function POST(request: NextRequest) {
 
                   // Send real-time chunk progress update to client
                   try {
-                    const updatedBank = await MCQBank.findOne({ sopId: sop._id });
+                    const updatedBank = await MCQBank.findOne({ sopId: sop._id, language: effectiveLanguage });
                     const chunkProgress = {
                       total: sopFiles.length,
                       completed,
@@ -251,7 +266,7 @@ export async function POST(request: NextRequest) {
             });
 
             // Check if we got any MCQs at all
-            const finalBank = await MCQBank.findOne({ sopId: sop._id });
+            const finalBank = await MCQBank.findOne({ sopId: sop._id, language: effectiveLanguage });
             if (!finalBank || finalBank.mcqs.length === 0) {
               console.warn(`⚠️ No MCQs generated for ${sopName}. All batches may have failed.`);
               throw new Error(`Failed to generate any MCQs. All batches encountered errors.`);

@@ -31,6 +31,8 @@ export interface ISOP extends Document {
   parentFolder?: string; // Immediate parent folder name
   subfolderLevel?: number; // Depth in folder hierarchy (0 = department root)
   originalFileName?: string; // Original DOCX filename before processing
+  /** Physical / logical location (building, area) — optional; can be bulk-set via Excel import */
+  location?: string;
   
   // Legacy Compliance Tracking (keeping for backward compatibility)
   validityPeriod?: number; // in months (e.g., 12, 24, 36)
@@ -162,6 +164,10 @@ const SOPSchema = new Schema<ISOP>({
     default: 0,
   },
   originalFileName: {
+    type: String,
+    trim: true,
+  },
+  location: {
     type: String,
     trim: true,
   },

@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
   try {
     await connectDB();
 
-    const { sopId, mcqBankId, targetCount, userInfo, sopIdentifier } = await request.json();
+    const { sopId, mcqBankId, targetCount, userInfo, sopIdentifier, language } = await request.json();
 
     if (!sopId && !sopIdentifier) {
       return NextResponse.json(
@@ -66,6 +66,7 @@ export async function POST(request: NextRequest) {
         targetCount: targetCount || 100,
         mcqBankId: mcqBankId,
         priority: 10, // High priority for user-initiated clicks
+        language: language,
       });
       
       // Ensure the queue is running
@@ -75,8 +76,10 @@ export async function POST(request: NextRequest) {
     // Wait for the task to complete (either the one we added or the one already there)
     await mcqQueue.waitForTask(sopId);
 
-    // Fetch the final state of the bank
-    const finalBank = await MCQBank.findOne({ sopId: sop._id });
+    // Fetch the final state of the bank (prefer language match, fall back to any)
+    const effectiveLang = language || sop.language || 'English';
+    const finalBank = await MCQBank.findOne({ sopId: sop._id, language: effectiveLang })
+      || await MCQBank.findOne({ sopId: sop._id });
 
     if (!finalBank || finalBank.mcqs.length === 0) {
       // Check if SOP was marked as failed (content issue or AI issue)

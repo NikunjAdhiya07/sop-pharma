@@ -33,13 +33,26 @@ export async function GET(request: NextRequest) {
     // If ID is provided, fetch single entry
     if (id) {
       const sopLibrary = await SOPLibrary.findById(id)
-        .populate('mcqBankId', 'totalQuestions difficultyDistribution');
+        .populate('mcqBankId', 'totalQuestions difficultyDistribution mcqs')
+        .lean() as any;
 
       if (!sopLibrary) {
         return NextResponse.json(
           { success: false, error: 'SOP Library entry not found' },
           { status: 404 }
         );
+      }
+
+      // Fix stale totalMCQs
+      if (sopLibrary.mcqBankId && Array.isArray(sopLibrary.mcqBankId.mcqs)) {
+        const actualCount = sopLibrary.mcqBankId.mcqs.length;
+        sopLibrary.metadata = sopLibrary.metadata || {};
+        sopLibrary.metadata.totalMCQs = actualCount;
+        sopLibrary.mcqBankId.totalQuestions = actualCount;
+        delete sopLibrary.mcqBankId.mcqs;
+      } else if (!sopLibrary.mcqBankId) {
+        sopLibrary.metadata = sopLibrary.metadata || {};
+        sopLibrary.metadata.totalMCQs = 0;
       }
 
       return NextResponse.json({
@@ -90,12 +103,27 @@ export async function GET(request: NextRequest) {
     }
 
     const sopLibraries = await SOPLibrary.find(query)
-      .populate('mcqBankId', 'totalQuestions difficultyDistribution')
+      .populate('mcqBankId', 'totalQuestions difficultyDistribution mcqs')
       .populate('sopId', 'reviewDate expiryDate version')
-      .sort({ department: 1, sopIdentifier: 1 });
+      .sort({ department: 1, sopIdentifier: 1 })
+      .lean();
+
+    // Fix stale totalMCQs by computing from actual mcqs array
+    for (const sop of sopLibraries as any[]) {
+      if (sop.mcqBankId && Array.isArray(sop.mcqBankId.mcqs)) {
+        const actualCount = sop.mcqBankId.mcqs.length;
+        sop.metadata = sop.metadata || {};
+        sop.metadata.totalMCQs = actualCount;
+        sop.mcqBankId.totalQuestions = actualCount;
+        delete sop.mcqBankId.mcqs;
+      } else if (!sop.mcqBankId) {
+        sop.metadata = sop.metadata || {};
+        sop.metadata.totalMCQs = 0;
+      }
+    }
 
     // Organize by department
-    const organized = organizeFolderStructure(sopLibraries);
+    const organized = organizeFolderStructure(sopLibraries as any[]);
 
     // Get unique departments
     const departments = [...new Set(sopLibraries.map(sop => sop.department))].sort();

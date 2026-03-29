@@ -217,26 +217,50 @@ export async function POST(request: NextRequest) {
               throw new Error(`Insufficient content. Only ${wordCount} words (${trimmedContent.length} chars) found. Minimum ${minWords} words or ${minChars} characters required.`);
             }
 
-            // Extract SOP ID from filename
-            const sopIdResult = extractSOPIdFromFilename(file.name);
-            let sopIdentifier = sopIdResult.identifier;
+            // ── Step 1: Extract SOP identifier + dates from the DOCX header table ──
+            // This is the most reliable source — reads "SOP NO." cell directly from
+            // the Word XML, so a misnamed file (QAGE28-10.docx whose header says
+            // QAGE21-05) gets the correct identifier stored in the DB.
+            const { extractSOPHeaderTableData } = await import('@/lib/docxHeaderExtractor');
+            const headerData = await extractSOPHeaderTableData(buffer);
 
-            // If no valid identifier found, try to extract from content
-            if (!sopIdentifier || !isValidSOPIdentifier(sopIdentifier)) {
+            let sopIdentifier: string | null = null;
+
+            if (headerData.sopNo && isValidSOPIdentifier(headerData.sopNo)) {
+              sopIdentifier = headerData.sopNo;
+              console.log(`  ✅ SOP NO from document header: ${sopIdentifier}`);
+            }
+
+            // ── Step 2: Fall back to filename-based extraction ────────────────────
+            if (!sopIdentifier) {
+              const sopIdResult = extractSOPIdFromFilename(file.name);
+              if (sopIdResult.identifier && isValidSOPIdentifier(sopIdResult.identifier)) {
+                sopIdentifier = sopIdResult.identifier;
+                console.log(`  ℹ️  SOP ID from filename: ${sopIdentifier}`);
+              }
+            }
+
+            // ── Step 3: Fall back to full-text content extraction ─────────────────
+            if (!sopIdentifier) {
               const { extractSOPIdentifier } = await import('@/lib/dateExtractor');
               const contentId = extractSOPIdentifier(content);
               if (contentId && isValidSOPIdentifier(contentId)) {
                 sopIdentifier = contentId;
               } else {
-                // Fallback: generate from filename
+                // Final fallback: generate from filename words
                 const nameWithoutExt = file.name.replace(/\.(pdf|docx|doc)$/i, '');
                 const words = nameWithoutExt.split(/[\s_-]+/).filter(w => w.length > 0);
                 sopIdentifier = words.slice(0, 3).join('-').toUpperCase() || `SOP-${Date.now()}`;
               }
             }
 
-            // Extract dates and version from content
-            const extractedDates = extractDatesFromContent(content);
+            // ── Extract dates: prepend header table values so they win the regex ──
+            // If the header says "EFF. DATE 23/07/2022" and the body text has
+            // ambiguous dates, the header values (prepended here) will be matched first.
+            let contentForDates = content;
+            if (headerData.effDate) contentForDates = `EFF. DATE: ${headerData.effDate}\n${contentForDates}`;
+            if (headerData.reviewDate) contentForDates = `REVIEW DT.: ${headerData.reviewDate}\n${contentForDates}`;
+            const extractedDates = extractDatesFromContent(contentForDates);
 
             // Parse folder path info
             const folderInfo = parseFolderPath(folderPath);

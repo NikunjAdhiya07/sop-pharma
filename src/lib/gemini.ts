@@ -271,7 +271,7 @@ ${safeExistingQuestions.map(q => `- ${q}`).join('\n')}
 🔹 **ULTRA-STABLE MCQ GENERATOR [Batch ${batchIndex + 1}/${totalBatches}]**
 Model: gemini-3-pro-preview
 
-Objective: Generate EXACTLY ${batchCount} HIGH-QUALITY MCQs from the pharmaceutical SOP provided. Generate these MCQs in ${targetLanguage}.
+Objective: Generate EXACTLY ${batchCount} HIGH-QUALITY MCQs from the pharmaceutical SOP provided.${targetLanguage === 'Gujarati' ? ' ⚠️ OUTPUT LANGUAGE: GUJARATI (ગુજરાતી) ONLY. All text must be in Gujarati script.' : ' Output in English.'}
 
 📄 **SOP CONTEXT**
 Name: ${request.sopName}
@@ -281,7 +281,7 @@ Content: ${request.sopContent}
 ${forbiddenSection}
 
 🎯 **STRICT REQUIREMENTS:**
-1. 🌐 **LANGUAGE**: ${targetLanguage === 'Gujarati' ? 'Generate ALL content (questions, options, explanations, and SOP references) in GUJARATI language using proper Unicode characters. The SOP content is in Gujarati, and your output MUST also be in Gujarati.' : 'Generate everything in English.'}
+1. 🌐 **LANGUAGE**: ${targetLanguage === 'Gujarati' ? '⚠️ CRITICAL: Generate ALL content ENTIRELY in GUJARATI (ગુજરાતી) language. Every question, every option, every explanation, and every SOP reference MUST be written in Gujarati script (Unicode). Do NOT use English for any part of the MCQ content. Even if the SOP content is in English, translate and generate everything in Gujarati.' : 'Generate everything in English.'}
 2. Generate exactly ${batchCount} questions.
 3. Start every question with ⭐.
 4. Every question MUST have exactly 4 options.

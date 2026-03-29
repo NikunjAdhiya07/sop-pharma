@@ -355,15 +355,37 @@ export default function FolderUploadModal({ isOpen, onClose, onSuccess }: Folder
             <>
               {/* Instructions */}
               <div className="mb-6 bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
-                <h3 className="text-lg font-semibold text-blue-300 mb-2">📋 Instructions</h3>
-                <ul className="text-sm text-gray-300 space-y-1 list-disc list-inside">
-                  <li>Upload folders containing department subfolders (QA, QC, MICROBIOLOGY, etc.)</li>
-                  <li><strong>Only main SOP DOCX files will be uploaded</strong> (matching folder name)</li>
-                  <li>Annexures, references, and temporary files will be automatically skipped</li>
-                  <li>SOP IDs will be auto-extracted from filenames (e.g., QAGE01-10)</li>
-                  <li>Dates and versions will be extracted from DOCX content</li>
-                  <li>Folder structure will be preserved in the system</li>
-                </ul>
+                <h3 className="text-lg font-semibold text-blue-300 mb-3">📋 How to Upload Everything at Once</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Steps */}
+                  <div>
+                    <p className="text-sm font-semibold text-blue-200 mb-2">Steps:</p>
+                    <ol className="text-sm text-gray-300 space-y-1.5 list-decimal list-inside">
+                      <li>Click <strong>"Select Folder"</strong> (or drag &amp; drop)</li>
+                      <li>Choose your <strong>root SOP folder</strong> — the one that contains all department subfolders</li>
+                      <li>Hit <strong>Upload</strong> once — all departments processed automatically</li>
+                    </ol>
+                    <div className="mt-3 text-xs text-gray-400 space-y-0.5">
+                      <p>✅ Only main SOP DOCX files included (matching folder name)</p>
+                      <p>✅ Annexures &amp; temp files auto-skipped</p>
+                      <p>✅ SOP IDs, dates &amp; versions auto-extracted</p>
+                    </div>
+                  </div>
+                  {/* Folder structure example */}
+                  <div>
+                    <p className="text-sm font-semibold text-blue-200 mb-2">Expected folder structure:</p>
+                    <div className="bg-slate-900/60 rounded-lg p-3 font-mono text-xs text-gray-300 leading-relaxed">
+                      <span className="text-purple-400">📁 SOPs/</span> &nbsp;← <span className="text-amber-300">select this</span><br/>
+                      &nbsp;&nbsp;<span className="text-blue-300">📁 QA/</span><br/>
+                      &nbsp;&nbsp;&nbsp;&nbsp;📁 QAGE01-08/ → file.docx<br/>
+                      &nbsp;&nbsp;&nbsp;&nbsp;📁 QAGE01-09/ → file.docx<br/>
+                      &nbsp;&nbsp;<span className="text-blue-300">📁 QC/</span><br/>
+                      &nbsp;&nbsp;&nbsp;&nbsp;📁 QCMI02-01/ → file.docx<br/>
+                      &nbsp;&nbsp;<span className="text-blue-300">📁 Store/</span><br/>
+                      &nbsp;&nbsp;&nbsp;&nbsp;📁 STOR01-01/ → file.docx
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Language Selection */}
@@ -397,36 +419,65 @@ export default function FolderUploadModal({ isOpen, onClose, onSuccess }: Folder
                 </p>
               </div>
 
-              {/* Step 2: Drag & Drop Area */}
+              {/* Step 2: Upload Zone */}
               <div className="mb-4 flex items-center gap-2">
                 <span className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 text-sm">2</span>
-                <h3 className="text-lg font-semibold text-white">Upload Folder</h3>
+                <h3 className="text-lg font-semibold text-white">Select Your SOP Folder</h3>
               </div>
+
+              {/* Compact tip box */}
+              <div className="mb-4 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 flex items-start gap-3">
+                <span className="text-xl mt-0.5">💡</span>
+                <div className="text-sm text-amber-200">
+                  <span className="font-semibold">Select your root folder once</span> — the one that contains all department folders (QA, QC, Store, etc.).
+                  All sub-folders will be scanned automatically.
+                </div>
+              </div>
+
+              {/* Compact drag-drop + button row */}
               <div
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                className={`border-2 border-dashed rounded-xl p-12 text-center transition-all ${
+                className={`border-2 border-dashed rounded-xl transition-all ${
                   isDragging
                     ? 'border-purple-500 bg-purple-500/10'
                     : 'border-gray-600 hover:border-purple-500/50 hover:bg-white/5'
                 }`}
               >
-                <Upload className="h-16 w-16 text-purple-400 mx-auto mb-4" />
-                <p className="text-xl font-semibold text-white mb-2">
-                  Drag & Drop Folders Here
-                </p>
-                <p className="text-gray-400 mb-4">or</p>
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all"
-                >
-                  Browse Folders
-                </button>
+                <div className="flex items-center gap-4 p-5">
+                  {/* Icon */}
+                  <div className="flex-shrink-0 w-14 h-14 rounded-xl bg-purple-500/20 flex items-center justify-center">
+                    <Upload className="h-7 w-7 text-purple-400" />
+                  </div>
+
+                  {/* Text */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white font-semibold text-base">
+                      {isDragging ? '📂 Drop your folder here…' : 'Drag your root SOP folder here'}
+                    </p>
+                    <p className="text-gray-400 text-sm mt-0.5">
+                      e.g. the folder containing QA/, QC/, Store/, Engineering/ …
+                    </p>
+                  </div>
+
+                  {/* Action button */}
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex-shrink-0 flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all shadow-lg whitespace-nowrap"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+                    </svg>
+                    Select Folder
+                  </button>
+                </div>
+
+                {/* Hidden input — webkitdirectory reads entire tree */}
                 <input
                   ref={fileInputRef}
                   type="file"
-                  // @ts-ignore - webkitdirectory is not in types but works
+                  // @ts-ignore
                   webkitdirectory=""
                   directory=""
                   multiple

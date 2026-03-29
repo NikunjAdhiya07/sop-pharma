@@ -48,6 +48,14 @@ export async function GET(request: NextRequest) {
     const tree = buildMCQTreeStructure(sops as any, mcqBanks as any);
     let treeArray = getTreeAsArray(tree);
 
+    // Count SOPs actually shown (those with MCQs)
+    const sopsWithMcqs = treeArray.reduce(
+      (sum, dept) => sum + dept.subcategories.reduce(
+        (s: number, sub: any) => s + sub.sops.length, 0
+      ), 0
+    ) + tree.unorganized.totalSOPs;
+    console.log(`🔎 Filtered to ${sopsWithMcqs} SOPs with MCQs (excluded ${sops.length - sopsWithMcqs} SOPs without MCQs)`);
+
     // Apply department filter — skip for admin/qa-head (they see everything)
     const isRestricted = !isAdmin && allowedDepartments.length > 0 && allowedDepartments.length < 7;
     if (isRestricted) {
@@ -63,9 +71,12 @@ export async function GET(request: NextRequest) {
       unorganized: tree.unorganized,
       stats: {
         totalDepartments: treeArray.length,
-        totalSOPs: sops.length,
+        totalSOPs: sopsWithMcqs,          // Only SOPs that actually have MCQs
         totalMCQBanks: mcqBanks.length,
-        totalQuestions: mcqBanks.reduce((sum, bank) => sum + bank.totalQuestions, 0),
+        totalQuestions: mcqBanks.reduce((sum, bank) => {
+          const mcqsArr = (bank as any).mcqs;
+          return sum + (Array.isArray(mcqsArr) ? mcqsArr.length : (bank.totalQuestions || 0));
+        }, 0),
       },
       userAccess: {
         allowedDepartments,

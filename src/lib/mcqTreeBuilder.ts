@@ -9,6 +9,8 @@ export interface SOPNode {
   sopCode: string;
   sopName: string;
   sopFileUrl: string;
+  /** When this identifier has a Gujarati SOP, its document URL (so View opens correct language) */
+  sopFileUrlGujarati?: string;
   sopFileType: 'pdf' | 'docx';
   mcqBanks: IMCQBank[];
   totalQuestions: number;
@@ -148,7 +150,7 @@ export function getDepartmentForSubcategory(code: string): string {
     'ANNE': 'QA',  // Annexures typically fall under QA
   };
 
-  return subcategoryToDepartment[code] || 'QA'; // Default to QA if unknown
+  return subcategoryToDepartment[code] || ''; // Empty string = unknown → will be treated as unorganized
 }
 
 /**
@@ -239,28 +241,90 @@ export function buildMCQTreeStructure(
     }
   });
 
-  // Process each SOP
+  // Sort banks by language: English first, then Gujarati (so both appear in same SOP section)
+  const LANGUAGE_ORDER = { English: 0, Gujarati: 1 };
+  function sortBanksByLanguage(banks: IMCQBank[]): IMCQBank[] {
+    return [...banks].sort((a, b) => {
+      const langA = (a.language || 'English') as keyof typeof LANGUAGE_ORDER;
+      const langB = (b.language || 'English') as keyof typeof LANGUAGE_ORDER;
+      return (LANGUAGE_ORDER[langA] ?? 2) - (LANGUAGE_ORDER[langB] ?? 2);
+    });
+  }
+
+  // Group SOPs by identifier so one node per identifier shows English + Gujarati banks together
+  const sopsByIdentifier = new Map<string, ISOP[]>();
   sops.forEach(sop => {
-    const sopId = sop._id.toString();
-    const sopIdentifier = sop.identifier?.toUpperCase().trim();
-    const subcategoryCode = extractSubcategoryFromIdentifier(sop.identifier);
-    
-    // Try to get MCQ banks by sopId first, then fallback to identifier
-    let sopMCQBanks = mcqBanksBySopId.get(sopId) || [];
-    if (sopMCQBanks.length === 0 && sopIdentifier) {
-      sopMCQBanks = mcqBanksByIdentifier.get(sopIdentifier) || [];
+    const identifier = sop.identifier?.toUpperCase().trim();
+    if (identifier) {
+      if (!sopsByIdentifier.has(identifier)) {
+        sopsByIdentifier.set(identifier, []);
+      }
+      sopsByIdentifier.get(identifier)!.push(sop);
     }
-    const totalQuestions = sopMCQBanks.reduce((sum, bank) => sum + bank.totalQuestions, 0);
+  });
+
+  // Process each unique identifier (one node per SOP identifier; combines all language banks)
+  // IMPORTANT: Only include SOPs that have at least one MCQ bank generated
+  sopsByIdentifier.forEach((sopsWithId, sopIdentifier) => {
+    // Prefer English SOP for display (name, fileUrl, etc.)
+    const primarySop = sopsWithId.find(s => s.language === 'English') || sopsWithId[0];
+    const sopId = primarySop._id.toString();
+    const subcategoryCode = extractSubcategoryFromIdentifier(primarySop.identifier);
+
+    // Collect all MCQ banks for any SOP with this identifier (English + Gujarati)
+    const seenBankIds = new Set<string>();
+    const allBanksForIdentifier: IMCQBank[] = [];
+    for (const sop of sopsWithId) {
+      const sid = sop._id.toString();
+      const banksBySop = mcqBanksBySopId.get(sid) || [];
+      if (banksBySop.length === 0 && sopIdentifier) {
+        const byIdent = mcqBanksByIdentifier.get(sopIdentifier) || [];
+        for (const bank of byIdent) {
+          if (bank.sopId.toString() === sid && !seenBankIds.has(bank._id.toString())) {
+            seenBankIds.add(bank._id.toString());
+            allBanksForIdentifier.push(bank);
+          }
+        }
+      }
+      for (const bank of banksBySop) {
+        if (!seenBankIds.has(bank._id.toString())) {
+          seenBankIds.add(bank._id.toString());
+          allBanksForIdentifier.push(bank);
+        }
+      }
+    }
+    // Fallback: any bank with this identifier not yet included (e.g. orphaned by sopId)
+    const byIdent = mcqBanksByIdentifier.get(sopIdentifier) || [];
+    for (const bank of byIdent) {
+      if (!seenBankIds.has(bank._id.toString())) {
+        seenBankIds.add(bank._id.toString());
+        allBanksForIdentifier.push(bank);
+      }
+    }
+
+    // ── GATE: Skip SOPs with no MCQ banks at all ─────────────────────────────
+    if (allBanksForIdentifier.length === 0) return;
+
+    const sopMCQBanks = sortBanksByLanguage(allBanksForIdentifier);
+
+    const gujaratiSop = sopsWithId.find((s: any) => s.language === 'Gujarati');
+    const sopFileUrlGujarati = gujaratiSop?.fileUrl || undefined;
+
+    const totalQuestions = sopMCQBanks.reduce(
+      (sum, bank) => sum + (bank.mcqs?.length ?? bank.totalQuestions ?? 0),
+      0
+    );
     const checkedCount = sopMCQBanks.reduce((sum, bank) => sum + (bank.mcqs?.filter(q => q.isChecked).length || 0), 0);
     const reviewedCount = sopMCQBanks.reduce((sum, bank) => sum + (bank.mcqs?.filter(q => q.isReviewed).length || 0), 0);
     const similarCount = sopMCQBanks.reduce((sum, bank) => sum + (bank.mcqs?.filter(q => q.isSimilar).length || 0), 0);
 
     const sopNode: SOPNode = {
       sopId,
-      sopCode: sop.identifier,
-      sopName: sop.name,
-      sopFileUrl: sop.fileUrl,
-      sopFileType: sop.fileType,
+      sopCode: primarySop.identifier,
+      sopName: primarySop.name,
+      sopFileUrl: primarySop.fileUrl,
+      sopFileUrlGujarati,
+      sopFileType: primarySop.fileType,
       mcqBanks: sopMCQBanks,
       totalQuestions,
       checkedCount,
@@ -268,11 +332,16 @@ export function buildMCQTreeStructure(
       similarCount,
     };
 
-    // Determine correct department from subcategory code
-    // This ensures proper folder organization regardless of SOP's department field
     const correctDepartment = getDepartmentForSubcategory(subcategoryCode);
 
-    // Get or create department
+    // If the subcategory code is unknown (no mapping), add to unorganized instead of defaulting to QA
+    if (!correctDepartment) {
+      tree.unorganized.sops.push(sopNode);
+      tree.unorganized.totalSOPs++;
+      tree.unorganized.totalQuestions += totalQuestions;
+      return;
+    }
+
     if (!tree.departments.has(correctDepartment)) {
       tree.departments.set(correctDepartment, {
         name: correctDepartment,
@@ -283,7 +352,6 @@ export function buildMCQTreeStructure(
     }
     const dept = tree.departments.get(correctDepartment)!;
 
-    // Get or create subcategory
     if (!dept.subcategories.has(subcategoryCode)) {
       dept.subcategories.set(subcategoryCode, {
         code: subcategoryCode,
@@ -295,12 +363,10 @@ export function buildMCQTreeStructure(
     }
     const subcat = dept.subcategories.get(subcategoryCode)!;
 
-    // Add SOP to subcategory
     subcat.sops.push(sopNode);
     subcat.totalSOPs++;
     subcat.totalQuestions += totalQuestions;
 
-    // Update department totals
     dept.totalSOPs++;
     dept.totalQuestions += totalQuestions;
   });
@@ -312,6 +378,7 @@ export function buildMCQTreeStructure(
     
     if (!sopExists) {
       // This MCQ bank has no SOP - add to unorganized
+      const bankQuestionCount = bank.mcqs?.length ?? bank.totalQuestions ?? 0;
       const sopNode: SOPNode = {
         sopId,
         sopCode: bank.sopIdentifier,
@@ -319,7 +386,7 @@ export function buildMCQTreeStructure(
         sopFileUrl: '', // No file available
         sopFileType: 'pdf',
         mcqBanks: [bank],
-        totalQuestions: bank.totalQuestions,
+        totalQuestions: bankQuestionCount,
         checkedCount: bank.mcqs?.filter(q => q.isChecked).length || 0,
         reviewedCount: bank.mcqs?.filter(q => q.isReviewed).length || 0,
         similarCount: bank.mcqs?.filter(q => q.isSimilar).length || 0,
@@ -327,7 +394,7 @@ export function buildMCQTreeStructure(
 
       tree.unorganized.sops.push(sopNode);
       tree.unorganized.totalSOPs++;
-      tree.unorganized.totalQuestions += bank.totalQuestions;
+      tree.unorganized.totalQuestions += bankQuestionCount;
     }
   });
 

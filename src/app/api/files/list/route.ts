@@ -18,6 +18,8 @@ export async function GET(request: NextRequest) {
       fileName: sop.fileUrl ? sop.fileUrl.split('/').pop() || 'unknown' : 'unknown',
       sopName: sop.name,
       sopIdentifier: sop.identifier,
+      identifier: sop.identifier,
+      fileUrl: sop.fileUrl || '',
       department: sop.department,
       fileType: sop.fileType,
       fileSize: sop.metadata?.fileSize || 0,

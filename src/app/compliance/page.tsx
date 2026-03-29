@@ -278,10 +278,10 @@ function ConsolidatedSectionCard({ sec }: { sec: {
 
 export default function ComplianceEnginePage() {
   const router = useRouter();
-  
+
   // Workflow State
   const [currentStep, setCurrentStep] = useState<WorkflowStep>('fetch-sops');
-  
+
   // Data State
   const [folders, setFolders] = useState<GuidelineFolder[]>([]);
   const [guidelines, setGuidelines] = useState<Guideline[]>([]);

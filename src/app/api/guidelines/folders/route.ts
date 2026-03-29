@@ -3,6 +3,8 @@ import dbConnect from '@/lib/mongodb';
 import SOPGuideline from '@/models/SOPGuideline';
 import User from '@/models/User';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * API Endpoint: Guideline Folder Management
  * 

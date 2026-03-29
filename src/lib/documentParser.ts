@@ -9,39 +9,95 @@ export interface ParsedDocument {
   };
 }
 
+/** Placeholder text so bulk upload can store scanned PDFs / legacy .doc / thin annexures while still passing validation. */
+export function buildStubParsedDocument(args: {
+  fileName: string;
+  sopIdentifier: string;
+  sopName: string;
+  note: string;
+  pageCount?: number;
+}): ParsedDocument {
+  const content = [
+    'Standard Operating Procedure record',
+    `Title: ${args.sopName}`,
+    `Identifier: ${args.sopIdentifier}`,
+    `Original file: ${args.fileName}`,
+    '',
+    'Indexing note:',
+    args.note,
+    '',
+    'The file was stored successfully and is available for download and preview.',
+    'Full-text search, MCQs, and AI features may be limited until you upload a searchable PDF or DOCX.',
+  ].join('\n');
+  const wordCount = content.split(/\s+/).filter((w) => w.length > 0).length;
+  return {
+    content,
+    metadata: {
+      wordCount,
+      ...(args.pageCount != null ? { pageCount: args.pageCount } : {}),
+    },
+  };
+}
+
+export type ParsePDFOptions = {
+  /**
+   * When true (e.g. bulk upload), do not throw on empty or very thin text;
+   * return empty/thin content so the caller can store a stub without a stack trace.
+   */
+  lenient?: boolean;
+};
+
 /**
  * Parse PDF file and extract text content
  */
-export async function parsePDF(buffer: Buffer): Promise<ParsedDocument> {
+export async function parsePDF(buffer: Buffer, opts?: ParsePDFOptions): Promise<ParsedDocument> {
+  const lenient = opts?.lenient === true;
   try {
     console.log('🔍 Starting PDF parsing...');
     console.log('📊 Buffer size:', buffer.length, 'bytes');
-    
-    // Parse the PDF
+
     const data = await pdfParse(buffer);
-    
+
     console.log('📄 PDF Info:', {
       pages: data.numpages,
       info: data.info,
       metadata: data.metadata,
     });
-    
+
     const content = data.text.trim();
-    const wordCount = content.split(/\s+/).filter(word => word.length > 0).length;
-    
+    const wordCount = content.split(/\s+/).filter((word) => word.length > 0).length;
+
     console.log('📝 Extracted text length:', content.length, 'characters');
     console.log('📊 Word count:', wordCount);
     console.log('📋 First 200 chars:', content.substring(0, 200));
-    
-    // Check if content extraction was successful
+
     if (!content || content.length === 0) {
+      if (lenient) {
+        console.warn(
+          `[parsePDF] No selectable text (${data.numpages} page(s)) — lenient mode; caller should stub for indexing.`,
+        );
+        return {
+          content: '',
+          metadata: { pageCount: data.numpages, wordCount: 0 },
+        };
+      }
       console.error('❌ No text extracted from PDF');
-      throw new Error('PDF text extraction failed. This PDF might contain only scanned images. Please use a PDF with selectable text or convert scanned images to text using OCR.');
+      throw new Error(
+        'PDF text extraction failed. This PDF might contain only scanned images. Please use a PDF with selectable text or convert scanned images to text using OCR.',
+      );
     }
-    
+
     if (wordCount < 5) {
+      if (lenient) {
+        return {
+          content,
+          metadata: { pageCount: data.numpages, wordCount },
+        };
+      }
       console.error('❌ Very low word count:', wordCount);
-      throw new Error(`PDF contains only ${wordCount} word(s). This suggests the PDF might be scanned images or have text extraction issues. Please ensure the PDF has selectable text.`);
+      throw new Error(
+        `PDF contains only ${wordCount} word(s). This suggests the PDF might be scanned images or have text extraction issues. Please ensure the PDF has selectable text.`,
+      );
     }
     
     return {
@@ -160,10 +216,11 @@ export async function parseDOCX(buffer: Buffer): Promise<ParsedDocument> {
  */
 export async function parseDocument(
   buffer: Buffer,
-  fileType: 'pdf' | 'docx'
+  fileType: 'pdf' | 'docx',
+  pdfOpts?: ParsePDFOptions,
 ): Promise<ParsedDocument> {
   if (fileType === 'pdf') {
-    return parsePDF(buffer);
+    return parsePDF(buffer, pdfOpts);
   } else if (fileType === 'docx') {
     return parseDOCX(buffer);
   } else {

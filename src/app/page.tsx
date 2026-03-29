@@ -10,13 +10,17 @@ export default function Home() {
   useEffect(() => {
     // Check if user is logged in
     const userData = localStorage.getItem('user');
-    if (userData) {
-      // User is logged in, redirect to dashboard
-      router.push('/dashboard');
-    } else {
-      // User is not logged in, redirect to login
-      router.push('/login');
-    }
+    
+    // Defer the redirect to ensure Next.js router is fully initialized
+    setTimeout(() => {
+      if (userData) {
+        // User is logged in, redirect to dashboard
+        router.push('/dashboard');
+      } else {
+        // User is not logged in, redirect to login
+        router.push('/login');
+      }
+    }, 0);
   }, [router]);
 
   return (

@@ -183,8 +183,17 @@ const MCQBankSchema = new Schema<IMCQBank>({
   timestamps: true,
 });
 
+// Keep totalQuestions in sync with actual mcqs array length
+MCQBankSchema.pre('save', function(next) {
+  if (this.mcqs) {
+    this.totalQuestions = this.mcqs.length;
+  }
+  next();
+});
+
 // Indexes for efficient querying
 MCQBankSchema.index({ sopId: 1 });
+MCQBankSchema.index({ sopId: 1, language: 1 }); // English + Gujarati banks per SOP
 MCQBankSchema.index({ sopIdentifier: 1 });
 MCQBankSchema.index({ department: 1 });
 MCQBankSchema.index({ folderDepartment: 1 });

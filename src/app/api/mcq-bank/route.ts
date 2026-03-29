@@ -120,7 +120,7 @@ export async function GET(request: NextRequest) {
     // If summary mode, only fetch essential fields (no MCQ data needed, Mongoose is fine)
     if (summary) {
       const mcqBanks = await MCQBank.find(query)
-        .select('sopId sopIdentifier sopName department folderDepartment folderSubcategory totalQuestions difficultyDistribution createdAt')
+        .select('sopId sopIdentifier sopName department folderDepartment folderSubcategory totalQuestions difficultyDistribution language createdAt')
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
@@ -167,6 +167,13 @@ export async function GET(request: NextRequest) {
       const checkedCount = sample.mcqs?.filter((m: any) => m.isChecked).length || 0;
       console.log(`📝 Sample bank: ${sample.sopIdentifier}, folder: ${sample.folderDepartment}/${sample.folderSubcategory}, checked: ${checkedCount}/${sample.mcqs?.length || 0}`);
     }
+
+    // Fix stale totalQuestions to reflect actual mcqs count
+    mcqBanks.forEach((bank: any) => {
+      if (Array.isArray(bank.mcqs)) {
+        bank.totalQuestions = bank.mcqs.length;
+      }
+    });
 
     // Filter by difficulty if specified
     let filteredMCQBanks = mcqBanks;

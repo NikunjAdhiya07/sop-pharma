@@ -11,7 +11,8 @@ import {
   Database,
   Upload,
   FileText,
-  AlertTriangle
+  AlertTriangle,
+  Eye
 } from 'lucide-react';
 
 interface ProcessProgress {
@@ -31,21 +32,22 @@ export default function BulkProcessPage() {
   const [progress, setProgress] = useState<ProcessProgress | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [language, setLanguage] = useState<'English' | 'Gujarati'>('English');
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
     if (!userData) {
-      router.push('/login');
+      setTimeout(() => router.push('/login'), 0);
       return;
     }
 
     try {
       const user = JSON.parse(userData);
       if (user.role !== 'admin' && user.role !== 'qa-head' && user.role !== 'trainer') {
-        router.push('/dashboard');
+        setTimeout(() => router.push('/dashboard'), 0);
       }
     } catch (e) {
-      router.push('/login');
+      setTimeout(() => router.push('/login'), 0);
     }
   }, [router]);
 
@@ -74,6 +76,7 @@ export default function BulkProcessPage() {
         headers: {
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ language }),
       });
 
       if (!response.ok) {
@@ -295,9 +298,18 @@ export default function BulkProcessPage() {
                           <FileText className="h-4 w-4 text-green-400" />
                           <span className="text-white font-medium">{result.fileName}</span>
                         </div>
-                        <span className="text-green-300 text-sm font-semibold">
-                          {result.mcqCount} MCQs
-                        </span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-green-300 text-sm font-semibold">
+                            {result.mcqCount} MCQs
+                          </span>
+                          <button
+                            onClick={() => router.push(`/mcq-bank?sopId=${result.sopId}&lang=${language}`)}
+                            className="p-1.5 bg-purple-500/20 text-purple-300 rounded-lg hover:bg-purple-500/30 border border-purple-500/30 transition-all"
+                            title="View MCQs"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -331,8 +343,40 @@ export default function BulkProcessPage() {
             Bulk MCQ Generation
           </h2>
           <p className="text-gray-300 mb-6">
-            Process all DOC, DOCX, and PDF files from the "files" folder and generate approximately 100 MCQs from each file with full error checking and validation.
+            Process all DOC, DOCX, and PDF files from the &quot;files&quot; folder and generate approximately 100 MCQs from each file with full error checking and validation.
           </p>
+
+          {/* Language Selection */}
+          <div className="mb-6">
+            <label className="block text-sm font-semibold text-gray-300 mb-3">
+              MCQ Language
+            </label>
+            <div className="flex gap-4">
+              {(['English', 'Gujarati'] as const).map((lang) => (
+                <button
+                  key={lang}
+                  type="button"
+                  onClick={() => setLanguage(lang)}
+                  disabled={processing}
+                  className={`flex-1 py-4 px-6 rounded-xl border-2 transition-all flex items-center justify-center gap-3 disabled:opacity-50 ${
+                    language === lang
+                      ? 'border-purple-500 bg-purple-500/10 text-white shadow-lg shadow-purple-500/10'
+                      : 'border-white/10 bg-white/5 text-gray-400 hover:border-white/20 hover:text-gray-300'
+                  }`}
+                >
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                    language === lang ? 'border-purple-500 bg-purple-500' : 'border-slate-600'
+                  }`}>
+                    {language === lang && <div className="w-2 h-2 rounded-full bg-white" />}
+                  </div>
+                  <span className="font-bold text-lg">{lang}</span>
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-sm text-gray-400">
+              AI will generate MCQs in the selected language for all processed files.
+            </p>
+          </div>
 
           <button
             onClick={handleBulkProcess}

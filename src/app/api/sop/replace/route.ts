@@ -5,11 +5,11 @@ import MCQBank from '@/models/MCQBank';
 import ArchivedSOP from '@/models/ArchivedSOP';
 import ArchivedMCQBank from '@/models/ArchivedMCQBank';
 import { parseDocument, validateDocumentContent } from '@/lib/documentParser';
-import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
 import { Notification } from '@/models/Notification';
 import User from '@/models/User';
+import { persistUploadPath } from '@/lib/persistUploadPath';
 
 /**
  * Increments the SOP version.
@@ -159,19 +159,20 @@ export async function POST(request: NextRequest) {
     }
 
     // -----------------------------------------------
-    // 6. Save new file to disk
+    // 6. Local file path under uploads/ (for preview / download)
     // -----------------------------------------------
     const department = newDepartment || existingSOP.department;
     const sanitizedDept = department.replace(/[^a-zA-Z0-9-_]/g, '_');
-    const uploadsDir = path.join(process.cwd(), 'uploads', 'sops', sanitizedDept);
-    await mkdir(uploadsDir, { recursive: true });
 
     const sopIdentifier = newSopIdentifier || existingSOP.identifier;
     const fileName = `${sopIdentifier}_v${newVersion}_${Date.now()}.${fileExtension}`;
-    const filePath = path.join(uploadsDir, fileName);
-    await writeFile(filePath, buffer);
     const fileUrl = `/uploads/sops/${sanitizedDept}/${fileName}`;
-    console.log('✅ New file saved:', fileName);
+    try {
+      await persistUploadPath(fileUrl, buffer);
+      console.log('✅ SOP file saved to disk:', fileName);
+    } catch (persistErr) {
+      console.error('⚠️ Failed to persist replaced SOP file:', persistErr);
+    }
 
     // -----------------------------------------------
     // 7. Extract dates from new content

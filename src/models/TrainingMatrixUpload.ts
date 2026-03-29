@@ -1,0 +1,36 @@
+import mongoose, { Document, Schema } from 'mongoose';
+
+export interface ITrainingMatrixUpload extends Document {
+  department: string;
+  fileName: string;
+  fileType: 'main' | 'addendum';
+  month: number;
+  year: number;
+  monthName: string;
+  employeeCount: number;
+  sopCount: number;
+  recordsImported: number;
+  uploadedAt: Date;
+  uploadedBy?: string;
+}
+
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+const TrainingMatrixUploadSchema = new Schema<ITrainingMatrixUpload>({
+  department:      { type: String, required: true },
+  fileName:        { type: String, required: true },
+  fileType:        { type: String, enum: ['main','addendum'], default: 'main' },
+  month:           { type: Number, required: true, min: 1, max: 12 },
+  year:            { type: Number, required: true },
+  monthName:       { type: String, required: true },
+  employeeCount:   { type: Number, default: 0 },
+  sopCount:        { type: Number, default: 0 },
+  recordsImported: { type: Number, default: 0 },
+  uploadedAt:      { type: Date, default: Date.now },
+  uploadedBy:      { type: String },
+});
+
+TrainingMatrixUploadSchema.index({ department: 1, year: 1, month: 1 });
+
+export default mongoose.models.TrainingMatrixUpload ||
+  mongoose.model<ITrainingMatrixUpload>('TrainingMatrixUpload', TrainingMatrixUploadSchema);

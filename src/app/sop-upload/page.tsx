@@ -14,6 +14,7 @@ interface UploadResponse {
     identifier: string;
     status: string;
     wordCount: number;
+    language?: string;
   };
 }
 
@@ -23,7 +24,7 @@ export default function SOPUploadPage() {
   const [sopName, setSopName] = useState('');
   const [sopIdentifier, setSopIdentifier] = useState('');
   const [department, setDepartment] = useState('QA');
-  const [language, setLanguage] = useState<'English' | 'Gujarati'>('English');
+  const [language, setLanguage] = useState<'English' | 'Gujarati' | 'auto'>('auto');
   const [uploading, setUploading] = useState(false);
 
   const departments = [
@@ -336,29 +337,37 @@ export default function SOPUploadPage() {
               <label className="block text-white font-semibold mb-3 text-lg">
                 SOP Language
               </label>
-              <div className="flex gap-4">
-                {['English', 'Gujarati'].map((lang) => (
+              <div className="flex flex-col sm:flex-row gap-3">
+                {(
+                  [
+                    { key: 'auto' as const, label: 'Auto detect' },
+                    { key: 'English' as const, label: 'English' },
+                    { key: 'Gujarati' as const, label: 'Gujarati' },
+                  ] as const
+                ).map(({ key, label }) => (
                   <button
-                    key={lang}
+                    key={key}
                     type="button"
-                    onClick={() => setLanguage(lang as 'English' | 'Gujarati')}
-                    className={`flex-1 py-4 px-6 rounded-xl border-2 transition-all flex items-center justify-center gap-3 ${
-                      language === lang
+                    onClick={() => setLanguage(key)}
+                    className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all flex items-center justify-center gap-3 ${
+                      language === key
                         ? 'border-purple-500 bg-purple-500/10 text-white shadow-lg shadow-purple-500/10'
                         : 'border-white/10 bg-white/5 text-gray-400 hover:border-white/20 hover:text-gray-300'
                     }`}
                   >
-                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                      language === lang ? 'border-purple-500 bg-purple-500' : 'border-slate-600'
-                    }`}>
-                      {language === lang && <div className="w-2 h-2 rounded-full bg-white" />}
+                    <div
+                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                        language === key ? 'border-purple-500 bg-purple-500' : 'border-slate-600'
+                      }`}
+                    >
+                      {language === key && <div className="w-2 h-2 rounded-full bg-white" />}
                     </div>
-                    <span className="font-bold text-lg">{lang}</span>
+                    <span className="font-bold text-base text-left">{label}</span>
                   </button>
                 ))}
               </div>
               <p className="mt-2 text-sm text-gray-400">
-                💡 Tagging the language correctly ensures AI generates MCQs in the same language.
+                Auto uses Gujarati script in the file name or body to tag the record as Gujarati; otherwise English. MCQs follow the stored language.
               </p>
             </div>
 
@@ -418,9 +427,17 @@ export default function SOPUploadPage() {
                   <p className="text-gray-300 mb-1">
                     Identifier: <span className="font-mono text-green-300">{uploadedSOP.identifier}</span>
                   </p>
-                  <p className="text-gray-300">
-                    Word Count: <span className="font-semibold text-green-300">{uploadedSOP.wordCount.toLocaleString()}</span>
+                  <p className="text-gray-300 mb-1">
+                    Word Count:{' '}
+                    <span className="font-semibold text-green-300">
+                      {(uploadedSOP.wordCount ?? 0).toLocaleString()}
+                    </span>
                   </p>
+                  {uploadedSOP.language ? (
+                    <p className="text-gray-300">
+                      Language: <span className="font-semibold text-green-300">{uploadedSOP.language}</span>
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </div>
