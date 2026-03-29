@@ -71,7 +71,7 @@ function DepartmentTooltip({
   deptMode,
 }: {
   active?: boolean;
-  payload?: Array<{ payload?: Record<string, unknown> }>;
+  payload?: ReadonlyArray<{ payload?: Record<string, unknown> }>;
   label?: string;
   deptMode: "count" | "percent";
 }) {
