@@ -4,7 +4,7 @@ import {
   getOrigin,
   isOriginPublicForViewer,
   canOfficeOnlineFetchDocumentUrl,
-} from '@/app/api/files/open-in-viewer/route';
+} from '@/lib/viewerHelper';
 
 const OFFICE_VIEW = 'https://view.officeapps.live.com/op/view.aspx';
 const OFFICE_EMBED = 'https://view.officeapps.live.com/op/embed.aspx';

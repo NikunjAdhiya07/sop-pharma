@@ -1,0 +1,11 @@
+﻿.next/dev/types/app/api/files/open-in-viewer/route.ts(14,13): error TS2344: Type 'OmitWithTag<typeof import("C:/Users/rohth/OneDrive/Desktop/sop pharma/sop pharma/src/app/api/files/open-in-viewer/route"), "config" | "POST" | "PUT" | "DELETE" | "HEAD" | "PATCH" | "GET" | ... 9 more ... | "OPTIONS", "">' does not satisfy the constraint '{ [x: string]: never; }'.
+  Property 'getOrigin' is incompatible with index signature.
+    Type '(request: NextRequest) => string' is not assignable to type 'never'.
+src/app/dashboard/components/SOPFolderUploadModal.tsx(82,22): error TS2345: Argument of type '(value: void | PromiseLike<void>) => void' is not assignable to parameter of type 'ErrorCallback'.
+  Types of parameters 'value' and 'err' are incompatible.
+    Type 'DOMException' is not assignable to type 'void | PromiseLike<void>'.
+src/app/dashboard/components/UploadSOPModal.tsx(112,22): error TS2345: Argument of type '(value: void | PromiseLike<void>) => void' is not assignable to parameter of type 'ErrorCallback'.
+  Types of parameters 'value' and 'err' are incompatible.
+    Type 'DOMException' is not assignable to type 'void | PromiseLike<void>'.
+src/lib/documentParser.ts(141,15): error TS2339: Property 'extractAllDOCXContent' does not exist on type 'typeof import("C:/Users/rohth/OneDrive/Desktop/sop pharma/sop pharma/src/lib/docxHeaderExtractor")'.
+src/lib/documentParser.ts(147,56): error TS7006: Parameter 'w' implicitly has an 'any' type.

@@ -72,7 +72,7 @@ function DepartmentTooltip({
 }: {
   active?: boolean;
   payload?: ReadonlyArray<{ payload?: Record<string, unknown> }>;
-  label?: string;
+  label?: string | number;
   deptMode: "count" | "percent";
 }) {
   if (!active || !payload?.length) return null;

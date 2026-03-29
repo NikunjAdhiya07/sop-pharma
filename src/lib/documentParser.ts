@@ -144,7 +144,7 @@ export async function parseDOCX(buffer: Buffer): Promise<ParsedDocument> {
       
       // Safety check: If content is very short (likely only headers), try to append Mammoth content
       // A typical empty SOP with just headers might be very small, but a real SOP > 2KB should have body text.
-      const wordCount = xmlContent.split(/\s+/).filter(w => w.length > 0).length;
+      const wordCount = xmlContent.split(/\s+/).filter((w: string) => w.length > 0).length;
       
       // If we found very few words but the file is reasonably large, something is wrong
       if (wordCount < 20 && buffer.length > 2000) {

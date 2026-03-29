@@ -5,6 +5,21 @@ const RELS_HEADER =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/header';
 
 /**
+ * Extract body and header HTML then strip HTML tags to get pure document text.
+ */
+export async function extractAllDOCXContent(buffer: Buffer): Promise<string> {
+  const headerHtml = await extractHeaderHtmlFromDocx(buffer);
+  const bodyHtml = await extractDocumentBodyHtmlFromDocx(buffer);
+  
+  const strip = (html: string) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  
+  const headerText = strip(headerHtml);
+  const bodyText = strip(bodyHtml);
+  
+  return (headerText + '\n\n' + bodyText).trim();
+}
+
+/**
  * Extract header HTML from a DOCX buffer so the preview shows the full document.
  * Word often puts the title and metadata table in the header.
  */

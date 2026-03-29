@@ -109,7 +109,7 @@ export default function UploadSOPModal({ isOpen, onClose, onSuccess, initialTab 
                   (entry as FileSystemFileEntry).file((f) => {
                     acc.push(f);
                     res();
-                  }, res);
+                  }, (err) => res());
                 });
               } else if (entry.isDirectory) {
                 const sub = await readAllFilesFromDir(entry as FileSystemDirectoryEntry);
