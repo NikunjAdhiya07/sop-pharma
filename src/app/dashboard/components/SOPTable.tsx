@@ -509,6 +509,24 @@ export default function SOPTable({
     return null;
   };
 
+  const deriveGujaratiSubtitle = (row: any): string => {
+    const direct = String(row?.gujaratiName || "").trim();
+    if (direct && /[\u0A80-\u0AFF]/.test(direct)) return direct;
+
+    // Fallback: Gujarati file entries often carry the real title in fileName/path.
+    const gujDoc = (row?.sopDocuments || []).find((d: any) => {
+      const lang = String(d?.language || "").toLowerCase();
+      if (lang !== "gujarati") return false;
+      const raw = String(d?.fileName || d?.filePath || "");
+      return /[\u0A80-\u0AFF]/.test(raw);
+    });
+    if (!gujDoc) return "";
+
+    const raw = String(gujDoc.fileName || gujDoc.filePath || "");
+    const cleaned = cleanSOPName(raw, row?.sopNo);
+    return /[\u0A80-\u0AFF]/.test(cleaned) ? cleaned : "";
+  };
+
   const uniqueDepartments = Array.from(
     new Set([
       ...data.map((r: any) => r.department),
@@ -814,7 +832,7 @@ export default function SOPTable({
                               .toLowerCase();
                           // English on top, Gujarati below
                           const line1 = cleanSOPName(row.englishName || row.sopName, row.sopNo);
-                          const line2 = row.gujaratiName;
+                          const line2 = deriveGujaratiSubtitle(row);
                           const showLine2 =
                             line2 && norm(line2) !== norm(line1);
                           const title = showLine2

@@ -606,14 +606,29 @@ function mergeRegistryRowsByDocumentFamily(
     for (const r of group) {
       for (const [raw, lang] of [
         [r.englishName || r.sopName, 'en'] as const,
-        [r.gujaratiName, 'gj'] as const,
+        [r.gujaratiName || r._gujRawName || r._gujOriginalFileName, 'gj'] as const,
       ]) {
         if (!raw || String(raw).length < 3) continue;
         const cleaned = cleanSopName(String(raw), nk);
         if (cleaned.length < 3 || registryDisplayTitleKey(cleaned) === registryDisplayTitleKey(nk)) continue;
         if (lang === 'en') {
           if (!bestEnglish || cleaned.length > bestEnglish.length) bestEnglish = cleaned;
-        } else if (!bestGujarati || cleaned.length > bestGujarati.length) bestGujarati = cleaned;
+        } else if (
+          /[\u0A80-\u0AFF]/.test(cleaned) &&
+          (!bestGujarati || cleaned.length > bestGujarati.length)
+        ) {
+          bestGujarati = cleaned;
+        }
+      }
+    }
+
+    if (!bestGujarati) {
+      for (const r of group) {
+        const candidate = String(r.gujaratiName || '').trim();
+        if (candidate && /[\u0A80-\u0AFF]/.test(candidate)) {
+          bestGujarati = candidate;
+          break;
+        }
       }
     }
 
@@ -1024,6 +1039,7 @@ export async function GET() {
 
       const engRawName = hasEng ? (row._engRow.sopName || row._engRow.originalFileName || '') : '';
       const gujRawName = hasGuj ? (row._gujRow.sopName || row._gujRow.originalFileName || '') : '';
+      const gujOriginalFileName = hasGuj ? (row._gujRow.originalFileName || '') : '';
 
       const engSopFile = hasEng ? row._engRow.sopFile : null;
       const gujSopFile = hasGuj ? row._gujRow.sopFile : null;
@@ -1044,6 +1060,7 @@ export async function GET() {
         sopName: row.sopName,
         _engRawName: engRawName,
         _gujRawName: gujRawName,
+        _gujOriginalFileName: gujOriginalFileName,
         originalFileName: row.originalFileName,
         department: row.department,
         version: row.version,
@@ -1315,7 +1332,7 @@ export async function GET() {
             idUpper,
             libGujNameByIdentifier.get(idUpper),
             undefined,
-            row._gujRow?.originalFileName,
+            row._gujOriginalFileName,
             versionArtifactNameByKey.get(`${versionArtifactsLookupKey(idUpper)}::Gujarati`),
             'Gujarati'
           )
@@ -1426,6 +1443,27 @@ export async function GET() {
             ? gujTitleDistinct
             : engTitle || (!isEnglishOnlySop ? gujTitleDistinct || gujTitle : null) || idUpper;
 
+      const gujaratiNameResolved =
+        gujTitleDistinct &&
+        gujTitleDistinct.length > 2 &&
+        registryDisplayTitleKey(gujTitleDistinct) !== registryDisplayTitleKey(idUpper)
+          ? gujTitleDistinct
+          : resolveGujaratiTitleFromStores(
+              idUpper,
+              libGujNameByIdentifier,
+              libNameByIdentifier,
+              masterGujNameByIdentifier,
+              versionArtifactNameByKey,
+            );
+
+      // Last fallback for dual rows: use Gujarati SOP row title if it contains Gujarati script.
+      const gujaratiNameFromDualRow =
+        row.isDualLanguage === true &&
+        row._gujRawName &&
+        /[\u0A80-\u0AFF]/.test(String(row._gujRawName))
+          ? cleanSopName(String(row._gujRawName), idUpper)
+          : null;
+
       let assignedTrainer = 'Unassigned';
       const dept = row.department;
       if (sopToTrainersMap.has(idUpper) && sopToTrainersMap.get(idUpper)!.size > 0) {
@@ -1485,18 +1523,7 @@ export async function GET() {
               masterEngNameByIdentifier,
               versionArtifactNameByKey,
             ),
-        gujaratiName:
-          gujTitleDistinct &&
-          gujTitleDistinct.length > 2 &&
-          registryDisplayTitleKey(gujTitleDistinct) !== registryDisplayTitleKey(idUpper)
-            ? gujTitleDistinct
-            : resolveGujaratiTitleFromStores(
-                idUpper,
-                libGujNameByIdentifier,
-                libNameByIdentifier,
-                masterGujNameByIdentifier,
-                versionArtifactNameByKey,
-              ),
+        gujaratiName: gujaratiNameResolved || gujaratiNameFromDualRow,
         location: resolvedLocation || null,
         isDualLanguage,
         /** True when Mongo has ENG+GUJ rows but no separate Gujarati file path (same URL or only English paths) */
