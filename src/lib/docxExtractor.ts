@@ -4,8 +4,8 @@ import { parseDOCX } from './documentParser';
 /**
  * Extract text from DOCX file
  */
-export async function extractTextFromDOCX(filePath: string): Promise<string> {
-  const buffer = await readFile(filePath);
+export async function extractTextFromDOCX(input: string | Buffer): Promise<string> {
+  const buffer = typeof input === 'string' ? await readFile(input) : input;
   const parsed = await parseDOCX(buffer);
   return parsed.content;
 }

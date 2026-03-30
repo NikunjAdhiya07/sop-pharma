@@ -61,18 +61,20 @@ async function buildHeaderHtml(identifier: string, language: string, buffer: Buf
     try { docxText = (await extractTextFromDOCX(buffer)) || ''; } catch { /* ignore */ }
     const liveDates = extractDatesFromContent(docxText);
 
+    const effectiveDateRaw =
+      master?.metadata?.effectiveDate ?? sop?.effectiveDate ?? liveDates.effectiveDate ?? '';
+    const reviewDateRaw =
+      master?.metadata?.reviewDate ?? sop?.reviewDate ?? master?.metadata?.expiryDate ?? sop?.expiryDate ?? liveDates.reviewDate ?? liveDates.expiryDate ?? '';
+
     const meta: TemplateHeaderData = {
       department: DEPT_DISPLAY[dept] ?? dept.toUpperCase(),
       area: area.toUpperCase(),
       sopNo: sop?.identifier ?? identifier,
-      effectiveDate: master?.metadata?.effectiveDate ?? sop?.effectiveDate ?? liveDates.effectiveDate ?? '',
-      reviewDate: master?.metadata?.reviewDate ?? sop?.reviewDate ?? master?.metadata?.expiryDate ?? sop?.expiryDate ?? liveDates.reviewDate ?? liveDates.expiryDate ?? '',
+      effectiveDate: effectiveDateRaw instanceof Date ? effectiveDateRaw.toISOString() : effectiveDateRaw,
+      reviewDate: reviewDateRaw instanceof Date ? reviewDateRaw.toISOString() : reviewDateRaw,
       supersedes: deriveSupersedes(sop?.identifier ?? identifier),
       subject: sop?.name ?? '',
     };
-    // Convert Date objects to ISO strings
-    if (meta.effectiveDate instanceof Date) meta.effectiveDate = (meta.effectiveDate as Date).toISOString();
-    if (meta.reviewDate instanceof Date) meta.reviewDate = (meta.reviewDate as Date).toISOString();
 
     return buildTemplateHeaderHtml(meta);
   } catch {
