@@ -117,17 +117,69 @@ export async function GET(request: NextRequest) {
       query.folderSubcategory = folderSubcategory;
     }
 
-    // If summary mode, only fetch essential fields (no MCQ data needed, Mongoose is fine)
+    // If summary mode, only fetch essential fields
     if (summary) {
-      const mcqBanks = await MCQBank.find(query)
-        .select('sopId sopIdentifier sopName department folderDepartment folderSubcategory totalQuestions difficultyDistribution language createdAt')
-        .sort({ createdAt: -1 })
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .allowDiskUse(true)
-        .lean();
+      const db = mongoose.connection.db;
+      if (!db) return NextResponse.json({ error: 'Database not connected' }, { status: 500 });
+      const collection = db.collection('mcqbanks');
 
-      const total = await MCQBank.countDocuments(query);
+      const aggregationPipeline: any[] = [];
+      
+      // Match phase
+      if (Object.keys(query).length > 0) {
+        aggregationPipeline.push({ $match: query });
+      }
+
+      // Projection phase with counts
+      aggregationPipeline.push({
+        $project: {
+          sopId: 1,
+          sopIdentifier: 1,
+          sopName: 1,
+          department: 1,
+          folderDepartment: 1,
+          folderSubcategory: 1,
+          totalQuestions: 1,
+          difficultyDistribution: 1,
+          language: 1,
+          createdAt: 1,
+          checkedCount: {
+            $size: {
+              $filter: {
+                input: { $ifNull: ["$mcqs", []] },
+                as: "mcq",
+                cond: { $eq: ["$$mcq.isChecked", true] }
+              }
+            }
+          },
+          reviewedCount: {
+            $size: {
+              $filter: {
+                input: { $ifNull: ["$mcqs", []] },
+                as: "mcq",
+                cond: { $eq: ["$$mcq.isReviewed", true] }
+              }
+            }
+          },
+          similarCount: {
+            $size: {
+              $filter: {
+                input: { $ifNull: ["$mcqs", []] },
+                as: "mcq",
+                cond: { $eq: ["$$mcq.isSimilar", true] }
+              }
+            }
+          }
+        }
+      });
+
+      // Sort, Skip, Limit
+      aggregationPipeline.push({ $sort: { createdAt: -1 } });
+      aggregationPipeline.push({ $skip: (page - 1) * limit });
+      aggregationPipeline.push({ $limit: limit });
+
+      const mcqBanks = await collection.aggregate(aggregationPipeline).toArray();
+      const total = await collection.countDocuments(query);
 
       return NextResponse.json({
         success: true,

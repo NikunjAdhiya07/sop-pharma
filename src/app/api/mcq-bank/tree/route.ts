@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
 import MCQBank from '@/models/MCQBank';
@@ -37,10 +38,24 @@ export async function GET(request: NextRequest) {
       .select('_id name identifier department fileUrl fileType')
       .lean();
 
-    // Fetch all MCQ Banks with status fields
-    const mcqBanks = await MCQBank.find({})
-      .select('_id sopId sopName sopIdentifier department totalQuestions mcqs.isChecked mcqs.isReviewed mcqs.isSimilar')
-      .lean();
+    // Fetch all MCQ Banks with status fields — use native driver to preserve subdocument fields reliably
+    const dbConnection = mongoose.connection.db;
+    if (!dbConnection) throw new Error('Database connection lost');
+    const mcqBankCollection = dbConnection.collection('mcqbanks');
+    
+    const mcqBanks = await mcqBankCollection.find({}, {
+      projection: {
+        _id: 1,
+        sopId: 1,
+        sopName: 1,
+        sopIdentifier: 1,
+        department: 1,
+        totalQuestions: 1,
+        'mcqs.isChecked': 1,
+        'mcqs.isReviewed': 1,
+        'mcqs.isSimilar': 1
+      }
+    }).toArray();
 
     console.log(`📊 Building tree from ${sops.length} SOPs and ${mcqBanks.length} MCQ banks`);
 
@@ -73,7 +88,7 @@ export async function GET(request: NextRequest) {
         totalDepartments: treeArray.length,
         totalSOPs: sopsWithMcqs,          // Only SOPs that actually have MCQs
         totalMCQBanks: mcqBanks.length,
-        totalQuestions: mcqBanks.reduce((sum, bank) => {
+        totalQuestions: mcqBanks.reduce((sum: number, bank: any) => {
           const mcqsArr = (bank as any).mcqs;
           return sum + (Array.isArray(mcqsArr) ? mcqsArr.length : (bank.totalQuestions || 0));
         }, 0),

@@ -7,7 +7,7 @@ import { buildDocxDownloadHref } from '@/lib/viewDocLinks';
 
 export { buildDocxDownloadHref } from '@/lib/viewDocLinks';
 
-type PreviewMode = 'loading' | 'docx-preview' | 'pdf-inline' | 'error';
+type PreviewMode = 'loading' | 'docx-preview' | 'view-docx-html' | 'pdf-inline' | 'error';
 
 export type DocxViewerPreference = 'office' | 'google';
 
@@ -90,6 +90,7 @@ export default function DocxPreviewClient({
   const [mode, setMode] = useState<PreviewMode>('loading');
   const [error, setError] = useState<string | null>(null);
   const [pdfInlineSrc, setPdfInlineSrc] = useState<string | null>(null);
+  const [viewDocxHtml, setViewDocxHtml] = useState<string | null>(null);
   /** Office Online full-tab URL — shown as button when available */
   const [wordOnlineUrl, setWordOnlineUrl] = useState<string | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -187,9 +188,37 @@ export default function DocxPreviewClient({
           return;
         }
 
+        // Step 4a: Gujarati — browser fetches DOCX from CDN directly, POSTs bytes to docx-to-html
+        if (isGujarati && pathParam) {
+          try {
+            // Fetch the DOCX directly from the CDN (browser can reach it even if server cannot)
+            const cdnRes = await fetchWithTimeout(pathParam);
+            if (!cancelled && cdnRes.ok) {
+              const docxBytes = await cdnRes.arrayBuffer();
+              if (!cancelled && docxBytes.byteLength > 0) {
+                const postParams = new URLSearchParams();
+                if (identifierParam) postParams.set('identifier', identifierParam);
+                if (languageParam) postParams.set('language', languageParam);
+                const htmlRes = await fetchWithTimeout(
+                  `/api/files/docx-to-html?${postParams.toString()}`,
+                  { method: 'POST', body: docxBytes, headers: { 'Content-Type': 'application/octet-stream' } },
+                );
+                if (!cancelled && htmlRes.ok) {
+                  const htmlData = await htmlRes.json();
+                  if (!cancelled && htmlData.success && htmlData.html) {
+                    setViewDocxHtml(htmlData.html as string);
+                    setMode('view-docx-html');
+                    return;
+                  }
+                }
+              }
+            }
+          } catch { /* fall through to docx-preview */ }
+        }
+
         const blob = await blobRes.blob();
 
-        // Step 4: render with docx-preview
+        // Step 4b: render with docx-preview (English and Gujarati fallback)
         try {
           const { renderAsync } = await import('docx-preview');
           if (cancelled || !bodyRef.current) return;
@@ -200,9 +229,7 @@ export default function DocxPreviewClient({
             bodyRef.current,
             styleRef.current || undefined,
             {
-              className: isGujarati
-                ? 'docx-preview-wrapper docx-gujarati-text'
-                : 'docx-preview-wrapper',
+              className: 'docx-preview-wrapper',
               breakPages: true,
               inWrapper: true,
               renderHeaders: true,
@@ -226,13 +253,9 @@ export default function DocxPreviewClient({
               ),
             ),
           ]);
-          if (isGujarati && bodyRef.current) {
-            bodyRef.current.style.fontFamily = "'Noto Sans Gujarati', 'Nirmala UI', 'Segoe UI', sans-serif";
-          }
           if (cancelled) return;
           setMode('docx-preview');
         } catch {
-          // docx-preview failed — try PDF fallback
           if (!cancelled && await tryPdfFallback()) return;
           if (cancelled) return;
           setError('Failed to render the document. The file may be corrupted or in an unsupported format.');
@@ -387,6 +410,48 @@ export default function DocxPreviewClient({
           />
         </div>
         {downloadHint && <p className="px-4 pb-2 text-xs text-red-600">{downloadHint}</p>}
+      </div>
+    );
+  }
+
+  // ── Server-rendered HTML preview (Gujarati via view-docx) ───────────────
+  if (mode === 'view-docx-html' && viewDocxHtml) {
+    return (
+      <div className={`relative flex flex-col bg-[#e5e7eb] ${layout === 'embedded' ? 'min-h-[600px]' : 'min-h-screen'}`}>
+        <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4 py-2 shadow-sm">
+          <div className="flex flex-wrap items-center gap-3">
+            {layout === 'full' && <BackButton backHref={backHref} backLabel={backLabel} />}
+            {docxDownloadHref && (
+              <button type="button" disabled={downloadBusy} onClick={() => void handleDownloadDocx()}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+              >
+                <Download className="h-4 w-4" aria-hidden />
+                {downloadBusy ? 'Preparing…' : 'Download original'}
+              </button>
+            )}
+            {wordOnlineUrl && (
+              <a href={wordOnlineUrl} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-3 py-1.5 text-sm font-semibold text-purple-700 hover:bg-purple-100"
+              >
+                <ExternalLink className="h-4 w-4" aria-hidden /> Open in Word Online
+              </a>
+            )}
+          </div>
+          <span className="flex items-center gap-2 text-xs text-gray-500">
+            <FileText className="h-4 w-4" /> In-browser preview
+            <span className="font-semibold text-indigo-600">Gujarati</span>
+          </span>
+        </div>
+        {downloadHint && <p className="px-4 pt-1 text-xs text-red-600">{downloadHint}</p>}
+        <div className="p-2 sm:p-4">
+          <div
+            className="view-docx-surface mx-auto w-full max-w-[210mm] rounded border border-gray-300 bg-white p-6 shadow-sm"
+            dangerouslySetInnerHTML={{ __html: viewDocxHtml }}
+          />
+          <p className="mx-auto max-w-[210mm] px-2 pb-8 pt-3 text-center text-[11px] leading-snug text-gray-500">
+            In-browser preview — <strong>Download original</strong> opens the exact file in Microsoft Word.
+          </p>
+        </div>
       </div>
     );
   }

@@ -20,6 +20,8 @@ export interface DeptCapsuleStats {
   nearExpiry: number;
   docxSOPs: number;
   pdfSOPs: number;
+  expectedDocx: number;
+  expectedPdf: number;
   docxFiles: number;
   pdfFiles: number;
   eng: number;
@@ -45,6 +47,8 @@ function computeDepartmentStats(data: any[]): DeptCapsuleStats[] {
       nearExpiry: number;
       docxSOPs: number;
       pdfSOPs: number;
+      expectedDocx: number;
+      expectedPdf: number;
       docxFiles: number;
       pdfFiles: number;
       eng: number;
@@ -66,6 +70,8 @@ function computeDepartmentStats(data: any[]): DeptCapsuleStats[] {
       nearExpiry: 0,
       docxSOPs: 0,
       pdfSOPs: 0,
+      expectedDocx: 0,
+      expectedPdf: 0,
       docxFiles: 0,
       pdfFiles: 0,
       eng: 0,
@@ -120,6 +126,11 @@ function computeDepartmentStats(data: any[]): DeptCapsuleStats[] {
     if (nDocxFiles > 0) s.docxSOPs++;
     if (nPdfFiles > 0) s.pdfSOPs++;
 
+    // Expecting 2 files if dual-language, 1 otherwise
+    const expectedForThisRow = row.isDualLanguage ? 2 : 1;
+    s.expectedDocx += expectedForThisRow;
+    s.expectedPdf += expectedForThisRow;
+
     if (row.englishVersion) s.eng++;
     if (row.gujaratiVersion) s.guj++;
     if (row.mediaStatus?.videos) s.videos++;
@@ -141,6 +152,8 @@ function computeDepartmentStats(data: any[]): DeptCapsuleStats[] {
       nearExpiry: s.nearExpiry,
       docxSOPs: s.docxSOPs,
       pdfSOPs: s.pdfSOPs,
+      expectedDocx: s.expectedDocx,
+      expectedPdf: s.expectedPdf,
       docxFiles: s.docxFiles,
       pdfFiles: s.pdfFiles,
       eng: s.eng,
@@ -198,7 +211,7 @@ export type CapsuleAvailMetric = "docx" | "pdf" | "video" | "slides";
 /** Label = same filter as green (has asset); green = rows with asset + sort desc; red = rows missing + sort asc. */
 function CapsuleMetricAvailMissing({
   label,
-  totalSOPs,
+  totalExpected,
   available,
   onFilterClick,
   onAvailableClick,
@@ -209,7 +222,7 @@ function CapsuleMetricAvailMissing({
   titleSummary,
 }: {
   label: ReactNode;
-  totalSOPs: number;
+  totalExpected: number;
   available: number;
   onFilterClick: () => void;
   onAvailableClick: () => void;
@@ -219,7 +232,7 @@ function CapsuleMetricAvailMissing({
   filterRowActive: boolean;
   titleSummary: string;
 }) {
-  const missing = Math.max(0, totalSOPs - available);
+  const missing = Math.max(0, totalExpected - available);
 
   return (
     <div
@@ -242,7 +255,7 @@ function CapsuleMetricAvailMissing({
       </button>
       <div
         className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums"
-        aria-label={`${available} with attachment, ${missing} missing of ${totalSOPs} SOPs`}>
+        aria-label={`${available} with attachment, ${missing} missing of ${totalExpected} expected`}>
         <button
           type="button"
           onClick={(e) => {
@@ -718,8 +731,8 @@ function DepartmentCapsuleCard({
         />
         <CapsuleMetricAvailMissing
           label="DOCX"
-          totalSOPs={stat.totalSOPs}
-          available={stat.docxSOPs}
+          totalExpected={stat.expectedDocx}
+          available={stat.docxFiles}
           onFilterClick={() => apply("docx")}
           onAvailableClick={() =>
             applyCapsuleAvailMiss(deptForFilter, "docx", "available")
@@ -761,8 +774,8 @@ function DepartmentCapsuleCard({
         />
         <CapsuleMetricAvailMissing
           label="PDF"
-          totalSOPs={stat.totalSOPs}
-          available={stat.pdfSOPs}
+          totalExpected={stat.expectedPdf}
+          available={stat.pdfFiles}
           onFilterClick={() => apply("pdf")}
           onAvailableClick={() =>
             applyCapsuleAvailMiss(deptForFilter, "pdf", "available")
@@ -864,7 +877,7 @@ function DepartmentCapsuleCard({
               Videos
             </>
           }
-          totalSOPs={stat.totalSOPs}
+          totalExpected={stat.totalSOPs}
           available={stat.videos}
           onFilterClick={() => apply("video")}
           onAvailableClick={() =>
@@ -912,7 +925,7 @@ function DepartmentCapsuleCard({
               Slides
             </>
           }
-          totalSOPs={stat.totalSOPs}
+          totalExpected={stat.totalSOPs}
           available={stat.slides}
           onFilterClick={() => apply("slides")}
           onAvailableClick={() =>
@@ -992,6 +1005,8 @@ export default function DepartmentCapsules({
         nearExpiry: acc.nearExpiry + s.nearExpiry,
         docxSOPs: acc.docxSOPs + s.docxSOPs,
         pdfSOPs: acc.pdfSOPs + s.pdfSOPs,
+        expectedDocx: acc.expectedDocx + s.expectedDocx,
+        expectedPdf: acc.expectedPdf + s.expectedPdf,
         docxFiles: acc.docxFiles + s.docxFiles,
         pdfFiles: acc.pdfFiles + s.pdfFiles,
         eng: acc.eng + s.eng,
@@ -1010,6 +1025,8 @@ export default function DepartmentCapsules({
         nearExpiry: 0,
         docxSOPs: 0,
         pdfSOPs: 0,
+        expectedDocx: 0,
+        expectedPdf: 0,
         docxFiles: 0,
         pdfFiles: 0,
         eng: 0,

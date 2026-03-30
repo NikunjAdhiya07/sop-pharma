@@ -15,8 +15,10 @@ import {
   Eye,
   Download,
   BookOpen,
+  Trash2,
+  X,
 } from "lucide-react";
-import { useState, Fragment, useEffect, type ReactNode } from "react";
+import { useState, Fragment, useEffect, useRef, type ReactNode } from "react";
 import {
   fileKindFromStoredPath,
   fileKindToLabel,
@@ -26,6 +28,7 @@ import {
   buildDocxDownloadHref,
   buildPdfDownloadHref,
 } from "@/lib/viewDocLinks";
+import { cleanSOPName } from "@/lib/sopLibraryHelper";
 
 const DEPT_ALL = "All";
 
@@ -38,8 +41,16 @@ export default function SOPTable({
   onOpenGuidelineWizard,
   complianceCache,
   onViewCompliance,
+  onMarkObsolete,
 }: any) {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
+
+  // Obsolete confirm modal state
+  const [obsoleteTarget, setObsoleteTarget] = useState<{ sopNo: string; sopName: string } | null>(null);
+  const [obsoletePassword, setObsoletePassword] = useState("");
+  const [obsoleteBusy, setObsoleteBusy] = useState(false);
+  const [obsoleteError, setObsoleteError] = useState("");
+  const obsoleteInputRef = useRef<HTMLInputElement>(null);
   const [filters, setFilters] = useState({
     department: "",
     language: "",
@@ -153,9 +164,8 @@ export default function SOPTable({
   const formatPriorVersionLabel = (v: number) => {
     const n =
       typeof v === "number" && !Number.isNaN(v) ? v : parseInt(String(v), 10);
-    if (!Number.isFinite(n)) return "v?";
-    if (n < 100) return `v${String(n).padStart(2, "0")}`;
-    return `v${n}`;
+    if (!Number.isFinite(n)) return "V?";
+    return `V${n}`;
   };
 
   const renderVersionArtifactLinks = (
@@ -169,56 +179,51 @@ export default function SOPTable({
     const sorted = [...entries]
       .sort((a, b) => b.version - a.version)
       .slice(0, maxRows);
+
     return (
-      <div className="flex flex-col gap-0.5">
+      <div className="flex flex-col gap-1 py-0.5">
         {subLabel && (
-          <span className="text-[9px] font-bold uppercase tracking-wide text-gray-500 leading-none">
+          <span className="text-[9px] font-bold uppercase tracking-wide text-gray-500 leading-none mb-0.5">
             {subLabel}
           </span>
         )}
-        {sorted.map((e) => (
-          <details
-            key={`${lang}-v${e.version}`}
-            className="group relative"
-            onClick={(ev) => ev.stopPropagation()}>
-            <summary className="flex cursor-pointer select-none items-center gap-1 w-fit rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-bold text-emerald-800 transition-colors hover:bg-emerald-200 list-none [&::-webkit-details-marker]:hidden">
-              <span className="tabular-nums">
+        <div className="flex flex-row flex-nowrap gap-4 items-start">
+          {sorted.map((e) => (
+            <div key={`${lang}-v${e.version}`} className="flex flex-col gap-0.5 min-w-[50px]">
+              <span className="text-[10px] font-bold text-gray-900 leading-tight">
                 {formatPriorVersionLabel(e.version)}
               </span>
-              <ChevronDown className="h-3 w-3 opacity-70 transition-transform group-open:rotate-180" />
-            </summary>
-            <div className="absolute left-0 top-full z-50 mt-1 flex min-w-[90px] flex-col gap-1.5 rounded-lg bg-white p-2 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.15)] ring-1 ring-gray-900/5">
-              {e.pdfPath ? (
-                <a
-                  href={buildPreviewHref(e.pdfPath, "pdf", row.sopNo, lang)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(ev) => ev.stopPropagation()}
-                  className="flex items-center gap-2 text-[11px] font-bold text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-1 rounded transition-colors">
-                  <FileText className="h-3.5 w-3.5" /> PDF
-                </a>
-              ) : (
-                <span className="flex items-center gap-2 text-[11px] font-semibold text-gray-300 px-1">
-                  <FileText className="h-3.5 w-3.5" /> PDF
-                </span>
-              )}
-              {e.docxPath ? (
-                <a
-                  href={buildPreviewHref(e.docxPath, "docx", row.sopNo, lang)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(ev) => ev.stopPropagation()}
-                  className="flex items-center gap-2 text-[11px] font-bold text-purple-600 hover:text-purple-800 hover:bg-purple-50 px-1 rounded transition-colors">
-                  <FileText className="h-3.5 w-3.5" /> DOCX
-                </a>
-              ) : (
-                <span className="flex items-center gap-2 text-[11px] font-semibold text-gray-300 px-1">
-                  <FileText className="h-3.5 w-3.5" /> DOCX
-                </span>
-              )}
+              <div className="flex items-center gap-1 leading-none text-[8px] font-bold h-[14px]">
+                {e.docxPath ? (
+                  <a
+                    href={buildPreviewHref(e.docxPath, "docx", row.sopNo, lang)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(ev) => ev.stopPropagation()}
+                    className="text-purple-600 hover:underline">
+                    DOCX
+                  </a>
+                ) : null}
+                {e.docxPath && e.pdfPath ? (
+                  <span className="text-gray-300 select-none">/</span>
+                ) : null}
+                {e.pdfPath ? (
+                  <a
+                    href={buildPreviewHref(e.pdfPath, "pdf", row.sopNo, lang)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(ev) => ev.stopPropagation()}
+                    className="text-blue-600 hover:underline">
+                    PDF
+                  </a>
+                ) : null}
+                {!e.docxPath && !e.pdfPath ? (
+                  <span className="text-gray-400">—</span>
+                ) : null}
+              </div>
             </div>
-          </details>
-        ))}
+          ))}
+        </div>
       </div>
     );
   };
@@ -799,7 +804,7 @@ export default function SOPTable({
                           <span className="text-[9px] text-gray-400">—</span>
                         )}
                       </td>
-                      {/* SOP Name — dual language: Gujarati first, English second (no duplicate lines) */}
+                      {/* SOP Name — English first, Gujarati second */}
                       <td className="px-1 py-px font-medium text-gray-800 max-w-[280px] align-middle">
                         {(() => {
                           const norm = (s: string) =>
@@ -807,9 +812,9 @@ export default function SOPTable({
                               .replace(/\s+/g, " ")
                               .trim()
                               .toLowerCase();
-                          // Gujarati on top, English below it
-                          const line1 = row.gujaratiName || row.sopName;
-                          const line2 = row.englishName;
+                          // English on top, Gujarati below
+                          const line1 = cleanSOPName(row.englishName || row.sopName, row.sopNo);
+                          const line2 = row.gujaratiName;
                           const showLine2 =
                             line2 && norm(line2) !== norm(line1);
                           const title = showLine2
@@ -822,12 +827,12 @@ export default function SOPTable({
                               className="flex items-center gap-1.5"
                               title={title}>
                               <div className="flex flex-col gap-0 leading-tight min-w-0">
-                                <span className="text-[10px] font-semibold leading-tight text-gray-900 truncate">
+                                <span className="text-[12px] font-bold leading-tight text-gray-900 truncate">
                                   {line1}
                                 </span>
                                 {showLine2 ? (
-                                  <span className="text-[9px] leading-tight text-gray-500 truncate">
-                                    {line2}
+                                  <span className="text-[10px] font-bold leading-tight text-indigo-700 truncate">
+                                    {cleanSOPName(line2, row.sopNo)}
                                   </span>
                                 ) : null}
                               </div>
@@ -1428,6 +1433,23 @@ export default function SOPTable({
                                   <BookOpen className="h-3.5 w-3.5 shrink-0" />
                                   Guideline check
                                 </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setObsoleteTarget({
+                                      sopNo: String(row.sopNo),
+                                      sopName: String(row.englishName || row.sopName || row.sopNo),
+                                    });
+                                    setObsoletePassword("");
+                                    setObsoleteError("");
+                                    setTimeout(() => obsoleteInputRef.current?.focus(), 50);
+                                  }}
+                                  className="mt-1 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-[10px] font-bold text-red-700 shadow-sm transition-colors hover:bg-red-100"
+                                  title="Mark this SOP as obsolete — removes it from registry and capsule data">
+                                  <Trash2 className="h-3.5 w-3.5 shrink-0" />
+                                  Mark Obsolete
+                                </button>
                               </div>
                             </div>
                           </div>
@@ -1441,6 +1463,104 @@ export default function SOPTable({
           </tbody>
         </table>
       </div>
+
+      {/* Obsolete confirmation modal */}
+      {obsoleteTarget && (
+        <div
+          className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => setObsoleteTarget(null)}>
+          <div
+            className="mx-4 w-full max-w-sm rounded-xl border border-red-200 bg-white p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-100">
+                  <Trash2 className="h-4 w-4 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900">Mark as Obsolete</h3>
+                  <p className="text-[10px] text-gray-500">This action cannot be undone</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setObsoleteTarget(null)}
+                className="rounded p-0.5 text-gray-400 hover:text-gray-600">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="mb-3 rounded bg-red-50 border border-red-100 px-3 py-2 text-[11px] font-semibold text-red-900 leading-snug">
+              <span className="block font-bold text-red-800">{obsoleteTarget.sopNo}</span>
+              {obsoleteTarget.sopName}
+            </p>
+            <p className="mb-2 text-[10px] text-gray-600 leading-snug">
+              This SOP will be removed from the registry and capsule data and moved to the Obsolete SOPs section.
+              Enter the obsolete password to confirm.
+            </p>
+            <input
+              ref={obsoleteInputRef}
+              type="password"
+              placeholder="Enter password"
+              value={obsoletePassword}
+              onChange={(e) => { setObsoletePassword(e.target.value); setObsoleteError(""); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && obsoletePassword && !obsoleteBusy) handleObsoleteConfirm();
+              }}
+              className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-800 outline-none focus:border-red-400 focus:ring-1 focus:ring-red-300 mb-1"
+            />
+            {obsoleteError && (
+              <p className="text-[10px] text-red-600 font-semibold mb-2">{obsoleteError}</p>
+            )}
+            <div className="flex gap-2 mt-3">
+              <button
+                type="button"
+                onClick={() => setObsoleteTarget(null)}
+                className="flex-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!obsoletePassword || obsoleteBusy}
+                onClick={handleObsoleteConfirm}
+                className="flex-1 rounded-md bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                {obsoleteBusy ? "Processing…" : "Confirm Obsolete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+
+  async function handleObsoleteConfirm() {
+    if (!obsoleteTarget || !obsoletePassword) return;
+    setObsoleteBusy(true);
+    setObsoleteError("");
+    try {
+      const user = (() => {
+        try { return JSON.parse(localStorage.getItem("user") || "{}"); } catch { return {}; }
+      })();
+      const res = await fetch("/api/sop/mark-obsolete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sopIdentifier: obsoleteTarget.sopNo,
+          password: obsoletePassword,
+          username: user?.username,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        setObsoleteError(json.error || "Failed to mark obsolete");
+        return;
+      }
+      setObsoleteTarget(null);
+      setObsoletePassword("");
+      onMarkObsolete?.(obsoleteTarget.sopNo);
+    } catch {
+      setObsoleteError("Network error — please try again");
+    } finally {
+      setObsoleteBusy(false);
+    }
+  }
 }

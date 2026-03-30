@@ -55,6 +55,10 @@ export interface ISOP extends Document {
     lastTrainedAt?: Date;
   }[];
 
+  isObsolete?: boolean;
+  obsoleteAt?: Date;
+  obsoleteReason?: string;
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -211,6 +215,10 @@ const SOPSchema = new Schema<ISOP>({
     status: { type: String, enum: ['pending', 'completed'], default: 'pending' },
     lastTrainedAt: Date
   }],
+
+  isObsolete: { type: Boolean, default: false },
+  obsoleteAt: { type: Date },
+  obsoleteReason: { type: String },
 }, {
   timestamps: true,
 });

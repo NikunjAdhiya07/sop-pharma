@@ -77,8 +77,8 @@ export async function POST(request: NextRequest) {
               },
             });
 
-            // Only write to MatrixEntry for 'completed' (√) — preserves existing logic
-            if (status === 'completed') {
+            // Write to MatrixEntry for 'pending' (ticks: √) — meaning the employee HAS to give the test
+            if (status === 'pending') {
               matrixEntryOps.push({
                 updateOne: {
                   filter: { employeeName: emp.name, department: dept, year, month, sopCode },

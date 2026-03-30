@@ -61,8 +61,13 @@ const STATUS_CELL: Record<TrainingStatus, string> = {
   na:           'bg-gray-50 text-gray-400',
   pending:      'bg-amber-50 text-amber-600',
 };
+// pending = tick (√) = scheduled/required to give exam, not yet done
+// completed = explicitly marked as trained/done
 const STATUS_DISPLAY: Record<TrainingStatus, string> = {
-  completed: '√', not_required: 'X', na: '--', pending: '?',
+  pending:      '√',   // tick from matrix = scheduled for exam
+  completed:    '✓',   // marked as trained/done
+  not_required: 'X',
+  na:           '--',
 };
 const CHART_COLORS = ['#7c3aed','#10b981','#f59e0b','#ef4444','#3b82f6','#ec4899','#14b8a6'];
 
@@ -489,6 +494,10 @@ export default function TrainingMatrixPage() {
             <button onClick={refresh} className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100" title="Refresh">
               <RefreshCw className="h-4 w-4" />
             </button>
+            <Link href="/training-matrix/enhanced"
+              className="flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700">
+              <Calendar className="h-3.5 w-3.5" /> Monthly View
+            </Link>
             <button onClick={() => setShowUpload(true)}
               className="flex items-center gap-1.5 rounded-md bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-700">
               <Upload className="h-3.5 w-3.5" /> Upload Matrix

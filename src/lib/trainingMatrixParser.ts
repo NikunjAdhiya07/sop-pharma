@@ -75,18 +75,23 @@ export function detectMonthYearFromText(text: string): { month: number; year: nu
 
 /** Normalise any cell value to a CellStatus */
 export function parseCellStatus(raw: string | number | boolean | null | undefined): { status: CellStatus; raw: string; display: string } {
-  if (raw === null || raw === undefined || raw === '') return { status: 'pending', raw: '', display: '' };
+  if (raw === null || raw === undefined || raw === '') return { status: 'not_required', raw: '', display: '' };
   const s = String(raw).trim();
-  if (!s) return { status: 'pending', raw: '', display: '' };
+  if (!s) return { status: 'not_required', raw: '', display: '' };
   const lo = s.toLowerCase();
 
-  // Completed
+  // Completed (must be explicitly marked as done)
+  if (
+    lo === 'done' || lo === 'trained' || lo === 'completed' || lo === 'ok'
+  ) return { status: 'completed', raw: s, display: 'C' };
+
+  // Pending / Scheduled (has to give test)
   if (
     s === '√' || s === '✓' || s === '✔' ||
-    lo === 'v' || lo === 'y' || lo === 'yes' || lo === 'done' ||
-    lo === 'trained' || lo === 'completed' || lo === 'ok' ||
+    lo === 'v' || lo === 'y' || lo === 'yes' ||
+    lo === 'scheduled' || lo === 'test' ||
     s.includes('√') || s.includes('✓') || s.includes('✔')
-  ) return { status: 'completed', raw: s, display: '√' };
+  ) return { status: 'pending', raw: s, display: '√' };
 
   // Not required
   if (

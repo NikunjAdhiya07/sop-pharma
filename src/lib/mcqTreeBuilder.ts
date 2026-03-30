@@ -25,6 +25,9 @@ export interface SubcategoryNode {
   sops: SOPNode[];
   totalSOPs: number;
   totalQuestions: number;
+  checkedCount: number;
+  reviewedCount: number;
+  similarCount: number;
 }
 
 export interface DepartmentNode {
@@ -32,6 +35,9 @@ export interface DepartmentNode {
   subcategories: Map<string, SubcategoryNode>;
   totalSOPs: number;
   totalQuestions: number;
+  checkedCount: number;
+  reviewedCount: number;
+  similarCount: number;
 }
 
 export interface MCQTreeStructure {
@@ -348,6 +354,9 @@ export function buildMCQTreeStructure(
         subcategories: new Map(),
         totalSOPs: 0,
         totalQuestions: 0,
+        checkedCount: 0,
+        reviewedCount: 0,
+        similarCount: 0,
       });
     }
     const dept = tree.departments.get(correctDepartment)!;
@@ -359,6 +368,9 @@ export function buildMCQTreeStructure(
         sops: [],
         totalSOPs: 0,
         totalQuestions: 0,
+        checkedCount: 0,
+        reviewedCount: 0,
+        similarCount: 0,
       });
     }
     const subcat = dept.subcategories.get(subcategoryCode)!;
@@ -366,9 +378,15 @@ export function buildMCQTreeStructure(
     subcat.sops.push(sopNode);
     subcat.totalSOPs++;
     subcat.totalQuestions += totalQuestions;
+    subcat.checkedCount += checkedCount;
+    subcat.reviewedCount += reviewedCount;
+    subcat.similarCount += similarCount;
 
     dept.totalSOPs++;
     dept.totalQuestions += totalQuestions;
+    dept.checkedCount += checkedCount;
+    dept.reviewedCount += reviewedCount;
+    dept.similarCount += similarCount;
   });
 
   // Handle MCQ banks without corresponding SOPs (orphaned)
@@ -424,6 +442,9 @@ export function getTreeAsArray(tree: MCQTreeStructure) {
       name: deptName,
       totalSOPs: dept.totalSOPs,
       totalQuestions: dept.totalQuestions,
+      checkedCount: dept.checkedCount,
+      reviewedCount: dept.reviewedCount,
+      similarCount: dept.similarCount,
       subcategories: [] as any[],
     };
 
@@ -434,6 +455,9 @@ export function getTreeAsArray(tree: MCQTreeStructure) {
         name: subcat.name,
         totalSOPs: subcat.totalSOPs,
         totalQuestions: subcat.totalQuestions,
+        checkedCount: subcat.checkedCount,
+        reviewedCount: subcat.reviewedCount,
+        similarCount: subcat.similarCount,
         sops: subcat.sops.map(sop => ({
           type: 'sop',
           ...sop,

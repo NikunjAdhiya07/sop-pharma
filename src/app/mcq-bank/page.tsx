@@ -90,6 +90,9 @@ interface MCQBank {
   };
   createdAt: string;
   language?: "English" | "Gujarati";
+  checkedCount?: number;
+  reviewedCount?: number;
+  similarCount?: number;
 }
 
 function MCQBankContent() {
@@ -377,8 +380,8 @@ function MCQBankContent() {
       const username = currentUser?.username || "";
 
       // Per-user cache key so restricted users don't see each other's cached data
-      const CACHE_KEY = `mcq-tree-cache-v2-${username || "guest"}`;
-      const CACHE_TIMESTAMP_KEY = `mcq-tree-cache-timestamp-v2-${username || "guest"}`;
+      const CACHE_KEY = `mcq-tree-cache-v4-${username || "guest"}`;
+      const CACHE_TIMESTAMP_KEY = `mcq-tree-cache-timestamp-v4-${username || "guest"}`;
       const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
 
       // Check cache first (unless force refresh)
@@ -1660,15 +1663,43 @@ function MCQBankContent() {
                             <span className="text-xs font-mono text-purple-300">{bank.sopIdentifier}</span>
                           </td>
                           <td className="px-4 py-3 max-w-xs md:max-w-sm">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-white line-clamp-2" title={formatSOPDisplayName(bank.sopName, bank.sopIdentifier)}>
-                                {formatSOPDisplayName(bank.sopName, bank.sopIdentifier)}
-                              </span>
-                              {bank.language && bank.language !== 'English' && (
-                                <span className="flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                                  GU
-                                </span>
-                              )}
+                            <div className="flex items-center gap-3">
+                              {/* Status Mini Icons */}
+                              <div className="flex items-center gap-1 shrink-0">
+                                {bank.checkedCount && bank.checkedCount > 0 && (
+                                  <div className={`p-1 rounded ${bank.checkedCount >= (bank.totalQuestions || 0) ? 'bg-emerald-500/20 text-emerald-400' : 'bg-blue-500/20 text-blue-400'}`} title={`${bank.checkedCount} Approved`}>
+                                    <CheckCircle2 className="h-3 w-3" />
+                                  </div>
+                                )}
+                                {bank.similarCount && bank.similarCount > 0 && (
+                                  <div className="p-1 rounded bg-orange-500/20 text-orange-400 animate-pulse" title={`${bank.similarCount} Similar Questions`}>
+                                    <AlertCircle className="h-3 w-3" />
+                                  </div>
+                                )}
+                                {bank.reviewedCount && bank.reviewedCount > 0 && (
+                                  <div className="p-1 rounded bg-indigo-500/20 text-indigo-400" title={`${bank.reviewedCount} Reviewed`}>
+                                    <Star className="h-3 w-3" />
+                                  </div>
+                                )}
+                                {!bank.checkedCount && !bank.similarCount && !bank.reviewedCount && (
+                                  <div className="p-1 rounded bg-white/5 text-gray-500" title="Not Checked">
+                                    <AlertCircle className="h-3 w-3 opacity-40" />
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex flex-col min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-bold text-white truncate" title={formatSOPDisplayName(bank.sopName, bank.sopIdentifier)}>
+                                    {formatSOPDisplayName(bank.sopName, bank.sopIdentifier)}
+                                  </span>
+                                  {bank.language && bank.language !== 'English' && (
+                                    <span className="flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                      GU
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[10px] font-mono text-purple-400/70">{bank.sopIdentifier}</span>
+                              </div>
                             </div>
                           </td>
                           <td className="px-4 py-3">

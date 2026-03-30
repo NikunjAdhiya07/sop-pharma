@@ -88,10 +88,62 @@ body {
 .docx-preview-surface section.docx-preview-wrapper {
   color: #111827;
 }
+/* Force all text inside docx-preview pages to be dark — Tailwind base resets can make spans transparent */
+.docx-preview-surface section.docx-preview-wrapper * {
+  color: inherit;
+}
+.docx-preview-surface section.docx-preview-wrapper span,
+.docx-preview-surface section.docx-preview-wrapper p,
+.docx-preview-surface section.docx-preview-wrapper td,
+.docx-preview-surface section.docx-preview-wrapper th,
+.docx-preview-surface section.docx-preview-wrapper li {
+  color: #111827;
+}
+/* Gujarati: override font on all text nodes after docx-preview renders */
+.docx-gujarati-text *,
+.docx-preview-surface section.docx-gujarati-text * {
+  font-family: 'Noto Sans Gujarati', 'Nirmala UI', 'Shruti', sans-serif !important;
+  color: #111827;
+}
 .docx-preview-surface .docx-preview-wrapper table {
   border-collapse: collapse;
 }
 .docx-preview-surface .docx-preview-wrapper img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Server-rendered view-docx HTML surface (used for Gujarati preview) */
+.view-docx-surface {
+  font-family: 'Noto Sans Gujarati', 'Nirmala UI', 'Shruti', 'Times New Roman', serif;
+  font-size: 11pt;
+  color: #111827;
+  line-height: 1.5;
+}
+.view-docx-surface * {
+  color: #111827;
+  font-family: 'Noto Sans Gujarati', 'Nirmala UI', 'Shruti', 'Times New Roman', serif;
+  box-sizing: border-box;
+}
+.view-docx-surface table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: 1em;
+}
+.view-docx-surface td,
+.view-docx-surface th {
+  border: 1px solid #374151;
+  padding: 4px 8px;
+  vertical-align: top;
+}
+.view-docx-surface p {
+  margin: 0.25em 0;
+}
+.view-docx-surface h1, .view-docx-surface h2, .view-docx-surface h3 {
+  font-weight: 700;
+  margin: 0.5em 0 0.25em;
+}
+.view-docx-surface img {
   max-width: 100%;
   height: auto;
 }

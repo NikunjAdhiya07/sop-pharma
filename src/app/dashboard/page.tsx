@@ -22,6 +22,9 @@ import {
   BookOpen,
   BarChart2,
   Download,
+  Archive,
+  X,
+  Trash2,
 } from "lucide-react";
 
 import CompactFilterBar from "./components/CompactFilterBar";
@@ -101,6 +104,11 @@ export default function DashboardPage() {
   const [complianceCache, setComplianceCache] = useState<
     Record<string, ComplianceResult>
   >({});
+
+  // Obsolete SOPs panel
+  const [showObsoletePanel, setShowObsoletePanel] = useState(false);
+  const [obsoleteList, setObsoleteList] = useState<any[]>([]);
+  const [obsoleteListLoading, setObsoleteListLoading] = useState(false);
   // which sopNo result panel is currently open
   const [viewingComplianceSopNo, setViewingComplianceSopNo] = useState<
     string | null
@@ -125,6 +133,21 @@ export default function DashboardPage() {
   );
 
   const sopRegistryRef = useRef<HTMLDivElement | null>(null);
+
+  const fetchObsoleteList = async () => {
+    setObsoleteListLoading(true);
+    try {
+      const res = await fetch("/api/sop/obsolete-list");
+      const j = await res.json();
+      if (j.success) setObsoleteList(j.data ?? []);
+    } catch { /* ignore */ }
+    finally { setObsoleteListLoading(false); }
+  };
+
+  const handleOpenObsoletePanel = () => {
+    setShowObsoletePanel(true);
+    fetchObsoleteList();
+  };
   const [locationImportBusy, setLocationImportBusy] = useState(false);
 
   const LOCATION_XLSX_INPUT_ID = "dashboard-sop-location-xlsx";
@@ -347,14 +370,18 @@ export default function DashboardPage() {
         }
 
         case "version": {
-          // Use the actual display version (V0, V1, V8 …) — stored as string or number
-          const toNum = (r: any) => {
+          // Use the display revision extracted from SOP No (e.g. QAGE01-11 → 11)
+          // Rows with 0 versions come first in ascending order
+          const toDisplayRev = (r: any) => {
+            const sopNo = String(r.sopNo || "");
+            const m = sopNo.match(/-0*(\d+)$/);
+            if (m) return parseInt(m[1], 10);
             const raw = r.version;
             if (raw == null || raw === "—") return -1;
             const n = parseInt(String(raw).replace(/[^\d]/g, ""), 10);
             return isNaN(n) ? -1 : n;
           };
-          cmp = toNum(a) - toNum(b);
+          cmp = toDisplayRev(a) - toDisplayRev(b);
           if (cmp !== 0) return cmp * dir;
           // Within same version, sort SOP No ascending
           return cmpSopNo(String(a.sopNo || ""), String(b.sopNo || ""));
@@ -758,6 +785,13 @@ export default function DashboardPage() {
                 {user?.role}
               </p>
             </div>
+            <button
+              type="button"
+              onClick={handleOpenObsoletePanel}
+              className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-rose-100 hover:text-rose-700"
+              title="Obsolete SOPs">
+              <Archive className="h-4 w-4" />
+            </button>
             {(user?.role === "admin" || user?.role === "qa-head") && (
               <Link
                 href="/admin"
@@ -1076,6 +1110,7 @@ export default function DashboardPage() {
               setGuidelinesWizardPreset(row);
               setShowGuidelinesLibrary(true);
             }}
+            onMarkObsolete={() => setRefreshKey((k) => k + 1)}
           />
         </div>
       </main>
@@ -1131,6 +1166,103 @@ export default function DashboardPage() {
             setShowGuidelinesLibrary(true);
           }}
         />
+      )}
+
+      {/* Obsolete SOPs Panel */}
+      {showObsoletePanel && (
+        <div
+          className="fixed inset-0 z-[990] flex items-start justify-end bg-black/30 backdrop-blur-sm"
+          onClick={() => setShowObsoletePanel(false)}>
+          <div
+            className="relative m-3 mt-14 w-full max-w-md rounded-xl border border-rose-200 bg-white shadow-2xl flex flex-col max-h-[80vh]"
+            onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-rose-100 px-4 py-3 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-100">
+                  <Archive className="h-4 w-4 text-rose-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900">Obsolete SOPs</h3>
+                  <p className="text-[9px] text-gray-500 uppercase tracking-wide font-semibold">
+                    Removed from registry &amp; MCQ bank
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowObsoletePanel(false)}
+                className="rounded p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto px-4 py-3 custom-scrollbar">
+              {obsoleteListLoading ? (
+                <div className="flex items-center justify-center py-10">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-rose-400 border-t-transparent" />
+                </div>
+              ) : obsoleteList.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 py-10 text-gray-400">
+                  <Trash2 className="h-8 w-8 opacity-30" />
+                  <p className="text-xs font-semibold">No obsolete SOPs found</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {obsoleteList.map((item: any) => (
+                    <div
+                      key={item.identifier}
+                      className="rounded-lg border border-rose-100 bg-rose-50/60 px-3 py-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-mono text-[11px] font-bold text-rose-800 tracking-wide">
+                            {item.identifier}
+                          </p>
+                          {item.englishName && (
+                            <p className="text-[10px] font-semibold text-gray-800 truncate mt-0.5">
+                              {item.englishName}
+                            </p>
+                          )}
+                          {item.gujaratiName && (
+                            <p className="text-[10px] text-indigo-700 font-semibold truncate">
+                              {item.gujaratiName}
+                            </p>
+                          )}
+                          <p className="text-[9px] text-gray-500 mt-0.5">{item.department}</p>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          {item.fromMCQBank && (
+                            <span className="inline-block rounded-full bg-amber-100 border border-amber-200 px-1.5 py-px text-[8px] font-bold text-amber-800 uppercase tracking-wide">
+                              MCQ Bank
+                            </span>
+                          )}
+                          {item.fromRegistry && (
+                            <span className="ml-1 inline-block rounded-full bg-rose-100 border border-rose-200 px-1.5 py-px text-[8px] font-bold text-rose-700 uppercase tracking-wide">
+                              Registry
+                            </span>
+                          )}
+                          {item.mcqCount != null && (
+                            <p className="text-[9px] text-gray-500 mt-0.5 tabular-nums">
+                              {item.mcqCount} MCQs
+                            </p>
+                          )}
+                          {item.obsoleteAt && (
+                            <p className="text-[9px] text-gray-400 mt-0.5">
+                              {new Date(item.obsoleteAt).toLocaleDateString()}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="shrink-0 border-t border-gray-100 px-4 py-2 text-[9px] text-gray-400 text-right">
+              {obsoleteList.length} record{obsoleteList.length !== 1 ? "s" : ""}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

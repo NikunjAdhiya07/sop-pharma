@@ -176,16 +176,35 @@ export function cleanSOPName(sopName: string, identifier: string): string {
   }
   
   // Remove identifier prefix if present
-  if (identifier && name.toUpperCase().startsWith(identifier.toUpperCase())) {
-    name = name.substring(identifier.length).replace(/^[\s\-_:\.]+/, '').trim();
+  if (identifier) {
+    const idUpper = identifier.toUpperCase();
+    const nameUpper = name.toUpperCase();
+    
+    if (nameUpper.startsWith(idUpper)) {
+      name = name.substring(identifier.length).replace(/^[\s\-_:\.]+/, '').trim();
+    } else {
+      // Also try stripping without the revision if identifier has one (e.g. QAGE01-10 -> QAGE01)
+      const baseIdMatch = identifier.match(/^([A-Z]+\d+)/i);
+      if (baseIdMatch) {
+        const baseId = baseIdMatch[1].toUpperCase();
+        if (nameUpper.startsWith(baseId)) {
+          name = name.substring(baseId.length).replace(/^[\s\-_:\.]+/, '').trim();
+        }
+      }
+    }
   }
+  
+  // Strip leading digits followed by spaces or separators (common in file lists, e.g. "0 BATCH...")
+  // Only if they are separated from the rest of the name
+  name = name.replace(/^[0-9]+[\s\-_:\.]+/, '').trim();
   
   // Remove underscores and clean up whitespace
   name = name.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
   
-  // If empty, use a default
-  if (!name) {
-    name = 'Standard Operating Procedure';
+  // If name is purely numeric (e.g. "1774768105796"), or empty, use a default or the ID
+  const isPurelyNumeric = /^[0-9\s\-_:\.]+$/.test(name);
+  if (!name || isPurelyNumeric) {
+    return 'Standard Operating Procedure';
   }
   
   return name;

@@ -9,6 +9,35 @@ import { extractDatesFromContent } from '@/lib/dateExtractor';
 import { extractTitleFromFolderPath } from '@/lib/sopLibraryHelper';
 import { extractSOPIdFromFilename, isValidSOPIdentifier } from '@/lib/sopIdExtractor';
 import { saveFileToFolder, parseFolderPath } from '@/lib/fileStorage';
+import { uploadToBunny, generateSOPDocumentPath } from '@/lib/bunnyStorage';
+
+/** Upload to Bunny CDN if configured, otherwise fall back to local disk.
+ *  Returns the stored path/URL to save in the DB. */
+async function storeFile(
+  buffer: Buffer,
+  department: string,
+  sopIdentifier: string,
+  fileName: string,
+  folderPath: string,
+): Promise<{ fileUrl: string; storedPath: string }> {
+  const bunnyConfigured =
+    process.env.BUNNY_STORAGE_ZONE &&
+    process.env.BUNNY_STORAGE_PASSWORD &&
+    process.env.BUNNY_PULL_ZONE_URL;
+
+  if (bunnyConfigured) {
+    const bunnyPath = generateSOPDocumentPath(department, sopIdentifier, fileName);
+    const cdnUrl = await uploadToBunny(buffer, bunnyPath);
+    if (cdnUrl) {
+      return { fileUrl: cdnUrl, storedPath: bunnyPath };
+    }
+    console.warn(`[bulk-upload] Bunny upload failed for ${fileName}, falling back to local disk`);
+  }
+
+  // Local disk fallback (dev / no Bunny configured)
+  const savedFilePath = await saveFileToFolder(buffer, folderPath, fileName);
+  return { fileUrl: `/${savedFilePath}`, storedPath: savedFilePath };
+}
 import AuditLog from '@/models/AuditLog';
 import User from '@/models/User';
 
@@ -92,28 +121,34 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // Only process main SOP file (filename should match parent folder name)
+        // Only process main SOP file (filename must contain a SOP code that appears somewhere in the folder hierarchy)
         // Example: QAGE01-10/QAGE01-10.docx ✅
+        //          QAGE01-10/Gujarati SOP/QAGE01-10_gujarati.docx ✅  (SOP code in ancestor folder)
         //          QAGE01-10/Annexure-I.docx ❌
-        const parentFolderName = pathParts[pathParts.length - 2]; // Second to last is parent folder
         const fileNameWithoutExt = value.name.replace(/\.(docx|doc)$/i, '');
-        
-        // Extract SOP code from folder name (e.g., "QAGE01-10" from "QAGE01-10 - STANDARD OPERATING PROCEDURE")
-        // Supports: QA01-10, QAGE01-10, QAGE127-03, MAGE 01-10, etc. (2-6 letters, optional space/hyphen, 2-3 digits, hyphen, 2-3 digits)
-        const folderSopCode = parentFolderName?.match(/([A-Z]{2,6}[\s-]?\d{2,3}-\d{2,3})/i)?.[1];
-        const fileSopCode = fileNameWithoutExt.match(/([A-Z]{2,6}[\s-]?\d{2,3}-\d{2,3})/i)?.[1];
-        
-        console.log(`  📋 Parent folder: "${parentFolderName}"`);
-        console.log(`  📋 Folder SOP code: "${folderSopCode}"`);
+        const SOP_CODE_RE = /([A-Z]{2,6}[\s-]?\d{2,3}-\d{2,3})/i;
+
+        const fileSopCode = fileNameWithoutExt.match(SOP_CODE_RE)?.[1];
+
+        // Search up the folder hierarchy (excluding the filename) for a matching SOP code
+        const folderParts = pathParts.slice(0, -1); // all parts except filename
+        let folderSopCode: string | undefined;
+        for (let i = folderParts.length - 1; i >= 0; i--) {
+          const m = folderParts[i].match(SOP_CODE_RE);
+          if (m) { folderSopCode = m[1]; break; }
+        }
+
+        console.log(`  📋 Parent folder: "${folderParts[folderParts.length - 1]}"`);
+        console.log(`  📋 Folder SOP code (from hierarchy): "${folderSopCode}"`);
         console.log(`  📋 File name: "${fileNameWithoutExt}"`);
         console.log(`  📋 File SOP code: "${fileSopCode}"`);
-        
-        // Check if file matches folder (either exact match or SOP code match)
-        const isMainSOP = folderSopCode && fileSopCode && 
-                          folderSopCode.toUpperCase() === fileSopCode.toUpperCase();
-        
+
+        // Check if file SOP code matches any ancestor folder's SOP code
+        const isMainSOP = folderSopCode && fileSopCode &&
+                          folderSopCode.toUpperCase().replace(/[\s-]/g, '') === fileSopCode.toUpperCase().replace(/[\s-]/g, '');
+
         if (!isMainSOP) {
-          console.warn(`❌ Skipping file ${relativePath}: Not the main SOP file (doesn't match folder "${parentFolderName}")`);
+          console.warn(`❌ Skipping file ${relativePath}: Not the main SOP file (SOP code in filename "${fileSopCode}" doesn't match folder hierarchy "${folderSopCode}")`);
           continue;
         }
         
@@ -269,8 +304,10 @@ export async function POST(request: NextRequest) {
             // The folder structure has the full title: "QAGE01-10 - STANDARD OPERATING PROCEDURE FOR SOP"
             const sopName = extractTitleFromFolderPath(folderPath, sopIdentifier);
 
-            // Save file to mirrored folder structure
-            const savedFilePath = await saveFileToFolder(buffer, folderPath, file.name);
+            // Save file to Bunny CDN (or local disk fallback)
+            const { fileUrl: savedFileUrl, storedPath: savedFilePath } = await storeFile(
+              buffer, department, sopIdentifier, file.name, folderPath,
+            );
 
             // Check if SOP already exists
             let sop = await SOP.findOne({ identifier: sopIdentifier, language: language });
@@ -282,7 +319,7 @@ export async function POST(request: NextRequest) {
               sop.parentFolder = folderInfo.parentFolder || undefined;
               sop.subfolderLevel = folderInfo.level;
               sop.originalFileName = file.name;
-              sop.fileUrl = `/${savedFilePath}`;
+              sop.fileUrl = savedFileUrl;
               sop.department = department;
               sop.language = language;
               
@@ -308,7 +345,7 @@ export async function POST(request: NextRequest) {
                 parentFolder: folderInfo.parentFolder || undefined,
                 subfolderLevel: folderInfo.level,
                 originalFileName: file.name,
-                fileUrl: `/${savedFilePath}`,
+                fileUrl: savedFileUrl,
                 fileType: 'docx',
                 content: content,
                 language: language,

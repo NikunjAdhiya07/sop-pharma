@@ -36,20 +36,47 @@ import {
 import Link from "next/link";
 import { normalizeDepartmentName } from "@/lib/mcqTreeBuilder";
 
-// Helper function to clean SOP name from folder path
 function cleanSOPName(rawName: string, identifier: string): string {
-  if (rawName.includes("/")) {
-    const segments = rawName.split("/").filter((s) => s.trim());
-    const lastSegment = segments[segments.length - 1] || rawName;
-    rawName = lastSegment;
+  let name = rawName || "";
+
+  if (name.includes("/")) {
+    const segments = name.split("/").filter((s) => s.trim());
+    const lastSegment = segments[segments.length - 1] || name;
+    name = lastSegment;
   }
 
-  let cleanedName = rawName
-    .replace(new RegExp(`^${identifier}[_\\-\\s]*`, "i"), "")
-    .trim();
+  // Remove identifier prefix if present
+  if (identifier) {
+    const idUpper = identifier.toUpperCase();
+    const nameUpper = name.toUpperCase();
 
-  cleanedName = cleanedName.replace(/_/g, " ");
-  return cleanedName || rawName;
+    if (nameUpper.startsWith(idUpper)) {
+      name = name.substring(identifier.length).replace(/^[\s\-_:\.]+/, "").trim();
+    } else {
+      // Also try stripping without the revision if identifier has one (e.g. QAGE01-10 -> QAGE01)
+      const baseIdMatch = identifier.match(/^([A-Z]+\d+)/i);
+      if (baseIdMatch) {
+        const baseId = baseIdMatch[1].toUpperCase();
+        if (nameUpper.startsWith(baseId)) {
+          name = name.substring(baseId.length).replace(/^[\s\-_:\.]+/, "").trim();
+        }
+      }
+    }
+  }
+
+  // Strip leading digits followed by spaces or separators (common in file lists, e.g. "0 BATCH...")
+  name = name.replace(/^[0-9]+[\s\-_:\.]+/, "").trim();
+
+  // Remove underscores and clean up whitespace
+  name = name.replace(/_/g, " ").replace(/\s+/g, " ").trim();
+
+  // If name is purely numeric (e.g. "1774768105796"), or empty, use a default
+  const isPurelyNumeric = /^[0-9\s\-_:\.]+$/.test(name);
+  if (!name || isPurelyNumeric) {
+    return "Standard Operating Procedure";
+  }
+
+  return name;
 }
 
 // Helper to get department theme colors
@@ -197,6 +224,9 @@ interface SubcategoryNode {
   sops: SOPNode[];
   totalSOPs: number;
   totalQuestions: number;
+  checkedCount?: number;
+  reviewedCount?: number;
+  similarCount?: number;
 }
 
 interface DepartmentNode {
@@ -205,6 +235,9 @@ interface DepartmentNode {
   icon?: string;
   totalSOPs: number;
   totalQuestions: number;
+  checkedCount?: number;
+  reviewedCount?: number;
+  similarCount?: number;
   subcategories: SubcategoryNode[];
 }
 
@@ -911,6 +944,24 @@ export default function MCQTreeView({
                     </span>
                   </div>
                 </div>
+
+                {/* Status Breakdown Bar */}
+                {(dept.checkedCount || 0) > 0 || (dept.similarCount || 0) > 0 || (dept.reviewedCount || 0) > 0 ? (
+                  <div className="flex items-center gap-1.5 w-full bg-black/10 rounded-lg p-2 mt-px overflow-hidden">
+                    {(dept.checkedCount || 0) > 0 && (
+                      <div className="flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20" title="Total Approved">
+                        <CheckCircle2 className="h-2.5 w-2.5 text-emerald-400" />
+                        <span className="text-[10px] font-bold text-emerald-400 leading-none">{dept.checkedCount}</span>
+                      </div>
+                    )}
+                    {(dept.similarCount || 0) > 0 && (
+                      <div className="flex items-center gap-1 bg-orange-500/10 px-2 py-0.5 rounded-md border border-orange-500/20 animate-pulse" title="Total Similar">
+                        <AlertTriangle className="h-2.5 w-2.5 text-orange-400" />
+                        <span className="text-[10px] font-bold text-orange-400 leading-none">{dept.similarCount}</span>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
               </button>
             </div>
           );
@@ -1132,10 +1183,11 @@ export default function MCQTreeView({
                                 label: "Approved",
                                 count: stats.checked,
                                 active:
-                                  "bg-gradient-to-r from-purple-600 to-indigo-600 border-white/20 text-white shadow-[0_0_30px_rgba(147,51,234,0.3)]",
+                                  "bg-gradient-to-r from-emerald-600 to-emerald-500 border-white/20 text-white shadow-[0_0_30px_rgba(16,185,129,0.3)]",
                                 inactive:
-                                  "bg-purple-500/5 border-purple-500/10 text-purple-400 hover:bg-purple-500/10",
-                                dot: "bg-purple-400",
+                                  "bg-emerald-500/5 border-emerald-500/10 text-emerald-400 hover:bg-emerald-500/10",
+                                dot: "bg-emerald-400",
+                                icon: <CheckCircle2 className="h-3 w-3" />,
                               },
                               {
                                 id: "notChecked" as const,
@@ -1144,30 +1196,33 @@ export default function MCQTreeView({
                                   (fullScreenDept.totalQuestions || 0) -
                                   stats.checked,
                                 active:
-                                  "bg-rose-600 border-white/20 text-white shadow-[0_0_30px_rgba(225,29,72,0.3)]",
+                                  "bg-gradient-to-r from-rose-600 to-rose-500 border-white/20 text-white shadow-[0_0_30px_rgba(225,29,72,0.3)]",
                                 inactive:
                                   "bg-rose-500/5 border-rose-500/10 text-rose-400 hover:bg-rose-500/10",
                                 dot: "bg-rose-400",
+                                icon: <AlertCircle className="h-3 w-3" />,
                               },
                               {
                                 id: "similar" as const,
                                 label: "Similar",
                                 count: stats.similar,
                                 active:
-                                  "bg-orange-600 border-white/20 text-white shadow-[0_0_30_rgba(234,88,12,0.3)]",
+                                  "bg-gradient-to-r from-orange-600 to-orange-500 border-white/20 text-white shadow-[0_0_30_rgba(234,88,12,0.3)]",
                                 inactive:
                                   "bg-orange-500/5 border-orange-500/10 text-orange-400 hover:bg-orange-500/10",
                                 dot: "bg-orange-400",
+                                icon: <AlertTriangle className="h-3 w-3" />,
                               },
                               {
                                 id: "reviewed" as const,
                                 label: "Reviewed",
                                 count: stats.reviewed,
                                 active:
-                                  "bg-indigo-600 border-white/20 text-white shadow-[0_0_30px_rgba(79,70,229,0.3)]",
+                                  "bg-gradient-to-r from-indigo-600 to-indigo-500 border-white/20 text-white shadow-[0_0_30px_rgba(79,70,229,0.3)]",
                                 inactive:
                                   "bg-indigo-500/5 border-indigo-500/10 text-indigo-400 hover:bg-indigo-500/10",
                                 dot: "bg-indigo-400",
+                                icon: <Star className="h-3 w-3" />,
                               },
                             ];
 
@@ -1192,9 +1247,7 @@ export default function MCQTreeView({
                                       : pill.inactive
                                       }`}
                                   >
-                                    <div
-                                      className={`w-1.5 h-1.5 rounded-full ${pill.dot} shadow-[0_0_8px_currentColor]`}
-                                    />
+                                    {pill.icon}
                                     {pill.label}: {pill.count}
                                   </button>
                                 ))}
@@ -1872,10 +1925,24 @@ export default function MCQTreeView({
                                           <div className="absolute inset-y-0 left-0 w-1 bg-indigo-500/0 group-hover:bg-indigo-500 transition-all" />
 
                                           <div className="flex items-center gap-4">
-                                            <div
-                                              className={`p-2.5 rounded-xl bg-white/5 text-gray-500 group-hover:text-indigo-400 group-hover:bg-indigo-500/10 transition-all border border-transparent group-hover:border-indigo-500/20`}
-                                            >
-                                              <FileText className="h-5 w-5" />
+                                            <div className="flex-shrink-0">
+                                              {(sop.checkedCount || 0) > 0 && (sop.checkedCount || 0) >= sop.totalQuestions ? (
+                                                <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)] transition-all group-hover:bg-emerald-500/20" title="Approved / Checked">
+                                                  <CheckCircle2 className="h-5 w-5" />
+                                                </div>
+                                              ) : (sop.similarCount || 0) > 0 ? (
+                                                <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-orange-500/10 border border-orange-500/30 text-orange-400 animate-pulse shadow-[0_0_15px_rgba(249,115,22,0.15)] transition-all group-hover:bg-orange-500/20" title="Has Similar Questions">
+                                                  <AlertTriangle className="h-5 w-5" />
+                                                </div>
+                                              ) : (sop.checkedCount || 0) > 0 ? (
+                                                <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.15)] transition-all group-hover:bg-blue-500/20" title="Reviewing">
+                                                  <RotateCcw className="h-5 w-5" />
+                                                </div>
+                                              ) : (
+                                                <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-white/5 border border-white/10 text-gray-500 transition-all group-hover:bg-indigo-500/10 group-hover:border-indigo-500/20 group-hover:text-indigo-400">
+                                                  <FileText className="h-5 w-5" />
+                                                </div>
+                                              )}
                                             </div>
                                             <div className="flex-1 min-w-0">
                                               <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -1941,27 +2008,7 @@ export default function MCQTreeView({
                                                 >
                                                   {sop.totalQuestions} Qs
                                                 </span>
-                                                {(sop.similarCount || 0) >
-                                                  0 && (
-                                                    <span className="text-[8px] font-black px-1.5 py-0.5 rounded-md border bg-orange-500/10 text-orange-400 border-orange-500/20 uppercase tracking-widest flex items-center gap-1">
-                                                      <span className="w-1 h-1 rounded-full bg-orange-400 shadow-[0_0_5px_currentColor]" />
-                                                      {sop.similarCount} Similar
-                                                    </span>
-                                                  )}
-                                                {(sop.checkedCount || 0) >
-                                                  0 && (
-                                                    <span className="text-[8px] font-black px-1.5 py-0.5 rounded-md border bg-emerald-500/10 text-emerald-400 border-emerald-500/20 uppercase tracking-widest flex items-center gap-1">
-                                                      <span className="w-1 h-1 rounded-full bg-emerald-400 shadow-[0_0_5px_currentColor]" />
-                                                      {sop.checkedCount} Checked
-                                                    </span>
-                                                  )}
-                                                {(sop.reviewedCount || 0) >
-                                                  0 && (
-                                                    <span className="text-[8px] font-black px-1.5 py-0.5 rounded-md border bg-indigo-500/10 text-indigo-400 border-indigo-500/20 uppercase tracking-widest flex items-center gap-1">
-                                                      <span className="w-1 h-1 rounded-full bg-indigo-400 shadow-[0_0_5px_currentColor]" />
-                                                      {sop.reviewedCount} Reviewed
-                                                    </span>
-                                                  )}
+                                                {/* Status markers removed here because we have the main icon now */}
                                               </div>
                                               <p className="text-[10px] text-gray-500 font-medium group-hover:text-gray-300 transition-colors truncate">
                                                 {cleanSOPName(
@@ -2217,10 +2264,25 @@ export default function MCQTreeView({
                                       className="hover:bg-white/[0.02] cursor-pointer transition-colors group"
                                     >
                                       <td className="p-4 whitespace-nowrap">
-                                        <div className="flex items-center gap-3">
-                                          <div className="p-2 rounded-lg bg-white/5 border border-white/5 text-indigo-400 group-hover:bg-indigo-500/10 group-hover:border-indigo-500/20 transition-colors">
-                                            <FileText className="h-4 w-4" />
-                                          </div>
+                                        <div className="flex items-center gap-2">
+                                          {/* Status icon - large and prominent */}
+                                          {(sop.checkedCount || 0) > 0 && (sop.checkedCount || 0) >= sop.totalQuestions ? (
+                                            <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex-shrink-0 shadow-[0_0_10px_rgba(16,185,129,0.15)]" title="Approved / Checked">
+                                              <CheckCircle2 className="h-4 w-4" />
+                                            </div>
+                                          ) : (sop.similarCount || 0) > 0 ? (
+                                            <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-orange-500/15 border border-orange-500/30 text-orange-400 flex-shrink-0 animate-pulse shadow-[0_0_10px_rgba(249,115,22,0.15)]" title="Has Similar Questions">
+                                              <AlertTriangle className="h-4 w-4" />
+                                            </div>
+                                          ) : sop.totalQuestions > 0 ? (
+                                            <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-white/5 border border-white/10 text-gray-500 flex-shrink-0" title="Not Checked">
+                                              <AlertCircle className="h-4 w-4" />
+                                            </div>
+                                          ) : (
+                                            <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-white/5 border border-white/10 text-gray-600 flex-shrink-0">
+                                              <FileText className="h-4 w-4" />
+                                            </div>
+                                          )}
                                           <span className="text-xs font-black text-white tracking-widest uppercase">
                                             {sop.sopCode}
                                           </span>

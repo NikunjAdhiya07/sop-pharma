@@ -141,12 +141,20 @@ function cleanSopName(rawName: string, identifier: string): string {
   }
 
   name = name.replace(/_/g, ' ');
+  
+  // Strip leading digits followed by spaces or separators (common in file lists, e.g. "0 BATCH...")
+  name = name.replace(/^[0-9]+[\s\-_:\.]+/, '').trim();
+
   name = name.replace(/^[\s\-–—:.]+/, '').replace(/[\s\-–—:.]+$/, '').trim();
 
-  if (!name || name.length < 2) {
+  // If name is purely numeric (e.g. "1774768105796"), or empty, fallback
+  const isPurelyNumeric = /^[0-9\s\-_:\.]+$/.test(name);
+  if (!name || name.length < 2 || isPurelyNumeric) {
     // If the name is basically just the code, don't revert to the uncleaned folder path!
     // Instead, return the cleaned basename (or at worst, the identifier).
-    return nameAfterFolderStrip.length >= 2 ? nameAfterFolderStrip : identifier;
+    return nameAfterFolderStrip.length >= 2 && !/^[0-9\s\-_:\.]+$/.test(nameAfterFolderStrip) 
+      ? nameAfterFolderStrip 
+      : identifier;
   }
   return name;
 }
@@ -759,7 +767,7 @@ export async function GET() {
   try {
     await connectDB();
 
-    const allSOPs = await SOP.find({})
+    const allSOPs = await SOP.find({ $or: [{ isObsolete: { $ne: true } }, { isObsolete: { $exists: false } }] })
       .select('_id name identifier department fileUrl fileType originalFileName folderPath location metadata reviewDate expiryDate version language content createdAt')
       .lean();
 
