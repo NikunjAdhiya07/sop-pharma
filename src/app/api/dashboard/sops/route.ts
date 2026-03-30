@@ -112,49 +112,51 @@ function splitDualName(name: string): { eng: string; guj: string } | null {
 
 function cleanSopName(rawName: string, identifier: string): string {
   if (!rawName) return identifier || 'Untitled SOP';
-  let name = rawName.trim();
+  let name = String(rawName).trim();
   name = name.replace(/\.(docx|doc|pdf)$/i, '');
   name = stripFolderPath(name);
 
-  // Save the state after stripping the folder so we can fallback to it
-  // if removing the SOP code leaves us with an empty string.
   const nameAfterFolderStrip = name;
-
   const id = (identifier || '').trim();
+
   if (id) {
+    // 1. Exact match with loose separators
     const escaped = id.replace(/[-]/g, '[-_\\s]?');
     const prefixRe = new RegExp(`^${escaped}[\\s_\\-–—:,]*`, 'i');
     name = name.replace(prefixRe, '');
+
+    // 2. Revision-insensitive strip (e.g. strip QAMI01-08 when identifier is QAMI01-6)
+    const idNorm = normalizeSopIdentifierKey(id.toUpperCase());
+    const famM = idNorm.match(/^([A-Z]{1,6})(\d+)-(\d+)$/);
+    if (famM) {
+      const letters = famM[1];
+      const docNum = parseInt(famM[2], 10);
+      const looseRevPrefix = new RegExp(
+        `^${letters}[0\\s_\\-]*${docNum}[\\s_\\-]*\\d+[\\s_\\-–—:,]*`,
+        'i',
+      );
+      name = name.replace(looseRevPrefix, '');
+    }
   }
 
-  /** Filenames often use a different revision than DB (QAMI01-08_… vs sop QAMI01-6) — strip same doc+any rev prefix */
-  const idNorm = normalizeSopIdentifierKey(id.toUpperCase());
-  const famM = idNorm.match(/^([A-Z]{1,6})(\d+)-(\d+)$/);
-  if (famM) {
-    const letters = famM[1];
-    const docNum = parseInt(famM[2], 10);
-    const looseRevPrefix = new RegExp(
-      `^${letters}[\\s_\\-]*0*${docNum}[\\s_\\-]*\\d+[\\s_\\-–—:,]*`,
-      'i',
-    );
-    name = name.replace(looseRevPrefix, '');
-  }
-
-  name = name.replace(/_/g, ' ');
-  
   // Strip leading digits followed by spaces or separators (common in file lists, e.g. "0 BATCH...")
   name = name.replace(/^[0-9]+[\s\-_:\.]+/, '').trim();
-
+  name = name.replace(/_/g, ' ');
   name = name.replace(/^[\s\-–—:.]+/, '').replace(/[\s\-–—:.]+$/, '').trim();
 
-  // If name is purely numeric (e.g. "1774768105796"), or empty, fallback
+  // Special case: if name matches code exactly without the revision (e.g. name was "PREG10", ID is "PREG10-4")
+  if (id && name.toUpperCase() === id.replace(/-.*/, '').toUpperCase()) {
+    name = '';
+  }
+
+  // Fallback if empty or purely numeric
   const isPurelyNumeric = /^[0-9\s\-_:\.]+$/.test(name);
   if (!name || name.length < 2 || isPurelyNumeric) {
-    // If the name is basically just the code, don't revert to the uncleaned folder path!
-    // Instead, return the cleaned basename (or at worst, the identifier).
-    return nameAfterFolderStrip.length >= 2 && !/^[0-9\s\-_:\.]+$/.test(nameAfterFolderStrip) 
-      ? nameAfterFolderStrip 
-      : identifier;
+    if (nameAfterFolderStrip && nameAfterFolderStrip.length > 2 && !/^[0-9\s\-_:\.]+$/.test(nameAfterFolderStrip)) {
+      // If original nameAfterFolderStrip was descriptive, use it
+      return nameAfterFolderStrip;
+    }
+    return identifier || 'Untitled SOP';
   }
   return name;
 }
@@ -170,14 +172,28 @@ function registryDisplayTitleKey(s: string): string {
 }
 
 function englishTitleIsUsableForRegistry(s: string, idUpper: string): boolean {
-  const isGujOnly = (x: string) => /[\u0A80-\u0AFF]/.test(x) && !/[A-Za-z]{3,}/.test(x);
-  return (
-    !!s &&
-    String(s).trim().length > 2 &&
-    !isGujOnly(s) &&
-    registryDisplayTitleKey(s) !== registryDisplayTitleKey(idUpper) &&
-    !looksLikeSopCodeFilename(String(s).trim())
-  );
+  const x = String(s || '').trim();
+  if (x.length < 3) return false;
+  
+  // Is it Gujarati only?
+  const isGujOnly = /[\u0A80-\u0AFF]/.test(x) && !/[A-Za-z]{3,}/.test(x);
+  if (isGujOnly) return false;
+
+  // Is it just the SOP code?
+  if (registryDisplayTitleKey(x) === registryDisplayTitleKey(idUpper)) return false;
+  if (looksLikeSopCodeFilename(x)) return false;
+
+  // Is it just a generic department name?
+  const lower = x.toLowerCase();
+  const genericDepts = [
+    'production', 'qa', 'qc', 'quality assurance', 'quality control', 
+    'personnel', 'hr', 'stores', 'store', 'microbiology', 'micro', 
+    'engineering', 'maintenance', 'engineering and maintenance',
+    'it', 'information technology', 'warehouse', 'dispatch'
+  ];
+  if (genericDepts.includes(lower)) return false;
+
+  return true;
 }
 
 /** When Mongo English row has GUJ-only or code-like title, recover English from SOPLibrary / Master / folder-upload artifacts. */
@@ -186,17 +202,39 @@ function resolveDualEnglishTitleFromStores(
   libEngNameByIdentifier: Map<string, string>,
   libNameByIdentifier: Map<string, string>,
   masterNameByIdentifier: Map<string, string>,
+  masterEngNameByIdentifier: Map<string, string>,
   versionArtifactNameByKey: Map<string, string>,
 ): string | null {
   for (const vid of expandSopIdentifierVariants(idUpper)) {
     const fbEn =
       libEngNameByIdentifier.get(vid) ||
+      masterEngNameByIdentifier.get(vid) ||
       libNameByIdentifier.get(vid) ||
       masterNameByIdentifier.get(vid) ||
       versionArtifactNameByKey.get(`${versionArtifactsLookupKey(vid)}::English`);
     if (!fbEn || String(fbEn).trim().length < 3) continue;
     const t = cleanSopName(String(fbEn), idUpper);
     if (englishTitleIsUsableForRegistry(t, idUpper)) return t;
+  }
+  return null;
+}
+
+function resolveGujaratiTitleFromStores(
+  idUpper: string,
+  libGujNameByIdentifier: Map<string, string>,
+  libNameByIdentifier: Map<string, string>,
+  masterGujNameByIdentifier: Map<string, string>,
+  versionArtifactNameByKey: Map<string, string>,
+): string | null {
+  for (const vid of expandSopIdentifierVariants(idUpper)) {
+    const t =
+      libGujNameByIdentifier.get(vid) ||
+      masterGujNameByIdentifier.get(vid) ||
+      libNameByIdentifier.get(vid) ||
+      versionArtifactNameByKey.get(`${versionArtifactsLookupKey(vid)}::Gujarati`);
+    if (t && /[\u0A80-\u0AFF]/.test(t) && t.length > 2) {
+      return cleanSopName(t, idUpper);
+    }
   }
   return null;
 }
@@ -772,39 +810,47 @@ export async function GET() {
       .lean();
 
     const masterSOPs = await MasterSOPRepository.find({})
-      .select('sopIdentifier sopName metadata.reviewDate metadata.expiryDate')
+      .select('sopIdentifier sopName englishName gujaratiName metadata.reviewDate metadata.expiryDate')
       .lean();
 
     const reviewDateByIdentifier = new Map<string, Date>();
-    const reviewDateByFamily = new Map<string, { date: Date, rev: number }>();
+    const reviewDateByFamily = new Map<string, { date: Date; rev: number }>();
     const masterNameByIdentifier = new Map<string, string>();
+    const masterEngNameByIdentifier = new Map<string, string>();
+    const masterGujNameByIdentifier = new Map<string, string>();
+
     masterSOPs.forEach((sop: any) => {
-      if (sop.sopIdentifier) {
-        const code = String(sop.sopIdentifier).trim().toUpperCase();
-        const norm = normalizeSopIdentifierKey(code);
-        const dateRaw = sop.metadata?.reviewDate || sop.metadata?.expiryDate;
-        
-        if (dateRaw) {
-          const dateDate = new Date(dateRaw);
-          const fk = sopFamilyKeyFromIdentifier(code);
-          const rev = parseRevisionFromSopIdentifier(code);
-          
-          for (const key of norm !== code ? [code, norm] : [code]) {
-            reviewDateByIdentifier.set(key, dateDate);
-          }
-          
+      const id = String(sop.sopIdentifier || sop.identifier || '').trim().toUpperCase();
+      if (!id) return;
+      const norm = normalizeSopIdentifierKey(id);
+      const dateRaw = sop.metadata?.reviewDate || sop.metadata?.expiryDate;
+      const mName = String(sop.sopName || '').trim();
+      const mEng = String(sop.englishName || '').trim();
+      const mGuj = String(sop.gujaratiName || '').trim();
+      const dual = splitDualName(mName);
+
+      if (dateRaw) {
+        const dateDate = new Date(dateRaw);
+        const fk = sopFamilyKeyFromIdentifier(id);
+        const rev = parseRevisionFromSopIdentifier(id);
+        for (const key of norm !== id ? [id, norm] : [id]) {
+          reviewDateByIdentifier.set(key, dateDate);
           if (fk && rev != null) {
-             const existing = reviewDateByFamily.get(fk);
-             if (!existing || rev > existing.rev) {
-               reviewDateByFamily.set(fk, { date: dateDate, rev });
-             }
+            const existing = reviewDateByFamily.get(fk);
+            if (!existing || rev > existing.rev) {
+              reviewDateByFamily.set(fk, { date: dateDate, rev });
+            }
           }
         }
-        
-        if (sop.sopName) {
-          for (const key of norm !== code ? [code, norm] : [code]) {
-             masterNameByIdentifier.set(key, sop.sopName);
-          }
+      }
+
+      for (const key of norm !== id ? [id, norm] : [id]) {
+        if (mName && !masterNameByIdentifier.has(key)) masterNameByIdentifier.set(key, mName);
+        if (mEng && !masterEngNameByIdentifier.has(key)) masterEngNameByIdentifier.set(key, mEng);
+        if (mGuj && !masterGujNameByIdentifier.has(key)) masterGujNameByIdentifier.set(key, mGuj);
+        if (dual) {
+          if (!masterEngNameByIdentifier.has(key)) masterEngNameByIdentifier.set(key, dual.eng);
+          if (!masterGujNameByIdentifier.has(key)) masterGujNameByIdentifier.set(key, dual.guj);
         }
       }
     });
@@ -1091,11 +1137,20 @@ export async function GET() {
         rawLibLang === 'gujarati' ||
         (rawLibLang === '' && /[\u0A80-\u0AFF]/.test(String(lib.sopName || '')));
       const langNameMap = isGujLib ? libGujNameByIdentifier : libEngNameByIdentifier;
+      const dual = splitDualName(String(lib.sopName || ''));
+
       for (const key of idNorm !== id ? [id, idNorm] : [id]) {
         if (!libByIdentifier.has(key)) libByIdentifier.set(key, []);
         libByIdentifier.get(key)!.push(lib);
-        if (lib.sopName && !libNameByIdentifier.has(key)) libNameByIdentifier.set(key, lib.sopName);
-        if (lib.sopName && !langNameMap.has(key)) langNameMap.set(key, lib.sopName);
+        const sn = String(lib.sopName || '').trim();
+        if (sn && !libNameByIdentifier.has(key)) libNameByIdentifier.set(key, sn);
+        
+        if (dual) {
+          if (!libEngNameByIdentifier.has(key)) libEngNameByIdentifier.set(key, dual.eng);
+          if (!libGujNameByIdentifier.has(key)) libGujNameByIdentifier.set(key, dual.guj);
+        } else {
+          if (sn && !langNameMap.has(key)) langNameMap.set(key, sn);
+        }
         if (loc && !locationByIdentifier.has(key)) locationByIdentifier.set(key, loc);
       }
     });
@@ -1293,22 +1348,20 @@ export async function GET() {
             libEngNameByIdentifier,
             libNameByIdentifier,
             masterNameByIdentifier,
+            masterEngNameByIdentifier,
             versionArtifactNameByKey,
           );
           if (resolved) engTitle = resolved;
         }
         if (!gujTitle || gujTitle.length < 2) {
-          for (const vid of expandSopIdentifierVariants(idUpper)) {
-            const fbGj =
-              libGujNameByIdentifier.get(vid) ||
-              versionArtifactNameByKey.get(`${versionArtifactsLookupKey(vid)}::Gujarati`);
-            if (!fbGj || String(fbGj).trim().length < 3) continue;
-            const t = cleanSopName(String(fbGj), idUpper);
-            if (t.length > 2 && !looksLikeSopCodeFilename(t)) {
-              gujTitle = t;
-              break;
-            }
-          }
+          const resolved = resolveGujaratiTitleFromStores(
+            idUpper,
+            libGujNameByIdentifier,
+            libNameByIdentifier,
+            masterGujNameByIdentifier,
+            versionArtifactNameByKey,
+          );
+          if (resolved) gujTitle = resolved;
         }
       }
 
@@ -1341,6 +1394,7 @@ export async function GET() {
           libEngNameByIdentifier,
           libNameByIdentifier,
           masterNameByIdentifier,
+          masterEngNameByIdentifier,
           versionArtifactNameByKey,
         );
         if (resolved) engTitle = resolved;
@@ -1421,13 +1475,28 @@ export async function GET() {
         _id: row._id,
         sopNo: row.sopNo,
         sopName: displayName,
-        englishName: englishTitleIsUsableForRegistry(engTitle, idUpper) ? engTitle : null,
+        englishName: englishTitleIsUsableForRegistry(engTitle, idUpper)
+          ? engTitle
+          : resolveDualEnglishTitleFromStores(
+              idUpper,
+              libEngNameByIdentifier,
+              libNameByIdentifier,
+              masterNameByIdentifier,
+              masterEngNameByIdentifier,
+              versionArtifactNameByKey,
+            ),
         gujaratiName:
           gujTitleDistinct &&
           gujTitleDistinct.length > 2 &&
           registryDisplayTitleKey(gujTitleDistinct) !== registryDisplayTitleKey(idUpper)
             ? gujTitleDistinct
-            : null,
+            : resolveGujaratiTitleFromStores(
+                idUpper,
+                libGujNameByIdentifier,
+                libNameByIdentifier,
+                masterGujNameByIdentifier,
+                versionArtifactNameByKey,
+              ),
         location: resolvedLocation || null,
         isDualLanguage,
         /** True when Mongo has ENG+GUJ rows but no separate Gujarati file path (same URL or only English paths) */
@@ -1637,14 +1706,23 @@ export async function GET() {
         sopNo: mk,
         sopName: displayName,
         location: artifactLocation || null,
-        englishName:
-          nameEn && nameEn.length > 2 && nameEn.toUpperCase() !== mk
-            ? cleanSopName(nameEn, mk)
-            : null,
-        gujaratiName:
-          nameGj && nameGj.length > 2 && nameGj.toUpperCase() !== mk
-            ? cleanSopName(nameGj, mk)
-            : null,
+        englishName: (() => {
+          const cleaned = nameEn && nameEn.length > 2 ? cleanSopName(nameEn, mk) : null;
+          if (cleaned && englishTitleIsUsableForRegistry(cleaned, mk)) return cleaned;
+          return resolveDualEnglishTitleFromStores(
+            mk,
+            libEngNameByIdentifier,
+            libNameByIdentifier,
+            masterNameByIdentifier,
+            masterEngNameByIdentifier,
+            versionArtifactNameByKey,
+          );
+        })(),
+        gujaratiName: (() => {
+          const cleaned = nameGj && nameGj.length > 2 ? cleanSopName(nameGj, mk) : null;
+          if (cleaned && /[\u0A80-\u0AFF]/.test(cleaned)) return cleaned;
+          return resolveGujaratiTitleFromStores(mk, libGujNameByIdentifier, libNameByIdentifier, masterGujNameByIdentifier, versionArtifactNameByKey);
+        })(),
         isDualLanguage,
         gujaratiFileMissing,
         department: dept,
@@ -1700,11 +1778,11 @@ export async function GET() {
         const bankTitleRaw = mcqNameByNorm.get(nk);
         if (!bankTitleRaw) return r;
         const titled = cleanSopName(bankTitleRaw, nk);
-        if (titled.length < 3) return r;
+        if (!englishTitleIsUsableForRegistry(titled, nk)) return r;
         return {
           ...r,
           sopName: titled,
-          englishName: r.gujaratiName ? (r.englishName && String(r.englishName).trim().length > 2 ? r.englishName : titled) : titled,
+          englishName: (r.englishName && englishTitleIsUsableForRegistry(r.englishName, nk)) ? r.englishName : titled,
         };
       });
     }

@@ -46,7 +46,10 @@ import GuidelinesResultPanel, {
   type ComplianceResult,
 } from "./components/GuidelinesResultPanel";
 import Link from "next/link";
-import { countRowDocxPdfAttached } from "@/lib/registryRowDocCounts";
+import {
+  countRowDocxPdfAttached,
+  countRowDocxPdfForCapsules,
+} from "@/lib/registryRowDocCounts";
 import { filterPrimaryRegistryRows } from "@/lib/registryPrimaryRows";
 import {
   classifySopVersionCapsule,
@@ -268,15 +271,24 @@ export default function DashboardPage() {
       result = result.filter((d: any) => d.isDualLanguage === true);
     }
 
-    // Filter File Type — same as capsules + Files column (sopFile + sopDocuments; path extension wins over wrong fileType)
+    // Filter File Type — same as capsules: is it fully/partially missing an expected language slot?
     if (filterFileType === "DOCX") {
-      result = result.filter((d: any) => countRowDocxPdfAttached(d).docx > 0);
+      result = result.filter((d: any) => countRowDocxPdfForCapsules(d).docx > 0);
     } else if (filterFileType === "NO_DOCX") {
-      result = result.filter((d: any) => countRowDocxPdfAttached(d).docx === 0);
+      // Missing if (Expected > Available)
+      result = result.filter((d: any) => {
+        const avail = countRowDocxPdfForCapsules(d).docx;
+        const expected = d.isDualLanguage ? 2 : 1;
+        return avail < expected;
+      });
     } else if (filterFileType === "PDF") {
-      result = result.filter((d: any) => countRowDocxPdfAttached(d).pdf > 0);
+      result = result.filter((d: any) => countRowDocxPdfForCapsules(d).pdf > 0);
     } else if (filterFileType === "NO_PDF") {
-      result = result.filter((d: any) => countRowDocxPdfAttached(d).pdf === 0);
+      result = result.filter((d: any) => {
+        const avail = countRowDocxPdfForCapsules(d).pdf;
+        const expected = d.isDualLanguage ? 2 : 1;
+        return avail < expected;
+      });
     }
 
     // Filter Language
@@ -455,7 +467,7 @@ export default function DashboardPage() {
 
         case "fileType": {
           const rank = (r: any) => {
-            const c = countRowDocxPdfAttached(r);
+            const c = countRowDocxPdfForCapsules(r);
             return c.docx * 2 + c.pdf;
           };
           cmp = rank(a) - rank(b);
@@ -465,12 +477,12 @@ export default function DashboardPage() {
         /** Capsule green/red: distinct DOCX paths per row (matches Files column). */
         case "rowDocxCount": {
           cmp =
-            countRowDocxPdfAttached(a).docx - countRowDocxPdfAttached(b).docx;
+            countRowDocxPdfForCapsules(a).docx - countRowDocxPdfForCapsules(b).docx;
           break;
         }
 
         case "rowPdfCount": {
-          cmp = countRowDocxPdfAttached(a).pdf - countRowDocxPdfAttached(b).pdf;
+          cmp = countRowDocxPdfForCapsules(a).pdf - countRowDocxPdfForCapsules(b).pdf;
           break;
         }
 

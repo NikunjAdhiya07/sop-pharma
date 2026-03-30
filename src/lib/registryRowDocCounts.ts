@@ -86,7 +86,57 @@ export function countRowDocxPdf(row: any, opts?: { includeSuperseded?: boolean }
   return { docx: seenDocx.size, pdf: seenPdf.size };
 }
 
-/** Department capsules + DOCX/PDF filters: same as {@link countRowDocxPdfAttached} (aligned with Files column). */
+/**
+ * Department capsules: count available "slots" per row (English, Gujarati).
+ * For a Dual-Language SOP, we expect 2 slots (English, Gujarati).
+ * Available = how many of those slots have at least one file.
+ * This ensures the total reaches 470 (427 rows + 43 dual) and accurately reports gaps.
+ */
 export function countRowDocxPdfForCapsules(row: any): { docx: number; pdf: number } {
-  return countRowDocxPdfAttached(row);
+  let hasEngDocx = false;
+  let hasEngPdf = false;
+  let hasGjDocx = false;
+  let hasGjPdf = false;
+
+  const docList = [...(row.sopFile ? [row.sopFile] : []), ...(row.sopDocuments || [])];
+  
+  for (const d of docList) {
+    const p = (d.filePath || d.fileUrl || '').trim();
+    if (!p) continue;
+    const k = fileKindFromStoredPath(p, d.fileType);
+    // sopFile is usually English; sopDocuments has explicit language
+    const lang = d.language === 'Gujarati' ? 'Gujarati' : 'English';
+    
+    if (k === 'docx' || k === 'doc') {
+      if (lang === 'Gujarati') hasGjDocx = true;
+      else hasEngDocx = true;
+    } else if (k === 'pdf') {
+      if (lang === 'Gujarati') hasGjPdf = true;
+      else hasEngPdf = true;
+    }
+  }
+
+  // Also check artifact-rows if this row is an artifact-only kind
+  // or if we want to include artifacts as "available" (main registry uses artifacts for the Files column)
+  const artifactKeys = ['versionArtifacts', 'versionArtifactsGujarati'] as const;
+  for (const key of artifactKeys) {
+    const entries = row[key];
+    if (!Array.isArray(entries)) continue;
+    const lang = key === 'versionArtifactsGujarati' ? 'Gujarati' : 'English';
+    for (const e of entries) {
+      if (e?.docxPath?.trim()) {
+        if (lang === 'Gujarati') hasGjDocx = true;
+        else hasEngDocx = true;
+      }
+      if (e?.pdfPath?.trim()) {
+        if (lang === 'Gujarati') hasGjPdf = true;
+        else hasEngPdf = true;
+      }
+    }
+  }
+
+  return {
+    docx: (hasEngDocx ? 1 : 0) + (hasGjDocx ? 1 : 0),
+    pdf: (hasEngPdf ? 1 : 0) + (hasGjPdf ? 1 : 0),
+  };
 }
