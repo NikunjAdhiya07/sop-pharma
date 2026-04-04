@@ -61,88 +61,124 @@ export function buildTemplateHeaderHtml(data: TemplateHeaderData): string {
   const e = (s: string) =>
     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+  // Shared cell styles — kept as constants to keep the template readable
+  const BORDER = 'border:1.5px solid #000;';
+  const BASE = `${BORDER}padding:3px 6px;vertical-align:middle;font-size:9pt;`;
+  const LABEL = `${BASE}white-space:nowrap;`;
+  const VALUE = `${BASE}`;
+  const CENTER = `${BASE}text-align:center;`;
+
   return `
-<div class="docx-header" style="margin-bottom:16px;">
-  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-    ${logo ? `<img src="${logo}" alt="logo" style="width:40px;height:40px;" />` : ''}
-    <span style="font-family:'Times New Roman',serif;font-size:12pt;font-weight:normal;">STANDARD OPERATING PROCEDURE</span>
-  </div>
-  <table style="width:100%;border-collapse:collapse;font-family:'Times New Roman',serif;font-size:11pt;color:#000;" cellpadding="0" cellspacing="0">
+<div class="docx-template-header" style="margin-bottom:14px;font-family:'Noto Sans Gujarati','Shruti','Nirmala UI','Arial Unicode MS',sans-serif;font-size:9pt;color:#000;">
+  <!--
+    Outer layout: title bar (left) + logo (right)
+    Then the 5-column metadata table
+    Then the signature row
+  -->
+  <!-- Title + logo row -->
+  <table style="width:100%;border-collapse:collapse;margin-bottom:0;" cellpadding="0" cellspacing="0">
+    <tr>
+      <td style="padding:0 0 4px 0;vertical-align:bottom;">
+        <span style="font-size:11pt;font-weight:normal;font-family:'Noto Sans Gujarati','Shruti','Nirmala UI','Arial Unicode MS',sans-serif;">પ્રમાણસર કાર્ય કરવાની પદ્ધતિ</span>
+      </td>
+      <td style="padding:0 0 4px 0;text-align:right;vertical-align:middle;width:52px;">
+        ${logo ? `<img src="${logo}" alt="logo" style="width:48px;height:48px;object-fit:contain;display:inline-block;" />` : ''}
+      </td>
+    </tr>
+  </table>
+
+  <!-- Metadata table: matches PDF layout exactly -->
+  <!--
+    Columns (approximate % of usable width):
+      Col A: Company name block  ~17%
+      Col B: Label (Dept/Area/Subject)  ~13%
+      Col C: Colon separator  ~2%
+      Col D: Value (Dept value / Subject text)  ~28%
+      Col E: Right label (SOP No / Page No / dates)  ~17%
+      Col F: Right value  ~23%
+  -->
+  <table style="width:100%;border-collapse:collapse;table-layout:fixed;font-family:'Noto Sans Gujarati','Shruti','Nirmala UI','Arial Unicode MS',sans-serif;font-size:9pt;color:#000;" cellpadding="0" cellspacing="0">
     <colgroup>
+      <col style="width:17%;" />
+      <col style="width:13%;" />
+      <col style="width:3%;" />
+      <col style="width:27%;" />
       <col style="width:18%;" />
-      <col style="width:14%;" />
-      <col style="width:2%;" />
-      <col style="width:26%;" />
-      <col style="width:14%;" />
-      <col style="width:2%;" />
-      <col style="width:14%;" />
+      <col style="width:22%;" />
     </colgroup>
-    <!-- Row 1: Department / SOP No -->
+
+    <!-- Row 1: Company | DEPARTMENT : value | SOP NO. : value -->
     <tr>
-      <td rowspan="5" style="border:1px solid #000;text-align:center;vertical-align:middle;font-weight:700;padding:6px;">
-        INDIANA<br/>OPHTHALMICS<br/>LLP
+      <td rowspan="5" style="${BORDER}text-align:center;vertical-align:middle;padding:4px;font-size:9pt;font-weight:700;line-height:1.6;">
+        ઇન્ડિયાના<br/>ઓફ્થાલ્મિક્સ<br/>એલ.એલ.પી
       </td>
-      <td style="border:1px solid #000;border-right:none;padding:4px 6px;font-weight:700;vertical-align:middle;">DEPARTMENT</td>
-      <td style="border:1px solid #000;border-left:none;border-right:none;padding:4px 2px;font-weight:700;vertical-align:middle;">:</td>
-      <td style="border:1px solid #000;border-left:none;padding:4px 6px;vertical-align:middle;">${e(data.department)}</td>
-      <td style="border:1px solid #000;border-right:none;padding:4px 6px;vertical-align:middle;">SOP NO.</td>
-      <td style="border:1px solid #000;border-left:none;border-right:none;padding:4px 2px;vertical-align:middle;">:</td>
-      <td style="border:1px solid #000;border-left:none;padding:4px 6px;text-align:center;vertical-align:middle;">${e(normalizeSopNo(data.sopNo))}</td>
+      <td style="${LABEL}font-weight:700;">વિભાગ</td>
+      <td style="${CENTER}font-weight:700;">:</td>
+      <td style="${VALUE}">${e(data.department)}</td>
+      <td style="${LABEL}">એસ.ઓ.પી.નં.</td>
+      <td style="${CENTER}">${e(normalizeSopNo(data.sopNo))}</td>
     </tr>
-    <!-- Row 2: Area / Page No -->
+
+    <!-- Row 2: | AREA : value | PAGE NO. : value -->
     <tr>
-      <td style="border:1px solid #000;border-right:none;padding:4px 6px;font-weight:700;vertical-align:middle;">AREA</td>
-      <td style="border:1px solid #000;border-left:none;border-right:none;padding:4px 2px;font-weight:700;vertical-align:middle;">:</td>
-      <td style="border:1px solid #000;border-left:none;padding:4px 6px;vertical-align:middle;">${e(data.area)}</td>
-      <td style="border:1px solid #000;border-right:none;padding:4px 6px;vertical-align:middle;">PAGE NO.</td>
-      <td style="border:1px solid #000;border-left:none;border-right:none;padding:4px 2px;vertical-align:middle;">:</td>
-      <td style="border:1px solid #000;border-left:none;padding:4px 6px;text-align:center;vertical-align:middle;">—</td>
+      <td style="${LABEL}font-weight:700;">શાખા</td>
+      <td style="${CENTER}font-weight:700;">:</td>
+      <td style="${VALUE}">${e(data.area)}</td>
+      <td style="${LABEL}">પેજ નંબર</td>
+      <td style="${CENTER}"></td>
     </tr>
-    <!-- Row 3: Subject / Eff. Dt. -->
+
+    <!-- Row 3: | SUBJECT (spans 2 rows of label+colon+value) | EFF DATE : value -->
     <tr>
-      <td colspan="3" rowspan="3" style="border:1px solid #000;padding:4px 6px;vertical-align:top;">
-        <span style="font-weight:700;">SUBJECT :</span><br/>${e(data.subject)}
+      <td colspan="3" rowspan="3" style="${BORDER}padding:4px 6px;vertical-align:top;word-break:break-word;font-size:9pt;">
+        <span style="font-weight:700;">વિષય :</span> ${e(data.subject)}
       </td>
-      <td style="border:1px solid #000;border-right:none;padding:4px 6px;vertical-align:middle;">EFF. DT.</td>
-      <td style="border:1px solid #000;border-left:none;border-right:none;padding:4px 2px;vertical-align:middle;">:</td>
-      <td style="border:1px solid #000;border-left:none;padding:4px 6px;text-align:center;vertical-align:middle;">${e(eff)}</td>
+      <td style="${LABEL}">લાગુ&nbsp;પડેલ&nbsp;તારીખ</td>
+      <td style="${CENTER}">${e(eff)}</td>
     </tr>
-    <!-- Row 4: Review Dt. -->
+
+    <!-- Row 4: | | REVIEW DT. : value -->
     <tr>
-      <td style="border:1px solid #000;border-right:none;padding:4px 6px;vertical-align:middle;">REVIEW DT.</td>
-      <td style="border:1px solid #000;border-left:none;border-right:none;padding:4px 2px;vertical-align:middle;">:</td>
-      <td style="border:1px solid #000;border-left:none;padding:4px 6px;text-align:center;vertical-align:middle;">${e(rev)}</td>
+      <td style="${LABEL}">ફેરચકાસણી&nbsp;તારીખ</td>
+      <td style="${CENTER}">${e(rev)}</td>
     </tr>
-    <!-- Row 5: Supersedes -->
+
+    <!-- Row 5: | | SUPERSEDES : value -->
     <tr>
-      <td style="border:1px solid #000;border-right:none;padding:4px 6px;vertical-align:middle;">SUPERSEDES</td>
-      <td style="border:1px solid #000;border-left:none;border-right:none;padding:4px 2px;vertical-align:middle;">:</td>
-      <td style="border:1px solid #000;border-left:none;padding:4px 6px;text-align:center;vertical-align:middle;">${e(data.supersedes)}</td>
+      <td style="${LABEL}">રદ&nbsp;કરેલ&nbsp;નં.</td>
+      <td style="${CENTER}">${e(data.supersedes)}</td>
     </tr>
-    <!-- Row 6: Prepared / Checked / Approved -->
+
+    <!-- Row 6: header label row — col A (label) | col B+C+D (prepared) | col E (checked) | col F (approved) -->
     <tr>
-      <td rowspan="3" style="border:1px solid #000;padding:4px 6px;vertical-align:top;font-weight:400;">
-        SIGNATURE<br/><br/>NAME<br/><br/>DATE
-      </td>
-      <td colspan="3" style="border:1px solid #000;padding:4px 6px;text-align:center;vertical-align:top;">
-        <div style="font-weight:400;margin-bottom:4px;">PREPARED BY</div>
-        <div style="min-height:40px;"></div>
-      </td>
-      <td colspan="3" style="border:1px solid #000;padding:4px 6px;text-align:center;vertical-align:top;" class="sop-hdr-checked">
-        <div style="font-weight:400;margin-bottom:4px;">CHECKED BY</div>
-        <div style="min-height:40px;"></div>
-      </td>
+      <td style="${BORDER}padding:3px 6px;vertical-align:middle;font-size:9pt;text-align:center;"></td>
+      <td colspan="3" style="${BORDER}padding:3px 6px;text-align:center;vertical-align:middle;font-size:9pt;">બનાવનાર</td>
+      <td style="${BORDER}padding:3px 6px;text-align:center;vertical-align:middle;font-size:9pt;">તપાસનાર</td>
+      <td style="${BORDER}padding:3px 6px;text-align:center;vertical-align:middle;font-size:9pt;">પ્રમાણિત&nbsp;કરનાર</td>
     </tr>
+
+    <!-- Row 7: SIGNATURE row -->
     <tr>
-      <td colspan="3" style="border:1px solid #000;padding:4px 6px;text-align:center;vertical-align:top;">
-        <div style="font-weight:400;margin-bottom:4px;">APPROVED BY</div>
-        <div style="min-height:40px;"></div>
-      </td>
-      <td colspan="3" style="border:1px solid #000;padding:4px 6px;text-align:center;vertical-align:middle;">
-      </td>
+      <td style="${BORDER}padding:3px 6px;text-align:center;vertical-align:middle;font-size:9pt;font-weight:700;">સહી</td>
+      <td colspan="3" style="${BORDER}padding:3px 6px;min-height:32px;height:32px;"></td>
+      <td style="${BORDER}padding:3px 6px;min-height:32px;height:32px;"></td>
+      <td style="${BORDER}padding:3px 6px;min-height:32px;height:32px;"></td>
     </tr>
+
+    <!-- Row 8: NAME row -->
     <tr>
-      <td colspan="6" style="border:none;padding:0;"></td>
+      <td style="${BORDER}padding:3px 6px;text-align:center;vertical-align:middle;font-size:9pt;font-weight:700;">નામ</td>
+      <td colspan="3" style="${BORDER}padding:3px 6px;min-height:24px;height:24px;"></td>
+      <td style="${BORDER}padding:3px 6px;min-height:24px;height:24px;"></td>
+      <td style="${BORDER}padding:3px 6px;min-height:24px;height:24px;"></td>
+    </tr>
+
+    <!-- Row 9: DATE row -->
+    <tr>
+      <td style="${BORDER}padding:3px 6px;text-align:center;vertical-align:middle;font-size:9pt;font-weight:700;">તારીખ</td>
+      <td colspan="3" style="${BORDER}padding:3px 6px;min-height:24px;height:24px;"></td>
+      <td style="${BORDER}padding:3px 6px;min-height:24px;height:24px;"></td>
+      <td style="${BORDER}padding:3px 6px;min-height:24px;height:24px;"></td>
     </tr>
   </table>
 </div>`;

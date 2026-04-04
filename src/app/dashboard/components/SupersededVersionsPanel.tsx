@@ -2,6 +2,7 @@
 
 import { useMemo, useEffect } from 'react';
 import { fileKindFromStoredPath } from '@/lib/filePathFileKind';
+import { buildViewDocHref } from '@/lib/viewDocLinks';
 import { X, Archive } from 'lucide-react';
 
 type ArtifactEntry = { version: number; docxPath?: string; pdfPath?: string };
@@ -53,12 +54,10 @@ function mergeByVersion(a: ArtifactEntry[], b: ArtifactEntry[]): ArtifactEntry[]
 }
 
 function viewDocUrl(path: string, type: string, sopNo: string, lang: 'English' | 'Gujarati') {
-  const params = new URLSearchParams();
-  params.set('identifier', sopNo);
-  params.set('language', lang);
-  params.set('path', path.startsWith('/') ? path : `/${path}`);
   const kind = fileKindFromStoredPath(path, type);
-  if (kind === 'docx' || kind === 'doc') return `/dashboard/view-doc?${params.toString()}`;
+  if (kind === 'docx' || kind === 'doc') {
+    return buildViewDocHref(path, sopNo, lang);
+  }
   const dl = new URLSearchParams();
   dl.set('path', path);
   dl.set('open', '1');
@@ -116,7 +115,7 @@ export default function SupersededVersionsPanel({
             <Archive className="h-5 w-5 shrink-0 text-amber-800" />
             <div className="min-w-0">
               <h2 id="superseded-title" className="text-sm font-bold text-gray-900">
-                Superseded Versions
+                Prior Version Archive
               </h2>
               <p className="text-[11px] text-amber-900/90">
                 Older prior-version files (beyond the two newest shown in the registry &quot;Prior versions&quot; column).{' '}

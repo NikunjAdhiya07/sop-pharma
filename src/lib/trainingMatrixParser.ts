@@ -75,9 +75,9 @@ export function detectMonthYearFromText(text: string): { month: number; year: nu
 
 /** Normalise any cell value to a CellStatus */
 export function parseCellStatus(raw: string | number | boolean | null | undefined): { status: CellStatus; raw: string; display: string } {
-  if (raw === null || raw === undefined || raw === '') return { status: 'not_required', raw: '', display: '' };
+  if (raw === null || raw === undefined || raw === '') return { status: 'na', raw: '', display: '' };
   const s = String(raw).trim();
-  if (!s) return { status: 'not_required', raw: '', display: '' };
+  if (!s) return { status: 'na', raw: '', display: '' };
   const lo = s.toLowerCase();
 
   // Completed (must be explicitly marked as done)

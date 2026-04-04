@@ -6,17 +6,13 @@ import type { SopVersionFilterSegment } from "@/lib/sopVersionCapsuleClassify";
 interface CompactFilterBarProps {
   data: any[];
   filterDept: string;
-  filterMedia: string;
-  filterExpiry: string;
-  filterDualLang: boolean;
-  filterFileType?: string;
   filterLanguage?: string;
   filterVersionStatus?: "all" | SopVersionFilterSegment;
+  filterAbsoluteSop?: boolean;
   search: string;
   onFilterDept: (dept: string) => void;
-  onFilterMedia: (media: string) => void;
-  onFilterExpiry: (expiry: string) => void;
-  onFilterDualLang?: (v: boolean) => void;
+  onFilterLanguage?: (language: "all" | "ENG" | "GUJ" | "BOTH") => void;
+  onFilterAbsoluteSop?: (v: boolean) => void;
   onClearAll: () => void;
   inline?: boolean;
 }
@@ -24,71 +20,28 @@ interface CompactFilterBarProps {
 export default function CompactFilterBar({
   data,
   filterDept,
-  filterMedia,
-  filterExpiry,
-  filterDualLang,
-  filterFileType,
   filterLanguage,
   filterVersionStatus,
+  filterAbsoluteSop = false,
   search,
   onFilterDept,
-  onFilterMedia,
-  onFilterExpiry,
-  onFilterDualLang,
+  onFilterLanguage,
+  onFilterAbsoluteSop,
   onClearAll,
   inline = false,
 }: CompactFilterBarProps) {
   const totalSOPs = data.length;
   const departmentsMap = new Map<string, number>();
-  let totalVideos = 0;
-  let totalSlides = 0;
-  let expiredCount = 0;
-  let highCount = 0;
-  let mediumCount = 0;
-  let lowCount = 0;
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
 
   data.forEach((row: any) => {
     if (isArtifactOnlyRegistryRow(row)) return;
     const dept = row.department || "Unknown";
     departmentsMap.set(dept, (departmentsMap.get(dept) || 0) + 1);
-
-    if (row.mediaStatus?.videos) totalVideos += 1;
-    if (row.mediaStatus?.slides) totalSlides += 1;
-
-    if (row.expiryDate) {
-      const diffDays = Math.ceil(
-        (new Date(row.expiryDate).getTime() - today.getTime()) /
-          (1000 * 60 * 60 * 24),
-      );
-      if (diffDays < 0) expiredCount += 1;
-      else if (diffDays <= 30) highCount += 1;
-      else if (diffDays <= 60) mediumCount += 1;
-      else lowCount += 1;
-    }
   });
 
   const departments = Array.from(departmentsMap.entries()).map(
-    ([department, count]) => ({
-      department,
-      count,
-    }),
+    ([department, count]) => ({ department, count }),
   );
-
-  const fileFilterLabel =
-    filterFileType === "NO_DOCX"
-      ? "Missing DOCX"
-      : filterFileType === "NO_PDF"
-        ? "Missing PDF"
-        : filterFileType;
-  const mediaFilterLabel =
-    filterMedia === "no-video"
-      ? "No video"
-      : filterMedia === "no-slides"
-        ? "No slides"
-        : filterMedia;
 
   const versionFilterLabel =
     filterVersionStatus === "last2ok"
@@ -101,15 +54,10 @@ export default function CompactFilterBar({
 
   const activeFilters = [
     filterDept !== "All" ? `Dept: ${filterDept}` : null,
-    filterMedia !== "all" ? `Media: ${mediaFilterLabel}` : null,
-    filterExpiry !== "all" ? `Expiry: ${filterExpiry}` : null,
-    filterFileType && filterFileType !== "all"
-      ? `File: ${fileFilterLabel}`
-      : null,
     filterLanguage && filterLanguage !== "all"
       ? `Lang: ${filterLanguage}`
       : null,
-    filterDualLang ? "Dual language only" : null,
+    filterAbsoluteSop ? "Absolute SOP" : null,
     filterVersionStatus && filterVersionStatus !== "all"
       ? `Version: ${versionFilterLabel}`
       : null,
@@ -155,59 +103,28 @@ export default function CompactFilterBar({
         </div>
 
         <div className="flex items-center gap-1">
-          <label
-            htmlFor="media-select"
-            className="text-[10px] font-semibold text-gray-500">
-            Media
+          <label htmlFor="lang-select" className="text-[10px] font-semibold text-gray-500">
+            Lang
           </label>
           <select
-            id="media-select"
-            value={filterMedia}
-            onChange={(e) => onFilterMedia(e.target.value)}
+            id="lang-select"
+            value={filterLanguage || "all"}
+            onChange={(e) => onFilterLanguage?.(e.target.value as "all" | "ENG" | "GUJ" | "BOTH")}
             className="rounded border border-gray-300 bg-gray-50 px-2 py-1 text-[10px] font-medium text-gray-700 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500/20">
             <option value="all">All</option>
-            <option value="video">Has videos ({totalVideos})</option>
-            <option value="slides">Has slides ({totalSlides})</option>
-            <option value="no-video">No video</option>
-            <option value="no-slides">No slides</option>
-            <option value="no-media">No media</option>
+            <option value="ENG">ENG</option>
+            <option value="GUJ">GUJ</option>
+            <option value="BOTH">BOTH</option>
           </select>
         </div>
 
-        <div className="flex items-center gap-1">
-          <label
-            htmlFor="expiry-select"
-            className="text-[10px] font-semibold text-gray-500">
-            Expiry
-          </label>
-          <select
-            id="expiry-select"
-            value={filterExpiry}
-            onChange={(e) => onFilterExpiry(e.target.value)}
-            className="rounded border border-gray-300 bg-gray-50 px-2 py-1 text-[10px] font-medium text-gray-700 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500/20">
-            <option value="all">All ({totalSOPs})</option>
-            <option value="expired">Expired ({expiredCount})</option>
-            <option value="high">High ({highCount})</option>
-            <option value="medium">Medium ({mediumCount})</option>
-            <option value="low">Low ({lowCount})</option>
-          </select>
-        </div>
-
-        {typeof onFilterDualLang === "function" && (
-          <label
-            className="flex cursor-pointer items-center gap-2"
-            title="Only SOPs with both English and Gujarati files (same as the “Dual” line in department capsules). Turn off to see all SOPs in the selected department.">
-            <input
-              type="checkbox"
-              checked={filterDualLang}
-              onChange={(e) => onFilterDualLang(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-            />
-            <span className="text-xs font-semibold text-gray-600">
-              Dual language only
-            </span>
-          </label>
-        )}
+        <button
+          type="button"
+          onClick={() => onFilterAbsoluteSop?.(!filterAbsoluteSop)}
+          className={`rounded border px-2 py-1 text-[10px] font-semibold ${filterAbsoluteSop ? "border-purple-500 bg-purple-100 text-purple-700" : "border-gray-300 bg-white text-gray-600"}`}
+          title="Show only SOP rows with complete document set">
+          Absolute SOP
+        </button>
 
         {inline && (
           <button

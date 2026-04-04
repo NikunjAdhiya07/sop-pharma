@@ -1,14 +1,14 @@
 /**
- * Shared links for dashboard document preview (view-doc) and downloads.
- * Preview must always go through /dashboard/view-doc so local + CDN paths resolve via API
- * (raw https:// links would skip token/serve-docx and break DOCX preview).
+ * Shared links for dashboard document preview and downloads.
+ * All DOCX files route through /api/files/open-in-viewer which resolves
+ * bunny:// paths to CDN URLs and redirects straight to Office Live Viewer.
  */
 export function buildViewDocHref(path: string, identifier?: string, language?: string): string {
   const params = new URLSearchParams();
   if (identifier) params.set('identifier', identifier);
   if (language) params.set('language', language);
   if (path) params.set('path', path);
-  return `/dashboard/view-doc?${params.toString()}`;
+  return `/api/files/open-in-viewer?${params.toString()}`;
 }
 
 /** Forces server-resolved Word bytes as attachment (same resolution as preview). */

@@ -27,7 +27,7 @@ import {
   Trash2,
 } from "lucide-react";
 
-import CompactFilterBar from "./components/CompactFilterBar";
+
 import DepartmentCapsules, {
   type CapsuleFilterMode,
   type CapsuleAvailMetric,
@@ -71,6 +71,13 @@ export default function DashboardPage() {
   const [showSOPFolderUploadModal, setShowSOPFolderUploadModal] =
     useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [migrateBunnyState, setMigrateBunnyState] = useState<
+    | { status: 'idle' }
+    | { status: 'checking'; localCount: number | null }
+    | { status: 'running' }
+    | { status: 'done'; migrated: number; skipped: number; failed: number; total: number }
+    | { status: 'error'; message: string }
+  >({ status: 'idle' });
   /** API metadata from `/api/dashboard/sops` (not shown in UI; avoids stale `setDashboardMeta` reference errors). */
   const [, setDashboardMeta] = useState<Record<string, unknown> | null>(null);
   // User State
@@ -78,6 +85,9 @@ export default function DashboardPage() {
 
   // Filters State
   const [search, setSearch] = useState("");
+  const [searchField, setSearchField] = useState<
+    "all" | "sopNo" | "sopName" | "department" | "location"
+  >("all");
   const [filterDept, setFilterDept] = useState("All");
   const [filterMedia, setFilterMedia] = useState<string>("all");
   const [filterExpiry, setFilterExpiry] = useState("all");
@@ -85,9 +95,12 @@ export default function DashboardPage() {
   const [filterFileType, setFilterFileType] = useState<
     "all" | "DOCX" | "NO_DOCX" | "PDF" | "NO_PDF"
   >("all");
-  const [filterLanguage, setFilterLanguage] = useState<"all" | "ENG" | "GUJ">(
+  const [filterLanguage, setFilterLanguage] = useState<"all" | "ENG" | "GUJ" | "BOTH">(
     "all",
   );
+  const [filterAbsoluteSop, setFilterAbsoluteSop] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [filterVersionStatus, setFilterVersionStatus] = useState<
     "all" | SopVersionFilterSegment
   >("all");
@@ -160,6 +173,8 @@ export default function DashboardPage() {
     [data],
   );
 
+  const effectiveData = data;
+
   useEffect(() => {
     const userData = localStorage.getItem("user");
     if (!userData) {
@@ -204,6 +219,46 @@ export default function DashboardPage() {
     router.push("/login");
   };
 
+  const handleMigrateToBunny = async () => {
+    // Step 1: dry-run check
+    setMigrateBunnyState({ status: 'checking', localCount: null });
+    try {
+      const dryRes = await fetch('/api/admin/migrate-to-bunny?dry=1');
+      const dryData = await dryRes.json();
+      const localCount = dryData.localPathCount ?? 0;
+      if (localCount === 0) {
+        setMigrateBunnyState({ status: 'done', migrated: 0, skipped: 0, failed: 0, total: 0 });
+        return;
+      }
+      setMigrateBunnyState({ status: 'checking', localCount });
+    } catch {
+      setMigrateBunnyState({ status: 'error', message: 'Failed to check local files.' });
+      return;
+    }
+  };
+
+  const handleMigrateToBunnyConfirm = async () => {
+    setMigrateBunnyState({ status: 'running' });
+    try {
+      const res = await fetch('/api/admin/migrate-to-bunny', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Migration failed');
+      setMigrateBunnyState({
+        status: 'done',
+        migrated: data.migrated ?? 0,
+        skipped: data.skipped ?? 0,
+        failed: data.failed ?? 0,
+        total: data.total ?? 0,
+      });
+    } catch (err) {
+      setMigrateBunnyState({ status: 'error', message: err instanceof Error ? err.message : 'Migration failed.' });
+    }
+  };
+
   const handleLocationExcelChange = async (
     e: ChangeEvent<HTMLInputElement>,
   ) => {
@@ -244,21 +299,28 @@ export default function DashboardPage() {
 
   // The perfect sorting & filtering logic
   const filteredAndSortedData = useMemo(() => {
-    let result = [...filterPrimaryRegistryRows(data)];
+    let result = [...filterPrimaryRegistryRows(effectiveData)];
 
     if (search) {
       const s = search.toLowerCase();
-      result = result.filter(
-        (d: any) =>
-          (d.sopNo || "").toLowerCase().includes(s) ||
-          (d.sopName || "").toLowerCase().includes(s) ||
-          (d.englishName || "").toLowerCase().includes(s) ||
-          (d.gujaratiName || "").toLowerCase().includes(s) ||
-          (d.department || "").toLowerCase().includes(s) ||
-          String(d.location || "")
-            .toLowerCase()
-            .includes(s),
-      );
+      result = result.filter((d: any) => {
+        const fields = {
+          sopNo: (d.sopNo || "").toLowerCase(),
+          sopName:
+            `${d.sopName || ""} ${d.englishName || ""} ${d.gujaratiName || ""}`.toLowerCase(),
+          department: (d.department || "").toLowerCase(),
+          location: String(d.location || "").toLowerCase(),
+        };
+        if (searchField === "all") {
+          return (
+            fields.sopNo.includes(s) ||
+            fields.sopName.includes(s) ||
+            fields.department.includes(s) ||
+            fields.location.includes(s)
+          );
+        }
+        return fields[searchField].includes(s);
+      });
     }
 
     // Filter Department
@@ -293,9 +355,37 @@ export default function DashboardPage() {
 
     // Filter Language
     if (filterLanguage === "ENG")
-      result = result.filter((d: any) => d.englishVersion);
+      result = result.filter(
+        (d: any) =>
+          d.englishVersion ||
+          (Array.isArray(d.sopDocuments) &&
+            d.sopDocuments.some(
+              (doc: any) => (doc.language || "English") !== "Gujarati",
+            )),
+      );
     else if (filterLanguage === "GUJ")
-      result = result.filter((d: any) => d.gujaratiVersion);
+      result = result.filter(
+        (d: any) =>
+          d.gujaratiVersion ||
+          (Array.isArray(d.sopDocuments) &&
+            d.sopDocuments.some((doc: any) => doc.language === "Gujarati")),
+      );
+    else if (filterLanguage === "BOTH")
+      result = result.filter(
+        (d: any) => {
+          const hasEn =
+            d.englishVersion ||
+            (Array.isArray(d.sopDocuments) &&
+              d.sopDocuments.some(
+                (doc: any) => (doc.language || "English") !== "Gujarati",
+              ));
+          const hasGu =
+            d.gujaratiVersion ||
+            (Array.isArray(d.sopDocuments) &&
+              d.sopDocuments.some((doc: any) => doc.language === "Gujarati"));
+          return d.isDualLanguage || (hasEn && hasGu);
+        },
+      );
 
     // Filter Media
     if (filterMedia === "video")
@@ -316,8 +406,8 @@ export default function DashboardPage() {
         filterVersionStatus === "last2ok"
           ? "green"
           : filterVersionStatus === "zerov"
-            ? "grey"
-            : "red";
+              ? "grey"
+              : "red";
       result = result.filter(
         (d: any) => classifySopVersionCapsule(d) === tier,
       );
@@ -341,6 +431,29 @@ export default function DashboardPage() {
         if (filterExpiry === "soon90") return diffDays > 60 && diffDays <= 90;
         if (filterExpiry === "low") return diffDays > 60;
         return true;
+      });
+    }
+
+    if (dateFrom || dateTo) {
+      const fromTs = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null;
+      const toTs = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : null;
+      result = result.filter((d: any) => {
+        if (!d.expiryDate) return false;
+        const ts = new Date(d.expiryDate).getTime();
+        if (Number.isNaN(ts)) return false;
+        if (fromTs != null && ts < fromTs) return false;
+        if (toTs != null && ts > toTs) return false;
+        return true;
+      });
+    }
+
+    if (filterAbsoluteSop) {
+      result = result.filter((d: any) => {
+        const docs = countRowDocxPdfForCapsules(d);
+        const expectedSlots = d.isDualLanguage ? 2 : 1;
+        const completeFiles = docs.docx >= expectedSlots && docs.pdf >= expectedSlots;
+        const hasMeta = Boolean((d.department || "").trim()) && Boolean((d.sopName || "").trim());
+        return completeFiles && hasMeta;
       });
     }
 
@@ -504,8 +617,9 @@ export default function DashboardPage() {
 
     return result;
   }, [
-    data,
+    effectiveData,
     search,
+    searchField,
     filterDept,
     filterMedia,
     filterExpiry,
@@ -513,12 +627,16 @@ export default function DashboardPage() {
     filterFileType,
     filterLanguage,
     filterVersionStatus,
+    filterAbsoluteSop,
+    dateFrom,
+    dateTo,
     sortConfig,
   ]);
 
+
   const supersededSlotCount = useMemo(() => {
     let n = 0;
-    for (const r of data) {
+    for (const r of effectiveData) {
       n +=
         (Array.isArray(r.versionArtifactsSuperseded)
           ? r.versionArtifactsSuperseded.length
@@ -528,7 +646,35 @@ export default function DashboardPage() {
           : 0);
     }
     return n;
-  }, [data]);
+  }, [effectiveData]);
+
+  const mediaTotals = useMemo(() => {
+    let totalVideos = 0;
+    let totalSlides = 0;
+    let totalDocx = 0;
+    let totalPdf = 0;
+    let pendingVideoSops = 0;
+    let pendingSlideSops = 0;
+    for (const r of filteredAndSortedData) {
+      const v = r.mediaStatus?.videoCount ?? (r.mediaStatus?.videos ? 1 : 0);
+      const s = r.mediaStatus?.slideCount ?? (r.mediaStatus?.slides ? 1 : 0);
+      const docs = countRowDocxPdfAttached(r);
+      totalVideos += v;
+      totalSlides += s;
+      totalDocx += docs.docx;
+      totalPdf += docs.pdf;
+      if (v <= 0) pendingVideoSops++;
+      if (s <= 0) pendingSlideSops++;
+    }
+    return {
+      totalVideos,
+      totalSlides,
+      totalDocx,
+      totalPdf,
+      pendingVideoSops,
+      pendingSlideSops,
+    };
+  }, [filteredAndSortedData]);
 
   const capsuleFilterSnapshot = useMemo(
     () => ({
@@ -679,6 +825,10 @@ export default function DashboardPage() {
           resetNeutral();
           setFilterExpiry("high");
           break;
+        case "nodate":
+          resetNeutral();
+          setFilterExpiry("nodate");
+          break;
         case "docx":
           resetNeutral();
           setFilterFileType("DOCX");
@@ -708,6 +858,43 @@ export default function DashboardPage() {
     [],
   );
 
+  const handleMarkVersionSuperseded = useCallback(
+    async (payload: {
+      sopNo: string;
+      lang: "English" | "Gujarati";
+      version: number;
+      docxPath?: string;
+      pdfPath?: string;
+    }) => {
+      try {
+        const user = (() => {
+          try {
+            return JSON.parse(localStorage.getItem("user") || "{}");
+          } catch {
+            return {};
+          }
+        })();
+        const res = await fetch("/api/dashboard/supersede-version", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...payload,
+            createdBy: user?.username || user?.name || "dashboard-user",
+          }),
+        });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok || !j.success) {
+          window.alert(j.error || "Failed to move version to Supersede SOP");
+          return;
+        }
+        setRefreshKey((k) => k + 1);
+      } catch {
+        window.alert("Network error while superseding version");
+      }
+    },
+    [],
+  );
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
@@ -724,7 +911,11 @@ export default function DashboardPage() {
     setFilterFileType("all");
     setFilterLanguage("all");
     setFilterVersionStatus("all");
+    setFilterAbsoluteSop(false);
+    setDateFrom("");
+    setDateTo("");
     setSearch("");
+    setSearchField("all");
     setSortConfig({ key: "sopNo", direction: "asc" });
   };
 
@@ -824,33 +1015,34 @@ export default function DashboardPage() {
 
         {/* Bottom Row: Filters & Toolbars */}
         <div className="flex flex-wrap items-center justify-between gap-y-2 w-full">
-          {/* Inline filters in header */}
-          <div className="hidden lg:flex flex-1 items-center justify-start pr-4">
-            <CompactFilterBar
-              data={primaryRegistryData}
-              filterDept={filterDept}
-              filterMedia={filterMedia}
-              filterExpiry={filterExpiry}
-              filterDualLang={filterDualLang}
-              filterFileType={filterFileType}
-              filterLanguage={filterLanguage}
-              filterVersionStatus={filterVersionStatus}
-              search={search}
-              onFilterDept={setFilterDept}
-              onFilterMedia={setFilterMedia}
-              onFilterExpiry={setFilterExpiry}
-              onFilterDualLang={setFilterDualLang}
-              onClearAll={handleClearFilters}
-              inline
-            />
-          </div>
+
+
 
           <div className="flex flex-wrap items-center justify-end gap-2 flex-1 lg:flex-none">
+            <select
+              value={searchField}
+              onChange={(e) =>
+                setSearchField(
+                  e.target.value as
+                    | "all"
+                    | "sopNo"
+                    | "sopName"
+                    | "department"
+                    | "location",
+                )
+              }
+              className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-[11px] font-semibold text-gray-700">
+              <option value="all">All fields</option>
+              <option value="sopNo">SOP No</option>
+              <option value="sopName">SOP Name</option>
+              <option value="department">Department</option>
+              <option value="location">Location</option>
+            </select>
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search SOP..."
+                placeholder="Advanced search..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-48 rounded-md border border-gray-300 bg-white py-1.5 pl-8 pr-3 text-xs text-gray-700 outline-none placeholder:text-gray-400 focus:border-purple-500 focus:ring-1 focus:ring-purple-500/20"
@@ -877,88 +1069,109 @@ export default function DashboardPage() {
             <button
               type="button"
               onClick={() => setShowSuperseded(true)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-900 shadow-sm transition-colors hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
-              title="Older prior-version files beyond the two newest shown in each registry row">
-              Superseded Versions
+              className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-900 shadow-sm transition-colors hover:bg-amber-100 focus:outline-none focus:ring-1 focus:ring-amber-500"
+              title="Prior version archive — older version files beyond the two newest per SOP">
+              Prior Ver. Archive
               {supersededSlotCount > 0 ? (
-                <span className="rounded-full bg-amber-200 px-1.5 py-px text-[10px] tabular-nums text-amber-950">
+                <span className="rounded-full bg-amber-200 px-1 py-px text-[9px] tabular-nums text-amber-950">
                   {supersededSlotCount}
                 </span>
               ) : null}
             </button>
+            <button
+              type="button"
+              onClick={() => setShowSOPFolderUploadModal(true)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-teal-300 bg-teal-50 px-2.5 py-1 text-[11px] font-semibold text-teal-900 shadow-sm transition-colors hover:bg-teal-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
+              title="Upload superseded folders and fetch only SOP versions (annexures skipped)">
+              <Upload className="h-3.5 w-3.5" />
+              Version Fetch Upload
+            </button>
 
-            {/* Upload Hub Dropdown */}
-            <div className="relative group">
-              <button
-                type="button"
-                className="flex items-center gap-1.5 rounded-md border border-purple-300 bg-purple-50 px-3 py-1.5 text-xs font-semibold text-purple-700 shadow-sm transition-colors hover:bg-purple-100">
-                <Upload className="h-3.5 w-3.5" /> Bulk Uploads{" "}
-                <ChevronDown className="h-3 w-3 opacity-70" />
-              </button>
-              <div className="absolute right-0 top-full mt-1 hidden w-48 flex-col gap-1 rounded-md border border-gray-200 bg-white p-1.5 shadow-xl group-hover:flex z-50">
+            <div className="flex items-center gap-2 rounded-md border border-purple-200 bg-white/80 px-1.5 py-1">
+              <span className="px-1 text-[9px] font-bold uppercase tracking-wide text-purple-700">
+                Bulk
+              </span>
+              <div className="relative group">
                 <button
                   type="button"
-                  onClick={() => {
-                    setUploadModalTab("english");
-                    setShowUploadModal(true);
-                  }}
-                  className="flex items-center gap-2 rounded px-2 py-1.5 text-xs font-semibold text-gray-700 hover:bg-purple-50 hover:text-purple-700 w-full text-left">
-                  <Upload className="h-3.5 w-3.5 text-purple-600" /> Upload SOPs
+                  className="flex items-center gap-1.5 rounded-md border border-purple-300 bg-purple-50 px-3 py-1.5 text-xs font-semibold text-purple-700 shadow-sm transition-colors hover:bg-purple-100">
+                  <Upload className="h-3.5 w-3.5" /> Bulk Uploads
+                  <ChevronDown className="h-3 w-3 opacity-70" />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setUploadModalTab("gujarati");
-                    setShowUploadModal(true);
-                  }}
-                  className="flex items-center gap-2 rounded px-2 py-1.5 text-xs font-semibold text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 w-full text-left">
-                  <Languages className="h-3.5 w-3.5 text-indigo-600" /> Gujarati
-                  folders
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowPdfUploadModal(true)}
-                  className="flex items-center gap-2 rounded px-2 py-1.5 text-xs font-semibold text-gray-700 hover:bg-red-50 hover:text-red-700 w-full text-left">
-                  <Upload className="h-3.5 w-3.5 text-red-600" /> Upload PDFs
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowSOPFolderUploadModal(true)}
-                  className="flex items-center gap-2 rounded px-2 py-1.5 text-xs font-semibold text-gray-700 hover:bg-teal-50 hover:text-teal-700 w-full text-left">
-                  <Upload className="h-3.5 w-3.5 text-teal-600" /> SOP folders
-                </button>
-                <div className="my-0.5 h-px bg-gray-100 w-full" />
-                <label
-                  htmlFor={LOCATION_XLSX_INPUT_ID}
-                  className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs font-semibold text-gray-700 hover:bg-slate-50 hover:text-slate-800 w-full text-left ${
-                    locationImportBusy ? "pointer-events-none opacity-50" : ""
-                  }`}>
-                  <Upload className="h-3.5 w-3.5 text-slate-500" /> Upload
-                  locations
-                </label>
+                <div className="absolute right-0 top-full pt-1 hidden w-48 group-hover:block z-50">
+                  <div className="flex flex-col gap-1 rounded-md border border-gray-200 bg-white p-1.5 shadow-xl">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUploadModalTab("english");
+                        setShowUploadModal(true);
+                      }}
+                      className="flex items-center gap-2 rounded px-2 py-1.5 text-xs font-semibold text-gray-700 hover:bg-purple-50 hover:text-purple-700 w-full text-left">
+                      <Upload className="h-3.5 w-3.5 text-purple-600" /> Upload SOPs
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUploadModalTab("gujarati");
+                        setShowUploadModal(true);
+                      }}
+                      className="flex items-center gap-2 rounded px-2 py-1.5 text-xs font-semibold text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 w-full text-left">
+                      <Languages className="h-3.5 w-3.5 text-indigo-600" /> Gujarati
+                      folders
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowPdfUploadModal(true)}
+                      className="flex items-center gap-2 rounded px-2 py-1.5 text-xs font-semibold text-gray-700 hover:bg-red-50 hover:text-red-700 w-full text-left">
+                      <Upload className="h-3.5 w-3.5 text-red-600" /> Upload PDFs
+                    </button>
+                    <div className="my-0.5 h-px bg-gray-100 w-full" />
+                    <label
+                      htmlFor={LOCATION_XLSX_INPUT_ID}
+                      className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs font-semibold text-gray-700 hover:bg-slate-50 hover:text-slate-800 w-full text-left ${
+                        locationImportBusy ? "pointer-events-none opacity-50" : ""
+                      }`}>
+                      <Upload className="h-3.5 w-3.5 text-slate-500" /> Upload
+                      locations
+                    </label>
+                    <div className="my-0.5 h-px bg-gray-100 w-full" />
+                    <button
+                      type="button"
+                      onClick={handleMigrateToBunny}
+                      disabled={migrateBunnyState.status === 'running' || migrateBunnyState.status === 'checking'}
+                      className="flex items-center gap-2 rounded px-2 py-1.5 text-xs font-semibold text-gray-700 hover:bg-orange-50 hover:text-orange-700 w-full text-left disabled:opacity-50">
+                      <Upload className="h-3.5 w-3.5 text-orange-500" /> Migrate to Bunny
+                    </button>
+                  </div>
+                </div>
               </div>
-              <input
-                id={LOCATION_XLSX_INPUT_ID}
-                type="file"
-                accept=".xlsx,.xls,.xlsm,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                className="sr-only"
-                tabIndex={-1}
-                disabled={locationImportBusy}
-                aria-label="Upload location Excel"
-                onChange={handleLocationExcelChange}
-              />
             </div>
+            <input
+              id={LOCATION_XLSX_INPUT_ID}
+              type="file"
+              accept=".xlsx,.xls,.xlsm,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              className="sr-only"
+              tabIndex={-1}
+              disabled={locationImportBusy}
+              aria-label="Upload location Excel"
+              onChange={handleLocationExcelChange}
+            />
 
             <Link
               href="/training-matrix"
               className="flex items-center gap-1.5 rounded-md border border-teal-300 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 shadow-sm transition-colors hover:bg-teal-100">
               <BarChart2 className="h-3.5 w-3.5" /> Training Matrix
             </Link>
-            <Link
-              href="/sop-upload"
-              className="flex items-center gap-1.5 rounded-md bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-purple-700">
-              <Plus className="h-3.5 w-3.5" /> Add SOP
-            </Link>
+            <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-white/80 px-1.5 py-1">
+              <span className="px-1 text-[9px] font-bold uppercase tracking-wide text-emerald-700">
+                Single
+              </span>
+              <Link
+                href="/sop-upload"
+                className="flex items-center gap-1.5 rounded-md border border-purple-600 bg-white px-3 py-1.5 text-xs font-semibold text-purple-700 shadow-sm transition-colors hover:bg-purple-50">
+                <Plus className="h-3.5 w-3.5" /> SOP Upload
+              </Link>
+            </div>
           </div>
         </div>
       </header>
@@ -1029,10 +1242,13 @@ export default function DashboardPage() {
               <Download className="h-3 w-3" /> Export Missing DOCX
             </button>
           </div>
-          <span className="text-[10px] font-semibold text-gray-500 tabular-nums shrink-0">
-            {filteredAndSortedData.length} result
-            {filteredAndSortedData.length !== 1 ? "s" : ""}
-          </span>
+          <div className="flex items-center gap-1.5 shrink-0">
+
+            <span className="text-[10px] font-semibold text-gray-500 tabular-nums">
+              {filteredAndSortedData.length} result
+              {filteredAndSortedData.length !== 1 ? "s" : ""}
+            </span>
+          </div>
         </div>
         {filteredAndSortedData.length === 0 && data.length > 0 ? (
           <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-[11px] leading-snug text-amber-950 shadow-sm">
@@ -1123,6 +1339,7 @@ export default function DashboardPage() {
               setShowGuidelinesLibrary(true);
             }}
             onMarkObsolete={() => setRefreshKey((k) => k + 1)}
+            onMarkVersionSuperseded={handleMarkVersionSuperseded}
           />
         </div>
       </main>
@@ -1148,10 +1365,91 @@ export default function DashboardPage() {
         onClose={() => setShowSOPFolderUploadModal(false)}
         onSuccess={() => setRefreshKey((k) => k + 1)}
       />
+
+      {/* Migrate to Bunny modal */}
+      {migrateBunnyState.status !== 'idle' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-xl">
+            <h2 className="mb-1 text-base font-bold text-gray-900">Migrate DOCX files to Bunny CDN</h2>
+
+            {migrateBunnyState.status === 'checking' && migrateBunnyState.localCount === null && (
+              <div className="flex items-center gap-3 py-4">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-orange-500 border-t-transparent" />
+                <p className="text-sm text-gray-600">Scanning for local files…</p>
+              </div>
+            )}
+
+            {migrateBunnyState.status === 'checking' && migrateBunnyState.localCount !== null && (
+              <>
+                <p className="mt-2 text-sm text-gray-600">
+                  Found <span className="font-bold text-orange-600">{migrateBunnyState.localCount}</span> SOP record{migrateBunnyState.localCount !== 1 ? 's' : ''} with local file paths not yet on Bunny CDN.
+                </p>
+                <p className="mt-1 text-xs text-gray-500">Files will be uploaded to Bunny and DB records updated. This may take a few minutes.</p>
+                <div className="mt-5 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => void handleMigrateToBunnyConfirm()}
+                    className="inline-flex items-center gap-2 rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-600">
+                    <Upload className="h-4 w-4" /> Start migration
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMigrateBunnyState({ status: 'idle' })}
+                    className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+
+            {migrateBunnyState.status === 'running' && (
+              <div className="flex items-center gap-3 py-4">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-orange-500 border-t-transparent" />
+                <p className="text-sm text-gray-600">Uploading files to Bunny CDN… please wait.</p>
+              </div>
+            )}
+
+            {migrateBunnyState.status === 'done' && (
+              <>
+                {migrateBunnyState.total === 0 ? (
+                  <p className="mt-2 text-sm text-green-700 font-semibold">All files are already on Bunny CDN.</p>
+                ) : (
+                  <div className="mt-2 space-y-1 text-sm">
+                    <p className="text-green-700 font-semibold">Migration complete.</p>
+                    <p className="text-gray-600">Uploaded: <span className="font-bold text-green-600">{migrateBunnyState.migrated}</span></p>
+                    <p className="text-gray-600">Already on CDN: <span className="font-bold text-gray-700">{migrateBunnyState.skipped}</span></p>
+                    {migrateBunnyState.failed > 0 && (
+                      <p className="text-red-600">Failed: <span className="font-bold">{migrateBunnyState.failed}</span> (file not found on disk)</p>
+                    )}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setMigrateBunnyState({ status: 'idle' })}
+                  className="mt-4 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                  Close
+                </button>
+              </>
+            )}
+
+            {migrateBunnyState.status === 'error' && (
+              <>
+                <p className="mt-2 text-sm text-red-600">{migrateBunnyState.message}</p>
+                <button
+                  type="button"
+                  onClick={() => setMigrateBunnyState({ status: 'idle' })}
+                  className="mt-4 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                  Close
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       <SupersededVersionsPanel
         open={showSuperseded}
         onClose={() => setShowSuperseded(false)}
-        data={data}
+        data={effectiveData}
       />
       <GuidelinesComplianceWizard
         open={showGuidelinesLibrary}
@@ -1263,6 +1561,22 @@ export default function DashboardPage() {
                               {new Date(item.obsoleteAt).toLocaleDateString()}
                             </p>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSearch(String(item.identifier || ""));
+                              setSearchField("sopNo");
+                              setShowObsoletePanel(false);
+                              requestAnimationFrame(() => {
+                                sopRegistryRef.current?.scrollIntoView({
+                                  behavior: "smooth",
+                                  block: "start",
+                                });
+                              });
+                            }}
+                            className="mt-1 rounded border border-purple-200 bg-purple-50 px-1.5 py-px text-[8px] font-bold text-purple-700 hover:bg-purple-100">
+                            View
+                          </button>
                         </div>
                       </div>
                     </div>

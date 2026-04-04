@@ -24,6 +24,12 @@ const MAX_VERSIONS_PER_SOP = getMaxPriorVersionsStored();
 
 type Acc = Map<number, { docxPath?: string; pdfPath?: string }>;
 
+function isAnnexureLikePath(relativePath: string): boolean {
+  const p = normalizeUnicodeHyphens(String(relativePath || '')).toLowerCase();
+  // Skip annexure/appendix/support docs; keep only main SOP version DOCX/PDF files.
+  return /\b(annexure|annex|appendix)\b/.test(p);
+}
+
 function asIntVersion(v: unknown): number {
   const n = typeof v === 'number' && !Number.isNaN(v) ? v : parseInt(String(v), 10);
   return Number.isFinite(n) ? n : 0;
@@ -742,7 +748,25 @@ function canonicalIdentifierFor(parsed: Parsed, canonicalByBase: Map<string, str
 export async function POST(request: NextRequest) {
   try {
     await connectDB();
-    const formData = await request.formData();
+    const len = request.headers.get('content-length');
+    if (len && parseInt(len, 10) > 10 * 1024 * 1024) {
+      console.warn(`[sop-folder-upload] Large request detected: ${Math.round(parseInt(len, 10) / (1024 * 1024))} MB`);
+    }
+
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch (parseErr) {
+      console.error('Failed to parse multipart/form-data:', parseErr);
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: `Failed to parse body as FormData. This often happens if the batch size is too large or the request timed out. (Content-Length: ${len || 'unknown'})` 
+        },
+        { status: 400 }
+      );
+    }
+
     const language = (formData.get('language') as string) === 'Gujarati' ? 'Gujarati' : 'English';
     const wantDebug =
       formData.get('debug') === '1' || formData.get('debug') === 'true' || debugSopUpload;
@@ -764,6 +788,7 @@ export async function POST(request: NextRequest) {
     >();
     const errors: { path: string; error: string }[] = [];
     const items: { relativePath: string; parsed: Parsed; buffer: Buffer }[] = [];
+    let skippedAnnexureFiles = 0;
     let versionTrace:
       | Array<{
           identifier: string;
@@ -778,6 +803,10 @@ export async function POST(request: NextRequest) {
       const m = key.match(/^files\[(.*)\]$/);
       if (!m) continue;
       const relativePath = m[1];
+      if (isAnnexureLikePath(relativePath)) {
+        skippedAnnexureFiles++;
+        continue;
+      }
       const parsed = parseRelativePath(relativePath);
       if (!parsed) {
         errors.push({
@@ -907,58 +936,101 @@ export async function POST(request: NextRequest) {
     const filteredByIdentifier = new Map<string, { department: string; versions: Acc }>();
     let processed = 0;
     let skippedOlderVersions = 0;
+    const uploadConcurrency = (() => {
+      const raw = String(process.env.SOP_FOLDER_UPLOAD_FILE_CONCURRENCY || '').trim();
+      const n = parseInt(raw, 10);
+      return Number.isFinite(n) && n >= 1 ? Math.min(6, n) : 3;
+    })();
 
-    for (const { relativePath, parsed, buffer } of items) {
-      const cid = canonicalIdentifierFor(parsed, canonicalByBase);
-      if (!cid) {
-        errors.push({ path: relativePath, error: 'Internal parse state: missing identifier / group.' });
+    const perFileResults = await (async () => {
+      const out: Array<
+        | { ok: true; cidNorm: string; department: string; version: number; ext: 'docx' | 'pdf'; storedPath: string }
+        | { ok: false; skipOlder?: boolean; error?: { path: string; error: string } }
+      > = [];
+      let next = 0;
+      const runOne = async (it: (typeof items)[number]) => {
+        const { relativePath, parsed, buffer } = it;
+        const cid = canonicalIdentifierFor(parsed, canonicalByBase);
+        if (!cid) {
+          return {
+            ok: false as const,
+            error: { path: relativePath, error: 'Internal parse state: missing identifier / group.' },
+          };
+        }
+        const cidNorm = normalizeSopIdentifierKey(cid);
+        const allowed = allowedByIdentifier.get(cidNorm);
+        const pv = asIntVersion(parsed.version);
+        if (pv < 0 || !allowed?.has(pv)) {
+          return { ok: false as const, skipOlder: true };
+        }
+        const safeName = path.basename(relativePath).replace(/[^a-zA-Z0-9.-]/g, '_');
+        const deptSeg = normalizeDeptFolder(parsed.department);
+        const idSeg = parsed.identifier ? normalizeSopIdentifierKey(parsed.identifier) : cidNorm;
+        const vNum = asIntVersion(parsed.version);
+        const subFolder =
+          parsed.versionGroupBase != null
+            ? `${deptSeg}/${parsed.versionGroupBase}-${padVersionSuffix(vNum)}`
+            : `${deptSeg}/${idSeg}/V${vNum}`;
+        const bunnyPath = `${subFolder.replace(/\\/g, '/')}/${safeName}`;
+        const cdn = await uploadToBunny(buffer, bunnyPath);
+        if (!cdn) {
+          return {
+            ok: false as const,
+            error: {
+              path: relativePath,
+              error: 'Bunny upload failed for this file (check credentials and zone).',
+            },
+          };
+        }
+        const meta = byIdentifier.get(cidNorm);
+        if (!meta) {
+          return {
+            ok: false as const,
+            error: { path: relativePath, error: 'Internal: canonical SOP row missing.' },
+          };
+        }
+        return {
+          ok: true as const,
+          cidNorm,
+          department: meta.department,
+          version: vNum,
+          ext: parsed.ext,
+          storedPath: cdn.startsWith('http') ? cdn : cdn.replace(/^\/+/, ''),
+        };
+      };
+      const worker = async () => {
+        while (next < items.length) {
+          const idx = next++;
+          out[idx] = await runOne(items[idx]);
+        }
+      };
+      const workers = Array.from(
+        { length: Math.min(uploadConcurrency, Math.max(1, items.length)) },
+        () => worker(),
+      );
+      await Promise.all(workers);
+      return out;
+    })();
+
+    for (const r of perFileResults) {
+      if (!r) continue;
+      if (!r.ok) {
+        if (r.skipOlder) {
+          skippedOlderVersions++;
+        } else if (r.error) {
+          errors.push(r.error);
+        }
         continue;
       }
-      const cidNorm = normalizeSopIdentifierKey(cid);
-      const allowed = allowedByIdentifier.get(cidNorm);
-      const pv = asIntVersion(parsed.version);
-      if (pv < 0 || !allowed?.has(pv)) {
-        skippedOlderVersions++;
-        continue;
+      if (!filteredByIdentifier.has(r.cidNorm)) {
+        filteredByIdentifier.set(r.cidNorm, { department: r.department, versions: new Map() });
       }
-
-      const safeName = path.basename(relativePath).replace(/[^a-zA-Z0-9.-]/g, '_');
-      const deptSeg = normalizeDeptFolder(parsed.department);
-      const idSeg = parsed.identifier ? normalizeSopIdentifierKey(parsed.identifier) : cidNorm;
-      const vNum = asIntVersion(parsed.version);
-      const subFolder =
-        parsed.versionGroupBase != null
-          ? `${deptSeg}/${parsed.versionGroupBase}-${padVersionSuffix(vNum)}`
-          : `${deptSeg}/${idSeg}/V${vNum}`;
-      const bunnyPath = `${subFolder.replace(/\\/g, '/')}/${safeName}`;
-      const cdn = await uploadToBunny(buffer, bunnyPath);
-      if (!cdn) {
-        errors.push({
-          path: relativePath,
-          error: 'Bunny upload failed for this file (check credentials and zone).',
-        });
-        continue;
-      }
-      const storedPath = cdn;
-
-      const meta = byIdentifier.get(cidNorm);
-      if (!meta) {
-        errors.push({ path: relativePath, error: 'Internal: canonical SOP row missing.' });
-        continue;
-      }
-      if (!filteredByIdentifier.has(cidNorm)) {
-        filteredByIdentifier.set(cidNorm, { department: meta.department, versions: new Map() });
-      }
-      const rec = filteredByIdentifier.get(cidNorm)!;
-      rec.department = meta.department;
-      if (!rec.versions.has(vNum)) rec.versions.set(vNum, {});
-      const slot = rec.versions.get(vNum)!;
-      if (parsed.ext === 'docx') {
-        slot.docxPath = storedPath.startsWith('http') ? storedPath : storedPath.replace(/^\/+/, '');
-      } else {
-        slot.pdfPath = storedPath.startsWith('http') ? storedPath : storedPath.replace(/^\/+/, '');
-      }
-
+      const rec = filteredByIdentifier.get(r.cidNorm)!;
+      rec.department = r.department;
+      if (!rec.versions.has(r.version)) rec.versions.set(r.version, {});
+      const slot = rec.versions.get(r.version)!;
+      if (r.ext === 'docx') slot.docxPath = r.storedPath;
+      else slot.pdfPath = r.storedPath;
       processed++;
     }
 
@@ -1071,6 +1143,7 @@ export async function POST(request: NextRequest) {
       uniqueSopsInRequest: byIdentifier.size,
       mongoRowsWritten: results.length,
       filesUploaded: processed,
+      skippedAnnexureFiles,
       skippedNotInTop3Versions: skippedOlderVersions,
       versionEntrySlotsInDb: versionsStored,
     };
@@ -1078,6 +1151,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       processed,
+      skippedAnnexureFiles,
       skippedOlderVersions,
       maxPriorVersions: Number.isFinite(MAX_VERSIONS_PER_SOP) ? MAX_VERSIONS_PER_SOP : 0,
       priorVersionsUnlimited: !Number.isFinite(MAX_VERSIONS_PER_SOP),

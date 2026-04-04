@@ -81,16 +81,65 @@ body {
   font-family: var(--font-gujarati), sans-serif;
 }
 
-/* DOCX in-browser fallback (docx-preview): className "docx-preview-wrapper" → outer div "…-wrapper" */
-.docx-preview-surface .docx-preview-wrapper-wrapper {
-  background: #d1d5db;
-}
-.docx-preview-surface section.docx-preview-wrapper {
+/* ─────────────────────────────────────────────────────────────────────────
+   DOCX preview: shared A4 page shell
+   ──────────────────────────────────────────────────────────────────────── */
+.docx-page-shell {
+  /* A4 at 96 dpi: 794 × 1123 px  */
+  width: 794px;
+  min-height: 1123px;
+  margin: 0 auto;
+  background: #ffffff;
+  box-shadow: 0 2px 16px 0 rgba(0,0,0,0.18);
+  border-radius: 2px;
+  /* Tighter margins matching actual Word SOP template: ~0.5 in all sides */
+  padding: 48px 56px;
+  box-sizing: border-box;
+  position: relative;
   color: #111827;
+  overflow: visible;
 }
-/* Force all text inside docx-preview pages to be dark — Tailwind base resets can make spans transparent */
+
+/* Scroll wrapper: grey page background like Word/Acrobat */
+.docx-scroll-area {
+  background: #d1d5db;
+  padding: 24px 16px 48px;
+  overflow-x: auto;
+  overflow-y: visible;
+  min-height: 400px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   docx-preview library overrides
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* Outer wrapper docx-preview generates */
+.docx-preview-surface .docx-preview-wrapper-wrapper {
+  background: #d1d5db !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* Each page section — docx-preview wraps each page in a <section> */
+.docx-preview-surface section.docx-preview-wrapper {
+  /* A4 fixed width; let docx-preview set its own internal padding via the DOCX page settings */
+  width: 794px !important;
+  min-height: 1123px !important;
+  margin: 0 auto 24px !important;
+  box-sizing: border-box !important;
+  background: #ffffff !important;
+  box-shadow: 0 2px 16px 0 rgba(0,0,0,0.18) !important;
+  border-radius: 2px !important;
+  color: #111827 !important;
+  overflow: visible !important;
+  position: relative !important;
+  /* Do NOT override padding — docx-preview sets it from the DOCX page margins */
+}
+
+/* All text must be dark */
+.docx-preview-surface section.docx-preview-wrapper,
 .docx-preview-surface section.docx-preview-wrapper * {
-  color: inherit;
+  color: #111827;
 }
 .docx-preview-surface section.docx-preview-wrapper span,
 .docx-preview-surface section.docx-preview-wrapper p,
@@ -99,51 +148,131 @@ body {
 .docx-preview-surface section.docx-preview-wrapper li {
   color: #111827;
 }
-/* Gujarati: override font on all text nodes after docx-preview renders */
-.docx-gujarati-text *,
-.docx-preview-surface section.docx-gujarati-text * {
-  font-family: 'Noto Sans Gujarati', 'Nirmala UI', 'Shruti', sans-serif !important;
-  color: #111827;
-}
+
+/* Fixed table layout — critical for column width fidelity */
 .docx-preview-surface .docx-preview-wrapper table {
-  border-collapse: collapse;
+  border-collapse: collapse !important;
+  table-layout: fixed !important;
+  width: 100% !important;
+  word-break: break-word !important;
 }
-.docx-preview-surface .docx-preview-wrapper img {
-  max-width: 100%;
-  height: auto;
+.docx-preview-surface .docx-preview-wrapper table td,
+.docx-preview-surface .docx-preview-wrapper table th {
+  overflow-wrap: break-word !important;
+  word-break: break-word !important;
+  min-width: 0 !important;
+  max-width: none !important;
 }
 
-/* Server-rendered view-docx HTML surface (used for Gujarati preview) */
-.view-docx-surface {
-  font-family: 'Noto Sans Gujarati', 'Nirmala UI', 'Shruti', 'Times New Roman', serif;
-  font-size: 11pt;
+/* Images stay within cell/page bounds */
+.docx-preview-surface .docx-preview-wrapper img {
+  max-width: 100% !important;
+  height: auto !important;
+  display: inline-block !important;
+}
+
+/* Gujarati font injection on docx-preview pages */
+.docx-gujarati-text *,
+.docx-preview-surface section.docx-gujarati-text *,
+.docx-preview-surface.docx-gujarati-text section.docx-preview-wrapper * {
+  font-family: 'Noto Sans Gujarati', 'Nirmala UI', 'Shruti', 'Arial Unicode MS', 'Segoe UI', sans-serif !important;
+  letter-spacing: 0 !important;
+  line-height: 1.45 !important;
   color: #111827;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Server-rendered HTML surface (view-docx / docx-to-html)
+   ──────────────────────────────────────────────────────────────────────── */
+.view-docx-surface {
+  font-family: 'Times New Roman', 'Noto Sans Gujarati', 'Nirmala UI', 'Shruti', serif;
+  font-size: 11pt;
   line-height: 1.5;
+  color: #111827;
+  /* Box model resets so the page shell padding is authoritative */
+  padding: 0;
+  margin: 0;
 }
 .view-docx-surface * {
   color: #111827;
-  font-family: 'Noto Sans Gujarati', 'Nirmala UI', 'Shruti', 'Times New Roman', serif;
   box-sizing: border-box;
 }
+
+/* Gujarati mode: override font on everything */
+.view-docx-surface.view-docx-gujarati,
+.view-docx-surface.view-docx-gujarati * {
+  font-family: 'Noto Sans Gujarati', 'Nirmala UI', 'Shruti', 'Arial Unicode MS', 'Segoe UI', sans-serif !important;
+  letter-spacing: 0 !important;
+  line-height: 1.45 !important;
+}
+
+.view-docx-surface.view-docx-gujarati table,
+.docx-gujarati-text table {
+  table-layout: fixed !important;
+  border-collapse: collapse !important;
+}
+
+/* Paragraphs: preserve Word's tight spacing */
+.view-docx-surface p {
+  margin: 0;
+  padding: 0;
+  line-height: inherit;
+}
+.view-docx-surface p + p {
+  margin-top: 2px;
+}
+
+/* Tables: fixed layout, exact borders */
 .view-docx-surface table {
   border-collapse: collapse;
+  table-layout: fixed;
   width: 100%;
-  margin-bottom: 1em;
+  margin: 0 0 6px 0;
+  word-break: break-word;
 }
 .view-docx-surface td,
 .view-docx-surface th {
-  border: 1px solid #374151;
-  padding: 4px 8px;
+  border: 1px solid #000000;
+  padding: 3px 6px;
   vertical-align: top;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  min-width: 0;
 }
-.view-docx-surface p {
-  margin: 0.25em 0;
-}
-.view-docx-surface h1, .view-docx-surface h2, .view-docx-surface h3 {
+/* Headings */
+.view-docx-surface h1,
+.view-docx-surface h2,
+.view-docx-surface h3 {
   font-weight: 700;
-  margin: 0.5em 0 0.25em;
+  margin: 6px 0 2px;
+  line-height: 1.3;
 }
+
+/* Images */
 .view-docx-surface img {
   max-width: 100%;
   height: auto;
+  display: inline-block;
+}
+
+/* Template header (injected by buildTemplateHeaderHtml) — Gujarati font applies to all */
+.view-docx-surface .docx-template-header,
+.view-docx-surface .docx-template-header *,
+.docx-preview-surface .docx-template-header,
+.docx-preview-surface .docx-template-header * {
+  font-family: 'Noto Sans Gujarati', 'Shruti', 'Nirmala UI', 'Arial Unicode MS', sans-serif !important;
+}
+
+/* Legacy .sop-header-table if still emitted anywhere */
+.view-docx-surface .sop-header-table {
+  table-layout: fixed;
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 12px;
+}
+.view-docx-surface .sop-header-table td {
+  border: 1.5px solid #000000;
+  padding: 4px 8px;
+  font-size: 9pt;
+  vertical-align: middle;
 }

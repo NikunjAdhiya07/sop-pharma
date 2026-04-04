@@ -26,6 +26,7 @@ export async function extractAllDOCXContent(buffer: Buffer): Promise<string> {
 export async function extractHeaderHtmlFromDocx(buffer: Buffer): Promise<string> {
   try {
     const zip = new AdmZip(buffer);
+    _imageMap = buildImageMap(zip);
     const relsPath = 'word/_rels/document.xml.rels';
     const relsXml = zip.readAsText(relsPath);
     if (!relsXml) return '';
@@ -64,38 +65,116 @@ export async function extractHeaderHtmlFromDocx(buffer: Buffer): Promise<string>
  * Extract main document body HTML from DOCX using the same conversion as the header,
  * so the preview matches the uploaded SOP (tables, borders, bold, layout).
  */
+/** Build a map of rId → base64 data URI for all images in the DOCX. */
+function buildImageMap(zip: AdmZip): Map<string, string> {
+  const map = new Map<string, string>();
+  try {
+    const relsXml = zip.readAsText('word/_rels/document.xml.rels');
+    if (!relsXml) return map;
+    // Simple regex parse — avoids async for a sync helper
+    const rel = /Type="[^"]*\/image"[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"/g;
+    let m: RegExpExecArray | null;
+    while ((m = rel.exec(relsXml)) !== null) {
+      const rId = m[1];
+      const target = m[2];
+      const path = target.startsWith('word/') ? target : `word/${target}`;
+      try {
+        const entry = zip.getEntry(path);
+        if (!entry) continue;
+        const data = entry.getData();
+        const ext = path.split('.').pop()?.toLowerCase() || 'png';
+        const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg'
+          : ext === 'png' ? 'image/png'
+          : ext === 'gif' ? 'image/gif'
+          : ext === 'emf' || ext === 'wmf' ? 'image/x-emf'
+          : 'image/png';
+        map.set(rId, `data:${mime};base64,${data.toString('base64')}`);
+      } catch { /* skip missing entries */ }
+    }
+  } catch { /* ignore */ }
+  return map;
+}
+
+// Module-level image map — set before parsing each document, consumed by renderRun
+let _imageMap: Map<string, string> = new Map();
+
 export async function extractDocumentBodyHtmlFromDocx(buffer: Buffer): Promise<string> {
   try {
     const zip = new AdmZip(buffer);
+    // Build image map so renderRun can embed inline images
+    _imageMap = buildImageMap(zip);
     const docXml = zip.readAsText('word/document.xml');
     if (!docXml) return '';
 
+    // Parse 1: standard parse — child element data is accessible by key (w:p, w:tbl, w:r, etc.)
+    // This is what all helper functions (paragraphToHtml, tableToHtml, etc.) expect.
     const parsed = await parseStringPromise(docXml);
 
-    // The parsed root is w:document (or similar); body is inside it
-    const docKey = Object.keys(parsed || {}).find(
-      (k) => k === 'w:document' || k.endsWith(':document') || k === 'document'
-    );
-    const docObj = docKey ? (Array.isArray(parsed[docKey]) ? parsed[docKey][0] : parsed[docKey]) : parsed;
+    // Parse 2: order-preserving parse — gives us the correct w:p / w:tbl sequence via $$
+    const parsedOrdered = await parseStringPromise(docXml, {
+      explicitArray: true,
+      explicitChildren: true,
+      preserveChildrenOrder: true,
+      charsAsChildren: false,
+    });
 
-    // Now find w:body inside the document object
-    const bodyKey = Object.keys(docObj || {}).find(
-      (k) => k === 'w:body' || k.endsWith(':body') || k === 'body'
-    );
-    const bodyRaw = bodyKey ? docObj?.[bodyKey] : undefined;
-    const body = Array.isArray(bodyRaw) ? bodyRaw[0] : bodyRaw;
+    // Navigate both parse results to w:body
+    function getBody(obj: any): any {
+      const docKey = Object.keys(obj || {}).find(
+        (k) => k === 'w:document' || k.endsWith(':document') || k === 'document'
+      );
+      const docObj = docKey ? (Array.isArray(obj[docKey]) ? obj[docKey][0] : obj[docKey]) : obj;
+      const bodyKey = Object.keys(docObj || {}).find(
+        (k) => k === 'w:body' || k.endsWith(':body') || k === 'body'
+      );
+      const bodyRaw = bodyKey ? docObj?.[bodyKey] : undefined;
+      return Array.isArray(bodyRaw) ? bodyRaw[0] : bodyRaw;
+    }
+
+    const body = getBody(parsed);
+    const bodyOrdered = getBody(parsedOrdered);
     if (!body || typeof body !== 'object') return '';
 
-    return convertBodyToHtml(body);
+    return convertBodyToHtmlOrdered(bodyOrdered, body);
   } catch {
     return '';
   }
 }
 
+/**
+ * Convert body preserving document order.
+ * @param bodyOrdered - parsed with explicitChildren+preserveChildrenOrder; provides $$ order list
+ * @param bodyData    - standard parse result; provides element data consumed by helper functions
+ */
+function convertBodyToHtmlOrdered(bodyOrdered: any, bodyData: any): string {
+  const parts: string[] = [];
+  // $$ contains [{#name:'w:p',...}, {#name:'w:tbl',...}] in document order
+  const ordered: any[] = Array.isArray(bodyOrdered?.$$) ? bodyOrdered.$$ : [];
+  if (ordered.length === 0) {
+    return convertBodyToHtml(bodyData);
+  }
+
+  // Build index maps from the standard parse so helpers get correct data format
+  const pList: any[] = Array.isArray(bodyData?.['w:p']) ? bodyData['w:p'] : bodyData?.['w:p'] != null ? [bodyData['w:p']] : [];
+  const tList: any[] = Array.isArray(bodyData?.['w:tbl']) ? bodyData['w:tbl'] : bodyData?.['w:tbl'] != null ? [bodyData['w:tbl']] : [];
+  let pIdx = 0;
+  let tIdx = 0;
+
+  for (const child of ordered) {
+    const name: string = child['#name'] || '';
+    if (name === 'w:p') {
+      if (pIdx < pList.length) parts.push(paragraphToHtml(pList[pIdx++]));
+    } else if (name === 'w:tbl') {
+      if (tIdx < tList.length) parts.push(tableToHtml(tList[tIdx++]));
+    }
+  }
+  return parts.join('\n');
+}
+
 /** Convert Word body (w:body or w:hdr) to HTML - same logic for header and main document. */
 function convertBodyToHtml(body: any): string {
   const parts: string[] = [];
-  const childKeys = Object.keys(body).filter((k) => k !== '$');
+  const childKeys = Object.keys(body).filter((k) => k !== '$' && k !== '$$');
   for (const key of childKeys) {
     const raw = body[key];
     const items = Array.isArray(raw) ? raw : [raw];
@@ -110,8 +189,8 @@ function convertBodyToHtml(body: any): string {
   return parts.join('\n');
 }
 
-const TABLE_STYLE = 'border-collapse:collapse;border:1px solid #000;width:100%;font-family:\'Times New Roman\',serif;font-size:11pt;';
-const CELL_STYLE_BASE = 'border:1px solid #000;padding:4px 8px;vertical-align:top;text-align:left;';
+const TABLE_STYLE = 'border-collapse:collapse;table-layout:fixed;width:100%;font-family:\'Times New Roman\',serif;font-size:11pt;word-break:break-word;';
+const CELL_STYLE_BASE = 'border:1px solid #000;padding:3px 6px;vertical-align:top;text-align:left;overflow-wrap:break-word;word-break:break-word;';
 
 function getParagraphAlignment(p: any): string {
   const pPr = p?.['w:pPr'];
@@ -125,10 +204,26 @@ function getParagraphAlignment(p: any): string {
   return 'left';
 }
 
+function getParagraphSpacing(p: any): { before: number; after: number; line: number | null } {
+  const pPr = p?.['w:pPr'];
+  const spacing = pPr?.['w:spacing'];
+  const list = Array.isArray(spacing) ? spacing : spacing != null ? [spacing] : [];
+  const el = list[0];
+  // Values in twentieths of a point (twips); convert to pt
+  const before = el?.$?.['w:before'] != null ? parseFloat(String(el.$['w:before'])) / 20 : 0;
+  const after = el?.$?.['w:after'] != null ? parseFloat(String(el.$['w:after'])) / 20 : 0;
+  const lineRaw = el?.$?.['w:line'];
+  // line is in 240ths of a line (240 = single); convert to em-ish
+  const line = lineRaw != null ? parseFloat(String(lineRaw)) / 240 : null;
+  return { before, after, line };
+}
+
 function paragraphToHtml(p: any): string {
   const html = getParagraphAsHtml(p);
   const align = getParagraphAlignment(p);
-  const style = `margin:0 0 2px 0;text-align:${align}`;
+  const { before, after, line } = getParagraphSpacing(p);
+  let style = `margin:${before > 0 ? before + 'pt' : '0'} 0 ${after > 0 ? after + 'pt' : '2px'} 0;text-align:${align};`;
+  if (line !== null) style += `line-height:${line.toFixed(3)};`;
   if (!html.trim()) return `<p style="${style}"></p>`;
   return `<p style="${style}">${html}</p>`;
 }
@@ -185,7 +280,106 @@ function hasLineBreak(run: any): boolean {
   return br != null;
 }
 
+function getRunFontSize(run: any): number | null {
+  const pr = run?.['w:rPr'];
+  if (!pr || typeof pr !== 'object') return null;
+  // w:sz is in half-points; w:szCs is for complex scripts (Gujarati)
+  const sz = pr['w:szCs'] ?? pr['w:sz'];
+  const list = Array.isArray(sz) ? sz : sz != null ? [sz] : [];
+  const val = list[0]?.$?.['w:val'];
+  if (val == null) return null;
+  const n = parseFloat(String(val));
+  return Number.isFinite(n) && n > 0 ? n / 2 : null; // half-points → points
+}
+
+function getRunColor(run: any): string | null {
+  const pr = run?.['w:rPr'];
+  if (!pr || typeof pr !== 'object') return null;
+  const color = pr['w:color'];
+  const list = Array.isArray(color) ? color : color != null ? [color] : [];
+  const val = list[0]?.$?.['w:val'];
+  if (!val || val === 'auto' || val === '000000') return null;
+  return `#${val}`;
+}
+
+/** Extract rId from a w:drawing element (supports both inline and anchor). */
+function getDrawingRId(run: any): string | null {
+  // w:drawing > wp:inline or wp:anchor > a:graphic > a:graphicData > pic:pic > pic:blipFill > a:blip @r:embed
+  const drawing = run?.['w:drawing'];
+  const drawList = Array.isArray(drawing) ? drawing : drawing != null ? [drawing] : [];
+  for (const d of drawList) {
+    // Try inline
+    for (const wrapKey of ['wp:inline', 'wp:anchor']) {
+      const wrap = d?.[wrapKey];
+      const wList = Array.isArray(wrap) ? wrap : wrap != null ? [wrap] : [];
+      for (const w of wList) {
+        const graphic = w?.['a:graphic'];
+        const gList = Array.isArray(graphic) ? graphic : graphic != null ? [graphic] : [];
+        for (const g of gList) {
+          const gd = g?.['a:graphicData'];
+          const gdList = Array.isArray(gd) ? gd : gd != null ? [gd] : [];
+          for (const gdi of gdList) {
+            const pic = gdi?.['pic:pic'];
+            const pList = Array.isArray(pic) ? pic : pic != null ? [pic] : [];
+            for (const pi of pList) {
+              const blipFill = pi?.['pic:blipFill'];
+              const bfList = Array.isArray(blipFill) ? blipFill : blipFill != null ? [blipFill] : [];
+              for (const bf of bfList) {
+                const blip = bf?.['a:blip'];
+                const blipList = Array.isArray(blip) ? blip : blip != null ? [blip] : [];
+                for (const b of blipList) {
+                  const rId = b?.$?.['r:embed'];
+                  if (rId) return rId;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/** Extract image dimensions from w:drawing in EMUs (1 in = 914400 EMU). */
+function getDrawingSize(run: any): { w: number; h: number } | null {
+  const drawing = run?.['w:drawing'];
+  const drawList = Array.isArray(drawing) ? drawing : drawing != null ? [drawing] : [];
+  for (const d of drawList) {
+    for (const wrapKey of ['wp:inline', 'wp:anchor']) {
+      const wrap = d?.[wrapKey];
+      const wList = Array.isArray(wrap) ? wrap : wrap != null ? [wrap] : [];
+      for (const w of wList) {
+        const ext = w?.['wp:extent'];
+        const extList = Array.isArray(ext) ? ext : ext != null ? [ext] : [];
+        for (const e of extList) {
+          const cx = parseFloat(String(e?.$?.cx ?? '0'));
+          const cy = parseFloat(String(e?.$?.cy ?? '0'));
+          if (cx > 0 && cy > 0) {
+            // EMU → points (1 pt = 12700 EMU)
+            return { w: cx / 12700, h: cy / 12700 };
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function renderRun(run: any): string {
+  // Handle inline images (w:drawing)
+  const rId = getDrawingRId(run);
+  if (rId) {
+    const src = _imageMap.get(rId);
+    if (src) {
+      const size = getDrawingSize(run);
+      const style = size
+        ? `width:${size.w.toFixed(1)}pt;height:${size.h.toFixed(1)}pt;display:inline-block;vertical-align:middle;`
+        : `max-width:100%;height:auto;display:inline-block;vertical-align:middle;`;
+      return `<img src="${src}" alt="" style="${style}" />`;
+    }
+  }
+
   const text = getTextFromRun(run);
   const safe = escapeHtml(text);
   const br = hasLineBreak(run) ? '<br />' : '';
@@ -194,6 +388,14 @@ function renderRun(run: any): string {
   if (isBold(run) && out) out = `<strong>${out}</strong>`;
   if (isItalic(run) && out) out = `<em>${out}</em>`;
   if (isUnderline(run) && out) out = `<u>${out}</u>`;
+  const fontSize = getRunFontSize(run);
+  const color = getRunColor(run);
+  if ((fontSize !== null || color !== null) && out) {
+    let spanStyle = '';
+    if (fontSize !== null) spanStyle += `font-size:${fontSize}pt;`;
+    if (color !== null) spanStyle += `color:${color};`;
+    out = `<span style="${spanStyle}">${out}</span>`;
+  }
   return out + br;
 }
 
@@ -301,10 +503,28 @@ interface CellInfo {
   rowspan: number;
 }
 
+function getTblWidth(tbl: any): string | null {
+  const tblPr = tbl?.['w:tblPr'];
+  if (!tblPr || typeof tblPr !== 'object') return null;
+  const tblW = tblPr['w:tblW'];
+  const list = Array.isArray(tblW) ? tblW : tblW != null ? [tblW] : [];
+  const el = list[0];
+  if (!el) return null;
+  const w = el?.$?.['w:w'];
+  const type = el?.$?.['w:type'];
+  if (w == null) return null;
+  const n = parseFloat(String(w));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (type === 'pct') return `${(n / 50).toFixed(2)}%`;
+  if (type === 'dxa') return `${(n / 20).toFixed(2)}pt`;
+  return null;
+}
+
 function tableToHtml(tbl: any): string {
   const trList = tbl?.['w:tr'] ?? [];
   const trs = Array.isArray(trList) ? trList : [trList];
   const gridWidths = getTblGridWidths(tbl);
+  const tblWidth = getTblWidth(tbl);
   const rowsCells: CellInfo[][] = [];
   let colIndex = 0;
   for (const tr of trs) {
@@ -326,7 +546,6 @@ function tableToHtml(tbl: any): string {
       if (info.vMerge !== 'restart') continue;
       let rowspan = 1;
       const startCol = info.colIndex;
-      const endCol = info.colIndex + info.gridSpan;
       for (let rr = r + 1; rr < rowsCells.length; rr++) {
         let hasContinue = false;
         let c = 0;
@@ -383,10 +602,55 @@ function tableToHtml(tbl: any): string {
       }
       logicalCol += info.gridSpan;
     }
-    if (tds.length) rows.push('<tr>' + tds.join('') + '</tr>');
+    if (tds.length) {
+      const trPr = trs[r]?.['w:trPr'];
+      const trHList = Array.isArray(trPr?.['w:trHeight']) ? trPr['w:trHeight'] : trPr?.['w:trHeight'] != null ? [trPr['w:trHeight']] : [];
+      const trHVal = trHList[0]?.$?.['w:val'];
+      const trHRule = trHList[0]?.$?.['w:hRule'];
+      let trStyle = '';
+      if (trHVal != null) {
+        const hPt = parseFloat(String(trHVal)) / 20;
+        if (Number.isFinite(hPt) && hPt > 0) {
+          // exact = fixed height; atLeast = min height
+          trStyle = trHRule === 'exact'
+            ? `style="height:${hPt}pt;overflow:hidden;"`
+            : `style="height:${hPt}pt;"`;
+        }
+      }
+      rows.push(`<tr${trStyle ? ' ' + trStyle : ''}>${tds.join('')}</tr>`);
+    }
   }
   if (!rows.length) return '';
-  return `<table style="${TABLE_STYLE}" cellpadding="0" cellspacing="0">${colgroupHtml}<tbody>${rows.join('')}</tbody></table>`;
+  const widthOverride = tblWidth ? `width:${tblWidth};` : '';
+  const tableStyle = widthOverride ? TABLE_STYLE.replace('width:100%;', widthOverride) : TABLE_STYLE;
+  return `<table style="${tableStyle}" cellpadding="0" cellspacing="0">${colgroupHtml}<tbody>${rows.join('')}</tbody></table>`;
+}
+
+function getCellBackground(tc: any): string | null {
+  const tcPr = tc?.['w:tcPr'];
+  if (!tcPr || typeof tcPr !== 'object') return null;
+  const shd = tcPr['w:shd'];
+  const list = Array.isArray(shd) ? shd : shd != null ? [shd] : [];
+  const fill = list[0]?.$?.['w:fill'];
+  if (!fill || fill === 'auto' || fill === 'FFFFFF' || fill === 'ffffff') return null;
+  return `#${fill}`;
+}
+
+function getCellWidth(tc: any): string | null {
+  const tcPr = tc?.['w:tcPr'];
+  if (!tcPr || typeof tcPr !== 'object') return null;
+  const tcW = tcPr['w:tcW'];
+  const list = Array.isArray(tcW) ? tcW : tcW != null ? [tcW] : [];
+  const el = list[0];
+  if (!el) return null;
+  const w = el?.$?.['w:w'];
+  const type = el?.$?.['w:type'];
+  if (w == null) return null;
+  const n = parseFloat(String(w));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (type === 'pct') return `${(n / 50).toFixed(2)}%`; // fifths of a percent
+  if (type === 'dxa') return `${(n / 20).toFixed(2)}pt`; // twips
+  return null;
 }
 
 function getCellStyle(tc: any): string {
@@ -394,6 +658,10 @@ function getCellStyle(tc: any): string {
   let s = CELL_STYLE_BASE;
   if (align.vertical) s += `vertical-align:${align.vertical};`;
   if (align.horizontal) s += `text-align:${align.horizontal};`;
+  const bg = getCellBackground(tc);
+  if (bg) s += `background-color:${bg};`;
+  const w = getCellWidth(tc);
+  if (w) s += `width:${w};`;
   return s;
 }
 
@@ -417,11 +685,6 @@ function cellContent(tc: any): string {
     }
   }
   return parts.length ? parts.join('') : '';
-}
-
-function cellToHtml(tc: any): string {
-  const content = cellContent(tc);
-  return `<td style="${getCellStyle(tc)}">${content}</td>`;
 }
 
 function escapeHtml(s: string): string {

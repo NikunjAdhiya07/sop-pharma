@@ -75,6 +75,18 @@ export function versionArtifactsLookupKey(id: string): string {
 }
 
 /**
+ * Format an SOP identifier for display with zero-padded section and document numbers.
+ * e.g. BSGE1-5 → BSGE01-05, MAGE1-8 → MAGE01-08, MAGE7-4 → MAGE07-04
+ * Falls back to the normalized key if the pattern doesn't match.
+ */
+export function formatSopNoDisplay(id: string): string {
+  const nk = normalizeSopIdentifierKey((id || '').trim().toUpperCase());
+  const m = nk.match(/^([A-Z]{2,6})(\d+)-(\d+)$/);
+  if (!m) return nk;
+  return `${m[1]}${String(parseInt(m[2], 10)).padStart(2, '0')}-${String(parseInt(m[3], 10)).padStart(2, '0')}`;
+}
+
+/**
  * Current approved revision from identifiers like QAGE01-10 → 10 (after normalization).
  * Returns null when there is no numeric `-NN` suffix (e.g. document-only QAGE136).
  */

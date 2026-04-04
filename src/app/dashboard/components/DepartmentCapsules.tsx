@@ -29,8 +29,10 @@ export interface DeptCapsuleStats {
   videos: number;
   slides: number;
   versionLast2Ok: number;
+  versionPartial: number;
   versionZero: number;
   versionMissing: number;
+  missingExpiry: number;
 }
 
 function computeDepartmentStats(data: any[]): DeptCapsuleStats[] {
@@ -56,8 +58,10 @@ function computeDepartmentStats(data: any[]): DeptCapsuleStats[] {
       videos: number;
       slides: number;
       versionLast2Ok: number;
+      versionPartial: number;
       versionZero: number;
       versionMissing: number;
+      missingExpiry: number;
     }
   >();
 
@@ -79,8 +83,10 @@ function computeDepartmentStats(data: any[]): DeptCapsuleStats[] {
       videos: 0,
       slides: 0,
       versionLast2Ok: 0,
+      versionPartial: 0,
       versionZero: 0,
       versionMissing: 0,
+      missingExpiry: 0,
     });
   });
 
@@ -116,7 +122,7 @@ function computeDepartmentStats(data: any[]): DeptCapsuleStats[] {
       const exp = new Date(row.expiryDate).getTime();
       const diffDays = (exp - today.getTime()) / day;
       if (diffDays < 0) s.expired++;
-      else if (diffDays <= 30) s.nearExpiry++;
+      else if (diffDays <= 90) s.nearExpiry++;
     }
 
     const { docx: nDocxFiles, pdf: nPdfFiles } =
@@ -140,6 +146,8 @@ function computeDepartmentStats(data: any[]): DeptCapsuleStats[] {
     if (vt === "green") s.versionLast2Ok++;
     else if (vt === "grey") s.versionZero++;
     else s.versionMissing++;
+
+    if (!row.expiryDate) s.missingExpiry++;
   });
 
   return order.map((department) => {
@@ -161,8 +169,10 @@ function computeDepartmentStats(data: any[]): DeptCapsuleStats[] {
       videos: s.videos,
       slides: s.slides,
       versionLast2Ok: s.versionLast2Ok,
+      versionPartial: s.versionPartial,
       versionZero: s.versionZero,
       versionMissing: s.versionMissing,
+      missingExpiry: s.missingExpiry,
     };
   });
 }
@@ -299,13 +309,16 @@ function CapsuleMetricAvailMissing({
 function CapsuleMetricVersionTriple({
   totalSOPs,
   last2Ok,
+  partialV,
   zeroV,
   missingV,
   onLabelClick,
   onGreenClick,
+  onYellowClick,
   onGreyClick,
   onRedClick,
   highlightGreen,
+  highlightYellow,
   highlightGrey,
   highlightRed,
   filterRowActive,
@@ -313,13 +326,16 @@ function CapsuleMetricVersionTriple({
 }: {
   totalSOPs: number;
   last2Ok: number;
+  partialV: number;
   zeroV: number;
   missingV: number;
   onLabelClick: () => void;
   onGreenClick: () => void;
+  onYellowClick: () => void;
   onGreyClick: () => void;
   onRedClick: () => void;
   highlightGreen: boolean;
+  highlightYellow: boolean;
   highlightGrey: boolean;
   highlightRed: boolean;
   filterRowActive: boolean;
@@ -346,60 +362,53 @@ function CapsuleMetricVersionTriple({
       </button>
       <div
         className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums"
-        aria-label={`Version status: ${missingV} missing prior, ${zeroV} no prior data, ${last2Ok} last-two complete of ${totalSOPs} SOPs`}>
+        aria-label={`Version status: ${last2Ok} both available, ${partialV} partial, ${missingV} missing both, ${zeroV} no prior data of ${totalSOPs} SOPs`}>
+        {/* 1st: Green — both last-2 prior versions available */}
         <button
           type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onRedClick();
-          }}
-          title="At least one tracked prior revision missing (or only one prior file when two expected)"
-          aria-pressed={highlightRed ? true : undefined}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onGreenClick(); }}
+          title="Both last-2 prior revisions available"
+          aria-pressed={highlightGreen ? true : undefined}
           className={`min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-emerald-500/70 ${
-            highlightRed
-              ? "bg-emerald-100 ring-1 ring-emerald-400/80"
-              : ""
+            highlightGreen ? "bg-emerald-100 ring-1 ring-emerald-400/80" : ""
+          }`}>
+          {last2Ok}
+        </button>
+        <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
+        {/* 2nd: Amber — only 1 of the last-2 prior revisions available */}
+        <button
+          type="button"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onYellowClick(); }}
+          title="Only 1 of the last-2 prior revisions is available"
+          aria-pressed={highlightYellow ? true : undefined}
+          className={`min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-amber-400/70 ${
+            highlightYellow ? "bg-amber-100 ring-1 ring-amber-400/80" : ""
+          }`}>
+          {partialV}
+        </button>
+        <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
+        {/* 3rd: Red — both last-2 prior revisions missing */}
+        <button
+          type="button"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRedClick(); }}
+          title="Both last-2 prior revisions missing — no prior-version files stored"
+          aria-pressed={highlightRed ? true : undefined}
+          className={`min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-400/70 ${
+            highlightRed ? "bg-red-100 ring-1 ring-red-400/80" : ""
           }`}>
           {missingV}
         </button>
-        <span
-          className="select-none text-[8px] font-light text-gray-300"
-          aria-hidden>
-          |
-        </span>
+        <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
+        {/* 4th: Grey — no prior-version data at all */}
         <button
           type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onGreyClick();
-          }}
-          title="No prior-version row data and no prior-version files stored"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onGreyClick(); }}
+          title="No prior-version data found for this SOP"
           aria-pressed={highlightGrey ? true : undefined}
           className={`min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-gray-500 transition-colors hover:bg-gray-100 focus:z-10 focus:outline-none focus:ring-1 focus:ring-gray-400/70 ${
             highlightGrey ? "bg-gray-200 ring-1 ring-gray-400/80" : ""
           }`}>
           {zeroV}
-        </button>
-        <span
-          className="select-none text-[8px] font-light text-gray-300"
-          aria-hidden>
-          |
-        </span>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onGreenClick();
-          }}
-          title="Last two tracked prior revisions available (or ≥2 prior-version files); sort by SOP No"
-          aria-pressed={highlightGreen ? true : undefined}
-          className={`min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-400/70 ${
-            highlightGreen ? "bg-red-100 ring-1 ring-red-400/80" : ""
-          }`}>
-          {last2Ok}
         </button>
       </div>
     </div>
@@ -414,6 +423,7 @@ export type CapsuleFilterMode =
   | "guj"
   | "expired"
   | "near"
+  | "nodate"
   | "docx"
   | "pdf"
   | "video"
@@ -424,7 +434,7 @@ export type CapsuleFilterSnapshot = {
   filterDualLang: boolean;
   filterExpiry: string;
   filterFileType: "all" | "DOCX" | "NO_DOCX" | "PDF" | "NO_PDF";
-  filterLanguage: "all" | "ENG" | "GUJ";
+  filterLanguage: "all" | "ENG" | "GUJ" | "BOTH";
   filterMedia: string;
   filterVersionStatus: "all" | SopVersionFilterSegment;
 };
@@ -544,6 +554,15 @@ function capsuleMetricMatches(
       return (
         !f.filterDualLang &&
         f.filterExpiry === "high" &&
+        f.filterFileType === "all" &&
+        f.filterLanguage === "all" &&
+        f.filterMedia === "all" &&
+        f.filterVersionStatus === "all"
+      );
+    case "nodate":
+      return (
+        !f.filterDualLang &&
+        f.filterExpiry === "nodate" &&
         f.filterFileType === "all" &&
         f.filterLanguage === "all" &&
         f.filterMedia === "all" &&
@@ -729,6 +748,22 @@ function DepartmentCapsuleCard({
               : `Near expiry in ${scopeHint}`
           }
         />
+        <CapsuleMetric
+          label="No Expiry"
+          value={stat.missingExpiry}
+          valueClass={stat.missingExpiry > 0 ? "text-slate-700" : "text-gray-700"}
+          onClick={() => apply("nodate")}
+          isActive={capsuleMetricMatches(
+            deptForFilter,
+            "nodate",
+            filterSnapshot,
+          )}
+          title={
+            isGrand
+              ? "All departments: SOPs with null/empty expiry date."
+              : `SOPs with no expiry date in ${scopeHint}`
+          }
+        />
         <CapsuleMetricAvailMissing
           label="DOCX"
           totalExpected={stat.expectedDocx}
@@ -818,6 +853,7 @@ function DepartmentCapsuleCard({
         <CapsuleMetricVersionTriple
           totalSOPs={stat.totalSOPs}
           last2Ok={stat.versionLast2Ok}
+          partialV={stat.versionPartial}
           zeroV={stat.versionZero}
           missingV={stat.versionMissing}
           onLabelClick={() =>
@@ -825,6 +861,9 @@ function DepartmentCapsuleCard({
           }
           onGreenClick={() =>
             applyCapsuleVersionSegment(deptForFilter, "last2ok")
+          }
+          onYellowClick={() =>
+            applyCapsuleVersionSegment(deptForFilter, "missingv")
           }
           onGreyClick={() =>
             applyCapsuleVersionSegment(deptForFilter, "zerov")
@@ -835,6 +874,11 @@ function DepartmentCapsuleCard({
           highlightGreen={capsuleVersionSegmentMatches(
             deptForFilter,
             "last2ok",
+            filterSnapshot,
+          )}
+          highlightYellow={capsuleVersionSegmentMatches(
+            deptForFilter,
+            "missingv",
             filterSnapshot,
           )}
           highlightGrey={capsuleVersionSegmentMatches(
@@ -848,26 +892,15 @@ function DepartmentCapsuleCard({
             filterSnapshot,
           )}
           filterRowActive={
-            capsuleVersionSegmentMatches(
-              deptForFilter,
-              "last2ok",
-              filterSnapshot,
-            ) ||
-            capsuleVersionSegmentMatches(
-              deptForFilter,
-              "zerov",
-              filterSnapshot,
-            ) ||
-            capsuleVersionSegmentMatches(
-              deptForFilter,
-              "missingv",
-              filterSnapshot,
-            )
+            capsuleVersionSegmentMatches(deptForFilter, "last2ok", filterSnapshot) ||
+            false ||
+            capsuleVersionSegmentMatches(deptForFilter, "zerov", filterSnapshot) ||
+            capsuleVersionSegmentMatches(deptForFilter, "missingv", filterSnapshot)
           }
           titleSummary={
             isGrand
-              ? "Green = missing priors; grey = no prior data; red = last-two complete"
-              : `Version in ${scopeHint} · green / grey / red`
+              ? "Red = one/both of last two missing; grey = no prior data; green = last-two complete"
+              : `Version in ${scopeHint} · red / amber / grey / green`
           }
         />
         <CapsuleMetricAvailMissing
@@ -877,7 +910,7 @@ function DepartmentCapsuleCard({
               Videos
             </>
           }
-          totalExpected={stat.totalSOPs}
+          totalExpected={stat.videos > 0 ? stat.totalSOPs : 0}
           available={stat.videos}
           onFilterClick={() => apply("video")}
           onAvailableClick={() =>
@@ -925,7 +958,7 @@ function DepartmentCapsuleCard({
               Slides
             </>
           }
-          totalExpected={stat.totalSOPs}
+          totalExpected={stat.slides > 0 ? stat.totalSOPs : 0}
           available={stat.slides}
           onFilterClick={() => apply("slides")}
           onAvailableClick={() =>
@@ -1014,8 +1047,10 @@ export default function DepartmentCapsules({
         videos: acc.videos + s.videos,
         slides: acc.slides + s.slides,
         versionLast2Ok: acc.versionLast2Ok + s.versionLast2Ok,
+        versionPartial: acc.versionPartial + s.versionPartial,
         versionZero: acc.versionZero + s.versionZero,
         versionMissing: acc.versionMissing + s.versionMissing,
+        missingExpiry: acc.missingExpiry + s.missingExpiry,
       }),
       {
         department: "Total",
@@ -1034,8 +1069,10 @@ export default function DepartmentCapsules({
         videos: 0,
         slides: 0,
         versionLast2Ok: 0,
+        versionPartial: 0,
         versionZero: 0,
         versionMissing: 0,
+        missingExpiry: 0,
       },
     );
   }, [stats]);

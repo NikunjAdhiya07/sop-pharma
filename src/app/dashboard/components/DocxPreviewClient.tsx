@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, AlertCircle, FileText, ExternalLink, Download } from 'lucide-react';
+import { ArrowLeft, AlertCircle, FileText, Download } from 'lucide-react';
 import { buildDocxDownloadHref } from '@/lib/viewDocLinks';
 
 export { buildDocxDownloadHref } from '@/lib/viewDocLinks';
@@ -91,26 +91,23 @@ export default function DocxPreviewClient({
   const [error, setError] = useState<string | null>(null);
   const [pdfInlineSrc, setPdfInlineSrc] = useState<string | null>(null);
   const [viewDocxHtml, setViewDocxHtml] = useState<string | null>(null);
-  /** Office Online full-tab URL — shown as button when available */
-  const [wordOnlineUrl, setWordOnlineUrl] = useState<string | null>(null);
-  const bodyRef = useRef<HTMLDivElement>(null);
+const bodyRef = useRef<HTMLDivElement>(null);
   const styleRef = useRef<HTMLDivElement>(null);
   const isGujarati = (languageParam || '').toLowerCase() === 'gujarati';
   const [downloadBusy, setDownloadBusy] = useState(false);
   const [downloadHint, setDownloadHint] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isGujarati) {
-      const id = 'noto-sans-gujarati-docx-preview';
-      if (!document.getElementById(id)) {
-        const link = document.createElement('link');
-        link.id = id;
-        link.rel = 'stylesheet';
-        link.href = 'https://fonts.googleapis.com/css2?family=Noto+Sans+Gujarati:wght@400;500;600&display=swap';
-        document.head.appendChild(link);
-      }
+    // Always load Gujarati font — template header now contains Gujarati text for all SOPs
+    const id = 'noto-sans-gujarati-docx-preview';
+    if (!document.getElementById(id)) {
+      const link = document.createElement('link');
+      link.id = id;
+      link.rel = 'stylesheet';
+      link.href = 'https://fonts.googleapis.com/css2?family=Noto+Sans+Gujarati:wght@400;500;600;700&display=swap';
+      document.head.appendChild(link);
     }
-  }, [isGujarati]);
+  }, []);
 
   useEffect(() => {
     if (!pathParam && !identifierParam) {
@@ -133,12 +130,13 @@ export default function DocxPreviewClient({
         );
         const viewerJson = await viewerRes.json();
         if (cancelled) return;
-        // Store Office Online URL as button option (NOT as iframe default)
+        // If Office Online can serve this file, redirect directly — no in-browser render needed
         if (viewerJson.success && viewerJson.canUseOfficeViewer && viewerJson.officeViewerUrl) {
-          setWordOnlineUrl(viewerJson.officeViewerUrl as string);
+          window.location.replace(viewerJson.officeViewerUrl as string);
+          return;
         }
 
-        // Step 2: get docx-view-token for in-browser rendering
+        // Step 2: get docx-view-token for in-browser rendering (fallback when Office Online unavailable)
         const tokenParams = new URLSearchParams();
         if (identifierParam) tokenParams.set('identifier', identifierParam);
         if (languageParam) tokenParams.set('language', languageParam || 'English');
@@ -362,16 +360,6 @@ export default function DocxPreviewClient({
                 {downloadHint && <p className="text-xs text-red-600">{downloadHint}</p>}
               </div>
             )}
-            {wordOnlineUrl && (
-              <a
-                href={wordOnlineUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 text-sm font-semibold text-purple-600 hover:underline"
-              >
-                <ExternalLink className="h-4 w-4" /> Open in Word Online
-              </a>
-            )}
           </div>
         </div>
       </div>
@@ -417,7 +405,7 @@ export default function DocxPreviewClient({
   // ── Server-rendered HTML preview (Gujarati via view-docx) ───────────────
   if (mode === 'view-docx-html' && viewDocxHtml) {
     return (
-      <div className={`relative flex flex-col bg-[#e5e7eb] ${layout === 'embedded' ? 'min-h-[600px]' : 'min-h-screen'}`}>
+      <div className={`relative flex flex-col bg-[#d1d5db] ${layout === 'embedded' ? 'min-h-[600px]' : 'min-h-screen'}`}>
         <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4 py-2 shadow-sm">
           <div className="flex flex-wrap items-center gap-3">
             {layout === 'full' && <BackButton backHref={backHref} backLabel={backLabel} />}
@@ -429,13 +417,6 @@ export default function DocxPreviewClient({
                 {downloadBusy ? 'Preparing…' : 'Download original'}
               </button>
             )}
-            {wordOnlineUrl && (
-              <a href={wordOnlineUrl} target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-3 py-1.5 text-sm font-semibold text-purple-700 hover:bg-purple-100"
-              >
-                <ExternalLink className="h-4 w-4" aria-hidden /> Open in Word Online
-              </a>
-            )}
           </div>
           <span className="flex items-center gap-2 text-xs text-gray-500">
             <FileText className="h-4 w-4" /> In-browser preview
@@ -443,12 +424,13 @@ export default function DocxPreviewClient({
           </span>
         </div>
         {downloadHint && <p className="px-4 pt-1 text-xs text-red-600">{downloadHint}</p>}
-        <div className="p-2 sm:p-4">
+        {/* A4 page-shell scroll area */}
+        <div className="docx-scroll-area flex-1">
           <div
-            className="view-docx-surface mx-auto w-full max-w-[210mm] rounded border border-gray-300 bg-white p-6 shadow-sm"
+            className={`docx-page-shell view-docx-surface${isGujarati ? ' view-docx-gujarati' : ''}`}
             dangerouslySetInnerHTML={{ __html: viewDocxHtml }}
           />
-          <p className="mx-auto max-w-[210mm] px-2 pb-8 pt-3 text-center text-[11px] leading-snug text-gray-500">
+          <p className="mx-auto w-[794px] max-w-full px-2 pb-8 pt-3 text-center text-[11px] leading-snug text-gray-500">
             In-browser preview — <strong>Download original</strong> opens the exact file in Microsoft Word.
           </p>
         </div>
@@ -473,17 +455,6 @@ export default function DocxPreviewClient({
               {downloadBusy ? 'Preparing…' : 'Download original'}
             </button>
           )}
-          {wordOnlineUrl && (
-            <a
-              href={wordOnlineUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-3 py-1.5 text-sm font-semibold text-purple-700 hover:bg-purple-100"
-            >
-              <ExternalLink className="h-4 w-4" aria-hidden />
-              Open in Word Online
-            </a>
-          )}
         </div>
         <span className="flex items-center gap-2 text-xs text-gray-500">
           <FileText className="h-4 w-4" /> In-browser preview
@@ -495,20 +466,19 @@ export default function DocxPreviewClient({
   );
 
   const previewBody = (
-    <div className="p-2 sm:p-4">
-      <div className="mx-auto w-full max-w-[210mm]">
-        <div ref={styleRef} className="docx-preview-styles" aria-hidden="true" />
-        <div
-          ref={bodyRef}
-          className={
-            mode === 'docx-preview'
-              ? `docx-preview-surface rounded border border-gray-300 bg-white shadow-sm ${layout === 'embedded' ? 'min-h-[480px] p-4' : 'min-h-[200px] p-6'}`
-              : 'hidden'
-          }
-        />
-      </div>
+    /* A4 grey background scroll area — matches Word print layout view */
+    <div className="docx-scroll-area flex-1">
+      <div ref={styleRef} className="docx-preview-styles" aria-hidden="true" />
+      <div
+        ref={bodyRef}
+        className={
+          mode === 'docx-preview'
+            ? `docx-preview-surface${isGujarati ? ' docx-gujarati-text' : ''}`
+            : 'hidden'
+        }
+      />
       {mode === 'docx-preview' && (
-        <p className="mx-auto max-w-[210mm] shrink-0 px-2 pb-8 pt-3 text-center text-[11px] leading-snug text-gray-500">
+        <p className="mx-auto w-[794px] max-w-full px-2 pb-8 pt-3 text-center text-[11px] leading-snug text-gray-500">
           In-browser preview — fonts and some images may differ slightly from the original.{' '}
           <strong>Download original</strong> opens the exact file in Microsoft Word.
         </p>
@@ -523,17 +493,6 @@ export default function DocxPreviewClient({
         {docxDownloadHref && mode === 'docx-preview' && (
           <div className="flex shrink-0 flex-col items-end gap-1 px-1">
             <div className="flex items-center gap-2">
-              {wordOnlineUrl && (
-                <a
-                  href={wordOnlineUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 rounded-md border border-purple-200 bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700 hover:bg-purple-100"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-                  Word Online
-                </a>
-              )}
               <button
                 type="button"
                 disabled={downloadBusy}
@@ -553,7 +512,7 @@ export default function DocxPreviewClient({
   }
 
   return (
-    <div className="relative flex min-h-screen flex-col bg-[#e5e7eb]">
+    <div className="relative flex min-h-screen flex-col bg-[#d1d5db]">
       {loadingOverlay}
       {headerContent}
       {previewBody}

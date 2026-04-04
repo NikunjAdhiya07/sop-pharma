@@ -3,6 +3,13 @@ import connectDB from '@/lib/mongodb';
 import TrainingMatrixRecord from '@/models/TrainingMatrixRecord';
 import TrainingMatrixUpload from '@/models/TrainingMatrixUpload';
 
+const STATUS_PRIORITY: Record<string, number> = {
+  completed: 4,
+  pending: 3,
+  not_required: 2,
+  na: 1,
+};
+
 export async function GET(request: NextRequest) {
   try {
     await connectDB();
@@ -20,43 +27,69 @@ export async function GET(request: NextRequest) {
     if (dept    !== 'all') match.department   = dept;
     if (monthP  !== 'all') match.month        = parseInt(monthP);
     if (yearP   !== 'all') match.year         = parseInt(yearP);
-    if (statusF !== 'all') match.status       = statusF;
     if (desigF  !== 'all') match.designation  = desigF;
     if (search)            match.employeeName = { $regex: search, $options: 'i' };
     if (sopSearch)         match.sopCode      = { $regex: sopSearch, $options: 'i' };
+    // Don't filter by status here — we need all statuses to build the employee map correctly
 
     const records = await TrainingMatrixRecord.find(match)
       .sort({ department: 1, employeeName: 1, sopCode: 1 })
       .lean();
 
     // Build employee map with SOP matrix
+    // Key: department||employeeName
+    // For each SOP, keep the highest-priority status across all months
     const empMap: Record<string, {
       employeeName: string;
       designation: string;
       department: string;
-      trainings: Record<string, { status: string; raw: string }>;
+      trainings: Record<string, { status: string; raw: string; priority: number }>;
     }> = {};
 
     const sopSet = new Set<string>();
 
     for (const r of records) {
+      // Skip na records — they contribute nothing to counts
+      if (r.status === 'na') continue;
+
       const key = `${r.department}||${r.employeeName}`;
       if (!empMap[key]) {
         empMap[key] = { employeeName: r.employeeName, designation: r.designation, department: r.department, trainings: {} };
       }
-      empMap[key].trainings[r.sopCode] = { status: r.status, raw: r.rawSymbol };
+
+      const priority = STATUS_PRIORITY[r.status] ?? 0;
+      const existing = empMap[key].trainings[r.sopCode];
+
+      // Only update if this status has higher priority than existing
+      if (!existing || priority > existing.priority) {
+        empMap[key].trainings[r.sopCode] = { status: r.status, raw: r.rawSymbol, priority };
+      }
+
       sopSet.add(r.sopCode);
     }
 
     const employees = Object.values(empMap).map(emp => {
-      const completed    = Object.values(emp.trainings).filter(t => t.status === 'completed').length;
-      const not_required = Object.values(emp.trainings).filter(t => t.status === 'not_required').length;
-      const na           = Object.values(emp.trainings).filter(t => t.status === 'na').length;
-      const pending      = Object.values(emp.trainings).filter(t => t.status === 'pending').length;
+      const trainingValues = Object.values(emp.trainings);
+      const completed    = trainingValues.filter(t => t.status === 'completed').length;
+      const not_required = trainingValues.filter(t => t.status === 'not_required').length;
+      const pending      = trainingValues.filter(t => t.status === 'pending').length;
       const required     = completed + pending;
+      const totalSOPs    = required + not_required; // Total = Required + Not Required (no NA)
       const pct          = required > 0 ? Math.round((completed / required) * 100) : 0;
-      return { ...emp, completed, not_required, na, pending, required, completionPct: pct };
+
+      // Strip out the priority field before returning
+      const trainings: Record<string, { status: string; raw: string }> = {};
+      for (const [sop, t] of Object.entries(emp.trainings)) {
+        trainings[sop] = { status: t.status, raw: t.raw };
+      }
+
+      return { ...emp, trainings, completed, not_required, na: 0, pending, required, totalSOPs, completionPct: pct };
     });
+
+    // Apply status filter after building (filter employees by status presence)
+    const filteredEmployees = statusF !== 'all'
+      ? employees.filter(e => Object.values(e.trainings).some(t => t.status === statusF))
+      : employees;
 
     const sopCodes = [...sopSet].sort();
 
@@ -76,7 +109,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      employees,
+      employees: filteredEmployees,
       sopCodes,
       filters: { departments, years, months, designations },
       uploads,

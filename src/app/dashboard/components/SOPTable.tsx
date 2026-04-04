@@ -15,6 +15,8 @@ import {
   Eye,
   Download,
   BookOpen,
+  Sparkles,
+  Printer,
   Trash2,
   X,
 } from "lucide-react";
@@ -42,8 +44,10 @@ export default function SOPTable({
   complianceCache,
   onViewCompliance,
   onMarkObsolete,
+  onMarkVersionSuperseded,
 }: any) {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
+
 
   // Obsolete confirm modal state
   const [obsoleteTarget, setObsoleteTarget] = useState<{ sopNo: string; sopName: string } | null>(null);
@@ -142,8 +146,15 @@ export default function SOPTable({
   ) => {
     const trimmed = (path || "").trim();
     const kind = fileKindFromStoredPath(trimmed, fileType);
-    if (kind === "docx" || kind === "doc" || kind === "pdf") {
+    if (kind === "docx" || kind === "doc") {
       return buildViewDocHref(path, identifier, language);
+    }
+    if (kind === "pdf") {
+      const dl = new URLSearchParams();
+      dl.set("path", path);
+      if (identifier) dl.set("identifier", identifier);
+      if (language) dl.set("language", language);
+      return `/api/files/download?${dl.toString()}`;
     }
     if (/^https?:\/\//i.test(trimmed)) return trimmed;
     const dl = new URLSearchParams();
@@ -174,11 +185,26 @@ export default function SOPTable({
     lang: "English" | "Gujarati",
     subLabel?: string,
     maxRows = 2,
+    allowSupersede = false,
   ): ReactNode => {
     if (!entries?.length) return null;
-    const sorted = [...entries]
-      .sort((a, b) => b.version - a.version)
-      .slice(0, maxRows);
+
+    // Build a consecutive sequence of prior versions so gaps show as "N/A"
+    // e.g. current=V6, stored=[V6,V4] → show V5(N/A), V4
+    const currentRev = getDisplayCurrentRevision(row);
+    const entryByVersion = new Map<number, VersionArtifactEntry>(
+      entries.map((e) => [e.version, e]),
+    );
+    const highestStored = Math.max(...entries.map((e) => e.version));
+    // Start just below current revision (prior versions only), go down to cover all stored
+    const startFrom = currentRev != null ? currentRev - 1 : highestStored;
+    const lowestStored = Math.min(...entries.map((e) => e.version));
+    const rangeSlots: (VersionArtifactEntry | { version: number; missing: true })[] = [];
+    for (let v = startFrom; v >= lowestStored; v--) {
+      const entry = entryByVersion.get(v);
+      rangeSlots.push(entry ?? { version: v, missing: true });
+    }
+    const sorted = rangeSlots.slice(0, maxRows);
 
     return (
       <div className="flex flex-col gap-1 py-0.5">
@@ -193,6 +219,13 @@ export default function SOPTable({
               <span className="text-[10px] font-bold text-gray-900 leading-tight">
                 {formatPriorVersionLabel(e.version)}
               </span>
+              {"missing" in e ? (
+                <span
+                  className="text-[8px] font-bold text-red-500 leading-none"
+                  title="This version was not uploaded — not available">
+                  ✗
+                </span>
+              ) : (
               <div className="flex items-center gap-1 leading-none text-[8px] font-bold h-[14px]">
                 {e.docxPath ? (
                   <a
@@ -220,7 +253,26 @@ export default function SOPTable({
                 {!e.docxPath && !e.pdfPath ? (
                   <span className="text-gray-400">—</span>
                 ) : null}
+                {allowSupersede ? (
+                  <button
+                    type="button"
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      onMarkVersionSuperseded?.({
+                        sopNo: String(row.sopNo || ""),
+                        lang,
+                        version: Number(e.version),
+                        docxPath: e.docxPath,
+                        pdfPath: e.pdfPath,
+                      });
+                    }}
+                    className="ml-1 rounded border border-amber-300 bg-amber-50 px-1 py-px text-[7px] font-bold text-amber-900 hover:bg-amber-100"
+                    title="Move this version to Supersede SOP section">
+                    Supersede
+                  </button>
+                ) : null}
               </div>
+              )}
             </div>
           ))}
         </div>
@@ -443,7 +495,11 @@ export default function SOPTable({
 
   /** e.g. 1028 days (34 months 8 days) — months = floor(days/30), remainder days */
   const formatExpiryVerbose = (dateStr: any): ReactNode => {
-    if (!dateStr) return <span className="text-[10px] text-gray-400">—</span>;
+    if (!dateStr) return (
+      <span className="inline-block rounded border border-gray-200 bg-gray-50 px-1 py-0.5 text-[8px] font-semibold text-gray-400">
+        No Date
+      </span>
+    );
     const review = new Date(dateStr);
     const now = new Date();
     now.setHours(0, 0, 0, 0);
@@ -508,6 +564,7 @@ export default function SOPTable({
       return parseInt(rv.trim(), 10);
     return null;
   };
+
 
   const deriveGujaratiSubtitle = (row: any): string => {
     const direct = String(row?.gujaratiName || "").trim();
@@ -578,6 +635,7 @@ export default function SOPTable({
     return true;
   });
 
+
   const thBase =
     "px-1 py-0.5 align-top text-[9px] font-bold text-gray-600 uppercase tracking-wide whitespace-nowrap";
   const selBase =
@@ -627,7 +685,7 @@ export default function SOPTable({
               </th>
               <th
                 className={`${thBase} min-w-[160px] max-w-[260px]`}
-                title="Up to two prior revisions (DOCX/PDF links) per language. Older files: Superseded Versions.">
+                title="Up to two prior revisions (DOCX/PDF links) per language. Older files: Supersede SOP.">
                 <button
                   type="button"
                   className={sortBtn}
@@ -796,6 +854,16 @@ export default function SOPTable({
                 const isExpanded = expandedRow === row._id;
                 const vNum = getVersionNum(row.sopNo);
                 const displayRev = getDisplayCurrentRevision(row);
+                const videoCount =
+                  row.mediaStatus?.videoCount ?? (row.mediaStatus?.videos ? 1 : 0);
+                const slideCount =
+                  row.mediaStatus?.slideCount ?? (row.mediaStatus?.slides ? 1 : 0);
+                const mediaTags = [
+                  videoCount > 0 ? "VIDEO_READY" : "VIDEO_PENDING",
+                  slideCount > 0 ? "SLIDE_READY" : "SLIDE_PENDING",
+                  row.isDualLanguage ? "LANG_BOTH" : row.language === "Gujarati" ? "LANG_GUJ" : "LANG_ENG",
+                  `TYPE_${String(row.sopNo || "").replace(/[^A-Za-z].*$/, "").toUpperCase() || "GEN"}`,
+                ];
                 return (
                   <Fragment key={row._id ?? `row-${idx}`}>
                     <tr
@@ -854,6 +922,16 @@ export default function SOPTable({
                                   </span>
                                 ) : null}
                               </div>
+                              <button
+                                type="button"
+                                title="Create guideline recommendation"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onOpenGuidelineWizard?.({ _id: String(row._id), sopNo: String(row.sopNo) });
+                                }}
+                                className="shrink-0 rounded-full p-0.5 text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors">
+                                <Sparkles className="h-3 w-3" />
+                              </button>
                               {hasResult && (
                                 <button
                                   type="button"
@@ -866,6 +944,16 @@ export default function SOPTable({
                                   <BookOpen className="h-3 w-3" />
                                 </button>
                               )}
+                              <button
+                                type="button"
+                                title="Print this SOP row"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  window.print();
+                                }}
+                                className="shrink-0 rounded-full p-0.5 text-slate-600 bg-slate-50 hover:bg-slate-100 transition-colors">
+                                <Printer className="h-3 w-3" />
+                              </button>
                             </div>
                           );
                         })()}
@@ -960,7 +1048,7 @@ export default function SOPTable({
                       {/* Dept */}
                       <td className="px-1 py-px text-gray-700 whitespace-nowrap align-middle">
                         <span className="bg-gray-200 text-gray-700 px-1 py-px rounded text-[9px] font-semibold leading-tight">
-                          {row.department}
+                          {row.department || "Other"}
                         </span>
                       </td>
                       {/* Lang */}
@@ -1064,7 +1152,7 @@ export default function SOPTable({
                                     Department:
                                   </span>
                                   <span className="text-gray-800 font-bold">
-                                    {row.department}
+                                    {row.department || "Other"}
                                   </span>
                                 </div>
                                 {row.location ? (
@@ -1297,6 +1385,9 @@ export default function SOPTable({
                                                   row.versionArtifacts,
                                                   row,
                                                   "English",
+                                                  undefined,
+                                                  2,
+                                                  true,
                                                 )}
                                               </div>
                                             )}
@@ -1315,6 +1406,9 @@ export default function SOPTable({
                                                   row.versionArtifactsGujarati,
                                                   row,
                                                   "Gujarati",
+                                                  undefined,
+                                                  2,
+                                                  true,
                                                 )}
                                               </div>
                                             )}
@@ -1339,7 +1433,7 @@ export default function SOPTable({
                                           Not listed in the main &quot;Prior
                                           versions&quot; column. Open the
                                           dashboard{" "}
-                                          <strong>Superseded Versions</strong>{" "}
+                                          <strong>Prior Ver. Archive</strong>{" "}
                                           button for the full list.
                                         </p>
                                         <div className="mt-1 flex flex-col gap-1.5 opacity-90">
@@ -1387,8 +1481,7 @@ export default function SOPTable({
                                     Videos:
                                   </span>
                                   <span className="text-gray-800 font-bold tabular-nums">
-                                    {row.mediaStatus?.videoCount ??
-                                      (row.mediaStatus?.videos ? 1 : 0)}
+                                    {videoCount}
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-1.5">
@@ -1397,9 +1490,17 @@ export default function SOPTable({
                                     Slides:
                                   </span>
                                   <span className="text-gray-800 font-bold tabular-nums">
-                                    {row.mediaStatus?.slideCount ??
-                                      (row.mediaStatus?.slides ? 1 : 0)}
+                                    {slideCount}
                                   </span>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                                  {mediaTags.map((t) => (
+                                    <span
+                                      key={t}
+                                      className="rounded border border-gray-200 bg-white px-1 py-px text-[8px] font-bold text-gray-600">
+                                      {t}
+                                    </span>
+                                  ))}
                                 </div>
                               </div>
                             </div>
@@ -1455,6 +1556,17 @@ export default function SOPTable({
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    window.print();
+                                  }}
+                                  className="mt-1 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-[10px] font-bold text-slate-700 shadow-sm transition-colors hover:bg-slate-100"
+                                  title="Print this SOP record (GRM support)">
+                                  <Printer className="h-3.5 w-3.5 shrink-0" />
+                                  Print (GRM)
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     setObsoleteTarget({
                                       sopNo: String(row.sopNo),
                                       sopName: String(row.englishName || row.sopName || row.sopNo),
@@ -1481,6 +1593,7 @@ export default function SOPTable({
           </tbody>
         </table>
       </div>
+
 
       {/* Obsolete confirmation modal */}
       {obsoleteTarget && (

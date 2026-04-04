@@ -118,29 +118,76 @@ export async function uploadToBunny(
 
   const cleanPath = destinationPath.startsWith('/') ? destinationPath.slice(1) : destinationPath;
   const uploadUrl = `https://${config.storageHostname}/${config.storageZone}/${cleanPath}`;
+  const timeoutMs = (() => {
+    const raw = String(process.env.BUNNY_UPLOAD_TIMEOUT_MS || '').trim();
+    const n = parseInt(raw, 10);
+    // Default 5 minutes to survive slower Bunny header responses on large runs.
+    return Number.isFinite(n) && n >= 30_000 ? n : 300_000;
+  })();
+  const maxAttempts = (() => {
+    const raw = String(process.env.BUNNY_UPLOAD_MAX_RETRIES || '').trim();
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) && n >= 1 ? Math.min(8, n) : 5;
+  })();
+  const backoffMs = (attempt: number) => {
+    const base = Math.min(12_000, 1_200 * attempt * attempt);
+    const jitter = Math.floor(Math.random() * 600);
+    return base + jitter;
+  };
 
-  try {
-    const response = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: {
-        'AccessKey': config.apiKey,
-        'Content-Type': 'application/octet-stream',
-      },
-      body: new Uint8Array(fileBuffer),
-    });
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const response = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'AccessKey': config.apiKey,
+          'Content-Type': 'application/octet-stream',
+        },
+        body: new Uint8Array(fileBuffer),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[BunnyStorage] Upload failed:', response.status, errorText);
-      return null;
+      if (!response.ok) {
+        const errorText = await response.text();
+        const retryable = response.status >= 500 || response.status === 429;
+        console.error(
+          `[BunnyStorage] Upload failed (attempt ${attempt}/${maxAttempts}):`,
+          response.status,
+          errorText,
+        );
+        if (!retryable || attempt === maxAttempts) return null;
+        await new Promise((r) => setTimeout(r, Math.min(6000, 1000 * attempt * attempt)));
+        continue;
+      }
+
+      // Return the CDN URL
+      return getBunnyCdnUrl(cleanPath);
+    } catch (error) {
+      const code = (error as any)?.cause?.code || (error as any)?.code;
+      const name = (error as any)?.name || '';
+      const msg = error instanceof Error ? error.message : String(error);
+      const lowMsg = msg.toLowerCase();
+      const retryable =
+        code === 'UND_ERR_HEADERS_TIMEOUT' ||
+        code === 'UND_ERR_CONNECT_TIMEOUT' ||
+        code === 'UND_ERR_SOCKET' ||
+        code === 'ECONNRESET' ||
+        code === 'ETIMEDOUT' ||
+        name === 'AbortError' ||
+        name === 'TimeoutError' ||
+        lowMsg.includes('timeout') ||
+        lowMsg.includes('timed out') ||
+        lowMsg.includes('aborted due to timeout');
+      const compactErr =
+        error instanceof Error
+          ? `${error.name}: ${error.message}`
+          : String(error);
+      console.error(`[BunnyStorage] Upload error (attempt ${attempt}/${maxAttempts}): ${compactErr}`);
+      if (!retryable || attempt === maxAttempts) return null;
+      await new Promise((r) => setTimeout(r, backoffMs(attempt)));
     }
-
-    // Return the CDN URL
-    return getBunnyCdnUrl(cleanPath);
-  } catch (error) {
-    console.error('[BunnyStorage] Upload error:', error);
-    return null;
   }
+  return null;
 }
 
 /**
@@ -229,6 +276,92 @@ export function generateSOPDocumentPath(
   const timestamp = Date.now();
   const ext = fileName.includes('.') ? fileName.split('.').pop() : 'docx';
   return `sop-documents/${sanitizedDept}/${sanitizedId}_${timestamp}.${ext}`;
+}
+
+interface BunnyListEntry {
+  ObjectName: string;
+  IsDirectory: boolean;
+  LastChanged: string;
+}
+
+/**
+ * List files directly from Bunny Storage API under a given path.
+ */
+async function listBunnyStoragePath(config: BunnyConfig, storagePath: string): Promise<BunnyListEntry[]> {
+  const cleanPath = storagePath.replace(/^\/+|\/+$/g, '');
+  const url = cleanPath
+    ? `https://${config.storageHostname}/${config.storageZone}/${cleanPath}/`
+    : `https://${config.storageHostname}/${config.storageZone}/`;
+  try {
+    const res = await fetch(url, {
+      headers: { AccessKey: config.apiKey },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Search Bunny Storage for a DOCX file matching the given SOP identifier.
+ * Lists sop-documents/ and its department subdirectories, finding the most-recently-modified
+ * DOCX whose stem (after stripping a trailing timestamp) normalizes to the same code.
+ * e.g. "QAGE09-10_1777290850711.docx" matches identifier "QAGE9-10".
+ * Returns the CDN URL of the match, or null if not found.
+ */
+export async function searchBunnyStorageForDocx(
+  identifier: string,
+  _language?: string,
+): Promise<string | null> {
+  const config = getConfig();
+  if (!config.storageZone || !config.apiKey || !config.cdnHostname) return null;
+
+  // Normalize identifier: strip leading zeros so QAGE09-10 === QAGE9-10
+  const normalizeId = (id: string): string => {
+    const cleaned = id.toUpperCase().replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-');
+    const m = cleaned.match(/^([A-Z]{2,6})(\d+)-(\d+)$/);
+    if (m) return `${m[1]}${parseInt(m[2], 10)}-${parseInt(m[3], 10)}`;
+    return cleaned;
+  };
+
+  const normalizedId = normalizeId((identifier || '').trim());
+  if (!normalizedId) return null;
+
+  const candidates: Array<{ path: string; lastChanged: string }> = [];
+
+  const collectMatches = (entries: BunnyListEntry[], basePath: string) => {
+    for (const entry of entries) {
+      if (entry.IsDirectory) continue;
+      const ext = entry.ObjectName.split('.').pop()?.toLowerCase() ?? '';
+      if (ext !== 'docx' && ext !== 'doc') continue;
+      // Strip extension and trailing Unix-ms timestamp (e.g. _1777290850711)
+      const stem = entry.ObjectName.replace(/\.[^.]+$/, '').replace(/_\d{10,}$/, '');
+      if (normalizeId(stem) === normalizedId) {
+        candidates.push({ path: `${basePath}/${entry.ObjectName}`, lastChanged: entry.LastChanged });
+      }
+    }
+  };
+
+  // List sop-documents/ once — reuse for both flat files and dept dir list
+  const topEntries = await listBunnyStoragePath(config, 'sop-documents');
+  collectMatches(topEntries, 'sop-documents');
+
+  if (!candidates.length) {
+    const deptDirs = topEntries.filter((e) => e.IsDirectory).map((e) => e.ObjectName);
+    for (const dept of deptDirs) {
+      const deptEntries = await listBunnyStoragePath(config, `sop-documents/${dept}`);
+      collectMatches(deptEntries, `sop-documents/${dept}`);
+      if (candidates.length) break; // stop at first department that has a match
+    }
+  }
+
+  if (!candidates.length) return null;
+
+  // Return the most recently modified match
+  candidates.sort((a, b) => new Date(b.lastChanged).getTime() - new Date(a.lastChanged).getTime());
+  return getBunnyCdnUrl(candidates[0].path);
 }
 
 /**

@@ -1,16 +1,23 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { normalizePath, resolveFilePath } from '@/lib/filePathResolver';
-import { fetchBunnyFile, isBunnyPath } from '@/lib/bunnyStorage';
+import { fetchBunnyFile, isBunnyPath, searchBunnyStorageForDocx } from '@/lib/bunnyStorage';
 import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
 import SOPLibrary from '@/models/SOPLibrary';
+import SOPVersionArtifacts from '@/models/SOPVersionArtifacts';
 import { sopIdentifierMatchFilter } from '@/lib/sopIdentifierNormalize';
 import { fileKindFromStoredPath } from '@/lib/filePathFileKind';
 import {
   collectSopIdentifierCandidates,
   extractRawHyphenatedSopCodesFromPath,
 } from '@/lib/inferSopIdentifierFromStoredPath';
+
+/** Never serve an annexure file when resolving a main SOP document. */
+function isAnnexurePath(p: string): boolean {
+  const name = path.posix.basename((p || '').replace(/\\/g, '/').split('?')[0]).toLowerCase();
+  return /annex(ure)?/i.test(name);
+}
 
 /** Avoid returning a Mongo path that no longer exists on disk (stale uploads path) so fallbacks can run. */
 async function isLocalStoredPathReachable(p: string): Promise<boolean> {
@@ -97,9 +104,10 @@ async function resolveLibraryDocumentPath(
   const row = pickLibraryRow(libs, wantGuj);
   const docs = row?.sopDocuments;
   if (!docs?.length) return null;
+  // First pass: prefer non-annexure files
   for (const d of docs) {
     const p = (d as { filePath?: string; fileType?: string }).filePath?.trim();
-    if (!p) continue;
+    if (!p || isAnnexurePath(p)) continue;
     if (fileKindFromStoredPath(p, (d as { fileType?: string }).fileType) === wantKind) return p;
   }
   return null;
@@ -173,7 +181,7 @@ async function resolveLibraryDocumentByFilenameGlobally(
   for (const row of orderLibraryRowsByLanguage(libs, wantGuj)) {
     for (const d of row.sopDocuments || []) {
       const p = (d as { filePath?: string; fileType?: string }).filePath?.trim();
-      if (!p) continue;
+      if (!p || isAnnexurePath(p)) continue;
       const base = path.posix.basename(p.split(/[?#]/)[0]).toLowerCase();
       if (base !== tb) continue;
       if (fileKindFromStoredPath(p, (d as { fileType?: string }).fileType) === wantKind) return p;
@@ -209,7 +217,7 @@ async function resolveLibraryDocumentByPathContainingCode(
   for (const row of orderLibraryRowsByLanguage(libs, wantGuj)) {
     for (const d of row.sopDocuments || []) {
       const p = (d as { filePath?: string; fileType?: string }).filePath?.trim();
-      if (!p || !pathRe.test(p)) continue;
+      if (!p || isAnnexurePath(p) || !pathRe.test(p)) continue;
       if (fileKindFromStoredPath(p, (d as { fileType?: string }).fileType) === wantKind) return p;
     }
   }
@@ -233,9 +241,11 @@ async function resolveSopFileUrlByPathContainingCode(
     .limit(30)
     .lean();
 
+  const nonAnnexure = all.filter((s) => !isAnnexurePath((s as any).fileUrl || ''));
+  const pool = nonAnnexure.length ? nonAnnexure : all;
   const target = wantGuj
-    ? all.find((s) => looksGujarati(s))
-    : all.find((s) => !looksGujarati(s)) || all[0];
+    ? pool.find((s) => looksGujarati(s))
+    : pool.find((s) => !looksGujarati(s)) || pool[0];
   const url = (target as { fileUrl?: string; fileType?: string } | undefined)?.fileUrl?.trim();
   if (!url || !urlRe.test(url)) return null;
   if (fileKindFromStoredPath(url, (target as { fileType?: string }).fileType) !== wantKind) return null;
@@ -272,7 +282,7 @@ async function findFirstReachablePathForIdentifiers(
     for (const row of orderLibraryRowsByLanguage(libs, wantGuj)) {
       for (const d of row.sopDocuments || []) {
         const p = (d as { filePath?: string; fileType?: string }).filePath?.trim();
-        if (!p) continue;
+        if (!p || isAnnexurePath(p)) continue;
         if (fileKindFromStoredPath(p, (d as { fileType?: string }).fileType) !== wantKind) continue;
         if (await isLocalStoredPathReachable(p)) return p;
       }
@@ -281,13 +291,18 @@ async function findFirstReachablePathForIdentifiers(
     const sops = await SOP.find(sopIdentifierMatchFilter(id))
       .select('fileUrl fileType language name originalFileName folderPath')
       .lean();
-    const engFirst = sops.filter((s) => !looksGujarati(s));
-    const gujFirst = sops.filter((s) => looksGujarati(s));
+    const nonAnnexureSops = sops.filter((s) => {
+      const n = ((s as any).name || '') + ((s as any).originalFileName || '');
+      return !/annex(ure)?/i.test(n) && !isAnnexurePath((s as any).fileUrl || '');
+    });
+    const sopPool = nonAnnexureSops.length ? nonAnnexureSops : sops;
+    const engFirst = sopPool.filter((s) => !looksGujarati(s));
+    const gujFirst = sopPool.filter((s) => looksGujarati(s));
     const ordered = wantGuj ? [...gujFirst, ...engFirst] : [...engFirst, ...gujFirst];
-    const list = ordered.length ? ordered : sops;
+    const list = ordered.length ? ordered : sopPool;
     for (const s of list) {
       const url = (s as { fileUrl?: string; fileType?: string }).fileUrl?.trim();
-      if (!url) continue;
+      if (!url || isAnnexurePath(url)) continue;
       if (fileKindFromStoredPath(url, (s as { fileType?: string }).fileType) !== wantKind) continue;
       if (await isLocalStoredPathReachable(url)) return url;
     }
@@ -329,13 +344,27 @@ export async function resolveDocxPathForViewer(
     // Many older SOP records have a stale local path but the file was migrated to Bunny.
     if (!/^https?:\/\//i.test(pathTrim) && !isBunnyPath(pathTrim)) {
       const { getBunnyCdnUrl } = await import('@/lib/bunnyStorage');
-      const cdnUrl = getBunnyCdnUrl(pathTrim.replace(/^\/+/, ''));
-      if (cdnUrl) {
-        // Validate the CDN URL is reachable before returning it
+      const tryHead = async (cdnRelPath: string): Promise<string | null> => {
+        const url = getBunnyCdnUrl(cdnRelPath);
+        if (!url) return null;
         try {
-          const headRes = await fetch(cdnUrl, { method: 'HEAD' });
-          if (headRes.ok) return cdnUrl;
-        } catch { /* CDN not reachable, continue */ }
+          const res = await fetch(url, { method: 'HEAD' });
+          return res.ok ? url : null;
+        } catch { return null; }
+      };
+      const normalForMap = pathTrim.replace(/^\/+/, '').replace(/\\/g, '/');
+      const direct = await tryHead(normalForMap);
+      if (direct) return direct;
+      // Remap uploads/sop-pdfs/<Dept>/<file> or uploads/sop-library/<Dept>/.../<file> → sop-documents/<Dept>/<file>
+      const sopPdfsMatch = normalForMap.match(/^uploads\/sop-pdfs\/([^/]+)\/(.+)$/i);
+      if (sopPdfsMatch) {
+        const remapped = await tryHead(`sop-documents/${sopPdfsMatch[1]}/${sopPdfsMatch[2]}`);
+        if (remapped) return remapped;
+      }
+      const sopLibMatch = normalForMap.match(/^uploads\/sop-library\/([^/]+)\/.+\/([^/]+)$/i);
+      if (sopLibMatch) {
+        const remapped = await tryHead(`sop-documents/${sopLibMatch[1]}/${sopLibMatch[2]}`);
+        if (remapped) return remapped;
       }
     }
   }
@@ -348,6 +377,45 @@ export async function resolveDocxPathForViewer(
       if ((k === 'docx' || k === 'doc') && (await isLocalStoredPathReachable(fb))) return fb;
       // If the stored URL is a Bunny CDN URL, return it directly
       if ((k === 'docx' || k === 'doc') && isBunnyPath(fb)) return fb;
+    }
+  }
+  return null;
+}
+
+/**
+ * Search SOPVersionArtifacts (folder-upload collection) for a reachable file path.
+ * These records store actual Bunny CDN URLs and are the most reliable source after migration.
+ */
+async function resolveFromVersionArtifacts(
+  identifier: string,
+  language: string | undefined,
+  wantKind: 'pdf' | 'docx' | 'doc',
+): Promise<string | null> {
+  const wantGuj = language === 'Gujarati';
+  const lang = wantGuj ? 'Gujarati' : 'English';
+  // Try exact language first, then the other as fallback
+  for (const langTry of [lang, wantGuj ? 'English' : 'Gujarati']) {
+    const docs = await SOPVersionArtifacts.find({
+      ...sopIdentifierMatchFilter(identifier, 'identifier'),
+      language: langTry,
+    })
+      .select('entries')
+      .lean();
+    for (const doc of docs) {
+      const sorted = [...(doc.entries || [])].sort((a, b) => b.version - a.version);
+      for (const e of sorted) {
+        const candidates =
+          wantKind === 'pdf'
+            ? [e.pdfPath, e.docxPath]
+            : [e.docxPath, e.pdfPath];
+        for (const p of candidates) {
+          const s = (p || '').trim();
+          if (!s) continue;
+          const k = fileKindFromStoredPath(s);
+          if (k !== wantKind && !(wantKind !== 'pdf' && (k === 'docx' || k === 'doc'))) continue;
+          if (await isLocalStoredPathReachable(s)) return s;
+        }
+      }
     }
   }
   return null;
@@ -391,6 +459,17 @@ export async function resolveAlternateStoredLocation(
     const byCode = await tryResolveLibraryOrSopByPathCodes(trimmedPath, wantKind, language);
     if (byCode) return byCode;
     return null;
+  }
+
+  // Check SOPVersionArtifacts first — these store actual Bunny CDN URLs from folder uploads.
+  const ex0 = (identifier || '').trim();
+  if (ex0) {
+    const va = await resolveFromVersionArtifacts(ex0, language, wantKind);
+    if (va) return va;
+  }
+  for (const id of ids) {
+    const va = await resolveFromVersionArtifacts(id, language, wantKind);
+    if (va) return va;
   }
 
   for (const id of ids) {
@@ -444,6 +523,59 @@ export async function resolveAlternateStoredLocation(
 
   const reachable = await findFirstReachablePathForIdentifiers(ids, language, wantKind);
   if (reachable) return reachable;
+
+  // Last resort: construct a Bunny CDN URL from the stale local path and verify it's reachable.
+  // Handles the common case where the file was migrated to Bunny but Mongo still has /uploads/… path.
+  if (hadConcretePath && !/^https?:\/\//i.test(trimmedPath) && !isBunnyPath(trimmedPath)) {
+    const { getBunnyCdnUrl } = await import('@/lib/bunnyStorage');
+
+    const tryHead = async (cdnPath: string): Promise<string | null> => {
+      const url = getBunnyCdnUrl(cdnPath);
+      if (!url) return null;
+      try {
+        const res = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(8_000) });
+        return res.ok ? url : null;
+      } catch { return null; }
+    };
+
+    // Try 1: direct mapping (same relative path on CDN as local)
+    const direct = await tryHead(trimmedPath.replace(/^\/+/, ''));
+    if (direct) return direct;
+
+    // Try 2: remap uploads/sop-pdfs/<Dept>/<file> → sop-documents/<Dept>/<file>
+    // and uploads/sop-library/<Dept>/.../<file> → sop-documents/<Dept>/<file>
+    // (Files migrated to Bunny keep the same dept folder + filename but lose the /uploads/ prefix and sub-dirs)
+    const normalForMap = trimmedPath.replace(/^\/+/, '').replace(/\\/g, '/');
+    const sopPdfsMatch = normalForMap.match(/^uploads\/sop-pdfs\/([^/]+)\/(.+)$/i);
+    if (sopPdfsMatch) {
+      const remapped = await tryHead(`sop-documents/${sopPdfsMatch[1]}/${sopPdfsMatch[2]}`);
+      if (remapped) return remapped;
+    }
+    const sopLibMatch = normalForMap.match(/^uploads\/sop-library\/([^/]+)\/.+\/([^/]+)$/i);
+    if (sopLibMatch) {
+      const remapped = await tryHead(`sop-documents/${sopLibMatch[1]}/${sopLibMatch[2]}`);
+      if (remapped) return remapped;
+    }
+    // Try 3: basename only under sop-documents/<Dept>/ (dept inferred from any segment of the path)
+    const basename = path.posix.basename(normalForMap.split('?')[0]);
+    if (basename) {
+      const deptFromPath = normalForMap.split('/').find(
+        (seg, i, arr) => i > 0 && i < arr.length - 1 && seg.length > 2 && !/^(uploads|sop-pdfs|sop-library|sop-docs|sop-docx|documents|files|public)$/i.test(seg),
+      );
+      if (deptFromPath) {
+        const remapped = await tryHead(`sop-documents/${deptFromPath}/${basename}`);
+        if (remapped) return remapped;
+      }
+    }
+  }
+
+  // Final fallback: search Bunny Storage API directly by identifier.
+  // Handles stale paths like uploads/sops/... where the file was migrated to Bunny
+  // under sop-documents/<Dept>/<IDENTIFIER>_<timestamp>.docx but Mongo still has the old path.
+  if ((wantKind === 'docx' || wantKind === 'doc') && (identifier || '').trim()) {
+    const bunnyMatch = await searchBunnyStorageForDocx((identifier || '').trim(), language);
+    if (bunnyMatch) return bunnyMatch;
+  }
 
   return null;
 }

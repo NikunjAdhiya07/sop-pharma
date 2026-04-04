@@ -38,20 +38,8 @@ export async function GET(request: NextRequest) {
     const isPublic = isOriginPublicForViewer(origin);
 
     // canOfficeOnlineFetchDocumentUrl checks whether the URL is HTTPS + non-localhost.
-    // We also verify the file actually exists at that URL (HEAD request) so Office Online
-    // doesn't get a valid-looking URL that returns 404 ("File not found" inside the iframe).
-    let canUseOfficeViewer = canOfficeOnlineFetchDocumentUrl(publicUrl);
-    if (canUseOfficeViewer) {
-      try {
-        const headRes = await fetch(publicUrl, {
-          method: 'HEAD',
-          signal: AbortSignal.timeout(5000),
-        });
-        if (!headRes.ok) canUseOfficeViewer = false;
-      } catch {
-        canUseOfficeViewer = false;
-      }
-    }
+    // Trust the CDN URL directly — HEAD checks were blocking Office Viewer for valid Bunny CDN files.
+    const canUseOfficeViewer = canOfficeOnlineFetchDocumentUrl(publicUrl);
 
     return NextResponse.json({
       success: true,

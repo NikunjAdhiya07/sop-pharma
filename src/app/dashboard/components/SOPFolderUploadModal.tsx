@@ -14,6 +14,14 @@ export default function SOPFolderUploadModal({ isOpen, onClose, onSuccess }: SOP
   const [language, setLanguage] = useState<'English' | 'Gujarati'>('English');
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
+  const [currentBatch, setCurrentBatch] = useState<string | null>(null);
+  const [uploadLive, setUploadLive] = useState<{
+    started: number;
+    completed: number;
+    active: number;
+    totalFilesStarted: number;
+  } | null>(null);
+  const [activeBatchFiles, setActiveBatchFiles] = useState<Record<number, string[]>>({});
   const [dragActive, setDragActive] = useState(false);
   const [result, setResult] = useState<{
     totalQueued: number;
@@ -37,14 +45,26 @@ export default function SOPFolderUploadModal({ isOpen, onClose, onSuccess }: SOP
     }
   }, []);
 
-  /** Keep each POST small — thousands of files in one body hits proxy/browser limits (“Failed to fetch”). */
-  const FILES_PER_CHUNK = 35;
+  /**
+   * Use larger chunks so big folder uploads do not feel "one-by-one".
+   * 1805 files @45 => ~41 requests; with adaptive chunking this drops significantly.
+   */
+  const getFilesPerChunk = (totalFiles: number) => {
+    return 10;
+  };
+  const MAX_PARALLEL_BATCHES = 1;
+
+  const isAnnexureLikePath = (p: string) =>
+    /\b(annexure|annex|appendix)\b/i.test(String(p || ''));
 
   useEffect(() => {
     if (!isOpen) return;
     setFiles([]);
     setResult(null);
     setUploadProgress(null);
+    setCurrentBatch(null);
+    setUploadLive(null);
+    setActiveBatchFiles({});
     setLanguage('English');
   }, [isOpen]);
 
@@ -54,12 +74,59 @@ export default function SOPFolderUploadModal({ isOpen, onClose, onSuccess }: SOP
     f.name.endsWith('.docx') || f.name.endsWith('.doc') || f.name.endsWith('.pdf');
 
   const addFilesFromList = (list: File[]) => {
-    const allowed = list.filter(isDoc).filter((f) => !f.name.startsWith('~$'));
+    const allowed = list
+      .filter(isDoc)
+      .filter((f) => !f.name.startsWith('~$'))
+      .filter((f) => {
+        const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
+        return !isAnnexureLikePath(rel);
+      });
     setFiles((prev) => {
       const keys = new Set(prev.map((f) => `${(f as any).webkitRelativePath || f.name}-${f.size}`));
       const toAdd = allowed.filter((f) => !keys.has(`${(f as any).webkitRelativePath || f.name}-${f.size}`));
       return [...prev, ...toAdd];
     });
+  };
+
+  const deriveBatchGroupKey = (f: File) => {
+    const rel = ((f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name || '').toUpperCase();
+    const m = rel.match(/([A-Z]{2,6}\d{1,4})-(\d{1,3})/);
+    if (m) return `SOP:${m[1]}`;
+    const parts = rel.split(/[\\/]/).filter(Boolean);
+    if (parts.length >= 2) return `PATH:${parts[0]}/${parts[1]}`;
+    if (parts.length === 1) return `PATH:${parts[0]}`;
+    return `FILE:${f.name}`;
+  };
+
+  const buildSmartBatches = (allFiles: File[], targetSize: number): File[][] => {
+    const groups = new Map<string, File[]>();
+    for (const f of allFiles) {
+      const k = deriveBatchGroupKey(f);
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k)!.push(f);
+    }
+    const groupList = [...groups.values()].sort((a, b) => b.length - a.length);
+    const batches: File[][] = [];
+
+    for (const g of groupList) {
+      if (g.length > targetSize) {
+        // Shard this massive group into multiple batches
+        for (let i = 0; i < g.length; i += targetSize) {
+          batches.push(g.slice(i, i + targetSize));
+        }
+      } else {
+        let placed = false;
+        for (const b of batches) {
+          if (b.length + g.length <= targetSize) {
+            b.push(...g);
+            placed = true;
+            break;
+          }
+        }
+        if (!placed) batches.push([...g]);
+      }
+    }
+    return batches;
   };
 
   const readAllFilesFromDir = (dir: FileSystemDirectoryEntry): Promise<File[]> => {
@@ -133,7 +200,16 @@ export default function SOPFolderUploadModal({ isOpen, onClose, onSuccess }: SOP
     }
     setUploading(true);
     setResult(null);
-    setUploadProgress({ done: 0, total: Math.ceil(files.length / FILES_PER_CHUNK) });
+    const filesPerChunk = getFilesPerChunk(files.length);
+    const batches = buildSmartBatches(files, filesPerChunk);
+    setUploadProgress({ done: 0, total: batches.length });
+    setUploadLive({
+      started: 0,
+      completed: 0,
+      active: 0,
+      totalFilesStarted: 0,
+    });
+    setActiveBatchFiles({});
     let totalProcessed = 0;
     let totalSkippedOlder = 0;
     /**
@@ -149,28 +225,42 @@ export default function SOPFolderUploadModal({ isOpen, onClose, onSuccess }: SOP
     let priorVersionsUnlimited = true;
 
     try {
-      const totalChunks = Math.ceil(files.length / FILES_PER_CHUNK);
-      for (let c = 0; c < totalChunks; c++) {
-        const slice = files.slice(c * FILES_PER_CHUNK, (c + 1) * FILES_PER_CHUNK);
+      let doneCount = 0;
+      let nextIndex = 0;
+      const totalChunks = batches.length;
+
+      const runOneBatch = async (batchIndex: number) => {
+        const slice = batches[batchIndex];
+        const previewNames = slice
+          .slice(0, 4)
+          .map((f) => (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name);
+        setActiveBatchFiles((prev) => ({ ...prev, [batchIndex]: previewNames }));
+        setUploadLive((s) =>
+          s
+            ? {
+                ...s,
+                started: s.started + 1,
+                active: s.active + 1,
+                totalFilesStarted: s.totalFilesStarted + slice.length,
+              }
+            : s,
+        );
         const formData = new FormData();
         formData.set('language', language);
         for (const f of slice) {
           const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
           formData.append(`files[${rel}]`, f);
         }
-
-        let res: Response;
         try {
-          res = await fetch('/api/sop/folder-upload', { method: 'POST', body: formData });
-        } catch (netErr) {
-          const msg = netErr instanceof Error ? netErr.message : 'Network error';
-          throw new Error(
-            `${msg} (batch ${c + 1}/${totalChunks}). Large uploads are sent in chunks; if this persists, try a smaller folder or fewer files per run.`,
-          );
-        }
-
-        const text = await res.text();
-        let data: {
+          let res: Response;
+          try {
+            res = await fetch('/api/sop/folder-upload', { method: 'POST', body: formData });
+          } catch (netErr) {
+            const msg = netErr instanceof Error ? netErr.message : 'Network error';
+            throw new Error(`${msg} (batch ${batchIndex + 1}/${totalChunks})`);
+          }
+          const text = await res.text();
+          let data: {
           success?: boolean;
           error?: string;
           processed?: number;
@@ -183,41 +273,71 @@ export default function SOPFolderUploadModal({ isOpen, onClose, onSuccess }: SOP
           storage?: string;
           results?: Array<{ identifier: string; entries?: Array<{ version?: number }> }>;
         };
-        try {
-          data = JSON.parse(text) as typeof data;
-        } catch {
-          throw new Error(
-            res.ok
-              ? `Invalid server response (batch ${c + 1}/${totalChunks})`
-              : `Server error ${res.status} (batch ${c + 1}/${totalChunks}): ${text.slice(0, 200)}`,
+          try {
+            data = JSON.parse(text) as typeof data;
+          } catch {
+            throw new Error(
+              res.ok
+                ? `Invalid server response (batch ${batchIndex + 1}/${totalChunks})`
+                : `Server error ${res.status} (batch ${batchIndex + 1}/${totalChunks}): ${text.slice(0, 200)}`,
+            );
+          }
+          if (!res.ok || data.success === false) {
+            throw new Error(data.error || `Upload failed (batch ${batchIndex + 1}/${totalChunks})`);
+          }
+
+          totalProcessed += data.processed ?? 0;
+          totalSkippedOlder += data.skippedOlderVersions ?? 0;
+          if (data.priorVersionsUnlimited === true) {
+            priorVersionsUnlimited = true;
+            maxPriorVersions = 0;
+          } else if (typeof data.maxPriorVersions === 'number' && data.maxPriorVersions > 0) {
+            priorVersionsUnlimited = false;
+            maxPriorVersions = data.maxPriorVersions;
+          }
+          if (data.storage) storageLabel = data.storage;
+          if (Array.isArray(data.errors)) allErrors.push(...data.errors);
+          if (Array.isArray(data.results)) {
+            for (const r of data.results) {
+              if (!r?.identifier) continue;
+              identifiersTouched.add(r.identifier);
+              const n = Array.isArray(r.entries) ? r.entries.length : 0;
+              latestEntryCountBySop.set(r.identifier, n);
+            }
+          }
+        } finally {
+          setActiveBatchFiles((prev) => {
+            const next = { ...prev };
+            delete next[batchIndex];
+            return next;
+          });
+          setUploadLive((s) =>
+            s
+              ? {
+                  ...s,
+                  completed: s.completed + 1,
+                  active: Math.max(0, s.active - 1),
+                }
+              : s,
           );
         }
+      };
 
-        if (!res.ok || data.success === false) {
-          throw new Error(data.error || `Upload failed (batch ${c + 1}/${totalChunks})`);
+      const worker = async () => {
+        while (nextIndex < totalChunks) {
+          const idx = nextIndex++;
+          setCurrentBatch(`${idx + 1}/${totalChunks}`);
+          await runOneBatch(idx);
+          doneCount++;
+          setUploadProgress({ done: doneCount, total: totalChunks });
         }
+      };
 
-        totalProcessed += data.processed ?? 0;
-        totalSkippedOlder += data.skippedOlderVersions ?? 0;
-        if (data.priorVersionsUnlimited === true) {
-          priorVersionsUnlimited = true;
-          maxPriorVersions = 0;
-        } else if (typeof data.maxPriorVersions === 'number' && data.maxPriorVersions > 0) {
-          priorVersionsUnlimited = false;
-          maxPriorVersions = data.maxPriorVersions;
-        }
-        if (data.storage) storageLabel = data.storage;
-        if (Array.isArray(data.errors)) allErrors.push(...data.errors);
-        if (Array.isArray(data.results)) {
-          for (const r of data.results) {
-            if (!r?.identifier) continue;
-            identifiersTouched.add(r.identifier);
-            const n = Array.isArray(r.entries) ? r.entries.length : 0;
-            latestEntryCountBySop.set(r.identifier, n);
-          }
-        }
-        setUploadProgress({ done: c + 1, total: totalChunks });
-      }
+      const workers = Array.from(
+        { length: Math.min(MAX_PARALLEL_BATCHES, totalChunks) },
+        () => worker(),
+      );
+      await Promise.all(workers);
 
       const totalVersionRows = [...latestEntryCountBySop.values()].reduce((a, b) => a + b, 0);
 
@@ -245,13 +365,15 @@ export default function SOPFolderUploadModal({ isOpen, onClose, onSuccess }: SOP
         priorVersionsUnlimited,
         identifiers: identifiersTouched.size,
         versionsStored: totalVersionRowsPartial,
-        uploadBatches: Math.ceil(files.length / FILES_PER_CHUNK),
+        uploadBatches: batches.length,
         errors: [...allErrors, { path: '', error: err instanceof Error ? err.message : 'Failed' }],
         storage: storageLabel,
       });
     } finally {
       setUploading(false);
       setUploadProgress(null);
+      setCurrentBatch(null);
+      setUploadLive(null);
     }
   };
 
@@ -308,6 +430,8 @@ export default function SOPFolderUploadModal({ isOpen, onClose, onSuccess }: SOP
                 <strong>Bunny</strong> — configure env keys if uploads fail. Uploads run in automatic batches. The SOP
                 registry lists these rows even if you have not uploaded a separate “main” SOP record — refresh the
                 dashboard after a successful run.
+                <br />
+                <strong>Annexure/Appendix files are skipped at selection time</strong> for faster version uploads.
               </p>
             </div>
 
@@ -364,19 +488,48 @@ export default function SOPFolderUploadModal({ isOpen, onClose, onSuccess }: SOP
             {files.length > 0 && (
               <p className="text-[10px] font-medium text-gray-500">
                 {files.length} file(s) queued (relative paths preserved)
-                {files.length > FILES_PER_CHUNK && (
+                {files.length > getFilesPerChunk(files.length) && (
                   <span className="text-teal-700">
                     {' '}
-                    · will send in ~{Math.ceil(files.length / FILES_PER_CHUNK)} batches
+                    · will send in ~{buildSmartBatches(files, getFilesPerChunk(files.length)).length} batches
                   </span>
                 )}
               </p>
             )}
 
             {uploadProgress && (
-              <p className="text-[10px] font-semibold text-teal-800">
-                Uploading batch {uploadProgress.done} of {uploadProgress.total}…
-              </p>
+              <div className="rounded border border-teal-200 bg-teal-50 px-2 py-1">
+                <p className="text-[10px] font-semibold text-teal-800">
+                  Uploading batches {uploadProgress.done}/{uploadProgress.total}
+                  {currentBatch ? ` (active ${currentBatch})` : ''}…
+                </p>
+                {uploadLive && (
+                  <>
+                    <p className="mt-0.5 text-[10px] text-teal-900">
+                      Started: <strong>{uploadLive.started}</strong> · Completed:{" "}
+                      <strong>{uploadLive.completed}</strong> · Active:{" "}
+                      <strong>{uploadLive.active}</strong> · Files sent:{" "}
+                      <strong>{uploadLive.totalFilesStarted}</strong>/{files.length}
+                    </p>
+                    {Object.keys(activeBatchFiles).length > 0 && (
+                      <div className="mt-1 rounded border border-teal-200 bg-white px-2 py-1">
+                        <p className="text-[10px] font-semibold text-teal-800">
+                          Currently uploading files:
+                        </p>
+                        <ul className="mt-0.5 max-h-24 overflow-y-auto text-[10px] text-teal-900">
+                          {Object.entries(activeBatchFiles).map(([batchNo, names]) =>
+                            names.map((n, i) => (
+                              <li key={`${batchNo}-${i}`}>
+                                B{Number(batchNo) + 1}: {n}
+                              </li>
+                            )),
+                          )}
+                        </ul>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             )}
 
             {result &&
