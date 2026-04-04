@@ -21,7 +21,7 @@ async function convertBufferToHtml(buffer: Buffer): Promise<string> {
           // Keep as much original doc formatting as possible for Gujarati SOPs.
           includeDefaultStyleMap: true,
           includeEmbeddedStyleMap: true,
-          convertImage: mammoth.images.inline(),
+          convertImage: mammoth.images.dataUri,
         },
       );
       bodyHtml = result.value;
