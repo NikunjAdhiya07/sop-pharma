@@ -19,6 +19,7 @@ import {
   Printer,
   Trash2,
   X,
+  Loader2,
 } from "lucide-react";
 import { useState, Fragment, useEffect, useRef, type ReactNode } from "react";
 import {
@@ -45,6 +46,9 @@ export default function SOPTable({
   onViewCompliance,
   onMarkObsolete,
   onMarkVersionSuperseded,
+  isObsoleteView,
+  onRemoveObsolete,
+  removingObsoleteId,
 }: any) {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
@@ -838,6 +842,13 @@ export default function SOPTable({
             </tr>
           </thead>
           <tbody className="text-[10px] text-gray-700">
+            {isObsoleteView && displayedData.length > 0 && (
+              <tr className="bg-rose-50 border-b border-rose-200">
+                <td colSpan={11} className="px-3 py-1.5 text-[10px] font-semibold text-rose-700">
+                  Showing {displayedData.length} obsolete SOP{displayedData.length !== 1 ? "s" : ""} — these have been removed from the active registry. Expand a row to restore.
+                </td>
+              </tr>
+            )}
             {displayedData.length === 0 ? (
               <tr>
                 <td
@@ -870,7 +881,7 @@ export default function SOPTable({
                       onClick={() => toggleRow(row._id)}
                       className={`hover:bg-purple-50/80 cursor-pointer transition-colors group border-b border-gray-100/80 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/60"} ${isExpanded ? "bg-purple-50" : ""}`}>
                       {/* SOP No */}
-                      <td className="px-1 py-px font-mono text-[14px] font-bold tracking-wider text-purple-700 group-hover:underline whitespace-nowrap align-middle">
+                      <td className={`px-1 py-px font-mono text-[14px] font-bold tracking-wider group-hover:underline whitespace-nowrap align-middle ${isObsoleteView ? "text-rose-700" : "text-purple-700"}`}>
                         <span className="inline-flex items-center gap-1">
                           {isExpanded ? (
                             <ChevronDown className="h-4 w-4 text-purple-600" />
@@ -1563,23 +1574,42 @@ export default function SOPTable({
                                   <Printer className="h-3.5 w-3.5 shrink-0" />
                                   Print (GRM)
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setObsoleteTarget({
-                                      sopNo: String(row.sopNo),
-                                      sopName: String(row.englishName || row.sopName || row.sopNo),
-                                    });
-                                    setObsoletePassword("");
-                                    setObsoleteError("");
-                                    setTimeout(() => obsoleteInputRef.current?.focus(), 50);
-                                  }}
-                                  className="mt-1 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-[10px] font-bold text-red-700 shadow-sm transition-colors hover:bg-red-100"
-                                  title="Mark this SOP as obsolete — removes it from registry and capsule data">
-                                  <Trash2 className="h-3.5 w-3.5 shrink-0" />
-                                  Mark Obsolete
-                                </button>
+                                {isObsoleteView ? (
+                                  <button
+                                    type="button"
+                                    disabled={!!removingObsoleteId}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onRemoveObsolete?.(String(row.sopNo || ""));
+                                    }}
+                                    className="mt-1 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[10px] font-bold text-emerald-700 shadow-sm transition-colors hover:bg-emerald-100 disabled:opacity-60 disabled:cursor-wait"
+                                    title="Restore this SOP to the active registry">
+                                    {removingObsoleteId === String(row.sopNo || "") ? (
+                                      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="h-3.5 w-3.5 shrink-0" />
+                                    )}
+                                    {removingObsoleteId === String(row.sopNo || "") ? "Restoring…" : "Remove from Obsolete"}
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setObsoleteTarget({
+                                        sopNo: String(row.sopNo),
+                                        sopName: String(row.englishName || row.sopName || row.sopNo),
+                                      });
+                                      setObsoletePassword("");
+                                      setObsoleteError("");
+                                      setTimeout(() => obsoleteInputRef.current?.focus(), 50);
+                                    }}
+                                    className="mt-1 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-[10px] font-bold text-red-700 shadow-sm transition-colors hover:bg-red-100"
+                                    title="Mark this SOP as obsolete — removes it from registry and capsule data">
+                                    <Trash2 className="h-3.5 w-3.5 shrink-0" />
+                                    Mark Obsolete
+                                  </button>
+                                )}
                               </div>
                             </div>
                           </div>

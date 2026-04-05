@@ -529,7 +529,7 @@ export default function DashboardCharts({
             tone="violet"
           />
           <InsightCard
-            label="No expiry date"
+            label="No Date"
             value={missing.noExpiryDate}
             sub="Review date not set"
             tone="slate"

@@ -3,7 +3,7 @@ import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
 import User from '@/models/User';
 
-const OBSOLETE_FIXED_PASSWORD = 'obsolete@sop';
+const OBSOLETE_FIXED_PASSWORD = 'indiana@132';
 
 export async function POST(request: NextRequest) {
   try {

@@ -749,7 +749,7 @@ function DepartmentCapsuleCard({
           }
         />
         <CapsuleMetric
-          label="No Expiry"
+          label="No Date"
           value={stat.missingExpiry}
           valueClass={stat.missingExpiry > 0 ? "text-slate-700" : "text-gray-700"}
           onClick={() => apply("nodate")}

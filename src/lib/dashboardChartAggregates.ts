@@ -93,7 +93,6 @@ export function aggregateExpiryStatusGlobal(data: any[]): {
   for (const row of data) {
     if (!row.expiryDate) {
       noExpiryDate++;
-      active++;
       continue;
     }
     const diffDays = Math.ceil((new Date(row.expiryDate).getTime() - today.getTime()) / dayMs);
@@ -107,6 +106,7 @@ export function aggregateExpiryStatusGlobal(data: any[]): {
     { name: 'Active', value: active, color: '#059669' },
     { name: 'Near expiry (≤30d)', value: nearExpiry, color: '#f59e0b' },
     { name: 'Expired', value: expired, color: '#dc2626' },
+    { name: 'No Date', value: noExpiryDate, color: '#64748b' },
   ].filter((x) => x.value > 0);
 
   return { slices, total, expired, nearExpiry, active, noExpiryDate };
