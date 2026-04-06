@@ -375,7 +375,7 @@ export async function POST(request: NextRequest) {
 
     // Revalidate dashboard cache after successful uploads
     try {
-      await revalidateTag('dashboard-sops');
+      await revalidateTag('dashboard-sops', 'max');
     } catch (revalidateError) {
       console.warn('Failed to revalidate dashboard cache:', revalidateError);
       // Don't fail the upload if cache revalidation fails
