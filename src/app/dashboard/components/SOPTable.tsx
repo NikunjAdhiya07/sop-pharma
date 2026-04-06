@@ -241,13 +241,13 @@ export default function SOPTable({
       (entries || []).map((e) => [e.version, e]),
     );
     return (
-      <div className="flex flex-col gap-0.5 py-0 leading-tight">
+      <div className="flex flex-col gap-px py-0 leading-none">
         {subLabel ? (
-          <span className="text-[8px] font-bold uppercase tracking-wide text-gray-500 leading-none mb-px">
+          <span className="text-[8px] font-bold uppercase tracking-wide text-gray-500 leading-none">
             {subLabel}
           </span>
         ) : null}
-        <div className="flex flex-row flex-nowrap gap-2.5 items-start">
+        <div className="flex flex-row flex-nowrap gap-2 items-start">
           {slotVersions.map((v) => {
             const e = entryByVersion.get(v);
             const hasAny = !!(e?.docxPath?.trim() || e?.pdfPath?.trim());
@@ -263,7 +263,7 @@ export default function SOPTable({
                     Not Found
                   </span>
                 ) : (
-                  <div className="flex items-center gap-0.5 leading-none text-[8px] font-bold min-h-[12px] flex-wrap">
+                  <div className="flex items-center gap-0.5 leading-none text-[8px] font-bold min-h-0 flex-wrap">
                     {e!.docxPath ? (
                       <a
                         href={buildPreviewHref(e!.docxPath!, "docx", row.sopNo, lang)}
@@ -522,7 +522,7 @@ export default function SOPTable({
       const pdfDoc = docs.find((d) => d.type === "PDF");
 
       return (
-        <div className="grid grid-cols-[24px_58px_6px_50px] items-center gap-x-0.5 text-left leading-none min-h-[16px]">
+        <div className="grid grid-cols-[24px_58px_6px_50px] items-center gap-x-0.5 text-left leading-none min-h-[12px]">
           <span className="text-[8px] font-bold text-gray-500">
             {langLabel}
           </span>
@@ -542,7 +542,7 @@ export default function SOPTable({
     };
 
     return (
-      <div className="flex w-max flex-col gap-0.5 text-left">
+      <div className="flex w-max flex-col gap-px text-left leading-none">
         {engDocs.length > 0 || useLangRows
           ? renderLangRow(engDocs, "ENG")
           : null}
@@ -1044,7 +1044,7 @@ export default function SOPTable({
                         </span>
                       </td>
                       {/* Versions: uploaded last-3 PDF/DOCX, else legacy AV availability */}
-                      <td className="px-0.5 py-px align-top min-w-[160px] max-w-[260px]">
+                      <td className="px-0.5 py-px align-middle min-w-[160px] max-w-[260px]">
                         {(() => {
                           const eng = Array.isArray(row.versionArtifacts)
                             ? row.versionArtifacts
@@ -1069,7 +1069,7 @@ export default function SOPTable({
                             dualSlots.length > 0
                           ) {
                             return (
-                              <div className="flex flex-col gap-1 py-px leading-tight">
+                              <div className="flex flex-col gap-[3px] py-0 leading-none">
                                 {renderVersionArtifactSlotRow(
                                   eng,
                                   row,
@@ -1092,7 +1092,7 @@ export default function SOPTable({
 
                           if (eng.length > 0 || guj.length > 0) {
                             return (
-                              <div className="flex flex-col gap-1 py-0.5">
+                              <div className="flex flex-col gap-[3px] py-0">
                                 {eng.length > 0 &&
                                   renderVersionArtifactLinks(
                                     eng,
