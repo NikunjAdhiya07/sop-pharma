@@ -2,8 +2,12 @@
 
 import { useMemo, ReactNode } from "react";
 import { Video, Presentation, FileText } from "lucide-react";
-import { countRowDocxPdfForCapsules } from "@/lib/registryRowDocCounts";
-import { isArtifactOnlyRegistryRow } from "@/lib/registryPrimaryRows";
+import {
+  countRowDocxPdfForCapsules,
+  expectedDocxSlotsForRow,
+  expectedPdfSlotsForRow,
+} from "@/lib/registryRowDocCounts";
+import { isArtifactOnlyRegistryRow, isStandardRegistrySopNumber } from "@/lib/registryPrimaryRows";
 import { CAPSULE_DEPARTMENTS } from "@/lib/capsuleDepartments";
 import {
   classifySopVersionCapsule,
@@ -11,6 +15,155 @@ import {
 } from "@/lib/sopVersionCapsuleClassify";
 
 export { CAPSULE_DEPARTMENTS } from "@/lib/capsuleDepartments";
+
+type CapsuleAcc = {
+  total: number;
+  dualLang: number;
+  expired: number;
+  nearExpiry: number;
+  docxSOPs: number;
+  pdfSOPs: number;
+  expectedDocx: number;
+  expectedPdf: number;
+  docxFiles: number;
+  pdfFiles: number;
+  missingDocxRows: number;
+  missingPdfRows: number;
+  eng: number;
+  guj: number;
+  videos: number;
+  slides: number;
+  videoRequired: number;
+  slideRequired: number;
+  videoAvailable: number;
+  slideAvailable: number;
+  versionAllTwoFound: number;
+  versionOnlyOneFound: number;
+  versionNotFound: number;
+  missingExpiry: number;
+};
+
+function emptyCapsuleAcc(): CapsuleAcc {
+  return {
+    total: 0,
+    dualLang: 0,
+    expired: 0,
+    nearExpiry: 0,
+    docxSOPs: 0,
+    pdfSOPs: 0,
+    expectedDocx: 0,
+    expectedPdf: 0,
+    docxFiles: 0,
+    pdfFiles: 0,
+    missingDocxRows: 0,
+    missingPdfRows: 0,
+    eng: 0,
+    guj: 0,
+    videos: 0,
+    slides: 0,
+    videoRequired: 0,
+    slideRequired: 0,
+    videoAvailable: 0,
+    slideAvailable: 0,
+    versionAllTwoFound: 0,
+    versionOnlyOneFound: 0,
+    versionNotFound: 0,
+    missingExpiry: 0,
+  };
+}
+
+function foldRegistryRowIntoCapsuleAcc(
+  s: CapsuleAcc,
+  row: any,
+  today: Date,
+  dayMs: number,
+) {
+  s.total++;
+
+  if (row.isDualLanguage === true) s.dualLang++;
+
+  if (row.expiryDate) {
+    const exp = new Date(row.expiryDate).getTime();
+    const diffDays = (exp - today.getTime()) / dayMs;
+    if (diffDays < 0) s.expired++;
+    else if (diffDays <= 90) s.nearExpiry++;
+  }
+
+  const { docx: nDocxFiles, pdf: nPdfFiles } = countRowDocxPdfForCapsules(row);
+  s.docxFiles += nDocxFiles;
+  s.pdfFiles += nPdfFiles;
+  if (nDocxFiles > 0) s.docxSOPs++;
+  if (nPdfFiles > 0) s.pdfSOPs++;
+
+  const expDocx = expectedDocxSlotsForRow(row);
+  const expPdf = expectedPdfSlotsForRow(row);
+  s.expectedDocx += expDocx;
+  s.expectedPdf += expPdf;
+
+  if (nDocxFiles < expDocx) s.missingDocxRows++;
+  if (nPdfFiles < expPdf) s.missingPdfRows++;
+
+  if (row.englishVersion) s.eng++;
+  if (row.gujaratiVersion) s.guj++;
+  if (row.mediaStatus?.videos) s.videos++;
+  if (row.mediaStatus?.slides) s.slides++;
+
+  s.videoRequired += row.mediaStatus?.videoRequired ?? (row.isDualLanguage ? 4 : 2);
+  s.slideRequired += row.mediaStatus?.slideRequired ?? (row.isDualLanguage ? 2 : 1);
+  s.videoAvailable += row.mediaStatus?.videoAvailable ?? 0;
+  s.slideAvailable += row.mediaStatus?.slideAvailable ?? 0;
+
+  const vt = classifySopVersionCapsule(row);
+  if (vt === "allTwoFound") s.versionAllTwoFound++;
+  else if (vt === "onlyOneFound") s.versionOnlyOneFound++;
+  else s.versionNotFound++;
+
+  if (!row.expiryDate) s.missingExpiry++;
+}
+
+function accToDeptCapsuleStats(department: string, s: CapsuleAcc): DeptCapsuleStats {
+  return {
+    department,
+    totalSOPs: s.total,
+    dualLangRows: s.dualLang,
+    expired: s.expired,
+    nearExpiry: s.nearExpiry,
+    docxSOPs: s.docxSOPs,
+    pdfSOPs: s.pdfSOPs,
+    expectedDocx: s.expectedDocx,
+    expectedPdf: s.expectedPdf,
+    docxFiles: s.docxFiles,
+    pdfFiles: s.pdfFiles,
+    missingDocxRows: s.missingDocxRows,
+    missingPdfRows: s.missingPdfRows,
+    eng: s.eng,
+    guj: s.guj,
+    videos: s.videos,
+    slides: s.slides,
+    videoRequired: s.videoRequired,
+    slideRequired: s.slideRequired,
+    videoAvailable: s.videoAvailable,
+    slideAvailable: s.slideAvailable,
+    versionAllTwoFound: s.versionAllTwoFound,
+    versionOnlyOneFound: s.versionOnlyOneFound,
+    versionNotFound: s.versionNotFound,
+    missingExpiry: s.missingExpiry,
+  };
+}
+
+/** Total row: every primary-format registry row (same scope as `filterPrimaryRegistryRows`), not only the 7 named departments. */
+export function computeCapsuleGrandTotalStat(data: any[]): DeptCapsuleStats {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dayMs = 1000 * 60 * 60 * 24;
+  const s = emptyCapsuleAcc();
+  for (const row of data || []) {
+    if (isArtifactOnlyRegistryRow(row)) continue;
+    if (!isStandardRegistrySopNumber(row)) continue;
+    foldRegistryRowIntoCapsuleAcc(s, row, today, dayMs);
+  }
+  return accToDeptCapsuleStats("Total", s);
+}
 
 export interface DeptCapsuleStats {
   department: string;
@@ -24,14 +177,22 @@ export interface DeptCapsuleStats {
   expectedPdf: number;
   docxFiles: number;
   pdfFiles: number;
+  missingDocxRows: number;
+  missingPdfRows: number;
   eng: number;
   guj: number;
   videos: number;
   slides: number;
-  versionLast2Ok: number;
-  versionPartial: number;
-  versionZero: number;
-  versionMissing: number;
+  videoRequired: number;
+  slideRequired: number;
+  videoAvailable: number;
+  slideAvailable: number;
+  /** All Two Found: version-0 SOPs or all expected prior versions available */
+  versionAllTwoFound: number;
+  /** Only One Found: exactly 1 of 2 expected prior versions available */
+  versionOnlyOneFound: number;
+  /** Not Found: expected prior versions exist but none were found */
+  versionNotFound: number;
   missingExpiry: number;
 }
 
@@ -40,54 +201,11 @@ function computeDepartmentStats(data: any[]): DeptCapsuleStats[] {
   today.setHours(0, 0, 0, 0);
   const day = 1000 * 60 * 60 * 24;
 
-  const byDept = new Map<
-    string,
-    {
-      total: number;
-      dualLang: number;
-      expired: number;
-      nearExpiry: number;
-      docxSOPs: number;
-      pdfSOPs: number;
-      expectedDocx: number;
-      expectedPdf: number;
-      docxFiles: number;
-      pdfFiles: number;
-      eng: number;
-      guj: number;
-      videos: number;
-      slides: number;
-      versionLast2Ok: number;
-      versionPartial: number;
-      versionZero: number;
-      versionMissing: number;
-      missingExpiry: number;
-    }
-  >();
+  const byDept = new Map<string, CapsuleAcc>();
 
   const order = [...CAPSULE_DEPARTMENTS];
   order.forEach((dept) => {
-    byDept.set(dept, {
-      total: 0,
-      dualLang: 0,
-      expired: 0,
-      nearExpiry: 0,
-      docxSOPs: 0,
-      pdfSOPs: 0,
-      expectedDocx: 0,
-      expectedPdf: 0,
-      docxFiles: 0,
-      pdfFiles: 0,
-      eng: 0,
-      guj: 0,
-      videos: 0,
-      slides: 0,
-      versionLast2Ok: 0,
-      versionPartial: 0,
-      versionZero: 0,
-      versionMissing: 0,
-      missingExpiry: 0,
-    });
+    byDept.set(dept, emptyCapsuleAcc());
   });
 
   const normalizeDept = (raw: string): string => {
@@ -114,67 +232,12 @@ function computeDepartmentStats(data: any[]): DeptCapsuleStats[] {
     if (!dept || !(order as readonly string[]).includes(dept)) return;
 
     const s = byDept.get(dept)!;
-    s.total++;
-
-    if (row.isDualLanguage === true) s.dualLang++;
-
-    if (row.expiryDate) {
-      const exp = new Date(row.expiryDate).getTime();
-      const diffDays = (exp - today.getTime()) / day;
-      if (diffDays < 0) s.expired++;
-      else if (diffDays <= 90) s.nearExpiry++;
-    }
-
-    const { docx: nDocxFiles, pdf: nPdfFiles } =
-      countRowDocxPdfForCapsules(row);
-    s.docxFiles += nDocxFiles;
-    s.pdfFiles += nPdfFiles;
-    if (nDocxFiles > 0) s.docxSOPs++;
-    if (nPdfFiles > 0) s.pdfSOPs++;
-
-    // Expecting 2 files if dual-language, 1 otherwise
-    const expectedForThisRow = row.isDualLanguage ? 2 : 1;
-    s.expectedDocx += expectedForThisRow;
-    s.expectedPdf += expectedForThisRow;
-
-    if (row.englishVersion) s.eng++;
-    if (row.gujaratiVersion) s.guj++;
-    if (row.mediaStatus?.videos) s.videos++;
-    if (row.mediaStatus?.slides) s.slides++;
-
-    const vt = classifySopVersionCapsule(row);
-    if (vt === "green") s.versionLast2Ok++;
-    else if (vt === "grey") s.versionZero++;
-    else s.versionMissing++;
-
-    if (!row.expiryDate) s.missingExpiry++;
+    foldRegistryRowIntoCapsuleAcc(s, row, today, day);
   });
 
-  return order.map((department) => {
-    const s = byDept.get(department)!;
-    return {
-      department,
-      totalSOPs: s.total,
-      dualLangRows: s.dualLang,
-      expired: s.expired,
-      nearExpiry: s.nearExpiry,
-      docxSOPs: s.docxSOPs,
-      pdfSOPs: s.pdfSOPs,
-      expectedDocx: s.expectedDocx,
-      expectedPdf: s.expectedPdf,
-      docxFiles: s.docxFiles,
-      pdfFiles: s.pdfFiles,
-      eng: s.eng,
-      guj: s.guj,
-      videos: s.videos,
-      slides: s.slides,
-      versionLast2Ok: s.versionLast2Ok,
-      versionPartial: s.versionPartial,
-      versionZero: s.versionZero,
-      versionMissing: s.versionMissing,
-      missingExpiry: s.missingExpiry,
-    };
-  });
+  return order.map((department) =>
+    accToDeptCapsuleStats(department, byDept.get(department)!),
+  );
 }
 
 function CapsuleMetric({
@@ -202,7 +265,7 @@ function CapsuleMetric({
       }}
       title={title}
       aria-pressed={isActive ? true : undefined}
-      className={`flex w-full cursor-pointer items-center justify-between gap-1.5 rounded-[4px] px-1 py-0.5 text-left text-[10px] transition-colors hover:bg-purple-100/80 active:bg-purple-200/60 focus:z-10 focus:outline-none focus:ring-1 focus:ring-purple-400 focus:ring-offset-0 ${
+      className={`flex w-full min-h-[24px] cursor-pointer items-center justify-between gap-1.5 rounded-[4px] px-1 py-0.5 text-left text-[10px] transition-colors hover:bg-purple-100/80 active:bg-purple-200/60 focus:z-10 focus:outline-none focus:ring-1 focus:ring-purple-400 focus:ring-offset-0 ${
         isActive
           ? "border border-purple-400 bg-purple-100/90"
           : "border border-transparent"
@@ -223,6 +286,7 @@ function CapsuleMetricAvailMissing({
   label,
   totalExpected,
   available,
+  missingCount,
   onFilterClick,
   onAvailableClick,
   onMissingClick,
@@ -234,6 +298,7 @@ function CapsuleMetricAvailMissing({
   label: ReactNode;
   totalExpected: number;
   available: number;
+  missingCount?: number;
   onFilterClick: () => void;
   onAvailableClick: () => void;
   onMissingClick: () => void;
@@ -242,7 +307,7 @@ function CapsuleMetricAvailMissing({
   filterRowActive: boolean;
   titleSummary: string;
 }) {
-  const missing = Math.max(0, totalExpected - available);
+  const missing = missingCount !== undefined ? missingCount : Math.max(0, totalExpected - available);
 
   return (
     <div
@@ -306,37 +371,37 @@ function CapsuleMetricAvailMissing({
   );
 }
 
+/**
+ * Version row: 3 buckets.
+ * Green = All Two Found (version-0 SOPs or all expected prior versions present)
+ * Amber = Only One Found (exactly 1 of 2 expected prior versions present)
+ * Red   = Not Found (expected prior versions exist but none were found)
+ */
 function CapsuleMetricVersionTriple({
   totalSOPs,
-  last2Ok,
-  partialV,
-  zeroV,
-  missingV,
+  allTwoFoundV,
+  onlyOneFoundV,
+  notFoundV,
   onLabelClick,
   onGreenClick,
-  onYellowClick,
-  onGreyClick,
+  onAmberClick,
   onRedClick,
   highlightGreen,
-  highlightYellow,
-  highlightGrey,
+  highlightAmber,
   highlightRed,
   filterRowActive,
   titleSummary,
 }: {
   totalSOPs: number;
-  last2Ok: number;
-  partialV: number;
-  zeroV: number;
-  missingV: number;
+  allTwoFoundV: number;
+  onlyOneFoundV: number;
+  notFoundV: number;
   onLabelClick: () => void;
   onGreenClick: () => void;
-  onYellowClick: () => void;
-  onGreyClick: () => void;
+  onAmberClick: () => void;
   onRedClick: () => void;
   highlightGreen: boolean;
-  highlightYellow: boolean;
-  highlightGrey: boolean;
+  highlightAmber: boolean;
   highlightRed: boolean;
   filterRowActive: boolean;
   titleSummary: string;
@@ -362,53 +427,41 @@ function CapsuleMetricVersionTriple({
       </button>
       <div
         className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums"
-        aria-label={`Version status: ${last2Ok} both available, ${partialV} partial, ${missingV} missing both, ${zeroV} no prior data of ${totalSOPs} SOPs`}>
-        {/* 1st: Green — both last-2 prior versions available */}
+        aria-label={`Version status: ${allTwoFoundV} all two found, ${onlyOneFoundV} only one found, ${notFoundV} not found of ${totalSOPs} SOPs`}>
+        {/* All Two Found — version-0 SOPs or all expected prior versions available */}
         <button
           type="button"
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); onGreenClick(); }}
-          title="Both last-2 prior revisions available"
+          title={`All Two Found: ${allTwoFoundV} SOPs (version-0 or all expected prior versions available)`}
           aria-pressed={highlightGreen ? true : undefined}
           className={`min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-emerald-500/70 ${
             highlightGreen ? "bg-emerald-100 ring-1 ring-emerald-400/80" : ""
           }`}>
-          {last2Ok}
+          {allTwoFoundV}
         </button>
         <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
-        {/* 2nd: Amber — only 1 of the last-2 prior revisions available */}
+        {/* Only One Found — exactly 1 of 2 expected prior versions available */}
         <button
           type="button"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onYellowClick(); }}
-          title="Only 1 of the last-2 prior revisions is available"
-          aria-pressed={highlightYellow ? true : undefined}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onAmberClick(); }}
+          title={`Only One Found: ${onlyOneFoundV} SOPs with exactly 1 of 2 prior versions available`}
+          aria-pressed={highlightAmber ? true : undefined}
           className={`min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-amber-400/70 ${
-            highlightYellow ? "bg-amber-100 ring-1 ring-amber-400/80" : ""
+            highlightAmber ? "bg-amber-100 ring-1 ring-amber-400/80" : ""
           }`}>
-          {partialV}
+          {onlyOneFoundV}
         </button>
         <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
-        {/* 3rd: Red — both last-2 prior revisions missing */}
+        {/* Not Found — expected prior versions but none found */}
         <button
           type="button"
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRedClick(); }}
-          title="Both last-2 prior revisions missing — no prior-version files stored"
+          title={`Not Found: ${notFoundV} SOPs with expected prior versions but none stored`}
           aria-pressed={highlightRed ? true : undefined}
           className={`min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-400/70 ${
             highlightRed ? "bg-red-100 ring-1 ring-red-400/80" : ""
           }`}>
-          {missingV}
-        </button>
-        <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
-        {/* 4th: Grey — no prior-version data at all */}
-        <button
-          type="button"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onGreyClick(); }}
-          title="No prior-version data found for this SOP"
-          aria-pressed={highlightGrey ? true : undefined}
-          className={`min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-gray-500 transition-colors hover:bg-gray-100 focus:z-10 focus:outline-none focus:ring-1 focus:ring-gray-400/70 ${
-            highlightGrey ? "bg-gray-200 ring-1 ring-gray-400/80" : ""
-          }`}>
-          {zeroV}
+          {notFoundV}
         </button>
       </div>
     </div>
@@ -658,7 +711,7 @@ function DepartmentCapsuleCard({
             apply("all");
           }
         }}
-        className={`mb-2 flex w-full items-center gap-1.5 rounded-md border-b pb-2 ${
+        className={`mb-2 flex w-full min-h-[40px] items-start gap-1.5 rounded-md border-b pb-2 ${
           isGrand
             ? "cursor-default border-purple-200"
             : `cursor-pointer border-gray-100 hover:bg-purple-50/80 focus:outline-none focus:ring-2 focus:ring-purple-400 ${
@@ -666,13 +719,12 @@ function DepartmentCapsuleCard({
                   ? "border-purple-300 bg-purple-100/70 ring-1 ring-purple-300"
                   : ""
               }`
-        }`}
-        title={
+        }`}        title={
           isGrand
             ? "Totals for the seven named departments only (rows with no/unmapped department are excluded). Use metric rows below to filter."
             : `Show all ${label} SOPs in the registry`
         }>
-        <FileText className="h-3.5 w-3.5 shrink-0 text-purple-600" />
+        <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-600" />
         <span className="min-w-0 flex-1 text-[11px] font-bold leading-tight text-gray-800 break-words">
           {label}
         </span>
@@ -767,7 +819,8 @@ function DepartmentCapsuleCard({
         <CapsuleMetricAvailMissing
           label="DOCX"
           totalExpected={stat.expectedDocx}
-          available={stat.docxFiles}
+          available={stat.docxSOPs}
+          missingCount={stat.missingDocxRows}
           onFilterClick={() => apply("docx")}
           onAvailableClick={() =>
             applyCapsuleAvailMiss(deptForFilter, "docx", "available")
@@ -803,14 +856,15 @@ function DepartmentCapsuleCard({
           }
           titleSummary={
             isGrand
-              ? `${stat.docxSOPs} rows with ≥1 DOCX · ${stat.docxFiles} paths · green = with DOCX, red = missing DOCX`
+              ? `${stat.docxSOPs} rows with ≥1 DOCX · ${stat.missingDocxRows} rows missing expected DOCX · green = with DOCX, red = missing DOCX`
               : `${stat.docxSOPs} with DOCX in ${label} · green = with DOCX, red = missing`
           }
         />
         <CapsuleMetricAvailMissing
           label="PDF"
           totalExpected={stat.expectedPdf}
-          available={stat.pdfFiles}
+          available={stat.pdfSOPs}
+          missingCount={stat.missingPdfRows}
           onFilterClick={() => apply("pdf")}
           onAvailableClick={() =>
             applyCapsuleAvailMiss(deptForFilter, "pdf", "available")
@@ -846,61 +900,51 @@ function DepartmentCapsuleCard({
           }
           titleSummary={
             isGrand
-              ? `${stat.pdfSOPs} rows with ≥1 PDF · ${stat.pdfFiles} paths · green = with PDF, red = missing PDF`
+              ? `${stat.pdfSOPs} rows with ≥1 PDF · ${stat.missingPdfRows} rows missing expected PDF · green = with PDF, red = missing PDF`
               : `${stat.pdfSOPs} with PDF in ${label} · green = with PDF, red = missing`
           }
         />
         <CapsuleMetricVersionTriple
           totalSOPs={stat.totalSOPs}
-          last2Ok={stat.versionLast2Ok}
-          partialV={stat.versionPartial}
-          zeroV={stat.versionZero}
-          missingV={stat.versionMissing}
+          allTwoFoundV={stat.versionAllTwoFound}
+          onlyOneFoundV={stat.versionOnlyOneFound}
+          notFoundV={stat.versionNotFound}
           onLabelClick={() =>
-            applyCapsuleVersionSegment(deptForFilter, "missingv")
+            applyCapsuleVersionSegment(deptForFilter, "notFoundv")
           }
           onGreenClick={() =>
-            applyCapsuleVersionSegment(deptForFilter, "last2ok")
+            applyCapsuleVersionSegment(deptForFilter, "allTwov")
           }
-          onYellowClick={() =>
-            applyCapsuleVersionSegment(deptForFilter, "missingv")
-          }
-          onGreyClick={() =>
-            applyCapsuleVersionSegment(deptForFilter, "zerov")
+          onAmberClick={() =>
+            applyCapsuleVersionSegment(deptForFilter, "onlyOnev")
           }
           onRedClick={() =>
-            applyCapsuleVersionSegment(deptForFilter, "missingv")
+            applyCapsuleVersionSegment(deptForFilter, "notFoundv")
           }
           highlightGreen={capsuleVersionSegmentMatches(
             deptForFilter,
-            "last2ok",
+            "allTwov",
             filterSnapshot,
           )}
-          highlightYellow={capsuleVersionSegmentMatches(
+          highlightAmber={capsuleVersionSegmentMatches(
             deptForFilter,
-            "missingv",
-            filterSnapshot,
-          )}
-          highlightGrey={capsuleVersionSegmentMatches(
-            deptForFilter,
-            "zerov",
+            "onlyOnev",
             filterSnapshot,
           )}
           highlightRed={capsuleVersionSegmentMatches(
             deptForFilter,
-            "missingv",
+            "notFoundv",
             filterSnapshot,
           )}
           filterRowActive={
-            capsuleVersionSegmentMatches(deptForFilter, "last2ok", filterSnapshot) ||
-            false ||
-            capsuleVersionSegmentMatches(deptForFilter, "zerov", filterSnapshot) ||
-            capsuleVersionSegmentMatches(deptForFilter, "missingv", filterSnapshot)
+            capsuleVersionSegmentMatches(deptForFilter, "allTwov", filterSnapshot) ||
+            capsuleVersionSegmentMatches(deptForFilter, "onlyOnev", filterSnapshot) ||
+            capsuleVersionSegmentMatches(deptForFilter, "notFoundv", filterSnapshot)
           }
           titleSummary={
             isGrand
-              ? "Red = one/both of last two missing; grey = no prior data; green = last-two complete"
-              : `Version in ${scopeHint} · red / amber / grey / green`
+              ? "Green = All Two Found (version-0 or all prior versions present); amber = Only One Found; red = Not Found"
+              : `Version in ${scopeHint} · green = All Two Found, amber = Only One Found, red = Not Found`
           }
         />
         <CapsuleMetricAvailMissing
@@ -910,8 +954,9 @@ function DepartmentCapsuleCard({
               Videos
             </>
           }
-          totalExpected={stat.videos > 0 ? stat.totalSOPs : 0}
-          available={stat.videos}
+          totalExpected={stat.videoRequired}
+          available={stat.videoAvailable}
+          missingCount={stat.videoRequired - stat.videoAvailable}
           onFilterClick={() => apply("video")}
           onAvailableClick={() =>
             applyCapsuleAvailMiss(deptForFilter, "video", "available")
@@ -947,8 +992,8 @@ function DepartmentCapsuleCard({
           }
           titleSummary={
             isGrand
-              ? `${stat.videos} rows with video attachments · green = with video, red = no video`
-              : `Videos in ${scopeHint} · green = with video, red = no video`
+              ? `${stat.videoAvailable} of ${stat.videoRequired} required video slots filled · green = filled, red = missing`
+              : `Videos in ${scopeHint} · ${stat.videoAvailable} of ${stat.videoRequired} slots · green = filled, red = missing`
           }
         />
         <CapsuleMetricAvailMissing
@@ -958,8 +1003,9 @@ function DepartmentCapsuleCard({
               Slides
             </>
           }
-          totalExpected={stat.slides > 0 ? stat.totalSOPs : 0}
-          available={stat.slides}
+          totalExpected={stat.slideRequired}
+          available={stat.slideAvailable}
+          missingCount={stat.slideRequired - stat.slideAvailable}
           onFilterClick={() => apply("slides")}
           onAvailableClick={() =>
             applyCapsuleAvailMiss(deptForFilter, "slides", "available")
@@ -995,8 +1041,8 @@ function DepartmentCapsuleCard({
           }
           titleSummary={
             isGrand
-              ? `${stat.slides} rows with slide attachments · green = with slides, red = no slides`
-              : `Slides in ${scopeHint} · green = with slides, red = no slides`
+              ? `${stat.slideAvailable} of ${stat.slideRequired} required slide sets filled · green = filled, red = missing`
+              : `Slides in ${scopeHint} · ${stat.slideAvailable} of ${stat.slideRequired} sets · green = filled, red = missing`
           }
         />
       </div>
@@ -1028,54 +1074,11 @@ export default function DepartmentCapsules({
 }) {
   const stats = useMemo(() => computeDepartmentStats(data), [data]);
 
-  const totalStats = useMemo((): DeptCapsuleStats => {
-    return stats.reduce(
-      (acc, s) => ({
-        department: "Total",
-        totalSOPs: acc.totalSOPs + s.totalSOPs,
-        dualLangRows: acc.dualLangRows + s.dualLangRows,
-        expired: acc.expired + s.expired,
-        nearExpiry: acc.nearExpiry + s.nearExpiry,
-        docxSOPs: acc.docxSOPs + s.docxSOPs,
-        pdfSOPs: acc.pdfSOPs + s.pdfSOPs,
-        expectedDocx: acc.expectedDocx + s.expectedDocx,
-        expectedPdf: acc.expectedPdf + s.expectedPdf,
-        docxFiles: acc.docxFiles + s.docxFiles,
-        pdfFiles: acc.pdfFiles + s.pdfFiles,
-        eng: acc.eng + s.eng,
-        guj: acc.guj + s.guj,
-        videos: acc.videos + s.videos,
-        slides: acc.slides + s.slides,
-        versionLast2Ok: acc.versionLast2Ok + s.versionLast2Ok,
-        versionPartial: acc.versionPartial + s.versionPartial,
-        versionZero: acc.versionZero + s.versionZero,
-        versionMissing: acc.versionMissing + s.versionMissing,
-        missingExpiry: acc.missingExpiry + s.missingExpiry,
-      }),
-      {
-        department: "Total",
-        totalSOPs: 0,
-        dualLangRows: 0,
-        expired: 0,
-        nearExpiry: 0,
-        docxSOPs: 0,
-        pdfSOPs: 0,
-        expectedDocx: 0,
-        expectedPdf: 0,
-        docxFiles: 0,
-        pdfFiles: 0,
-        eng: 0,
-        guj: 0,
-        videos: 0,
-        slides: 0,
-        versionLast2Ok: 0,
-        versionPartial: 0,
-        versionZero: 0,
-        versionMissing: 0,
-        missingExpiry: 0,
-      },
-    );
-  }, [stats]);
+  /** Sum of department capsules skipped “Other” rows; grand total uses every primary registry row. */
+  const totalStats = useMemo(
+    () => computeCapsuleGrandTotalStat(data),
+    [data],
+  );
 
   return (
     <div className="w-full px-1 py-2 sm:px-2">

@@ -28,6 +28,7 @@ export interface ISOPDocument {
   fileType: 'pdf' | 'docx';
   uploadedAt: Date;
   fileSize: number;
+  language?: 'English' | 'Gujarati';
 }
 
 export interface ISOPLibrary extends Document {
@@ -160,6 +161,11 @@ const SOPDocumentSchema = new Schema<ISOPDocument>({
   fileSize: {
     type: Number,
     required: true,
+  },
+  language: {
+    type: String,
+    enum: ['English', 'Gujarati'],
+    default: 'English',
   },
 }, { _id: false });
 

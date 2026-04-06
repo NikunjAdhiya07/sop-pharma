@@ -1,38 +1,37 @@
 /**
- * Dashboard version status (green | grey | red).
+ * Dashboard version status — exactly 3 user-facing buckets:
  *
- * Rules:
- *  - green : latest two prior versions are available
- *  - red   : one/both latest two prior versions are missing
- *  - grey  : no usable prior version data
+ *  - "allTwoFound"  : Version-0 SOPs (no prior versions expected), OR all
+ *                     expected prior versions are available → green
+ *  - "onlyOneFound" : Exactly 1 of 2 expected prior versions is available → amber
+ *  - "notFound"     : There ARE expected prior versions but NONE were found → red
  */
-export type SopVersionCapsuleTier = "green" | "grey" | "red";
+import { parseRevisionFromSopIdentifier } from "./sopIdentifierNormalize";
 
-export type SopVersionFilterSegment = "last2ok" | "zerov" | "missingv";
+export type SopVersionCapsuleTier = "allTwoFound" | "onlyOneFound" | "notFound";
 
-/** Classify a primary registry row for the Version capsule (mutually exclusive buckets). */
+export type SopVersionFilterSegment = "allTwov" | "onlyOnev" | "notFoundv";
+
+/** Classify a primary registry row for the Version capsule (mutually exclusive 3-bucket). */
 export function classifySopVersionCapsule(row: any): SopVersionCapsuleTier {
-  // Extract current version number from SOP identifier (e.g. "PREP2-0" -> 0, "MAGE1-8" -> 8)
-  const sopNo = String(row?.sopNo || "");
-  const verMatch = sopNo.match(/-0*(\d+)$/);
-  const currentVer = verMatch ? parseInt(verMatch[1], 10) : null;
+  const currentVer = parseRevisionFromSopIdentifier(String(row?.sopNo || ""));
+  /** No `-NN` suffix (e.g. family key only) — do not mark as “not found” red */
+  if (currentVer === null) return "allTwoFound";
+  if (currentVer === 0) return "allTwoFound";
 
-  // Version 0: no prior versions can logically exist -> grey bucket
-  if (currentVer === 0) return "grey";
-  // No version info at all -> grey
-  if (currentVer === null) return "grey";
+  const expectedSlots = currentVer >= 2 ? 2 : 1;
 
   const prev = Array.isArray(row?.previousVersionsStatus)
     ? row.previousVersionsStatus
     : [];
 
   if (prev.length > 0) {
-    const expectedSlots = currentVer >= 2 ? 2 : 1;
     const top = prev.slice(0, expectedSlots);
     const availableCount = top.filter((p: { available?: boolean }) => p.available).length;
 
-    if (top.length === 0) return "grey";
-    return availableCount >= expectedSlots ? "green" : "red";
+    if (availableCount >= expectedSlots) return "allTwoFound";
+    if (availableCount === 1) return "onlyOneFound";
+    return "notFound";
   }
 
   // Fallback: use artifact files when previousVersionsStatus was not computed.
@@ -44,19 +43,15 @@ export function classifySopVersionCapsule(row: any): SopVersionCapsuleTier {
   const gjArtifacts: { version: number }[] = Array.isArray(row?.versionArtifactsGujarati)
     ? row.versionArtifactsGujarati
     : [];
-  const allArtifactVersions = new Set([
-    ...enArtifacts.map((e) => e.version),
-    ...gjArtifacts.map((e) => e.version),
+  const allArtifactVersions = new Set<number>([
+    ...enArtifacts.map((e) => Number(e.version)),
+    ...gjArtifacts.map((e) => Number(e.version)),
   ]);
-  // Remove current version itself -- only count actual prior versions
   allArtifactVersions.delete(currentVer);
 
   const uniquePriorCount = allArtifactVersions.size;
-  const expectedSlots = currentVer >= 2 ? 2 : 1;
 
-  if (uniquePriorCount === 0) {
-    return "grey";
-  }
-  if (uniquePriorCount >= expectedSlots) return "green";
-  return "red";
+  if (uniquePriorCount >= expectedSlots) return "allTwoFound";
+  if (uniquePriorCount === 1) return "onlyOneFound";
+  return "notFound";
 }

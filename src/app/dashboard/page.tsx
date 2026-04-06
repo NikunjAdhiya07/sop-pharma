@@ -45,10 +45,13 @@ import GuidelinesComplianceWizard from "./components/GuidelinesComplianceWizard"
 import GuidelinesResultPanel, {
   type ComplianceResult,
 } from "./components/GuidelinesResultPanel";
+import ComplianceFullViewer from "./components/ComplianceFullViewer";
 import Link from "next/link";
 import {
   countRowDocxPdfAttached,
   countRowDocxPdfForCapsules,
+  expectedDocxSlotsForRow,
+  expectedPdfSlotsForRow,
 } from "@/lib/registryRowDocCounts";
 import { filterPrimaryRegistryRows } from "@/lib/registryPrimaryRows";
 import {
@@ -126,31 +129,62 @@ export default function DashboardPage() {
   const [obsoleteList, setObsoleteList] = useState<any[]>([]);
   const [obsoleteListLoading, setObsoleteListLoading] = useState(false);
   const [removingObsoleteId, setRemovingObsoleteId] = useState<string | null>(null);
-  // which sopNo result panel is currently open
+  // which sopNo result panel is currently open (old side-panel)
   const [viewingComplianceSopNo, setViewingComplianceSopNo] = useState<
+    string | null
+  >(null);
+  // which sopNo is open in the new full-screen viewer
+  const [viewingComplianceFullSopNo, setViewingComplianceFullSopNo] = useState<
     string | null
   >(null);
 
   const handleComplianceResult = useCallback(
     (sopNo: string, sopName: string, result: any) => {
-      setComplianceCache((prev) => ({
-        ...prev,
-        [sopNo]: {
-          sopNo,
-          sopName,
-          findings: Array.isArray(result.findings) ? result.findings : [],
-          overallScore: result.overallScore ?? 0,
-          clausesAnalyzed: result.clausesAnalyzed ?? 0,
-          guidelineDocumentsUsed: result.guidelineDocumentsUsed ?? 0,
-          runAt: new Date().toISOString(),
-        },
-      }));
+      const entry = {
+        sopNo,
+        sopName,
+        findings: Array.isArray(result.findings) ? result.findings : [],
+        overallScore: result.overallScore ?? 0,
+        clausesAnalyzed: result.clausesAnalyzed ?? 0,
+        guidelineDocumentsUsed: result.guidelineDocumentsUsed ?? 0,
+        runAt: new Date().toISOString(),
+      };
+      setComplianceCache((prev) => ({ ...prev, [sopNo]: entry }));
+      // Auto-open the full viewer after a new run
+      setShowGuidelinesLibrary(false);
+      setViewingComplianceFullSopNo(sopNo);
     },
     [],
   );
 
   const sopRegistryRef = useRef<HTMLDivElement | null>(null);
 
+  // ── Load persisted compliance results on mount (shuttle pre-load) ────────────
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/dashboard/sop-guideline-review?listAll=true', { cache: 'no-store' })
+      .then(res => res.json())
+      .catch(() => ({ success: false }))
+      .then((json) => {
+        if (cancelled || !json.success || !Array.isArray(json.results)) return;
+        const cache: Record<string, ComplianceResult> = {};
+        for (const r of json.results) {
+          cache[r.sopNo] = {
+            sopNo: r.sopNo,
+            sopName: r.sopName || '',
+            findings: Array.isArray(r.findings) ? r.findings : [],
+            overallScore: r.overallScore ?? 0,
+            clausesAnalyzed: r.clausesAnalyzed ?? 0,
+            guidelineDocumentsUsed: r.guidelineDocumentsUsed ?? 0,
+            runAt: r.runAt,
+            // Pass through the source so the full viewer can show the badge
+            ...(r.source ? { source: r.source } : {}),
+          } as any;
+        }
+        setComplianceCache(cache);
+      });
+    return () => { cancelled = true; };
+  }, []);
   const fetchObsoleteList = async () => {
     setObsoleteListLoading(true);
     try {
@@ -347,7 +381,7 @@ export default function DashboardPage() {
       version: item.version || null,
       sopFile: item.sopFile || null,
       sopDocuments: item.sopDocuments || [],
-      mediaStatus: { videoCount: 0, slideCount: 0, videos: false, slides: false },
+      mediaStatus: { videoCount: 0, slideCount: 0, videos: false, slides: false, videoRequired: 0, slideRequired: 0, videoAvailable: 0, slideAvailable: 0 },
       versionArtifacts: [],
       versionArtifactsGujarati: [],
       previousVersionsStatus: [],
@@ -401,16 +435,14 @@ export default function DashboardPage() {
       // Missing if (Expected > Available)
       result = result.filter((d: any) => {
         const avail = countRowDocxPdfForCapsules(d).docx;
-        const expected = d.isDualLanguage ? 2 : 1;
-        return avail < expected;
+        return avail < expectedDocxSlotsForRow(d);
       });
     } else if (filterFileType === "PDF") {
       result = result.filter((d: any) => countRowDocxPdfForCapsules(d).pdf > 0);
     } else if (filterFileType === "NO_PDF") {
       result = result.filter((d: any) => {
         const avail = countRowDocxPdfForCapsules(d).pdf;
-        const expected = d.isDualLanguage ? 2 : 1;
-        return avail < expected;
+        return avail < expectedPdfSlotsForRow(d);
       });
     }
 
@@ -464,11 +496,11 @@ export default function DashboardPage() {
 
     if (filterVersionStatus !== "all") {
       const tier =
-        filterVersionStatus === "last2ok"
-          ? "green"
-          : filterVersionStatus === "zerov"
-              ? "grey"
-              : "red";
+        filterVersionStatus === "allTwov"
+          ? "allTwoFound"
+          : filterVersionStatus === "onlyOnev"
+              ? "onlyOneFound"
+              : "notFound";
       result = result.filter(
         (d: any) => classifySopVersionCapsule(d) === tier,
       );
@@ -511,8 +543,9 @@ export default function DashboardPage() {
     if (filterAbsoluteSop) {
       result = result.filter((d: any) => {
         const docs = countRowDocxPdfForCapsules(d);
-        const expectedSlots = d.isDualLanguage ? 2 : 1;
-        const completeFiles = docs.docx >= expectedSlots && docs.pdf >= expectedSlots;
+        const completeFiles =
+          docs.docx >= expectedDocxSlotsForRow(d) &&
+          docs.pdf >= expectedPdfSlotsForRow(d);
         const hasMeta = Boolean((d.department || "").trim()) && Boolean((d.sopName || "").trim());
         return completeFiles && hasMeta;
       });
@@ -1391,11 +1424,11 @@ export default function DashboardPage() {
                 <>
                   Version:{" "}
                   <strong>
-                    {filterVersionStatus === "last2ok"
-                      ? "Last-two complete"
-                      : filterVersionStatus === "zerov"
-                        ? "No prior versions"
-                        : "Missing prior versions"}
+                    {filterVersionStatus === "allTwov"
+                      ? "All Two Found"
+                      : filterVersionStatus === "onlyOnev"
+                        ? "Only One Found"
+                        : "Not Found"}
                   </strong>
                   .{" "}
                 </>
@@ -1420,7 +1453,7 @@ export default function DashboardPage() {
               filterDeptFromParent={filterDept}
               complianceCache={complianceCache}
               onViewCompliance={(sopNo: string) =>
-                setViewingComplianceSopNo(sopNo)
+                setViewingComplianceFullSopNo(sopNo)
               }
               onOpenGuidelineWizard={(row: { _id: string; sopNo: string }) => {
                 setGuidelinesWizardPreset(row);
@@ -1556,11 +1589,30 @@ export default function DashboardPage() {
           onClose={() => setViewingComplianceSopNo(null)}
           onRerun={() => {
             const result = complianceCache[viewingComplianceSopNo];
-            // find the registry row for this sopNo to get the _id
             const row = data.find(
               (r: any) => String(r.sopNo) === viewingComplianceSopNo,
             );
             setViewingComplianceSopNo(null);
+            setGuidelinesWizardPreset({
+              _id: row ? String(row._id) : "",
+              sopNo: result.sopNo,
+            });
+            setShowGuidelinesLibrary(true);
+          }}
+        />
+      )}
+
+      {/* Full-screen compliance viewer — triggered by orange button */}
+      {viewingComplianceFullSopNo && complianceCache[viewingComplianceFullSopNo] && (
+        <ComplianceFullViewer
+          result={complianceCache[viewingComplianceFullSopNo]}
+          onClose={() => setViewingComplianceFullSopNo(null)}
+          onRerun={() => {
+            const result = complianceCache[viewingComplianceFullSopNo];
+            const row = data.find(
+              (r: any) => String(r.sopNo) === viewingComplianceFullSopNo,
+            );
+            setViewingComplianceFullSopNo(null);
             setGuidelinesWizardPreset({
               _id: row ? String(row._id) : "",
               sopNo: result.sopNo,

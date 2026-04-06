@@ -34,6 +34,8 @@ export function normalizeSopIdentifierKey(id: string): string {
   raw = normalizeSpaceAsHyphen(raw);
   let u = raw.replace(/\s+/g, '');
   u = toAsciiHyphens(u);
+  // Convert underscores to hyphens and collapse multiple hyphens
+  u = u.replace(/_/g, '-').replace(/-{2,}/g, '-');
 
   const m = u.match(/^([A-Z]{2,6})(\d+)-(\d+)$/);
   if (m) {

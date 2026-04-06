@@ -3,7 +3,7 @@
  * (primary rows from `filterPrimaryRegistryRows`, DOCX/PDF via {@link countRowDocxPdfForCapsules}).
  */
 import { CAPSULE_DEPARTMENTS } from '@/lib/capsuleDepartments';
-import { countRowDocxPdfForCapsules } from '@/lib/registryRowDocCounts';
+import { countRowDocxPdfForCapsules, countRowDocxPdfAttached } from '@/lib/registryRowDocCounts';
 
 const DEPT_ORDER = [...CAPSULE_DEPARTMENTS];
 
@@ -218,7 +218,7 @@ export function aggregateMissingInsights(data: any[]): {
   let noExpiryDate = 0;
 
   for (const row of data) {
-    const { docx, pdf } = countRowDocxPdfForCapsules(row);
+    const { docx, pdf } = countRowDocxPdfAttached(row);
     if (pdf === 0) missingPdf++;
     if (docx === 0) missingDocx++;
     const en = Array.isArray(row.versionArtifacts) ? row.versionArtifacts.length : 0;

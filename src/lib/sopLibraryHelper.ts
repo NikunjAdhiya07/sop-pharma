@@ -168,18 +168,33 @@ export function extractDepartmentFromIdentifier(identifier: string): {
  */
 export function cleanSOPName(sopName: string, identifier: string): string {
   let name = sopName || '';
+
+  // Strip department/category prefix + identifier code patterns like:
+  // "QA QAGE - GENERAL QAGE40-04 - ..." → strip everything up to and including the code
+  // "5. Store/BSGE-BSR/BSGE01-05_TITLE" -> strip path
+  // "All SOP_PDF File Only/..." -> strip prefix
+  name = name.replace(/^(?:All SOP_PDF File Only[\/\\])?(?:[0-9]+\.\s+\w+[\/\\])?(?:[A-Z\d-]+[\/\\])?/i, '');
   
-  // Remove any path-like segments (contains /)
-  if (name.includes('/')) {
-    const parts = name.split('/');
+  // Remove any remaining path-like segments (contains / or \)
+  if (name.includes('/') || name.includes('\\')) {
+    const parts = name.split(/[\/\\]/);
     name = parts[parts.length - 1]; // Get last segment
   }
-  
+
+  // Remove common file extensions
+  name = name.replace(/\.(?:docx|doc|pdf|xlsx|xls|mp4|webm|mov|avi|pptx|ppt)$/i, '');
+
+  // Strip V1, V2... or Revision tags if they appear at the start
+  name = name.replace(/^(?:v\.?\s*\d+|version\s*\d+|rev\.?\s*\d+|r\s*\d+)[\s_\-\.]+/i, '');
+
+  name = name.replace(/^(?:QA|QC|PROD|STORE|HR|MICRO|ENG)\s+[A-Z]{2,6}\s*[-–—]\s*\w+\s+[A-Z]{2,6}\d+[-–]\d+\s*[-–—:,]*\s*/i, '');
+  name = name.replace(/^(?:QA|QC|PROD|STORE|HR|MICRO|ENG)\s+[A-Z]{2,6}\s*[-–—]\s*\w+\s*[-–—]\s*/i, '');
+
   // Remove identifier prefix if present
   if (identifier) {
     const idUpper = identifier.toUpperCase();
     const nameUpper = name.toUpperCase();
-    
+
     if (nameUpper.startsWith(idUpper)) {
       name = name.substring(identifier.length).replace(/^[\s\-_:\.]+/, '').trim();
     } else {
@@ -197,16 +212,25 @@ export function cleanSOPName(sopName: string, identifier: string): string {
   // Strip leading digits followed by spaces or separators (common in file lists, e.g. "0 BATCH...")
   // Only if they are separated from the rest of the name
   name = name.replace(/^[0-9]+[\s\-_:\.]+/, '').trim();
-  
+
   // Remove underscores and clean up whitespace
   name = name.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
-  
+
+  // Strip trailing Annexure/Ann references
+  name = name.replace(/[\s,\-–—]*Ann(?:exure)?[-\s]*(?:[IVX\d]+)?\s*$/i, '').trim();
+  // Strip trailing SOP code (e.g. "... QAGE40-04", "... MAGE19-02", "... QAGE103-04")
+  // Run twice to handle chained suffixes
+  name = name.replace(/[\s,\-–—]*[A-Za-z]{1,8}\d{1,4}[-\u2013\u2014\s]\d{1,4}\s*$/i, '').trim();
+  name = name.replace(/[\s,\-–—]*[A-Za-z]{1,8}\d{1,4}[-\u2013\u2014\s]\d{1,4}\s*$/i, '').trim();
+  // Strip any remaining trailing separators
+  name = name.replace(/[\s\-–—:.]+$/, '').trim();
+
   // If name is purely numeric (e.g. "1774768105796"), or empty, use a default or the ID
   const isPurelyNumeric = /^[0-9\s\-_:\.]+$/.test(name);
   if (!name || isPurelyNumeric) {
     return 'Standard Operating Procedure';
   }
-  
+
   return name;
 }
 

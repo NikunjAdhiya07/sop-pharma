@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import connectDB from '@/lib/mongodb';
 import SOPLibrary from '@/models/SOPLibrary';
 import SOP from '@/models/SOP';
@@ -16,20 +17,96 @@ import {
   expandSopIdentifierVariants,
   formatSopNoDisplay,
   normalizeSopIdentifierKey,
+  normalizeUnicodeHyphens,
   parseRevisionFromSopIdentifier,
   sopFamilyKeyFromIdentifier,
   versionArtifactsLookupKey,
 } from '@/lib/sopIdentifierNormalize';
 import { getMaxPriorVersionsStored } from '@/lib/sopFolderUploadLimits';
 import { filterPrimaryRegistryRows, isArtifactOnlyRegistryRow } from '@/lib/registryPrimaryRows';
+import { looksLikePathOrFolderStructure } from '@/lib/registryDisplayName';
 
-/** Avoid stale JSON when users re-upload version artifacts and refresh the registry. */
-export const dynamic = 'force-dynamic';
+/** Cache for 5 minutes to improve dashboard load performance — user can refresh manually if needed */
+export const revalidate = 300;
 
 type VersionArtifactEntry = { version: number; docxPath?: string; pdfPath?: string };
 
 /** Registry + folder upload: same cap as folder upload (unlimited by default; env may cap). */
 const MAX_REGISTRY_PRIOR_VERSIONS = getMaxPriorVersionsStored();
+
+/** True when URL/path segments mark a Gujarati asset (folder uploads, CDN paths). */
+function pathSuggestsGujarati(rawPath: string): boolean {
+  const u = String(rawPath || '')
+    .toLowerCase()
+    .replace(/\\/g, '/');
+  if (!u) return false;
+  if (/\bgujarati\b/.test(u)) return true;
+  if (/\/guj(\/|$|[_.-])/i.test(u)) return true;
+  if (/[_-]guj([._/\-]|arati)/i.test(u)) return true;
+  if (/gujarati\s+sop/i.test(u)) return true;
+  return false;
+}
+
+/**
+ * Per-file language for SOP rows: trust explicit doc.language, then path hints, then row metadata.
+ * Fixes Gujarati files stored under English `language` or missing `sopDocuments[].language`.
+ */
+function resolveSopDocumentLanguage(
+  doc: { language?: string; filePath?: string; fileUrl?: string },
+  row?: {
+    language?: string;
+    name?: string;
+    sopName?: string;
+    originalFileName?: string;
+    folderPath?: string;
+  },
+): 'English' | 'Gujarati' {
+  const ex = String(doc?.language || '').trim().toLowerCase();
+  if (ex === 'gujarati') return 'Gujarati';
+  const pathStr = String(doc?.filePath || doc?.fileUrl || '');
+  if (ex === 'english' && pathSuggestsGujarati(pathStr)) return 'Gujarati';
+  if (pathSuggestsGujarati(pathStr)) return 'Gujarati';
+  if (row) {
+    const rl = String(row.language || '').trim().toLowerCase();
+    if (rl === 'gujarati') return 'Gujarati';
+    if (pathSuggestsGujarati(String(row.folderPath || ''))) return 'Gujarati';
+    const nm = `${row.sopName || row.name || ''} ${row.originalFileName || ''}`;
+    if (/[\u0A80-\u0AFF]/.test(nm)) return 'Gujarati';
+    if (/(^|[\s_-])guj([\s_.-/]|arati)/i.test(nm)) return 'Gujarati';
+  }
+  return 'English';
+}
+
+/**
+ * Split folder-upload artifact entries into EN vs GUJ maps. When `language` is wrongly `English`,
+ * paths like …/Gujarati SOP/… still land under Gujarati so dual registry columns stay accurate.
+ */
+function partitionArtifactEntriesByLanguageFieldAndPaths(
+  vaLanguage: string | undefined,
+  entries: VersionArtifactEntry[],
+): { english: VersionArtifactEntry[]; gujarati: VersionArtifactEntry[] } {
+  if (String(vaLanguage || '').trim().toLowerCase() === 'gujarati') {
+    return { english: [], gujarati: [...entries] };
+  }
+  const english: VersionArtifactEntry[] = [];
+  const gujarati: VersionArtifactEntry[] = [];
+  for (const e of entries) {
+    const d = e.docxPath?.trim();
+    const p = e.pdfPath?.trim();
+    const dG = d ? pathSuggestsGujarati(d) : false;
+    const pG = p ? pathSuggestsGujarati(p) : false;
+    if (d && p && dG !== pG) {
+      if (dG) gujarati.push({ version: e.version, docxPath: d });
+      else english.push({ version: e.version, docxPath: d });
+      if (pG) gujarati.push({ version: e.version, pdfPath: p });
+      else english.push({ version: e.version, pdfPath: p });
+      continue;
+    }
+    if ((d && dG) || (p && pG)) gujarati.push(e);
+    else if (d || p) english.push(e);
+  }
+  return { english, gujarati };
+}
 
 function mergeVersionArtifactEntries(a: VersionArtifactEntry[], b: VersionArtifactEntry[]): VersionArtifactEntry[] {
   const merged = new Map<number, { docxPath?: string; pdfPath?: string }>();
@@ -119,6 +196,12 @@ function cleanSopName(rawName: string, identifier: string): string {
   name = name.replace(/\.(docx|doc|pdf)$/i, '');
   name = stripFolderPath(name);
 
+  // Strip department/category prefixes like "QA QAGE - GENERAL", "QC QAGE - GENERAL", etc.
+  // Pattern: 2-3 dept letters + optional space + 2-6 code letters + optional separator + optional word + separator
+  name = name.replace(/^(?:QA|QC|PROD|STORE|HR|MICRO|ENG)\s+[A-Z]{2,6}\s*[-–—]\s*\w+\s*[-–—]\s*/i, '');
+  // Strip patterns like "QA QAGE - GENERAL QAGE40-04 -" (dept prefix + code)
+  name = name.replace(/^(?:QA|QC|PROD|STORE|HR|MICRO|ENG)\s+[A-Z]{2,6}\s*[-–—]\s*\w+\s+[A-Z]{2,6}\d+[-–]\d+\s*[-–—:,]*\s*/i, '');
+
   const nameAfterFolderStrip = name;
   const id = (identifier || '').trim();
 
@@ -146,6 +229,15 @@ function cleanSopName(rawName: string, identifier: string): string {
   name = name.replace(/^[0-9]+[\s\-_:\.]+/, '').trim();
   name = name.replace(/_/g, ' ');
   name = name.replace(/^[\s\-–—:.]+/, '').replace(/[\s\-–—:.]+$/, '').trim();
+
+  // Strip trailing Annexure/Annexure-VII/Ann references (run repeatedly to handle chained suffixes)
+  name = name.replace(/[\s,\-–—]*Ann(?:exure)?[-\s]*(?:[IVX\d]+)?\s*$/i, '').trim();
+  // Strip trailing SOP code (e.g. "... QAGE40-04", "... MAGE19-02", "... QAGE103-04")
+  // Run twice to handle cases where both Annexure and code are appended
+  name = name.replace(/[\s,\-–—]*[A-Za-z]{1,8}\d{1,4}[-\u2013\u2014\s]\d{1,4}\s*$/i, '').trim();
+  name = name.replace(/[\s,\-–—]*[A-Za-z]{1,8}\d{1,4}[-\u2013\u2014\s]\d{1,4}\s*$/i, '').trim();
+  // Strip any remaining trailing separators or standalone numbers
+  name = name.replace(/[\s\-–—:.]+$/, '').trim();
 
   // Special case: if name matches code exactly without the revision (e.g. name was "PREG10", ID is "PREG10-4")
   if (id && name.toUpperCase() === id.replace(/-.*/, '').toUpperCase()) {
@@ -177,24 +269,31 @@ function registryDisplayTitleKey(s: string): string {
 function englishTitleIsUsableForRegistry(s: string, idUpper: string): boolean {
   const x = String(s || '').trim();
   if (x.length < 3) return false;
-  
+
   // Is it Gujarati only?
   const isGujOnly = /[\u0A80-\u0AFF]/.test(x) && !/[A-Za-z]{3,}/.test(x);
   if (isGujOnly) return false;
+
+  // Is it a file path or folder structure?
+  if (looksLikePathOrFolderStructure(x)) return false;
+  // Contains a slash (URL path, folder path)
+  if (/[/\\]/.test(x)) return false;
 
   // Is it just the SOP code?
   if (registryDisplayTitleKey(x) === registryDisplayTitleKey(idUpper)) return false;
   if (looksLikeSopCodeFilename(x)) return false;
 
-  // Is it just a generic department name?
+  // Is it just a generic/meaningless single word (e.g. "sops", "documents", "files")?
   const lower = x.toLowerCase();
-  const genericDepts = [
-    'production', 'qa', 'qc', 'quality assurance', 'quality control', 
-    'personnel', 'hr', 'stores', 'store', 'microbiology', 'micro', 
+  const genericWords = [
+    'sops', 'sop', 'documents', 'document', 'doc', 'docs', 'files', 'file',
+    'folder', 'folders', 'archive', 'archives', 'annexure', 'annexures',
+    'production', 'qa', 'qc', 'quality assurance', 'quality control',
+    'personnel', 'hr', 'stores', 'store', 'microbiology', 'micro',
     'engineering', 'maintenance', 'engineering and maintenance',
-    'it', 'information technology', 'warehouse', 'dispatch'
+    'it', 'information technology', 'warehouse', 'dispatch', 'new'
   ];
-  if (genericDepts.includes(lower)) return false;
+  if (genericWords.includes(lower)) return false;
 
   return true;
 }
@@ -416,7 +515,8 @@ function docBelongsToSopFamily(sopNo: string, filePath: string, fileName?: strin
   if (fileName) {
     for (const c of inferSopIdentifiersFromStoredPath(fileName)) candidates.add(c);
   }
-  if (candidates.size === 0) return false;
+  // No identifier found in path — trust the explicit link (library / upload association)
+  if (candidates.size === 0) return true;
   for (const c of candidates) {
     if (sopFamilyKeyFromIdentifier(c) === family) return true;
   }
@@ -429,11 +529,20 @@ function filterDocsToCurrentRevision(sopNo: string, docs: any[]): any[] {
     const filePath = String(d?.filePath || '');
     const fileName = String(d?.fileName || '');
     if (isAnnexureLikeDoc(filePath, fileName)) return false;
+    // If no SOP identifier can be inferred from the path at all, keep the document —
+    // it was explicitly linked to this SOP via library/upload, so trust the association.
+    const candidates = new Set<string>();
+    for (const c of inferSopIdentifiersFromStoredPath(filePath || '')) candidates.add(c);
+    if (fileName) {
+      for (const c of inferSopIdentifiersFromStoredPath(fileName)) candidates.add(c);
+    }
+    if (candidates.size === 0) return true; // no identifier in path → trust the link
     if (!docBelongsToSopFamily(sopNo, filePath, fileName)) return false;
     if (cur == null) return true;
     const rev = extractRevisionFromDocRef(filePath, fileName);
-    // If revision cannot be inferred from path/name, do not use it as current mapping.
-    if (rev == null) return false;
+    // If revision cannot be inferred from path/name, keep the document —
+    // it belongs to the right family but just lacks version info in the path.
+    if (rev == null) return true;
     return rev === cur;
   });
 }
@@ -512,7 +621,16 @@ function extractArtifactsFromSopRows(
     const docs = [...(r.sopFile ? [r.sopFile] : []), ...(r.sopDocuments || [])];
     docs.forEach((d: any) => {
       if (!d?.filePath || !String(d.filePath).trim()) return;
-      const lang = d.language === 'Gujarati' ? 'Gujarati' : 'English';
+      const lang = resolveSopDocumentLanguage(
+        { language: d.language, filePath: d.filePath, fileUrl: d.fileUrl },
+        {
+          language: r.language,
+          name: r.name,
+          sopName: r.sopName,
+          originalFileName: r.originalFileName,
+          folderPath: r.folderPath,
+        },
+      );
       const k = fileKindFromStoredPath(String(d.filePath), d.fileType);
       const targetMap = lang === 'Gujarati' ? gjMap : enMap;
 
@@ -529,10 +647,30 @@ function extractArtifactsFromSopRows(
   };
 }
 
+/** Supplement version artifact arrays with SOP-collection prior records (older revision Mongo rows).
+ *  Mirrors the same logic used in the initial MERGED_DATA.map() enrichment step. */
+function supplementArtifactsFromSopFiles(
+  arr: VersionArtifactEntry[],
+  familyKey: string,
+  lang: 'English' | 'Gujarati',
+  currentRevision: number | null,
+  priorSopFilesByNormKey: Map<string, { version: number; docxPath?: string; pdfPath?: string; lang: 'English' | 'Gujarati' }[]>,
+): void {
+  if (!familyKey || currentRevision == null) return;
+  const priorEntries = priorSopFilesByNormKey.get(`${familyKey}::${lang}`) || [];
+  for (const pe of priorEntries) {
+    if (pe.version >= currentRevision) continue;
+    if (!arr.some((e) => e.version === pe.version)) {
+      arr.push({ version: pe.version, docxPath: pe.docxPath, pdfPath: pe.pdfPath });
+    }
+  }
+}
+
 function collapsePrimaryRegistryRowsByFamily(
   rows: any[],
   versionArtifactsByKey: Map<string, VersionArtifactEntry[]>,
   artifactsMergedByFamilyLang: Map<string, VersionArtifactEntry[]>,
+  priorSopFilesByNormKey: Map<string, { version: number; docxPath?: string; pdfPath?: string; lang: 'English' | 'Gujarati' }[]>,
 ): any[] {
   const byFamily = new Map<string, any[]>();
   const ungrouped: any[] = [];
@@ -540,6 +678,12 @@ function collapsePrimaryRegistryRowsByFamily(
     const fk = sopFamilyKeyFromIdentifier(String(row.sopNo || ''));
     if (!fk) {
       const nk0 = normalizeSopIdentifierKey(String(row.sopNo || '').trim().toUpperCase());
+      const rawEn0 = versionArtifactsForRow(nk0, 'English', versionArtifactsByKey, artifactsMergedByFamilyLang);
+      const rawGj0 = versionArtifactsForRow(nk0, 'Gujarati', versionArtifactsByKey, artifactsMergedByFamilyLang);
+      const rev0 = parseRevisionFromSopIdentifier(nk0);
+      const fk0 = sopFamilyKeyFromIdentifier(nk0);
+      supplementArtifactsFromSopFiles(rawEn0, fk0 || '', 'English', rev0, priorSopFilesByNormKey);
+      supplementArtifactsFromSopFiles(rawGj0, fk0 || '', 'Gujarati', rev0, priorSopFilesByNormKey);
       ungrouped.push(
         applyRegistryPriorSplits(
           {
@@ -547,8 +691,8 @@ function collapsePrimaryRegistryRowsByFamily(
             sopNo: nk0,
             sopDocuments: dedupeSopDocumentsByPath(row.sopDocuments || []),
           },
-          versionArtifactsForRow(nk0, 'English', versionArtifactsByKey, artifactsMergedByFamilyLang),
-          versionArtifactsForRow(nk0, 'Gujarati', versionArtifactsByKey, artifactsMergedByFamilyLang),
+          rawEn0,
+          rawGj0,
           nk0,
         ),
       );
@@ -563,6 +707,12 @@ function collapsePrimaryRegistryRowsByFamily(
     const nkFirst = normalizeSopIdentifierKey(String(group[0].sopNo || '').trim().toUpperCase());
     if (group.length === 1) {
       const only = group[0];
+      const rawEn1 = versionArtifactsForRow(nkFirst, 'English', versionArtifactsByKey, artifactsMergedByFamilyLang);
+      const rawGj1 = versionArtifactsForRow(nkFirst, 'Gujarati', versionArtifactsByKey, artifactsMergedByFamilyLang);
+      const rev1 = parseRevisionFromSopIdentifier(nkFirst);
+      const fk1 = sopFamilyKeyFromIdentifier(nkFirst);
+      supplementArtifactsFromSopFiles(rawEn1, fk1 || '', 'English', rev1, priorSopFilesByNormKey);
+      supplementArtifactsFromSopFiles(rawGj1, fk1 || '', 'Gujarati', rev1, priorSopFilesByNormKey);
       collapsed.push(
         applyRegistryPriorSplits(
           {
@@ -570,8 +720,8 @@ function collapsePrimaryRegistryRowsByFamily(
             sopNo: nkFirst,
             sopDocuments: dedupeSopDocumentsByPath(only.sopDocuments || []),
           },
-          versionArtifactsForRow(nkFirst, 'English', versionArtifactsByKey, artifactsMergedByFamilyLang),
-          versionArtifactsForRow(nkFirst, 'Gujarati', versionArtifactsByKey, artifactsMergedByFamilyLang),
+          rawEn1,
+          rawGj1,
           nkFirst,
         ),
       );
@@ -582,12 +732,23 @@ function collapsePrimaryRegistryRowsByFamily(
       row: r,
       rev: parseRevisionFromSopIdentifier(String(r.sopNo || '')) ?? -1,
     }));
-    scored.sort((a, b) => b.rev - a.rev);
+    // Stable sort: highest revision wins; tie-break by newest createdAt, then _id for full determinism
+    scored.sort((a, b) => {
+      if (b.rev !== a.rev) return b.rev - a.rev;
+      const ta = new Date(a.row.createdAt || 0).getTime();
+      const tb = new Date(b.row.createdAt || 0).getTime();
+      if (tb !== ta) return tb - ta;
+      return String(b.row._id || '').localeCompare(String(a.row._id || ''));
+    });
     const winner = scored[0].row;
     const nk = normalizeSopIdentifierKey(String(winner.sopNo || '').trim().toUpperCase());
 
     const mergedEn = versionArtifactsForRow(nk, 'English', versionArtifactsByKey, artifactsMergedByFamilyLang);
     const mergedGj = versionArtifactsForRow(nk, 'Gujarati', versionArtifactsByKey, artifactsMergedByFamilyLang);
+    const revNk = parseRevisionFromSopIdentifier(nk);
+    const fkNk = sopFamilyKeyFromIdentifier(nk);
+    supplementArtifactsFromSopFiles(mergedEn, fkNk || '', 'English', revNk, priorSopFilesByNormKey);
+    supplementArtifactsFromSopFiles(mergedGj, fkNk || '', 'Gujarati', revNk, priorSopFilesByNormKey);
     
     /** Prior versions: also collect files from any non-winner Mongo rows in this group (e.g. user uploaded V00, V01 separately). */
     const { en: extraEn, gj: extraGj } = extractArtifactsFromSopRows(group, winner._id);
@@ -653,6 +814,7 @@ function mergeRegistryRowsByDocumentFamily(
   rows: any[],
   versionArtifactsByKey: Map<string, VersionArtifactEntry[]>,
   artifactsMergedByFamilyLang: Map<string, VersionArtifactEntry[]>,
+  priorSopFilesByNormKey?: Map<string, { version: number; docxPath?: string; pdfPath?: string; lang: 'English' | 'Gujarati' }[]>,
 ): any[] {
   const byFamily = new Map<string, any[]>();
   const ungrouped: any[] = [];
@@ -682,7 +844,11 @@ function mergeRegistryRowsByDocumentFamily(
       if (b.rev !== a.rev) return b.rev - a.rev;
       if (a.isPrimary && !b.isPrimary) return 1;
       if (!a.isPrimary && b.isPrimary) return -1;
-      return 0;
+      // Stable tiebreaker: newest creation date, then _id
+      const ta = new Date(a.row.createdAt || 0).getTime();
+      const tb = new Date(b.row.createdAt || 0).getTime();
+      if (tb !== ta) return tb - ta;
+      return String(b.row._id || '').localeCompare(String(a.row._id || ''));
     });
 
     const winner = scored[0].row;
@@ -695,7 +861,13 @@ function mergeRegistryRowsByDocumentFamily(
 
     const rawEn = versionArtifactsForRow(nk, 'English', versionArtifactsByKey, artifactsMergedByFamilyLang);
     const rawGj = versionArtifactsForRow(nk, 'Gujarati', versionArtifactsByKey, artifactsMergedByFamilyLang);
-    
+    if (priorSopFilesByNormKey) {
+      const fkMerge = sopFamilyKeyFromIdentifier(nk);
+      const revMerge = parseRevisionFromSopIdentifier(nk);
+      supplementArtifactsFromSopFiles(rawEn, fkMerge || '', 'English', revMerge, priorSopFilesByNormKey);
+      supplementArtifactsFromSopFiles(rawGj, fkMerge || '', 'Gujarati', revMerge, priorSopFilesByNormKey);
+    }
+
     /** Prior versions: also collect files from any non-winner Mongo rows in this group. */
     const { en: extraEn, gj: extraGj } = extractArtifactsFromSopRows(group, winningRowForDocs._id);
     const finalEn = mergeVersionArtifactEntries(rawEn, extraEn);
@@ -807,6 +979,10 @@ function mergeRegistryRowsByDocumentFamily(
           slides: group.some((r: any) => r.mediaStatus?.slides),
           videoCount: group.reduce((n, r) => Math.max(n, r.mediaStatus?.videoCount || 0), 0),
           slideCount: group.reduce((n, r) => Math.max(n, r.mediaStatus?.slideCount || 0), 0),
+          videoRequired: group.reduce((n, r) => Math.max(n, r.mediaStatus?.videoRequired || 0), 0),
+          slideRequired: group.reduce((n, r) => Math.max(n, r.mediaStatus?.slideRequired || 0), 0),
+          videoAvailable: group.reduce((n, r) => n + (r.mediaStatus?.videoAvailable || 0), 0),
+          slideAvailable: group.reduce((n, r) => n + (r.mediaStatus?.slideAvailable || 0), 0),
         },
         createdAt: primaryRow?.createdAt || winner.createdAt || base.createdAt,
         previousVersionsStatus: primaryRow?.previousVersionsStatus?.length
@@ -992,7 +1168,7 @@ export async function GET() {
     // Fetch ALL SOP records including obsolete ones — used only for prior-version availability checks.
     // Older revisions are typically marked isObsolete:true but must still count as "available".
     const allSOPsIncludingObsolete = await SOP.find({})
-      .select('_id identifier fileUrl fileType language sopDocuments')
+      .select('_id identifier fileUrl fileType language sopDocuments name originalFileName folderPath')
       .lean();
 
     const masterSOPs = await MasterSOPRepository.find({})
@@ -1305,10 +1481,12 @@ export async function GET() {
     };
 
     /** Do not exclude sopName matching "annexure": QA bulk paths often include Annexure in the title, which
-     *  removed the whole library row from this query — Files showed PDF only (SOP fileUrl / artifacts) with no DOCX. */
+     *  removed the whole library row from this query — Files showed PDF only (SOP fileUrl / artifacts) with no DOCX.
+     *  Regex also matches family-key identifiers (e.g. PEGE08 without a version) so SOP-wise video/slide mappings
+     *  are included. Videos and slides fields are explicitly selected so counts are accurate. */
     const sopLibraries = await SOPLibrary.find({
-      sopIdentifier: { $regex: /^[A-Z]{1,6}\d{1,4}[-_]\d{1,3}$/i },
-    }).select('sopIdentifier sopName sopDocuments slides videos completionStatus language location').lean();
+      sopIdentifier: { $regex: /^[A-Z]{1,6}\d{1,4}([-_]\d{1,3})?$/i },
+    }).select('sopIdentifier sopName sopDocuments videos slides completionStatus language location').lean();
 
     const libByIdentifier = new Map<string, any[]>();
     const libNameByIdentifier = new Map<string, string>();
@@ -1327,14 +1505,17 @@ export async function GET() {
       const langNameMap = isGujLib ? libGujNameByIdentifier : libEngNameByIdentifier;
       const dual = splitDualName(String(lib.sopName || ''));
 
-      // Use all identifier variants so prior-version lookups never miss due to padding differences
-      const allKeys = [...new Set([id, idNorm, ...expandSopIdentifierVariants(id)])];
+      // Use all identifier variants so prior-version lookups never miss due to padding differences.
+      // Also include the family key (e.g. PEGE08) so library entries stored SOP-wise (without a
+      // version suffix) are found when enriching a versioned row like PEGE08-05.
+      const familyKeyForLib = sopFamilyKeyFromIdentifier(id);
+      const allKeys = [...new Set([id, idNorm, ...expandSopIdentifierVariants(id), ...(familyKeyForLib ? [familyKeyForLib] : [])])];
       for (const key of allKeys) {
         if (!libByIdentifier.has(key)) libByIdentifier.set(key, []);
         libByIdentifier.get(key)!.push(lib);
         const sn = String(lib.sopName || '').trim();
         if (sn && !libNameByIdentifier.has(key)) libNameByIdentifier.set(key, sn);
-        
+
         if (dual) {
           if (!libEngNameByIdentifier.has(key)) libEngNameByIdentifier.set(key, dual.eng);
           if (!libGujNameByIdentifier.has(key)) libGujNameByIdentifier.set(key, dual.guj);
@@ -1372,21 +1553,41 @@ export async function GET() {
       if (rev == null) continue;
       const familyKey = sopFamilyKeyFromIdentifier(sopId);
       if (!familyKey) continue;
-      const lang = String(sop.language || '').toLowerCase() === 'gujarati' ? 'Gujarati' : 'English';
-      const docs = [...(sop.fileUrl ? [{ filePath: sop.fileUrl, fileType: 'pdf', language: sop.language }] : []), ...(sop.sopDocuments || [])];
-      let docxPath: string | undefined;
-      let pdfPath: string | undefined;
+      const docs = [
+        ...(sop.fileUrl
+          ? [{ filePath: sop.fileUrl, fileType: sop.fileType || 'pdf', language: sop.language }]
+          : []),
+        ...(sop.sopDocuments || []),
+      ];
+      const rowHint = {
+        language: sop.language,
+        name: sop.name,
+        originalFileName: sop.originalFileName,
+        folderPath: sop.folderPath,
+      };
+      const byLang = new Map<'English' | 'Gujarati', { docxPath?: string; pdfPath?: string }>();
       for (const d of docs) {
         const p = (d.filePath || d.fileUrl || '').trim();
         if (!p) continue;
         const k = fileKindFromStoredPath(p, d.fileType);
-        if ((k === 'docx' || k === 'doc') && !docxPath) docxPath = p;
-        else if (k === 'pdf' && !pdfPath) pdfPath = p;
+        if (k !== 'docx' && k !== 'doc' && k !== 'pdf') continue;
+        const lang = resolveSopDocumentLanguage(d, rowHint);
+        const cur = byLang.get(lang) || {};
+        if ((k === 'docx' || k === 'doc') && !cur.docxPath) cur.docxPath = p;
+        else if (k === 'pdf' && !cur.pdfPath) cur.pdfPath = p;
+        byLang.set(lang, cur);
       }
-      if (!docxPath && !pdfPath) continue;
-      const mapKey = `${familyKey}::${lang}`;
-      if (!priorSopFilesByNormKey.has(mapKey)) priorSopFilesByNormKey.set(mapKey, []);
-      priorSopFilesByNormKey.get(mapKey)!.push({ version: rev, docxPath, pdfPath, lang });
+      for (const [lang, paths] of byLang) {
+        if (!paths.docxPath && !paths.pdfPath) continue;
+        const mapKey = `${familyKey}::${lang}`;
+        if (!priorSopFilesByNormKey.has(mapKey)) priorSopFilesByNormKey.set(mapKey, []);
+        priorSopFilesByNormKey.get(mapKey)!.push({
+          version: rev,
+          docxPath: paths.docxPath,
+          pdfPath: paths.pdfPath,
+          lang,
+        });
+      }
     }
 
     const versionArtifactsDocs = await SOPVersionArtifacts.find({})
@@ -1396,15 +1597,24 @@ export async function GET() {
     const versionArtifactNameByKey = new Map<string, string>();
     for (const va of versionArtifactsDocs as any[]) {
       const id = (va.identifier || '').trim().toUpperCase();
-      const lang = String(va.language || '').toLowerCase() === 'gujarati' ? 'Gujarati' : 'English';
       const sorted = [...(va.entries || [])].sort((a: any, b: any) => b.version - a.version);
-      const key = `${versionArtifactsLookupKey(va.identifier || id)}::${lang}`;
-      const prev = versionArtifactsByKey.get(key);
-      versionArtifactsByKey.set(key, prev ? mergeVersionArtifactEntries(prev, sorted) : sorted);
+      const { english: enPart, gujarati: guPart } = partitionArtifactEntriesByLanguageFieldAndPaths(
+        va.language,
+        sorted,
+      );
       const sn = va.sopName ? String(va.sopName).trim() : '';
-      if (sn.length >= 2) {
-        const prevN = versionArtifactNameByKey.get(key);
-        if (!prevN || sn.length > prevN.length) versionArtifactNameByKey.set(key, sn);
+      for (const [lang, part] of [
+        ['English', enPart],
+        ['Gujarati', guPart],
+      ] as const) {
+        if (!part.length) continue;
+        const key = `${versionArtifactsLookupKey(va.identifier || id)}::${lang}`;
+        const prev = versionArtifactsByKey.get(key);
+        versionArtifactsByKey.set(key, prev ? mergeVersionArtifactEntries(prev, part) : part);
+        if (sn.length >= 2) {
+          const prevN = versionArtifactNameByKey.get(key);
+          if (!prevN || sn.length > prevN.length) versionArtifactNameByKey.set(key, sn);
+        }
       }
     }
 
@@ -1413,13 +1623,25 @@ export async function GET() {
     for (const va of versionArtifactsDocs as any[]) {
       const fk = sopFamilyKeyFromIdentifier(String(va.identifier || ''));
       if (!fk) continue;
-      const lang = String(va.language || '').toLowerCase() === 'gujarati' ? 'Gujarati' : 'English';
       const sorted = [...(va.entries || [])].sort((a: any, b: any) => b.version - a.version);
-      const k = `${fk}::${lang}`;
-      artifactsMergedByFamilyLang.set(
-        k,
-        mergeVersionArtifactEntries(artifactsMergedByFamilyLang.get(k) || [], sorted),
+      const { english: enPart, gujarati: guPart } = partitionArtifactEntriesByLanguageFieldAndPaths(
+        va.language,
+        sorted,
       );
+      if (enPart.length) {
+        const k = `${fk}::English`;
+        artifactsMergedByFamilyLang.set(
+          k,
+          mergeVersionArtifactEntries(artifactsMergedByFamilyLang.get(k) || [], enPart),
+        );
+      }
+      if (guPart.length) {
+        const k = `${fk}::Gujarati`;
+        artifactsMergedByFamilyLang.set(
+          k,
+          mergeVersionArtifactEntries(artifactsMergedByFamilyLang.get(k) || [], guPart),
+        );
+      }
     }
 
     let data: any[] = MERGED_DATA.map((row: any) => {
@@ -1429,22 +1651,55 @@ export async function GET() {
 
       const seenLibId = new Set<string>();
       const libs: any[] = [];
-      for (const vid of expandSopIdentifierVariants(idUpper)) {
+      // Look up by all versioned identifier variants AND by the family key (e.g. PEGE08)
+      // so library entries stored SOP-wise (without a version suffix) are included.
+      // IMPORTANT: Must fetch BOTH English and Gujarati libraries separately to capture all media
+      const libLookupKeys = [...expandSopIdentifierVariants(idUpper)];
+      const famKeyForLibs = sopFamilyKeyFromIdentifier(idUpper);
+      if (famKeyForLibs && !libLookupKeys.includes(famKeyForLibs)) libLookupKeys.push(famKeyForLibs);
+
+      for (const vid of libLookupKeys) {
         for (const l of libByIdentifier.get(vid) || []) {
+          // Use both _id AND language to create unique library identifier
+          // This ensures we don't deduplicate English and Gujarati libraries of the same SOP
           const lid = String((l as any)._id ?? `${(l as any).sopIdentifier}-${(l as any).language ?? ''}`);
-          if (seenLibId.has(lid)) continue;
-          seenLibId.add(lid);
+          const langLid = `${lid}::${(l as any).language || 'English'}`;
+          if (seenLibId.has(langLid)) continue;
+          seenLibId.add(langLid);
           libs.push(l);
         }
       }
-      const rawVideoCount = libs.reduce((n: number, l: any) => n + (Array.isArray(l.videos) ? l.videos.length : 0), 0);
-      const rawSlideCount = libs.reduce((n: number, l: any) => n + (Array.isArray(l.slides) ? l.slides.length : 0), 0);
-      const flagVideos = libs.some((l: any) => l.completionStatus?.hasVideos);
-      const flagSlides = libs.some((l: any) => l.completionStatus?.hasSlides);
-      const hasVideos = rawVideoCount > 0 || flagVideos;
-      const hasSlides = rawSlideCount > 0 || flagSlides;
-      const videoCount = rawVideoCount > 0 ? rawVideoCount : flagVideos ? 1 : 0;
-      const slideCount = rawSlideCount > 0 ? rawSlideCount : flagSlides ? 1 : 0;
+
+      // Separate video/slide counts by language to handle dual-version media properly
+      const engLibs = libs.filter(l => !l.language || l.language === 'English');
+      const gujLibs = libs.filter(l => l.language === 'Gujarati');
+
+      const engVideoCount = engLibs.reduce((n: number, l: any) => n + (Array.isArray(l.videos) ? l.videos.length : 0), 0);
+      const engSlideCount = engLibs.reduce((n: number, l: any) => n + (Array.isArray(l.slides) ? l.slides.length : 0), 0);
+      const gujVideoCount = gujLibs.reduce((n: number, l: any) => n + (Array.isArray(l.videos) ? l.videos.length : 0), 0);
+      const gujSlideCount = gujLibs.reduce((n: number, l: any) => n + (Array.isArray(l.slides) ? l.slides.length : 0), 0);
+
+      const engFlagVideos = engLibs.some((l: any) => l.completionStatus?.hasVideos);
+      const engFlagSlides = engLibs.some((l: any) => l.completionStatus?.hasSlides);
+      const gujFlagVideos = gujLibs.some((l: any) => l.completionStatus?.hasVideos);
+      const gujFlagSlides = gujLibs.some((l: any) => l.completionStatus?.hasSlides);
+
+      // Combine English and Gujarati media counts — if either language has media, show it
+      const engHasVideos = engVideoCount > 0 || engFlagVideos;
+      const engHasSlides = engSlideCount > 0 || engFlagSlides;
+      const gujHasVideos = gujVideoCount > 0 || gujFlagVideos;
+      const gujHasSlides = gujSlideCount > 0 || gujFlagSlides;
+
+      const hasVideos = engHasVideos || gujHasVideos;
+      const hasSlides = engHasSlides || gujHasSlides;
+      const videoCount = Math.max(
+        engVideoCount > 0 ? engVideoCount : engFlagVideos ? 1 : 0,
+        gujVideoCount > 0 ? gujVideoCount : gujFlagVideos ? 1 : 0
+      );
+      const slideCount = Math.max(
+        engSlideCount > 0 ? engSlideCount : engFlagSlides ? 1 : 0,
+        gujSlideCount > 0 ? gujSlideCount : gujFlagSlides ? 1 : 0
+      );
       const sopDocuments = libs.flatMap((l: any) =>
         (l.sopDocuments || []).map((doc: any) => ({
           ...doc,
@@ -1492,6 +1747,33 @@ export async function GET() {
           }
         }
       }
+
+      // ── ENRICH sopDocuments with ALL current-revision records from Mongo SOP table ──
+      // The dedupe (byKey) only keeps the NEWEST record, so if you upload a PDF then a DOCX, one is lost.
+      // Here we look through allSOPsIncludingObsolete to recover all files for the current revision.
+      for (const rawSop of allSOPsIncludingObsolete as any[]) {
+        const rsId = (rawSop.identifier || '').trim().toUpperCase();
+        if (!rsId) continue;
+        const rsNk = normalizeSopIdentifierKey(rsId);
+        const rsFamily = sopFamilyKeyFromIdentifier(rsId);
+        const rsRev = parseRevisionFromSopIdentifier(rsId);
+        
+        if (rsNk === idUpper || (rsFamily === familyKey && rsRev === currentRevision)) {
+          const docs = [...(rawSop.fileUrl ? [{ filePath: rawSop.fileUrl, fileType: 'pdf', language: rawSop.language }] : []), ...(rawSop.sopDocuments || [])];
+          for (const d of docs) {
+            if (!d.filePath) continue;
+            if (!sopDocuments.some(existing => normPathKey(existing.filePath) === normPathKey(d.filePath))) {
+              sopDocuments.push({
+                fileName: d.fileName || (d.filePath.toLowerCase().endsWith('.pdf') ? 'PDF' : 'DOCX'),
+                filePath: d.filePath,
+                fileType: d.fileType || (d.filePath.toLowerCase().endsWith('.pdf') ? 'pdf' : 'docx'),
+                language: d.language || rawSop.language || 'English'
+              });
+            }
+          }
+        }
+      }
+
       appendLatestArtifactWordIfMissing(sopDocuments, rawEnFull, 'English', currentRevision);
       appendLatestArtifactWordIfMissing(sopDocuments, rawGjFull, 'Gujarati', currentRevision);
       appendLatestArtifactPdfIfMissing(sopDocuments, rawEnFull, 'English', currentRevision);
@@ -1514,6 +1796,54 @@ export async function GET() {
       /** Dual follows merged SOP rows (ENG + GUJ in Mongo). Separate Gujarati file link is informational only. */
       const isDualLanguage = registrySaysDual;
       const gujaratiFileMissing = registrySaysDual && !hasGujaratiFile;
+
+      // Helper to infer video type from title or fileName
+      const inferVideoType = (video: any): 'brief' | 'explainer' | 'unknown' => {
+        const name = ((video.title || video.fileName || '') as string).toLowerCase();
+        if (name.includes('brief')) return 'brief';
+        if (name.includes('explainer')) return 'explainer';
+        return 'unknown';
+      };
+
+      // Calculate required and available video/slide slots based on dual-language status
+      const videoRequired = isDualLanguage ? 4 : 2;
+      const slideRequired = isDualLanguage ? 2 : 1;
+
+      // Available video slots: count distinct (lang × type) combos found
+      let videoAvailable = 0;
+
+      // English library: check for brief and explainer separately
+      const engBrief = engLibs.some(l => (l.videos || []).some((v: any) => inferVideoType(v) === 'brief'));
+      const engExplainer = engLibs.some(l => (l.videos || []).some((v: any) => inferVideoType(v) === 'explainer'));
+      if (engBrief) videoAvailable++;
+      if (engExplainer) videoAvailable++;
+
+      let gujBrief = false;
+      let gujExplainer = false;
+      if (isDualLanguage) {
+        gujBrief = gujLibs.some(l => (l.videos || []).some((v: any) => inferVideoType(v) === 'brief'));
+        gujExplainer = gujLibs.some(l => (l.videos || []).some((v: any) => inferVideoType(v) === 'explainer'));
+        if (gujBrief) videoAvailable++;
+        if (gujExplainer) videoAvailable++;
+      }
+
+      // For 'unknown' type videos: count them as filling slots in order (first fills brief if missing, second fills explainer)
+      // This handles legacy uploads without naming convention
+      const engUnknown = engLibs.reduce((n: number, l: any) => n + (l.videos || []).filter((v: any) => inferVideoType(v) === 'unknown').length, 0);
+      const gujUnknown = gujLibs.reduce((n: number, l: any) => n + (l.videos || []).filter((v: any) => inferVideoType(v) === 'unknown').length, 0);
+      if (!engBrief && engUnknown >= 1) videoAvailable++;
+      if (!engExplainer && engUnknown >= 2) videoAvailable++;
+      if (isDualLanguage) {
+        if (!gujBrief && gujUnknown >= 1) videoAvailable++;
+        if (!gujExplainer && gujUnknown >= 2) videoAvailable++;
+      }
+      // Cap at required
+      videoAvailable = Math.min(videoAvailable, videoRequired);
+
+      // Available slide sets: count how many language sets have at least 1 slide
+      let slideAvailable = 0;
+      if (engHasSlides) slideAvailable++;
+      if (isDualLanguage && gujHasSlides) slideAvailable++;
 
       const displayLanguage = isDualLanguage
         ? 'Both'
@@ -1629,7 +1959,11 @@ export async function GET() {
         const splitGuj = splitDualName(gujTitle);
         if (splitGuj) {
           gujTitle = splitGuj.guj;
-          if (!engTitle || registryDisplayTitleKey(engTitle) === registryDisplayTitleKey(idUpper)) {
+          if (
+            !engTitle ||
+            registryDisplayTitleKey(engTitle) === registryDisplayTitleKey(idUpper) ||
+            !englishTitleIsUsableForRegistry(engTitle, idUpper)
+          ) {
             engTitle = splitGuj.eng;
           }
         }
@@ -1716,11 +2050,13 @@ export async function GET() {
        *  Version 0 has no prior versions → leave array empty (classifySopVersionCapsule handles grey).
        *  Version 1 → 1 slot (V0 only).
        *  Version >= 2 → 2 slots (V(n-1), V(n-2)).
+       *  IMPORTANT: Check BOTH English and Gujarati sources to catch Gujarati-owned prior versions.
        */
       const previousVersionsStatus: { version: number; available: boolean }[] = [];
-      const verMatch = idUpper.match(/^(.*?)-(\d+)$/);
+      const idAscii = normalizeUnicodeHyphens(String(idUpper || '').trim());
+      const verMatch = idAscii.match(/^(.*?)-(\d+)$/i);
       if (verMatch && sopFamilyKeyFromIdentifier(idUpper)) {
-        const base = verMatch[1];
+        const base = verMatch[1].trim().toUpperCase();
         const currentVer = parseInt(verMatch[2], 10);
         // Version 0: no prior versions possible — skip entirely
         if (currentVer >= 1) {
@@ -1732,10 +2068,13 @@ export async function GET() {
             const prevN = normalizeSopIdentifierKey(prevId);
             const prevPN = normalizeSopIdentifierKey(prevIdPadded);
             // Check prior-SOP-file map (from SOP collection itself — older revision records)
+            // This includes BOTH English AND Gujarati language versions
             const familyKeyForPrev = sopFamilyKeyFromIdentifier(idUpper);
-            const hasPriorSopFile = familyKeyForPrev
-              ? (!!(priorSopFilesByNormKey.get(`${familyKeyForPrev}::English`)?.some((e) => e.version === prev)) ||
-                 !!(priorSopFilesByNormKey.get(`${familyKeyForPrev}::Gujarati`)?.some((e) => e.version === prev)))
+            const hasPriorSopFileEng = familyKeyForPrev
+              ? !!(priorSopFilesByNormKey.get(`${familyKeyForPrev}::English`)?.some((e) => e.version === prev))
+              : false;
+            const hasPriorSopFileGuj = familyKeyForPrev
+              ? !!(priorSopFilesByNormKey.get(`${familyKeyForPrev}::Gujarati`)?.some((e) => e.version === prev))
               : false;
             // Check all variant spellings of the prev identifier to avoid missed lookups due to padding
             const prevVariants = expandSopIdentifierVariants(prevId);
@@ -1753,10 +2092,13 @@ export async function GET() {
               libByIdentifier.has(prevPN) ||
               prevVariantInLib ||
               // Also check version artifacts — prior version files uploaded via folder upload count as available
+              // Check BOTH English and Gujarati artifact versions
               rawEnFull.some((e) => e.version === prev) ||
               rawGjFull.some((e) => e.version === prev) ||
               // Check prior SOP records from SOP collection (older revisions stored as separate SOP records)
-              hasPriorSopFile;
+              // Explicitly check both languages to capture Gujarati-owned versions
+              hasPriorSopFileEng ||
+              hasPriorSopFileGuj;
             previousVersionsStatus.push({ version: prev, available });
           }
         }
@@ -1793,9 +2135,18 @@ export async function GET() {
           slides: hasSlides,
           videoCount,
           slideCount,
+          videoRequired,
+          slideRequired,
+          videoAvailable,
+          slideAvailable,
         },
         expiryDate: row.expiryDate,
-        sopDocuments: currentRevisionDocs,
+        sopDocuments: currentRevisionDocs.map(d => ({
+          filePath: d.filePath,
+          fileUrl: d.fileUrl,
+          fileType: d.fileType,
+          language: d.language,
+        })), // Slim down to essential fields for capsule counting
         sopFile: row.sopFile,
         previousVersionsStatus,
         ...(() => {
@@ -1804,10 +2155,10 @@ export async function GET() {
           const enS = splitMainVersusSuperseded(enF);
           const gjS = splitMainVersusSuperseded(gjF);
           return {
-            versionArtifacts: enS.main,
-            versionArtifactsGujarati: gjS.main,
-            versionArtifactsSuperseded: enS.superseded,
-            versionArtifactsGujaratiSuperseded: gjS.superseded,
+            versionArtifacts: enS.main.slice(0, 3), // Limit to 3 versions
+            versionArtifactsGujarati: gjS.main.slice(0, 3), // Limit to 3 versions
+            versionArtifactsSuperseded: enS.superseded.slice(0, 1), // Limit superseded to 1
+            versionArtifactsGujaratiSuperseded: gjS.superseded.slice(0, 1), // Limit superseded to 1
           };
         })(),
         createdAt: row.createdAt,
@@ -1816,7 +2167,7 @@ export async function GET() {
     });
 
     /** One row per SOP family; prior-version PDFs/DOCX stay under Prior versions, not in Files */
-    data = collapsePrimaryRegistryRowsByFamily(data, versionArtifactsByKey, artifactsMergedByFamilyLang);
+    data = collapsePrimaryRegistryRowsByFamily(data, versionArtifactsByKey, artifactsMergedByFamilyLang, priorSopFilesByNormKey);
 
     const registryNormKeys = new Set(
       data.map((r: any) => normalizeSopIdentifierKey(String(r.sopNo || '').trim().toUpperCase())),
@@ -2018,21 +2369,26 @@ export async function GET() {
         gujaratiVersion: hasGujaratiDocs,
         assignedTrainer,
         assignedUsers,
-        mediaStatus: { videos: false, slides: false, videoCount: 0, slideCount: 0 },
+        mediaStatus: { videos: false, slides: false, videoCount: 0, slideCount: 0, videoRequired: isDualLanguage ? 4 : 2, slideRequired: isDualLanguage ? 2 : 1, videoAvailable: 0, slideAvailable: 0 },
         expiryDate: expiryDateIso,
-        sopDocuments: filterDocsToCurrentRevision(mk, sopDocuments),
+        sopDocuments: filterDocsToCurrentRevision(mk, sopDocuments).map(d => ({
+          filePath: d.filePath,
+          fileUrl: d.fileUrl,
+          fileType: d.fileType,
+          language: d.language,
+        })), // Slim down to essential fields for capsule counting
         sopFile,
         previousVersionsStatus: [],
-        versionArtifacts: vaEn,
-        versionArtifactsGujarati: vaGj,
-        versionArtifactsSuperseded: vaEnSplit.superseded,
-        versionArtifactsGujaratiSuperseded: vaGjSplit.superseded,
+        versionArtifacts: vaEn.slice(0, 3), // Limit to top 3 versions
+        versionArtifactsGujarati: vaGj.slice(0, 3), // Limit to top 3 versions
+        versionArtifactsSuperseded: vaEnSplit.superseded.slice(0, 2), // Limit superseded
+        versionArtifactsGujaratiSuperseded: vaGjSplit.superseded.slice(0, 2), // Limit superseded
         createdAt: updatedMs ? new Date(updatedMs).toISOString() : null,
       });
       artifactOnlyRowsAdded++;
     }
 
-    data = mergeRegistryRowsByDocumentFamily(data, versionArtifactsByKey, artifactsMergedByFamilyLang);
+    data = mergeRegistryRowsByDocumentFamily(data, versionArtifactsByKey, artifactsMergedByFamilyLang, priorSopFilesByNormKey);
 
     const supersedeOverridesRaw = await SupersedeSOPVersion.find({})
       .select('sopNo language version docxPath pdfPath')
@@ -2116,7 +2472,7 @@ export async function GET() {
       sopNo: r.sopNo ? formatSopNoDisplay(String(r.sopNo)) : r.sopNo,
     }));
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       data,
       metadata: {
@@ -2145,6 +2501,10 @@ export async function GET() {
         },
       },
     });
+
+    // Tag response for on-demand revalidation from upload endpoints
+    response.headers.set('x-cache-tag', 'dashboard-sops');
+    return response;
   } catch (error) {
     console.error('Error fetching dashboard sops:', error);
     return NextResponse.json(

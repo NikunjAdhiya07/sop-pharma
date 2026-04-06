@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
+import SOPLibrary from '@/models/SOPLibrary';
 import {
   buildStubParsedDocument,
   parseDocument,
@@ -297,6 +299,64 @@ export async function POST(request: NextRequest) {
           });
         }
 
+        // Also create/update SOPLibrary record for dashboard visibility
+        try {
+          let sopLibrary = await SOPLibrary.findOne({
+            sopIdentifier: sopIdentifier,
+            language: effectiveLanguage,
+          });
+
+          if (sopLibrary) {
+            // Update existing library entry
+            sopLibrary.sopName = sop.name;
+            sopLibrary.department = sop.department;
+            sopLibrary.language = effectiveLanguage;
+            // Add/update the uploaded document with language field
+            const existingDocIndex = sopLibrary.sopDocuments?.findIndex(
+              (d: any) => d.filePath === fileUrl
+            ) ?? -1;
+            if (existingDocIndex === -1) {
+              sopLibrary.sopDocuments = [
+                ...(sopLibrary.sopDocuments || []),
+                {
+                  fileName,
+                  filePath: fileUrl,
+                  fileType,
+                  uploadedAt: new Date(),
+                  fileSize: buffer.length,
+                  language: effectiveLanguage,
+                },
+              ];
+            }
+            await sopLibrary.save();
+          } else {
+            // Create new library entry
+            await SOPLibrary.create({
+              sopId: sop._id,
+              sopName: sop.name,
+              sopIdentifier: sopIdentifier,
+              department: sop.department,
+              departmentCode: sopIdentifier.substring(0, 4).toUpperCase(),
+              videos: [],
+              slides: [],
+              sopDocuments: [
+                {
+                  fileName,
+                  filePath: fileUrl,
+                  fileType,
+                  uploadedAt: new Date(),
+                  fileSize: buffer.length,
+                  language: effectiveLanguage,
+                },
+              ],
+              language: effectiveLanguage,
+            });
+          }
+        } catch (libErr) {
+          console.error(`Failed to create/update SOPLibrary for ${sopIdentifier}:`, libErr);
+          // Don't fail the upload if library creation fails
+        }
+
         results.push({
           fileName,
           sopId: String(sop._id),
@@ -311,6 +371,14 @@ export async function POST(request: NextRequest) {
           error: err instanceof Error ? err.message : 'Unknown error',
         });
       }
+    }
+
+    // Revalidate dashboard cache after successful uploads
+    try {
+      await revalidateTag('dashboard-sops');
+    } catch (revalidateError) {
+      console.warn('Failed to revalidate dashboard cache:', revalidateError);
+      // Don't fail the upload if cache revalidation fails
     }
 
     return NextResponse.json({

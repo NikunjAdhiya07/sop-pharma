@@ -422,6 +422,11 @@ ComplianceReportSchema.index({ analysisStatus: 1 });  // NEW: Track analysis sta
 ComplianceReportSchema.index({ complianceStatus: 1 });
 ComplianceReportSchema.index({ analyzedAt: -1 });
 ComplianceReportSchema.index({ 'dataIntegrity.dataComplete': 1 });  // NEW: Filter complete data
+// Compound index for the sop-guideline-review GET route:
+// .find({ analysisStatus: 'completed' }).sort({ analysisCompletedAt: -1 })
+// Without this, Mongo tries in-memory sort and crashes at 32 MB on large collections.
+ComplianceReportSchema.index({ analysisStatus: 1, analysisCompletedAt: -1 });
+ComplianceReportSchema.index({ sopIdentifier: 1, analysisStatus: 1, analysisCompletedAt: -1 });
 
 const ComplianceReport: Model<IComplianceReport> = mongoose.models.ComplianceReport || mongoose.model<IComplianceReport>('ComplianceReport', ComplianceReportSchema);
 

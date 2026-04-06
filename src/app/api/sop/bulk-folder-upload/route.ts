@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
@@ -40,6 +41,11 @@ async function storeFile(
 }
 import AuditLog from '@/models/AuditLog';
 import User from '@/models/User';
+
+// Helper function to normalize path for comparison
+function normPathKey(p: string): string {
+  return (p || '').trim().replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\/+/, '').toLowerCase();
+}
 
 // Approved department names
 const APPROVED_DEPARTMENTS = [
@@ -373,6 +379,23 @@ export async function POST(request: NextRequest) {
               sopLibrary.parentFolder = folderInfo.parentFolder || undefined;
               sopLibrary.subfolderLevel = folderInfo.level;
               sopLibrary.language = language;
+              // Add/update the uploaded document with language field
+              const existingDoc = sopLibrary.sopDocuments?.find(
+                (d: any) => normPathKey(d.filePath) === normPathKey(savedFilePath)
+              );
+              if (!existingDoc) {
+                sopLibrary.sopDocuments = [
+                  ...(sopLibrary.sopDocuments || []),
+                  {
+                    fileName: file.name,
+                    filePath: savedFilePath,
+                    fileType: 'docx',
+                    uploadedAt: new Date(),
+                    fileSize: file.size,
+                    language: language,
+                  },
+                ];
+              }
               await sopLibrary.save();
             } else {
               // Create new library entry
@@ -393,6 +416,7 @@ export async function POST(request: NextRequest) {
                   fileType: 'docx',
                   uploadedAt: new Date(),
                   fileSize: file.size,
+                  language: language,
                 }],
                 language: language,
               });
@@ -538,6 +562,14 @@ export async function POST(request: NextRequest) {
         } catch (auditError) {
           console.error('⚠️ Failed to create audit log:', auditError);
           // Don't fail the upload if audit log creation fails
+        }
+
+        // Revalidate dashboard cache after successful uploads
+        try {
+          await revalidateTag('dashboard-sops');
+        } catch (revalidateError) {
+          console.warn('⚠️ Failed to revalidate dashboard cache:', revalidateError);
+          // Don't fail the upload if cache revalidation fails
         }
 
         controller.close();

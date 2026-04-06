@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
 import SOPGuideline from '@/models/SOPGuideline';
+import SOPGuidelineResult from '@/models/SOPGuidelineResult';
+import ComplianceReport from '@/models/ComplianceReport';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export const dynamic = 'force-dynamic';
@@ -269,6 +271,28 @@ export async function POST(request: NextRequest) {
       ? Math.round(((compliantCount * 10 + partialCount * 5) / applicable) * 10) / 10
       : 10;
 
+    // ── Persist result (shuttle system) ─────────────────────────────
+    try {
+      await SOPGuidelineResult.findOneAndUpdate(
+        { sopNo: sop.identifier },
+        {
+          sopId: sop._id,
+          sopNo: sop.identifier,
+          sopName: sop.name,
+          overallScore,
+          clausesAnalyzed: findings.length,
+          guidelineDocumentsUsed: guidelines.length,
+          guidelineIds,
+          findings,
+          runAt: new Date(),
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+    } catch (saveErr) {
+      console.warn('sop-guideline-review: could not persist result:', saveErr);
+      // non-fatal – still return the result to the client
+    }
+
     return NextResponse.json({
       success: true,
       sopIdentifier:        sop.identifier,
@@ -290,6 +314,153 @@ export async function POST(request: NextRequest) {
       userMessage: 'Guideline review failed. Try again or check server logs.',
     }, { status: 500 });
   }
+}
+
+/**
+ * GET /api/dashboard/sop-guideline-review
+ *   ?listAll=true  → returns all stored results merged from both sources (dashboard wizard + compliance section)
+ *   ?sopNo=QA-SOP-001 → returns result for one SOP (checks both sources)
+ */
+export async function GET(request: NextRequest) {
+  try {
+    await connectDB();
+    const { searchParams } = new URL(request.url);
+    const listAll = searchParams.get('listAll') === 'true';
+    const sopNo   = searchParams.get('sopNo')?.trim();
+
+    if (listAll) {
+      // ── Source 1: Dashboard wizard results (SOPGuidelineResult)
+      const wizardResults = await SOPGuidelineResult
+        .find({})
+        .select('sopNo sopName overallScore clausesAnalyzed guidelineDocumentsUsed runAt findings')
+        .sort({ runAt: -1 })
+        .lean();
+
+      // Build a map keyed by sopNo so we can merge
+      const cache: Record<string, any> = {};
+      for (const r of wizardResults) {
+        cache[r.sopNo] = {
+          sopNo: r.sopNo,
+          sopName: r.sopName || '',
+          overallScore: r.overallScore ?? 0,
+          clausesAnalyzed: r.clausesAnalyzed ?? 0,
+          guidelineDocumentsUsed: r.guidelineDocumentsUsed ?? 0,
+          runAt: r.runAt,
+          findings: Array.isArray(r.findings) ? r.findings : [],
+          source: 'dashboard-wizard',
+        };
+      }
+
+      // ── Source 2: Compliance section results (ComplianceReport)
+      // Fetch completed reports; only override if no wizard result exists for that SOP
+      try {
+        const complianceReports = await ComplianceReport
+          .find({ analysisStatus: 'completed' })
+          .select('sopIdentifier sopName overallScore compliancePercentage scoreBreakdown guidelinesUsed findings analysisCompletedAt')
+          .sort({ analysisCompletedAt: -1 })
+          .limit(500)
+          .allowDiskUse(true)
+          .lean();
+
+        for (const r of complianceReports) {
+          const key = r.sopIdentifier;
+          if (!key) continue;
+
+          // Only add if dashboard wizard has no result for this SOP
+          if (!cache[key]) {
+            const normalizedFindings = normalizeComplianceFindings(r.findings || []);
+            cache[key] = {
+              sopNo: key,
+              sopName: r.sopName || '',
+              overallScore: r.overallScore ?? 0,
+              clausesAnalyzed: r.scoreBreakdown?.totalChecks ?? normalizedFindings.length,
+              guidelineDocumentsUsed: (r.guidelinesUsed || []).length,
+              runAt: r.analysisCompletedAt || new Date(),
+              findings: normalizedFindings,
+              source: 'compliance-section',
+            };
+          }
+        }
+      } catch (compErr) {
+        console.warn('sop-guideline-review GET: could not load ComplianceReport:', compErr);
+        // non-fatal — still return wizard results
+      }
+
+      return NextResponse.json({ success: true, results: Object.values(cache) });
+    }
+
+    if (sopNo) {
+      // Check wizard results first
+      let result: any = await SOPGuidelineResult.findOne({ sopNo }).lean();
+      if (result) {
+        return NextResponse.json({ success: true, result, source: 'dashboard-wizard' });
+      }
+
+      // Fall back to compliance section results
+      try {
+        const cr = await ComplianceReport
+          .findOne({ sopIdentifier: sopNo, analysisStatus: 'completed' })
+          .sort({ analysisCompletedAt: -1 })
+          .allowDiskUse(true)
+          .lean();
+        if (cr) {
+          return NextResponse.json({
+            success: true,
+            source: 'compliance-section',
+            result: {
+              sopNo: cr.sopIdentifier,
+              sopName: cr.sopName || '',
+              overallScore: cr.overallScore ?? 0,
+              clausesAnalyzed: cr.scoreBreakdown?.totalChecks ?? 0,
+              guidelineDocumentsUsed: (cr.guidelinesUsed || []).length,
+              runAt: cr.analysisCompletedAt || new Date(),
+              findings: normalizeComplianceFindings(cr.findings || []),
+            },
+          });
+        }
+      } catch (_) { /* ignore */ }
+
+      return NextResponse.json({ success: false, error: 'No stored result for this SOP' }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: false, error: 'Provide listAll=true or sopNo param' }, { status: 400 });
+  } catch (e) {
+    console.error('sop-guideline-review GET:', e);
+    return NextResponse.json({ success: false, error: (e as Error).message }, { status: 500 });
+  }
+}
+
+/**
+ * Normalize ComplianceReport findings (from /compliance page) into the same
+ * field shape as SOPGuidelineResult findings (from dashboard wizard).
+ * Both schemas are already very similar — just ensuring consistent names.
+ */
+function normalizeComplianceFindings(findings: any[]): any[] {
+  return findings.map(f => ({
+    guidelineId:          f.guidelineId?.toString() ?? '',
+    guidelineName:        f.guidelineName        || '',
+    folderName:           f.folderName           || '',
+    pdfName:              f.pdfName              || '',
+    clauseNumber:         f.clauseNumber         || '',
+    clauseTitle:          f.clauseTitle          || '',
+    clauseText:           f.clauseText           || '',
+    // Compliance fields
+    complianceLevel:      f.complianceLevel      || 'not-applicable',
+    matchConfidence:      f.matchConfidence       ?? 0,
+    issueType:            f.issueType            || 'not-applicable',
+    issueSeverity:        f.issueSeverity        || 'informational',
+    // Location / explanation  
+    sopSectionAffected:   f.sopSectionAffected   || f.sopSectionNumber  || 'N/A',
+    mismatchExplanation:  f.mismatchExplanation  || f.specificGap       || '',
+    highlightedIssue:     f.highlightedIssue     || '',
+    sopTextSnippet:       f.sopTextSnippet       || '',
+    guidelineRequirement: f.guidelineRequirement || f.clauseTitle       || '',
+    // Actions
+    suggestedAction:      f.suggestedAction      || '',
+    suggestedText:        f.suggestedText        || '',
+    estimatedEffort:      f.estimatedEffort      || 'medium',
+    priority:             f.priority             ?? 3,
+  }));
 }
 
 function failedFinding(guideline: any, clause: any) {
