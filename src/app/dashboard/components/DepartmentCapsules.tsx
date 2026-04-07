@@ -1007,6 +1007,23 @@ function DepartmentCapsuleCard({
         />
         {sortLangCodes([...stat.langDocx.keys()]).map((lang) => {
           const ld = stat.langDocx.get(lang)!;
+          const langFilter = lang === "EN" ? "ENG" : lang === "GJ" ? "GUJ" : lang.toUpperCase();
+          const docxAvailActive =
+            filterSnapshot.filterDept === deptForFilter &&
+            filterSnapshot.filterFileType === "DOCX" &&
+            filterSnapshot.filterLanguage === langFilter &&
+            !filterSnapshot.filterDualLang &&
+            filterSnapshot.filterExpiry === "all" &&
+            filterSnapshot.filterMedia === "all" &&
+            filterSnapshot.filterVersionStatus === "all";
+          const docxMissingActive =
+            filterSnapshot.filterDept === deptForFilter &&
+            filterSnapshot.filterFileType === "NO_DOCX" &&
+            filterSnapshot.filterLanguage === langFilter &&
+            !filterSnapshot.filterDualLang &&
+            filterSnapshot.filterExpiry === "all" &&
+            filterSnapshot.filterMedia === "all" &&
+            filterSnapshot.filterVersionStatus === "all";
           return (
             <CapsuleMetricAvailMissing
               key={`docx-lang-${lang}`}
@@ -1014,12 +1031,18 @@ function DepartmentCapsuleCard({
               totalExpected={ld.found + ld.missing}
               available={ld.found}
               missingCount={ld.missing}
-              onFilterClick={() => {}}
-              onAvailableClick={() => {}}
-              onMissingClick={() => {}}
-              highlightAvailable={false}
-              highlightMissing={false}
-              filterRowActive={false}
+              onFilterClick={() => {
+                applyCapsuleAvailMiss(deptForFilter, "docx", "available");
+              }}
+              onAvailableClick={() => {
+                applyCapsuleAvailMiss(deptForFilter, "docx", "available");
+              }}
+              onMissingClick={() => {
+                applyCapsuleAvailMiss(deptForFilter, "docx", "missing");
+              }}
+              highlightAvailable={docxAvailActive}
+              highlightMissing={docxMissingActive}
+              filterRowActive={docxAvailActive || docxMissingActive}
               titleSummary={`${lang} DOCX: ${ld.found} found, ${ld.missing} missing`}
             />
           );
@@ -1069,6 +1092,23 @@ function DepartmentCapsuleCard({
         />
         {sortLangCodes([...stat.langPdf.keys()]).map((lang) => {
           const lp = stat.langPdf.get(lang)!;
+          const langFilter = lang === "EN" ? "ENG" : lang === "GJ" ? "GUJ" : lang.toUpperCase();
+          const pdfAvailActive =
+            filterSnapshot.filterDept === deptForFilter &&
+            filterSnapshot.filterFileType === "PDF" &&
+            filterSnapshot.filterLanguage === langFilter &&
+            !filterSnapshot.filterDualLang &&
+            filterSnapshot.filterExpiry === "all" &&
+            filterSnapshot.filterMedia === "all" &&
+            filterSnapshot.filterVersionStatus === "all";
+          const pdfMissingActive =
+            filterSnapshot.filterDept === deptForFilter &&
+            filterSnapshot.filterFileType === "NO_PDF" &&
+            filterSnapshot.filterLanguage === langFilter &&
+            !filterSnapshot.filterDualLang &&
+            filterSnapshot.filterExpiry === "all" &&
+            filterSnapshot.filterMedia === "all" &&
+            filterSnapshot.filterVersionStatus === "all";
           return (
             <CapsuleMetricAvailMissing
               key={`pdf-lang-${lang}`}
@@ -1076,12 +1116,18 @@ function DepartmentCapsuleCard({
               totalExpected={lp.found + lp.missing}
               available={lp.found}
               missingCount={lp.missing}
-              onFilterClick={() => {}}
-              onAvailableClick={() => {}}
-              onMissingClick={() => {}}
-              highlightAvailable={false}
-              highlightMissing={false}
-              filterRowActive={false}
+              onFilterClick={() => {
+                applyCapsuleAvailMiss(deptForFilter, "pdf", "available");
+              }}
+              onAvailableClick={() => {
+                applyCapsuleAvailMiss(deptForFilter, "pdf", "available");
+              }}
+              onMissingClick={() => {
+                applyCapsuleAvailMiss(deptForFilter, "pdf", "missing");
+              }}
+              highlightAvailable={pdfAvailActive}
+              highlightMissing={pdfMissingActive}
+              filterRowActive={pdfAvailActive || pdfMissingActive}
               titleSummary={`${lang} PDF: ${lp.found} found, ${lp.missing} missing`}
             />
           );
