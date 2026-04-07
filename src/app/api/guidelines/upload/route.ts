@@ -322,7 +322,7 @@ export async function GET(request: NextRequest) {
     console.log(`✅ Found ${guidelines.length} guidelines for this query`);
 
     // Calculate total clause count efficiently from the results (if they have clauses selected)
-    // For global total, use aggregate
+    // For global total, use aggregate with increased timeout and allowDiskUse
     let globalTotalClauses = 0;
     if (isSummary) {
       try {
@@ -330,13 +330,17 @@ export async function GET(request: NextRequest) {
           { $match: query },
           { $project: { count: { $size: { $ifNull: ["$clauses", []] } } } },
           { $group: { _id: null, total: { $sum: "$count" } } }
-        ]).option({ maxTimeMS: 5000 });
+        ])
+          .allowDiskUse(true)
+          .option({ maxTimeMS: 30000 }); // Increased from 5s to 30s
 
         if (globalCount.length > 0) {
           globalTotalClauses = globalCount[0].total;
         }
       } catch (e) {
         console.error('Quietly failed to get global clause count:', e);
+        // Fallback: calculate from fetched results
+        globalTotalClauses = guidelines.reduce((sum, g) => sum + (g.clauses?.length ?? 0), 0);
       }
     }
 

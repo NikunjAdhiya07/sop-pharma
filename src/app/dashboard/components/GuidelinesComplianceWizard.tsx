@@ -117,12 +117,27 @@ export default function GuidelinesComplianceWizard({
           }
         }
 
-        // Fetch fresh data with cache control header
-        const res = await fetch('/api/guidelines/upload?summary=true', {
-          headers: { 'Cache-Control': 'max-age=300' }, // 5 min browser cache
-        });
-        const j = await res.json().catch(() => ({}));
-        if (!res.ok || !j.success) throw new Error(j.error || `Failed to load guidelines (${res.status})`);
+        // Fetch fresh data with cache control header and timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+
+        let j: any;
+        try {
+          const res = await fetch('/api/guidelines/upload?summary=true', {
+            headers: { 'Cache-Control': 'max-age=300' }, // 5 min browser cache
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+
+          j = await res.json().catch(() => ({}));
+          if (!res.ok || !j.success) throw new Error(j.error || `Failed to load guidelines (${res.status})`);
+        } catch (fetchErr) {
+          clearTimeout(timeoutId);
+          if ((fetchErr as any)?.name === 'AbortError') {
+            throw new Error('Guidelines load timed out after 60 seconds. Server may be slow.');
+          }
+          throw fetchErr;
+        }
 
         const guidelines = Array.isArray(j.guidelines) ? (j.guidelines as GuidelineSummary[]) : [];
 
