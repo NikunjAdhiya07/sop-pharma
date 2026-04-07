@@ -1044,7 +1044,7 @@ function DepartmentCapsuleCard({
               highlightAvailable={docxAvailActive}
               highlightMissing={docxMissingActive}
               filterRowActive={docxAvailActive || docxMissingActive}
-              titleSummary={`${lang} DOCX: ${ld.found} found, ${ld.missing} missing`}
+              titleSummary={`${lang} DOCX: ${ld.found} found, ${ld.missing} missing (green=found, red=missing)`}
             />
           );
         })}
