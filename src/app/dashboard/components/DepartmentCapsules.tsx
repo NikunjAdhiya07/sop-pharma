@@ -822,6 +822,7 @@ function DepartmentCapsuleCard({
     dept: string,
     metric: CapsuleAvailMetric,
     side: "available" | "missing",
+    lang?: "ENG" | "GUJ",
   ) => void;
   applyCapsuleVersionSegment: (
     dept: string,
@@ -1032,13 +1033,13 @@ function DepartmentCapsuleCard({
               available={ld.found}
               missingCount={ld.missing}
               onFilterClick={() => {
-                applyCapsuleAvailMiss(deptForFilter, "docx", "available");
+                applyCapsuleAvailMiss(deptForFilter, "docx", "available", langFilter as "ENG" | "GUJ");
               }}
               onAvailableClick={() => {
-                applyCapsuleAvailMiss(deptForFilter, "docx", "available");
+                applyCapsuleAvailMiss(deptForFilter, "docx", "available", langFilter as "ENG" | "GUJ");
               }}
               onMissingClick={() => {
-                applyCapsuleAvailMiss(deptForFilter, "docx", "missing");
+                applyCapsuleAvailMiss(deptForFilter, "docx", "missing", langFilter as "ENG" | "GUJ");
               }}
               highlightAvailable={docxAvailActive}
               highlightMissing={docxMissingActive}
@@ -1117,13 +1118,13 @@ function DepartmentCapsuleCard({
               available={lp.found}
               missingCount={lp.missing}
               onFilterClick={() => {
-                applyCapsuleAvailMiss(deptForFilter, "pdf", "available");
+                applyCapsuleAvailMiss(deptForFilter, "pdf", "available", langFilter as "ENG" | "GUJ");
               }}
               onAvailableClick={() => {
-                applyCapsuleAvailMiss(deptForFilter, "pdf", "available");
+                applyCapsuleAvailMiss(deptForFilter, "pdf", "available", langFilter as "ENG" | "GUJ");
               }}
               onMissingClick={() => {
-                applyCapsuleAvailMiss(deptForFilter, "pdf", "missing");
+                applyCapsuleAvailMiss(deptForFilter, "pdf", "missing", langFilter as "ENG" | "GUJ");
               }}
               highlightAvailable={pdfAvailActive}
               highlightMissing={pdfMissingActive}

@@ -857,11 +857,12 @@ export default function DashboardPageClient() {
       dept: string,
       metric: CapsuleAvailMetric,
       side: "available" | "missing",
+      lang?: "ENG" | "GUJ",
     ) => {
       setFilterDept(dept);
       setFilterDualLang(false);
       setFilterExpiry("all");
-      setFilterLanguage("all");
+      setFilterLanguage(lang ?? "all");
       setFilterVersionStatus("all");
       const direction = side === "available" ? "desc" : "asc";
       if (metric === "docx") {
