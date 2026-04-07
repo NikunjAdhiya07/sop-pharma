@@ -1348,6 +1348,7 @@ export default function DepartmentCapsules({
     dept: string,
     metric: CapsuleAvailMetric,
     side: "available" | "missing",
+    lang?: "ENG" | "GUJ",
   ) => void;
   applyCapsuleVersionSegment: (
     dept: string,
