@@ -8,6 +8,7 @@ import {
   FileText,
   Video,
   Presentation,
+  CheckCircle2,
   File,
   Calendar,
   User as UserIcon,
@@ -19,6 +20,7 @@ import {
   Printer,
   Trash2,
   X,
+  Loader2,
 } from "lucide-react";
 import { useState, Fragment, useEffect, useRef, type ReactNode } from "react";
 import {
@@ -31,6 +33,7 @@ import {
   buildPdfDownloadHref,
 } from "@/lib/viewDocLinks";
 import { cleanSOPName } from "@/lib/sopLibraryHelper";
+import { normalizeUnicodeHyphens } from "@/lib/sopIdentifierNormalize";
 
 const DEPT_ALL = "All";
 
@@ -45,6 +48,9 @@ export default function SOPTable({
   onViewCompliance,
   onMarkObsolete,
   onMarkVersionSuperseded,
+  isObsoleteView,
+  onRemoveObsolete,
+  removingObsoleteId,
 }: any) {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
@@ -179,6 +185,146 @@ export default function SOPTable({
     return `V${n}`;
   };
 
+  /**
+   * Prior-version column: always the last `maxRows` revisions immediately below current (inclusive of V0).
+   * V1 → [0]; V2 → [1,0]; V6 → [5,4]. Uses SOP No revision when parsable; else highest stored artifact version.
+   */
+  const computePriorVersionSlotVersions = (
+    entries: VersionArtifactEntry[],
+    currentRev: number | null,
+    maxRows: number,
+  ): number[] => {
+    const highestStored =
+      entries.length > 0
+        ? Math.max(...entries.map((e) => Number(e.version)))
+        : null;
+    const effectiveCurrent =
+      currentRev != null && Number.isFinite(currentRev)
+        ? currentRev
+        : highestStored;
+    if (
+      effectiveCurrent == null ||
+      !Number.isFinite(effectiveCurrent) ||
+      effectiveCurrent < 1
+    ) {
+      return [];
+    }
+    const numSlots = Math.min(maxRows, effectiveCurrent);
+    const out: number[] = [];
+    for (let i = 1; i <= numSlots; i++) {
+      const v = effectiveCurrent - i;
+      if (v < 0) break;
+      out.push(v);
+    }
+    return out;
+  };
+
+  /**
+   * Stacked ENG/GUJ prior columns: true bilingual row, or both languages have files in registry
+   * (some SOPs are not flagged `isDualLanguage` but still have English + Gujarati docs — e.g. MAGE01-08).
+   */
+  const useAlignedEnGuPriorVersions = (row: any) =>
+    Boolean(row?.isDualLanguage) ||
+    (Boolean(row?.englishVersion) && Boolean(row?.gujaratiVersion));
+
+  /** One language row: V5 / V4 columns with DOCX+PDF or “Not Found” when no files for that slot. */
+  const renderVersionArtifactSlotRow = (
+    entries: VersionArtifactEntry[] | undefined,
+    row: any,
+    lang: "English" | "Gujarati",
+    slotVersions: number[],
+    subLabel?: string,
+    allowSupersede = false,
+  ): ReactNode => {
+    if (slotVersions.length === 0) return null;
+    const entryByVersion = new Map<number, VersionArtifactEntry>(
+      entries.map((e) => [e.version, e]),
+    );
+    const highestStored = Math.max(...entries.map((e) => e.version));
+    // Start just below current revision (prior versions only), go down to cover all stored
+    const startFrom = currentRev != null ? currentRev - 1 : highestStored;
+    const lowestStored = Math.min(...entries.map((e) => e.version));
+    const rangeSlots: (VersionArtifactEntry | { version: number; missing: true })[] = [];
+    for (let v = startFrom; v >= lowestStored; v--) {
+      const entry = entryByVersion.get(v);
+      rangeSlots.push(entry ?? { version: v, missing: true });
+    }
+    const sorted = rangeSlots.slice(0, maxRows);
+
+    return (
+      <div className="flex flex-col gap-1 py-0.5">
+        {subLabel && (
+          <span className="text-[9px] font-bold uppercase tracking-wide text-gray-500 leading-none mb-0.5">
+            {subLabel}
+          </span>
+        )}
+        <div className="flex flex-row flex-nowrap gap-4 items-start">
+          {sorted.map((e) => (
+            <div key={`${lang}-v${e.version}`} className="flex flex-col gap-0.5 min-w-[50px]">
+              <span className="text-[10px] font-bold text-gray-900 leading-tight">
+                {formatPriorVersionLabel(e.version)}
+              </span>
+              {"missing" in e ? (
+                <span
+                  className="text-[8px] font-bold text-red-500 leading-none"
+                  title="This version was not uploaded — not available">
+                  ✗
+                </span>
+              ) : (
+              <div className="flex items-center gap-1 leading-none text-[8px] font-bold h-[14px]">
+                {e.docxPath ? (
+                  <a
+                    href={buildPreviewHref(e.docxPath, "docx", row.sopNo, lang)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(ev) => ev.stopPropagation()}
+                    className="text-purple-600 hover:underline">
+                    DOCX
+                  </a>
+                ) : null}
+                {e.docxPath && e.pdfPath ? (
+                  <span className="text-gray-300 select-none">/</span>
+                ) : null}
+                {e.pdfPath ? (
+                  <a
+                    href={buildPreviewHref(e.pdfPath, "pdf", row.sopNo, lang)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(ev) => ev.stopPropagation()}
+                    className="text-blue-600 hover:underline">
+                    PDF
+                  </a>
+                ) : null}
+                {!e.docxPath && !e.pdfPath ? (
+                  <span className="text-gray-400">—</span>
+                ) : null}
+                {allowSupersede ? (
+                  <button
+                    type="button"
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      onMarkVersionSuperseded?.({
+                        sopNo: String(row.sopNo || ""),
+                        lang,
+                        version: Number(e.version),
+                        docxPath: e.docxPath,
+                        pdfPath: e.pdfPath,
+                      });
+                    }}
+                    className="ml-1 rounded border border-amber-300 bg-amber-50 px-1 py-px text-[7px] font-bold text-amber-900 hover:bg-amber-100"
+                    title="Move this version to Supersede SOP section">
+                    Supersede
+                  </button>
+                ) : null}
+              </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   const renderVersionArtifactLinks = (
     entries: VersionArtifactEntry[] | undefined,
     row: any,
@@ -188,125 +334,16 @@ export default function SOPTable({
     allowSupersede = false,
   ): ReactNode => {
     if (!entries?.length) return null;
-
-    // Build a consecutive sequence of prior versions so gaps show as "N/A"
-    // e.g. current=V6, stored=[V6,V4] → show V5(N/A), V4
     const currentRev = getDisplayCurrentRevision(row);
-    const entryByVersion = new Map<number, VersionArtifactEntry>(
-      entries.map((e) => [e.version, e]),
-    );
-    const highestStored = Math.max(...entries.map((e) => e.version));
-    const lowestStored = Math.min(...entries.map((e) => e.version));
-    /** Top of the prior chain: one below current revision, or highest stored when SOP No has no rev */
-    const startFrom =
-      currentRev != null ? currentRev - 1 : highestStored;
-    const rangeSlots: (VersionArtifactEntry | { version: number; missing: true })[] =
-      [];
-    if (currentRev != null) {
-      // Always show the newest `maxRows` prior revision numbers (fill gaps as missing),
-      // e.g. current V5 with only V4 on disk → V4 + V3 missing.
-      for (let i = 0; i < maxRows; i++) {
-        const v = startFrom - i;
-        if (v < 1) break;
-        const entry = entryByVersion.get(v);
-        rangeSlots.push(entry ?? { version: v, missing: true });
-      }
-    } else {
-      // No revision in SOP No: walk downward from highest stored through consecutive slots
-      for (
-        let v = startFrom;
-        v >= lowestStored && rangeSlots.length < maxRows;
-        v--
-      ) {
-        const entry = entryByVersion.get(v);
-        rangeSlots.push(entry ?? { version: v, missing: true });
-      }
-    }
-
-    /** Newest prior revision first (V5 above V4) everywhere */
-    const rowsSorted = [...rangeSlots].sort((a, b) => b.version - a.version);
-
-    return (
-      <table className="w-full border-collapse text-[9px] leading-tight table-fixed">
-        <colgroup>
-          <col className="w-[2.25rem]" />
-          <col />
-        </colgroup>
-        <tbody>
-          {subLabel ? (
-            <tr>
-              <td
-                colSpan={2}
-                className="pb-0.5 align-middle text-[8px] font-bold uppercase tracking-wide text-gray-500">
-                {subLabel}
-              </td>
-            </tr>
-          ) : null}
-          {rowsSorted.map((e) => (
-            <tr key={`${lang}-v${e.version}`}>
-              <td className="py-px pr-1 align-middle font-bold text-gray-900 tabular-nums whitespace-nowrap">
-                {formatPriorVersionLabel(e.version)}
-              </td>
-              <td className="py-px align-middle">
-                {"missing" in e ? (
-                  <span
-                    className="text-[8px] font-bold text-red-500 leading-none"
-                    title="This version was not uploaded — not available">
-                    ✗
-                  </span>
-                ) : (
-                  <div className="inline-flex flex-row flex-wrap items-center gap-x-1 gap-y-0 leading-none text-[8px] font-bold">
-                    {e.docxPath ? (
-                      <a
-                        href={buildPreviewHref(e.docxPath, "docx", row.sopNo, lang)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(ev) => ev.stopPropagation()}
-                        className="text-purple-600 hover:underline whitespace-nowrap">
-                        DOCX
-                      </a>
-                    ) : null}
-                    {e.docxPath && e.pdfPath ? (
-                      <span className="text-gray-300 select-none">/</span>
-                    ) : null}
-                    {e.pdfPath ? (
-                      <a
-                        href={buildPreviewHref(e.pdfPath, "pdf", row.sopNo, lang)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(ev) => ev.stopPropagation()}
-                        className="text-blue-600 hover:underline whitespace-nowrap">
-                        PDF
-                      </a>
-                    ) : null}
-                    {!e.docxPath && !e.pdfPath ? (
-                      <span className="text-gray-400">—</span>
-                    ) : null}
-                    {allowSupersede ? (
-                      <button
-                        type="button"
-                        onClick={(ev) => {
-                          ev.stopPropagation();
-                          onMarkVersionSuperseded?.({
-                            sopNo: String(row.sopNo || ""),
-                            lang,
-                            version: Number(e.version),
-                            docxPath: e.docxPath,
-                            pdfPath: e.pdfPath,
-                          });
-                        }}
-                        className="ml-0.5 rounded border border-amber-300 bg-amber-50 px-1 py-px text-[7px] font-bold text-amber-900 hover:bg-amber-100"
-                        title="Move this version to Supersede SOP section">
-                        Supersede
-                      </button>
-                    ) : null}
-                  </div>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    const slots = computePriorVersionSlotVersions(entries, currentRev, maxRows);
+    if (slots.length === 0) return null;
+    return renderVersionArtifactSlotRow(
+      entries,
+      row,
+      lang,
+      slots,
+      subLabel,
+      allowSupersede,
     );
   };
 
@@ -492,7 +529,7 @@ export default function SOPTable({
       const pdfDoc = docs.find((d) => d.type === "PDF");
 
       return (
-        <div className="grid grid-cols-[24px_58px_6px_50px] items-center gap-x-0.5 text-left leading-none min-h-[16px]">
+        <div className="grid grid-cols-[24px_58px_6px_50px] items-center gap-x-0.5 text-left leading-none min-h-[12px]">
           <span className="text-[8px] font-bold text-gray-500">
             {langLabel}
           </span>
@@ -512,7 +549,7 @@ export default function SOPTable({
     };
 
     return (
-      <div className="flex w-max flex-col gap-0.5 text-left">
+      <div className="flex w-max flex-col gap-px text-left leading-none">
         {engDocs.length > 0 || useLangRows
           ? renderLangRow(engDocs, "ENG")
           : null}
@@ -580,7 +617,11 @@ export default function SOPTable({
 
   const getVersionNum = (sopNo: string) => {
     if (typeof sopNo !== "string") return null;
-    const m = sopNo.match(/-0*(\d+)$/);
+    const u = normalizeUnicodeHyphens(sopNo.trim()).replace(
+      /[\u200B-\u200D\uFEFF]/g,
+      "",
+    );
+    const m = u.match(/-0*(\d+)$/);
     return m ? parseInt(m[1], 10) : null;
   };
 
@@ -868,6 +909,13 @@ export default function SOPTable({
             </tr>
           </thead>
           <tbody className="text-[10px] text-gray-700">
+            {isObsoleteView && displayedData.length > 0 && (
+              <tr className="bg-rose-50 border-b border-rose-200">
+                <td colSpan={11} className="px-3 py-1.5 text-[10px] font-semibold text-rose-700">
+                  Showing {displayedData.length} obsolete SOP{displayedData.length !== 1 ? "s" : ""} — these have been removed from the active registry. Expand a row to restore.
+                </td>
+              </tr>
+            )}
             {displayedData.length === 0 ? (
               <tr>
                 <td
@@ -900,7 +948,7 @@ export default function SOPTable({
                       onClick={() => toggleRow(row._id)}
                       className={`hover:bg-purple-50/80 cursor-pointer transition-colors group border-b border-gray-100/80 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/60"} ${isExpanded ? "bg-purple-50" : ""}`}>
                       {/* SOP No */}
-                      <td className="px-1 py-px font-mono text-[14px] font-bold tracking-wider text-purple-700 group-hover:underline whitespace-nowrap align-middle">
+                      <td className={`px-1 py-px font-mono text-[14px] font-bold tracking-wider group-hover:underline whitespace-nowrap align-middle ${isObsoleteView ? "text-rose-700" : "text-purple-700"}`}>
                         <span className="inline-flex items-center gap-1">
                           {isExpanded ? (
                             <ChevronDown className="h-4 w-4 text-purple-600" />
@@ -952,28 +1000,31 @@ export default function SOPTable({
                                   </span>
                                 ) : null}
                               </div>
+                              {/* ── Orange Guideline Button ── */}
+                              {/* Opens full viewer if result cached, otherwise opens wizard */}
                               <button
                                 type="button"
-                                title="Create guideline recommendation"
+                                title={hasResult ? `View guideline compliance results for ${row.sopNo}` : "Run guideline compliance check"}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  onOpenGuidelineWizard?.({ _id: String(row._id), sopNo: String(row.sopNo) });
-                                }}
-                                className="shrink-0 rounded-full p-0.5 text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors">
-                                <Sparkles className="h-3 w-3" />
-                              </button>
-                              {hasResult && (
-                                <button
-                                  type="button"
-                                  title="View last compliance check result"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
+                                  if (hasResult) {
                                     onViewCompliance?.(row.sopNo);
-                                  }}
-                                  className="shrink-0 rounded-full p-0.5 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-colors">
-                                  <BookOpen className="h-3 w-3" />
-                                </button>
-                              )}
+                                  } else {
+                                    onOpenGuidelineWizard?.({ _id: String(row._id), sopNo: String(row.sopNo) });
+                                  }
+                                }}
+                                className={`relative shrink-0 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold transition-all ${
+                                  hasResult
+                                    ? 'bg-orange-500 text-white hover:bg-orange-600 shadow-sm'
+                                    : 'bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100'
+                                }`}
+                              >
+                                <Sparkles className="h-2.5 w-2.5" />
+                                {hasResult ? 'Results' : 'Guidelines'}
+                                {hasResult && (
+                                  <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-emerald-400 border border-white" />
+                                )}
+                              </button>
                               <button
                                 type="button"
                                 title="Print this SOP row"
@@ -1000,7 +1051,7 @@ export default function SOPTable({
                         </span>
                       </td>
                       {/* Versions: uploaded last-3 PDF/DOCX, else legacy AV availability */}
-                      <td className="px-0.5 py-px align-top min-w-[160px] max-w-[260px]">
+                      <td className="px-0.5 py-px align-middle min-w-[160px] max-w-[260px]">
                         {(() => {
                           const eng = Array.isArray(row.versionArtifacts)
                             ? row.versionArtifacts
@@ -1010,9 +1061,45 @@ export default function SOPTable({
                           )
                             ? row.versionArtifactsGujarati
                             : [];
+                          const currentRev = getDisplayCurrentRevision(row);
+                          const slotBasis =
+                            eng.length > 0 ? eng : guj;
+                          const dualSlots = computePriorVersionSlotVersions(
+                            slotBasis,
+                            currentRev,
+                            2,
+                          );
+
+                          /** ENG+GUJ aligned stacks: Mongo dual row, or registry has both language files (same prior slots). */
+                          if (
+                            useAlignedEnGuPriorVersions(row) &&
+                            dualSlots.length > 0
+                          ) {
+                            return (
+                              <div className="flex flex-col gap-[3px] py-0 leading-none">
+                                {renderVersionArtifactSlotRow(
+                                  eng,
+                                  row,
+                                  "English",
+                                  dualSlots,
+                                  "ENG",
+                                  false,
+                                )}
+                                {renderVersionArtifactSlotRow(
+                                  guj,
+                                  row,
+                                  "Gujarati",
+                                  dualSlots,
+                                  "GUJ",
+                                  false,
+                                )}
+                              </div>
+                            );
+                          }
+
                           if (eng.length > 0 || guj.length > 0) {
                             return (
-                              <div className="flex flex-col gap-1 py-0.5 min-w-0">
+                              <div className="flex flex-col gap-1 py-0.5">
                                 {eng.length > 0 &&
                                   renderVersionArtifactLinks(
                                     eng,
@@ -1028,6 +1115,21 @@ export default function SOPTable({
                                     row.isDualLanguage ? "GUJ" : undefined,
                                   )}
                               </div>
+                            );
+                          }
+                          /** No artifact rows yet — still show V(n−1).. including V0 from SOP No */
+                          if (dualSlots.length > 0) {
+                            const monoLang =
+                              row.language === "Gujarati"
+                                ? "Gujarati"
+                                : "English";
+                            return renderVersionArtifactSlotRow(
+                              [],
+                              row,
+                              monoLang,
+                              dualSlots,
+                              undefined,
+                              false,
                             );
                           }
                           const items: {
@@ -1216,19 +1318,6 @@ export default function SOPTable({
                                         : "English"}
                                   </span>
                                 </div>
-                                {row.gujaratiFileMissing && (
-                                  <div className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] text-amber-900 leading-snug">
-                                    <span className="font-bold">
-                                      Gujarati file not linked:
-                                    </span>{" "}
-                                    A Gujarati SOP entry exists for this code,
-                                    but its file URL matches the English file
-                                    (or no Gujarati path was found). Upload the
-                                    Gujarati document and attach it to the
-                                    Gujarati SOP or SOPLibrary entry so ENG /
-                                    GUJ can show here.
-                                  </div>
-                                )}
                                 {row.englishName && (
                                   <div className="flex justify-between">
                                     <span className="text-gray-600 font-semibold">
@@ -1255,16 +1344,17 @@ export default function SOPTable({
                                 )}
                               </div>
                             </div>
+
                             <div className="space-y-2">
                               <h4 className="text-[10px] font-bold text-gray-700 uppercase tracking-wide border-b border-gray-300 pb-0.5">
-                                Files & Media
+                                Documents & Revisions
                               </h4>
                               <div className="space-y-1.5 text-[10px]">
                                 <div className="flex items-start gap-1.5">
                                   <File className="h-3 w-3 text-gray-500 mt-0.5 shrink-0" />
                                   <div className="flex min-w-0 flex-1 flex-col gap-1">
                                     <span className="text-gray-600 font-semibold">
-                                      Documents:
+                                      Active Files:
                                     </span>
                                     {(() => {
                                       const allDocs: Array<{
@@ -1272,156 +1362,135 @@ export default function SOPTable({
                                         filePath: string;
                                         fileType?: string;
                                         language?: string;
+                                        label: string;
                                       }> = [];
+
                                       if (row.sopFile?.filePath) {
                                         allDocs.push({
-                                          fileName: row.sopFile.fileName,
+                                          fileName: row.englishName || row.sopName || row.sopFile.fileName,
                                           filePath: row.sopFile.filePath,
                                           fileType: row.sopFile.fileType,
-                                          language: "English",
+                                          language: row.sopFile.language || "English",
+                                          label: "Active",
                                         });
                                       }
-                                      (row.sopDocuments || []).forEach(
-                                        (doc: any) => {
-                                          if (!doc.filePath) return;
-                                          if (
-                                            !allDocs.some(
-                                              (d) =>
-                                                d.filePath === doc.filePath,
-                                            )
-                                          ) {
-                                            allDocs.push({
-                                              fileName: doc.fileName,
-                                              filePath: doc.filePath,
-                                              fileType: doc.fileType,
-                                              language:
-                                                doc.language || "English",
-                                            });
-                                          }
-                                        },
-                                      );
-                                      if (allDocs.length === 0)
-                                        return (
-                                          <span className="font-medium text-gray-500">
-                                            No documents
-                                          </span>
-                                        );
+
+                                      if (row.gujaratiFileUrl && row.gujaratiFileUrl !== row.fileUrl) {
+                                        allDocs.push({
+                                          fileName: row.gujaratiName || row.sopName || "Gujarati SOP",
+                                          filePath: row.gujaratiFileUrl,
+                                          fileType: "pdf",
+                                          language: "Gujarati",
+                                          label: "Active",
+                                        });
+                                      }
+
+                                      (row.sopDocuments || []).forEach((doc: any) => {
+                                        if (!doc.filePath || doc.filePath === row.fileUrl || doc.filePath === row.gujaratiFileUrl) return;
+                                        if (!allDocs.some((d) => d.filePath === doc.filePath)) {
+                                          allDocs.push({
+                                            fileName: doc.fileName,
+                                            filePath: doc.filePath,
+                                            fileType: doc.fileType,
+                                            language: doc.language || "English",
+                                            label: "Attachment",
+                                          });
+                                        }
+                                      });
+
+                                      if (allDocs.length === 0) return <span className="text-gray-500">No documents</span>;
+
                                       return (
                                         <div className="flex flex-col gap-0.5">
                                           {allDocs.map((doc, i) => {
-                                            const docLang =
-                                              doc.language === "Gujarati"
-                                                ? "Gujarati"
-                                                : "English";
-                                            const prevHref = buildPreviewHref(
-                                              doc.filePath,
-                                              doc.fileType,
-                                              row.sopNo,
-                                              docLang,
-                                            );
-                                            const dk = fileKindFromStoredPath(
-                                              doc.filePath,
-                                              doc.fileType,
-                                            );
-                                            const dDocx =
-                                              dk === "docx" || dk === "doc"
-                                                ? buildDocxDownloadHref(
-                                                    doc.filePath,
-                                                    row.sopNo,
-                                                    docLang,
-                                                  )
-                                                : null;
-                                            const dPdf =
-                                              dk === "pdf"
-                                                ? buildPdfDownloadHref(
-                                                    doc.filePath,
-                                                    row.sopNo,
-                                                    docLang,
-                                                  )
-                                                : null;
+                                            const docLang = doc.language === "Gujarati" ? "Gujarati" : "English";
+                                            const prevHref = buildPreviewHref(doc.filePath, doc.fileType, row.sopNo, docLang);
+                                            const dk = fileKindFromStoredPath(doc.filePath, doc.fileType);
+                                            const dDocx = (dk === "docx" || dk === "doc") ? buildDocxDownloadHref(doc.filePath, row.sopNo, docLang) : null;
+                                            const dPdf = (dk === "pdf") ? buildPdfDownloadHref(doc.filePath, row.sopNo, docLang) : null;
                                             return (
-                                              <div
-                                                key={`doc-${i}`}
-                                                className="flex items-center gap-0.5 rounded border border-purple-100 bg-purple-50 pr-0.5">
-                                                <a
-                                                  href={prevHref}
-                                                  target="_blank"
-                                                  rel="noopener noreferrer"
-                                                  className="flex min-w-0 flex-1 items-center gap-1 px-1.5 py-1 text-[10px] font-medium text-purple-700 hover:bg-purple-100 hover:underline"
-                                                  title="Preview">
+                                              <div key={`doc-${i}`} className="flex items-center gap-0.5 rounded border border-purple-100 bg-purple-50 pr-0.5">
+                                                <a href={prevHref} target="_blank" rel="noopener noreferrer" className="flex min-w-0 flex-1 items-center gap-1 px-1.5 py-1 text-[10px] font-medium text-purple-700 hover:bg-purple-100" title="Preview">
                                                   <FileText className="h-2.5 w-2.5 shrink-0" />
-                                                  <span
-                                                    className="truncate"
-                                                    title={doc.fileName}>
-                                                    {doc.fileName}
-                                                  </span>
-                                                  {doc.language ===
-                                                    "Gujarati" && (
-                                                    <span className="text-[8px] text-indigo-600 font-bold ml-auto shrink-0">
-                                                      GUJ
-                                                    </span>
-                                                  )}
+                                                  <div className="flex flex-col min-w-0 leading-tight">
+                                                    <span className="text-[7px] font-bold uppercase tracking-wider text-purple-400">{doc.label}</span>
+                                                    <span className="truncate" title={doc.fileName}>{cleanSOPName(doc.fileName, row.sopNo)}</span>
+                                                  </div>
+                                                  {doc.language === "Gujarati" && <span className="text-[8px] text-indigo-600 font-bold ml-auto shrink-0 bg-indigo-50 px-1 rounded border border-indigo-100">GUJ</span>}
                                                 </a>
-                                                <a
-                                                  href={prevHref}
-                                                  target="_blank"
-                                                  rel="noopener noreferrer"
-                                                  className="shrink-0 rounded p-1 text-violet-600 hover:bg-violet-100"
-                                                  title="Preview">
-                                                  <Eye className="h-3 w-3" />
-                                                </a>
-                                                {dDocx ? (
-                                                  <a
-                                                    href={dDocx}
-                                                    className="shrink-0 rounded p-1 text-blue-600 hover:bg-blue-50"
-                                                    title="Download DOCX"
-                                                    onClick={(e) =>
-                                                      e.stopPropagation()
-                                                    }>
-                                                    <Download className="h-3 w-3" />
-                                                  </a>
-                                                ) : null}
-                                                {dPdf ? (
-                                                  <a
-                                                    href={dPdf}
-                                                    className="shrink-0 rounded p-1 text-slate-600 hover:bg-slate-100"
-                                                    title="Download PDF"
-                                                    onClick={(e) =>
-                                                      e.stopPropagation()
-                                                    }>
-                                                    <Download className="h-3 w-3" />
-                                                  </a>
-                                                ) : null}
+                                                <a href={prevHref} target="_blank" rel="noopener noreferrer" className="p-1 text-violet-600 hover:bg-violet-100"><Eye className="h-3 w-3" /></a>
+                                                {dDocx && <a href={dDocx} className="p-1 text-blue-600 hover:bg-blue-50" title="Download DOCX" onClick={(e) => e.stopPropagation()}><Download className="h-3 w-3" /></a>}
+                                                {dPdf && <a href={dPdf} className="p-1 text-slate-600 hover:bg-slate-100" title="Download PDF" onClick={(e) => e.stopPropagation()}><Download className="h-3 w-3" /></a>}
                                               </div>
                                             );
                                           })}
                                         </div>
                                       );
                                     })()}
-                                    {((Array.isArray(row.versionArtifacts) &&
-                                      row.versionArtifacts.length > 0) ||
-                                      (Array.isArray(
-                                        row.versionArtifactsGujarati,
-                                      ) &&
-                                        row.versionArtifactsGujarati.length >
-                                          0)) && (
-                                      <div className="mt-2 rounded border border-teal-200 bg-teal-50/60 px-2 py-1.5">
-                                        <span className="text-[9px] font-bold uppercase tracking-wide text-teal-900">
-                                          All uploaded versions
-                                        </span>
-                                        <div className="mt-1 flex flex-col gap-1.5">
-                                          {Array.isArray(
-                                            row.versionArtifacts,
-                                          ) &&
-                                            row.versionArtifacts.length > 0 && (
-                                              <div>
-                                                {row.isDualLanguage && (
-                                                  <span className="text-[8px] font-bold text-gray-600">
-                                                    English
-                                                  </span>
+
+                                    {/* Prior revisions: dual = EN + GUJ same V columns; single = one language */}
+                                    {(() => {
+                                      const eng = Array.isArray(row.versionArtifacts)
+                                        ? row.versionArtifacts
+                                        : [];
+                                      const guj = Array.isArray(row.versionArtifactsGujarati)
+                                        ? row.versionArtifactsGujarati
+                                        : [];
+                                      const cr = getDisplayCurrentRevision(row);
+                                      const expSlots = computePriorVersionSlotVersions(
+                                        eng.length > 0 ? eng : guj,
+                                        cr,
+                                        2,
+                                      );
+                                      if (
+                                        useAlignedEnGuPriorVersions(row) &&
+                                        expSlots.length > 0
+                                      ) {
+                                        return (
+                                          <>
+                                            <div className="mt-2 rounded border border-teal-200 bg-teal-50/60 px-2 py-1.5">
+                                              <span className="text-[9px] font-bold uppercase tracking-wide text-teal-900">
+                                                Prior revisions (English)
+                                              </span>
+                                              <div className="mt-1">
+                                                {renderVersionArtifactSlotRow(
+                                                  eng,
+                                                  row,
+                                                  "English",
+                                                  expSlots,
+                                                  undefined,
+                                                  true,
                                                 )}
+                                              </div>
+                                            </div>
+                                            <div className="mt-2 rounded border border-indigo-200 bg-indigo-50/60 px-2 py-1.5">
+                                              <span className="text-[9px] font-bold uppercase tracking-wide text-indigo-900">
+                                                Prior revisions (Gujarati)
+                                              </span>
+                                              <div className="mt-1">
+                                                {renderVersionArtifactSlotRow(
+                                                  guj,
+                                                  row,
+                                                  "Gujarati",
+                                                  expSlots,
+                                                  undefined,
+                                                  true,
+                                                )}
+                                              </div>
+                                            </div>
+                                          </>
+                                        );
+                                      }
+                                      return (
+                                        <>
+                                          {eng.length > 0 ? (
+                                            <div className="mt-2 rounded border border-teal-200 bg-teal-50/60 px-2 py-1.5">
+                                              <span className="text-[9px] font-bold uppercase tracking-wide text-teal-900">
+                                                Prior Revisions
+                                              </span>
+                                              <div className="mt-1">
                                                 {renderVersionArtifactLinks(
-                                                  row.versionArtifacts,
+                                                  eng,
                                                   row,
                                                   "English",
                                                   undefined,
@@ -1429,20 +1498,17 @@ export default function SOPTable({
                                                   true,
                                                 )}
                                               </div>
-                                            )}
-                                          {Array.isArray(
-                                            row.versionArtifactsGujarati,
-                                          ) &&
-                                            row.versionArtifactsGujarati
-                                              .length > 0 && (
-                                              <div>
-                                                {row.isDualLanguage && (
-                                                  <span className="text-[8px] font-bold text-gray-600">
-                                                    Gujarati
-                                                  </span>
-                                                )}
+                                            </div>
+                                          ) : null}
+                                          {!useAlignedEnGuPriorVersions(row) &&
+                                          guj.length > 0 ? (
+                                            <div className="mt-2 rounded border border-indigo-200 bg-indigo-50/60 px-2 py-1.5">
+                                              <span className="text-[9px] font-bold uppercase tracking-wide text-indigo-900">
+                                                Prior revisions (Gujarati)
+                                              </span>
+                                              <div className="mt-1">
                                                 {renderVersionArtifactLinks(
-                                                  row.versionArtifactsGujarati,
+                                                  guj,
                                                   row,
                                                   "Gujarati",
                                                   undefined,
@@ -1450,175 +1516,74 @@ export default function SOPTable({
                                                   true,
                                                 )}
                                               </div>
-                                            )}
-                                        </div>
-                                      </div>
-                                    )}
-                                    {((Array.isArray(
-                                      row.versionArtifactsSuperseded,
-                                    ) &&
-                                      row.versionArtifactsSuperseded.length >
-                                        0) ||
-                                      (Array.isArray(
-                                        row.versionArtifactsGujaratiSuperseded,
-                                      ) &&
-                                        row.versionArtifactsGujaratiSuperseded
-                                          .length > 0)) && (
-                                      <div className="mt-2 rounded border border-amber-200 bg-amber-50/70 px-2 py-1.5">
-                                        <span className="text-[9px] font-bold uppercase tracking-wide text-amber-900">
-                                          Superseded older versions
-                                        </span>
-                                        <p className="mt-0.5 text-[8px] leading-snug text-amber-800/90">
-                                          Not listed in the main &quot;Prior
-                                          versions&quot; column. Open the
-                                          dashboard{" "}
-                                          <strong>Prior Ver. Archive</strong>{" "}
-                                          button for the full list.
-                                        </p>
-                                        <div className="mt-1 flex flex-col gap-1.5 opacity-90">
-                                          {Array.isArray(
-                                            row.versionArtifactsSuperseded,
-                                          ) &&
-                                            row.versionArtifactsSuperseded
-                                              .length > 0 && (
-                                              <div>
-                                                <span className="text-[8px] font-bold text-gray-600">
-                                                  English
-                                                </span>
-                                                {renderVersionArtifactLinks(
-                                                  row.versionArtifactsSuperseded,
-                                                  row,
-                                                  "English",
-                                                )}
-                                              </div>
-                                            )}
-                                          {Array.isArray(
-                                            row.versionArtifactsGujaratiSuperseded,
-                                          ) &&
-                                            row
-                                              .versionArtifactsGujaratiSuperseded
-                                              .length > 0 && (
-                                              <div>
-                                                <span className="text-[8px] font-bold text-gray-600">
-                                                  Gujarati
-                                                </span>
-                                                {renderVersionArtifactLinks(
-                                                  row.versionArtifactsGujaratiSuperseded,
-                                                  row,
-                                                  "Gujarati",
-                                                )}
-                                              </div>
-                                            )}
-                                        </div>
+                                            </div>
+                                          ) : null}
+                                        </>
+                                      );
+                                    })()}
+
+                                    {/* Superseded Versions */}
+                                    {Array.isArray(row.versionArtifactsSuperseded) && row.versionArtifactsSuperseded.length > 0 && (
+                                      <div className="mt-1 rounded border border-amber-200 bg-amber-50/70 px-2 py-1">
+                                        <span className="text-[8px] font-bold uppercase tracking-wide text-amber-900 leading-none">Archive</span>
+                                        <div className="mt-0.5 opacity-80">{renderVersionArtifactLinks(row.versionArtifactsSuperseded, row, "English")}</div>
                                       </div>
                                     )}
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-1.5">
-                                  <Video className="h-3 w-3 text-blue-600" />
-                                  <span className="text-gray-600 font-semibold">
-                                    Videos:
-                                  </span>
-                                  <span className="text-gray-800 font-bold tabular-nums">
-                                    {videoCount}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                  <Presentation className="h-3 w-3 text-indigo-600" />
-                                  <span className="text-gray-600 font-semibold">
-                                    Slides:
-                                  </span>
-                                  <span className="text-gray-800 font-bold tabular-nums">
-                                    {slideCount}
-                                  </span>
-                                </div>
-                                <div className="flex flex-wrap items-center gap-1 pt-0.5">
-                                  {mediaTags.map((t) => (
-                                    <span
-                                      key={t}
-                                      className="rounded border border-gray-200 bg-white px-1 py-px text-[8px] font-bold text-gray-600">
-                                      {t}
-                                    </span>
-                                  ))}
-                                </div>
                               </div>
                             </div>
+
                             <div className="space-y-2">
                               <h4 className="text-[10px] font-bold text-gray-700 uppercase tracking-wide border-b border-gray-300 pb-0.5">
-                                Review & Assignment
+                                Training & Status
                               </h4>
-                              <div className="space-y-1 text-[10px]">
-                                <div className="flex items-center gap-1.5">
-                                  <Calendar className="h-3 w-3 text-gray-500" />
-                                  <span className="text-gray-600 font-semibold">
-                                    Expiry:
-                                  </span>
-                                  <span>
-                                    {formatExpiryVerbose(row.expiryDate)}
-                                  </span>
+                              <div className="space-y-2 text-[10px]">
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <Video className="h-3 w-3 text-emerald-600" />
+                                    <span className="text-gray-600 font-semibold">Training Video:</span>
+                                    <span className={`font-bold ${videoCount > 0 ? "text-emerald-700" : "text-gray-400"}`}>{videoCount > 0 ? "Available" : "Not Available"}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <Presentation className="h-3 w-3 text-indigo-600" />
+                                    <span className="text-gray-600 font-semibold">Slides & Materials:</span>
+                                    <span className={`font-bold ${slideCount > 0 ? "text-indigo-700" : "text-gray-400"}`}>{slideCount > 0 ? "Available" : "Not Available"}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <CheckCircle2 className="h-3 w-3 text-purple-600" />
+                                    <span className="text-gray-600 font-semibold">MCQ Bank:</span>
+                                    <span className={`font-bold ${row.mcqStatus === "assigned" ? "text-purple-700" : "text-gray-400"}`}>{row.mcqStatus === "assigned" ? "Assigned" : "Pending"}</span>
+                                  </div>
                                 </div>
-                                <div className="flex items-center gap-1.5">
-                                  <UserIcon className="h-3 w-3 text-gray-500" />
-                                  <span className="text-gray-600 font-semibold">
-                                    Trainer:
-                                  </span>
-                                  <span
-                                    className="text-gray-800 font-bold truncate"
-                                    title={row.assignedTrainer}>
-                                    {row.assignedTrainer || "Unassigned"}
-                                  </span>
+
+                                <div className="space-y-1.5 pt-2 border-t border-gray-200">
+                                  <div className="flex items-center gap-1.5">
+                                    <Calendar className="h-3 w-3 text-gray-600" />
+                                    <span className="text-gray-600 font-semibold">Expiry:</span>
+                                    <span className="font-bold">{formatExpiryVerbose(row.expiryDate)}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <UserIcon className="h-3 w-3 text-gray-500" />
+                                    <span className="text-gray-600 font-semibold">Trainer:</span>
+                                    <span className="text-gray-800 font-bold truncate" title={row.assignedTrainer}>{row.assignedTrainer || "Unassigned"}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <Users className="h-3 w-3 text-gray-500" />
+                                    <span className="text-gray-600 font-semibold">Users:</span>
+                                    <span className="text-gray-800 font-bold">{row.assignedUsers?.length || 0}</span>
+                                  </div>
                                 </div>
-                                <div className="flex items-center gap-1.5">
-                                  <Users className="h-3 w-3 text-gray-500" />
-                                  <span className="text-gray-600 font-semibold">
-                                    Users:
-                                  </span>
-                                  <span className="text-gray-800 font-bold">
-                                    {row.assignedUsers?.length || 0}
-                                  </span>
+
+                                <div className="space-y-1 pt-2">
+                                  <button type="button" onClick={(e) => { e.stopPropagation(); onOpenGuidelineWizard?.({ _id: String(row._id), sopNo: String(row.sopNo) }); }} className="inline-flex w-full items-center justify-center gap-1.5 rounded border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-[10px] font-bold text-indigo-800 hover:bg-indigo-100 transition-colors"><BookOpen className="h-3.5 w-3.5" />Guideline check</button>
+                                  <button type="button" onClick={(e) => { e.stopPropagation(); window.print(); }} className="inline-flex w-full items-center justify-center gap-1.5 rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-[10px] font-bold text-slate-700 hover:bg-slate-100 transition-colors"><Printer className="h-3.5 w-3.5" />Print record</button>
+                                  {isObsoleteView ? (
+                                    <button type="button" disabled={!!removingObsoleteId} onClick={(e) => { e.stopPropagation(); onRemoveObsolete?.(String(row.sopNo || "")); }} className="inline-flex w-full items-center justify-center gap-1.5 rounded border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100 transition-colors"><Trash2 className="h-3.5 w-3.5" />{removingObsoleteId === String(row.sopNo || "") ? "Restoring..." : "Restore SOP"}</button>
+                                  ) : (
+                                    <button type="button" onClick={(e) => { e.stopPropagation(); setObsoleteTarget({ sopNo: String(row.sopNo), sopName: String(row.englishName || row.sopName || row.sopNo) }); setObsoletePassword(""); setObsoleteError(""); setTimeout(() => obsoleteInputRef.current?.focus(), 50); }} className="inline-flex w-full items-center justify-center gap-1.5 rounded border border-red-200 bg-red-50 px-2 py-1.5 text-[10px] font-bold text-red-700 hover:bg-red-100 transition-colors"><Trash2 className="h-3.5 w-3.5" />Mark Obsolete</button>
+                                  )}
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onOpenGuidelineWizard?.({
-                                      _id: String(row._id),
-                                      sopNo: String(row.sopNo),
-                                    });
-                                  }}
-                                  className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-[10px] font-bold text-indigo-800 shadow-sm transition-colors hover:bg-indigo-100"
-                                  title="Compare this SOP to stored guidelines (select documents in the dialog)">
-                                  <BookOpen className="h-3.5 w-3.5 shrink-0" />
-                                  Guideline check
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    window.print();
-                                  }}
-                                  className="mt-1 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-[10px] font-bold text-slate-700 shadow-sm transition-colors hover:bg-slate-100"
-                                  title="Print this SOP record (GRM support)">
-                                  <Printer className="h-3.5 w-3.5 shrink-0" />
-                                  Print (GRM)
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setObsoleteTarget({
-                                      sopNo: String(row.sopNo),
-                                      sopName: String(row.englishName || row.sopName || row.sopNo),
-                                    });
-                                    setObsoletePassword("");
-                                    setObsoleteError("");
-                                    setTimeout(() => obsoleteInputRef.current?.focus(), 50);
-                                  }}
-                                  className="mt-1 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-[10px] font-bold text-red-700 shadow-sm transition-colors hover:bg-red-100"
-                                  title="Mark this SOP as obsolete — removes it from registry and capsule data">
-                                  <Trash2 className="h-3.5 w-3.5 shrink-0" />
-                                  Mark Obsolete
-                                </button>
                               </div>
                             </div>
                           </div>

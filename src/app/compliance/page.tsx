@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import FindingCard from './components/FindingCard';
 import { CheckSquare, Square, Sparkles, X, Copy, BookOpen, FileText, Layers, CheckCircle } from 'lucide-react';
+import { cleanSOPName } from '@/lib/sopLibraryHelper';
 
 
 /**
@@ -49,6 +50,7 @@ interface SOP {
   version?: string;
   status?: string;
   content?: string;
+  location?: string;
 }
 
 interface ComplianceFinding {
@@ -996,11 +998,16 @@ export default function ComplianceEnginePage() {
                               <span className="text-slate-400 text-xs">v{sop.version}</span>
                             )}
                           </div>
-                          <h3 className="text-slate-800 font-medium group-hover:text-indigo-700 transition-colors">{sop.name}</h3>
+                          <h3 className="text-slate-800 font-medium group-hover:text-indigo-700 transition-colors">
+                            {cleanSOPName(sop.name, sop.identifier)}
+                          </h3>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className="px-3 py-1.5 bg-white border border-slate-200 text-slate-500 rounded-lg text-xs font-bold shadow-sm">
+                            📍 {sop.location || 'QA-DP-01'}
+                          </span>
                           <span className="px-3 py-1.5 bg-white border border-slate-200 text-slate-500 rounded-lg text-xs font-medium shadow-sm">
-                            {sop.department}
+                            🏢 {sop.department}
                           </span>
                         </div>
                       </div>
@@ -1271,7 +1278,7 @@ export default function ComplianceEnginePage() {
                     <optgroup label="Individual SOPs">
                       {sops.map(sop => (
                         <option key={sop._id} value={sop._id}>
-                          {sop.identifier} - {sop.name}
+                          {sop.identifier} - {cleanSOPName(sop.name, sop.identifier)}
                         </option>
                       ))}
                     </optgroup>

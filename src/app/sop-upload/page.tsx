@@ -2,8 +2,10 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Upload, FileText, AlertCircle, CheckCircle2, Loader2, Library, FolderOpen } from 'lucide-react';
+import { Upload, FileText, AlertCircle, CheckCircle2, Loader2, Library, FolderOpen, Archive, X, Trash2, Eye, Download, RotateCcw } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
+import { fileKindFromStoredPath, fileKindToLabel } from '@/lib/filePathFileKind';
+import { buildViewDocHref, buildDocxDownloadHref, buildPdfDownloadHref } from '@/lib/viewDocLinks';
 
 interface UploadResponse {
   success: boolean;
@@ -18,6 +20,36 @@ interface UploadResponse {
   };
 }
 
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+function buildPreviewHref(path: string, fileType?: string, identifier?: string, language?: string) {
+  const trimmed = (path || '').trim();
+  const kind = fileKindFromStoredPath(trimmed, fileType);
+  if (kind === 'docx' || kind === 'doc') return buildViewDocHref(path, identifier, language);
+  if (kind === 'pdf') {
+    const dl = new URLSearchParams();
+    dl.set('path', path);
+    if (identifier) dl.set('identifier', identifier);
+    if (language) dl.set('language', language);
+    return `/api/files/download?${dl.toString()}`;
+  }
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  const dl = new URLSearchParams();
+  dl.set('path', path);
+  dl.set('open', '1');
+  if (identifier) dl.set('identifier', identifier);
+  if (language) dl.set('language', language);
+  return `/api/files/download?${dl.toString()}`;
+}
+
+function getVersionNum(sopNo: string): number | null {
+  if (typeof sopNo !== 'string') return null;
+  const m = sopNo.match(/-0*(\d+)$/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+// ── component ─────────────────────────────────────────────────────────────────
+
 export default function SOPUploadPage() {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
@@ -26,6 +58,55 @@ export default function SOPUploadPage() {
   const [department, setDepartment] = useState('QA');
   const [language, setLanguage] = useState<'English' | 'Gujarati' | 'auto'>('auto');
   const [uploading, setUploading] = useState(false);
+
+  // Obsolete SOPs panel
+  const [showObsoletePanel, setShowObsoletePanel] = useState(false);
+  const [obsoleteList, setObsoleteList] = useState<any[]>([]);
+  const [obsoleteLoading, setObsoleteLoading] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<{ identifier: string; name: string } | null>(null);
+  const [removePassword, setRemovePassword] = useState('');
+  const [removeBusy, setRemoveBusy] = useState(false);
+  const [removeError, setRemoveError] = useState('');
+  const [obsoleteFilterDept, setObsoleteFilterDept] = useState('');
+
+  const fetchObsoleteList = async () => {
+    setObsoleteLoading(true);
+    try {
+      const res = await fetch('/api/sop/obsolete-list');
+      const j = await res.json();
+      if (j.success) setObsoleteList(j.data ?? []);
+    } catch { /* ignore */ } finally { setObsoleteLoading(false); }
+  };
+
+  const handleOpenObsoletePanel = () => {
+    setShowObsoletePanel(true);
+    fetchObsoleteList();
+  };
+
+  const handleRemoveObsolete = async () => {
+    if (!removeTarget || !removePassword) return;
+    setRemoveBusy(true);
+    setRemoveError('');
+    try {
+      const user = (() => { try { return JSON.parse(localStorage.getItem('user') || '{}'); } catch { return {}; } })();
+      const res = await fetch('/api/sop/remove-obsolete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sopIdentifier: removeTarget.identifier, password: removePassword, username: user?.username }),
+      });
+      const j = await res.json();
+      if (!res.ok || !j.success) { setRemoveError(j.error || 'Failed'); return; }
+      setRemoveTarget(null);
+      setRemovePassword('');
+      setObsoleteList(prev => prev.filter(x => x.identifier !== removeTarget.identifier));
+    } catch { setRemoveError('Network error — please try again'); }
+    finally { setRemoveBusy(false); }
+  };
+
+  const obsoleteDepts = Array.from(new Set(obsoleteList.map((x: any) => x.department).filter(Boolean))).sort() as string[];
+  const displayedObsolete = obsoleteFilterDept
+    ? obsoleteList.filter((x: any) => x.department === obsoleteFilterDept)
+    : obsoleteList;
 
   const departments = [
     'QA',
@@ -245,6 +326,18 @@ export default function SOPUploadPage() {
 
         {/* Upload Form */}
         <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20 mb-8">
+          {/* Section header with Obsolete SOPs button */}
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-white">Single SOP Upload</h2>
+            <button
+              type="button"
+              onClick={handleOpenObsoletePanel}
+              className="flex items-center gap-2 px-4 py-2 bg-rose-600/80 hover:bg-rose-600 border border-rose-400/40 text-white font-semibold rounded-xl transition-all duration-200 text-sm"
+            >
+              <Archive className="h-4 w-4" />
+              Obsolete SOPs
+            </button>
+          </div>
           <form onSubmit={handleUpload} className="space-y-6">
             {/* File Upload */}
             <div>
@@ -556,6 +649,297 @@ export default function SOPUploadPage() {
                   </div>
               </div>
            </div>
+        )}
+
+        {/* ── Obsolete SOPs Modal ─────────────────────────────────────────── */}
+        {showObsoletePanel && (
+          <div
+            className="fixed inset-0 z-[990] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={() => setShowObsoletePanel(false)}>
+            <div
+              className="relative w-full max-w-6xl rounded-2xl border border-rose-200 bg-white shadow-2xl flex flex-col max-h-[90vh]"
+              onClick={e => e.stopPropagation()}>
+
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-rose-100 px-6 py-4 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-rose-100">
+                    <Archive className="h-4 w-4 text-rose-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900">Obsolete SOPs</h3>
+                    <p className="text-[10px] text-gray-500 uppercase tracking-wide font-semibold">
+                      Removed from registry &amp; MCQ bank
+                    </p>
+                  </div>
+                  {!obsoleteLoading && (
+                    <span className="ml-2 rounded-full bg-rose-100 border border-rose-200 px-2 py-0.5 text-[10px] font-bold text-rose-700">
+                      {displayedObsolete.length} of {obsoleteList.length}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  {/* Department filter */}
+                  <select
+                    value={obsoleteFilterDept}
+                    onChange={e => setObsoleteFilterDept(e.target.value)}
+                    className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:border-rose-400">
+                    <option value="">All Departments</option>
+                    {obsoleteDepts.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setShowObsoletePanel(false)}
+                    className="rounded p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100">
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Body — full registry table */}
+              <div className="flex-1 overflow-auto">
+                {obsoleteLoading ? (
+                  <div className="flex items-center justify-center py-16">
+                    <div className="h-7 w-7 animate-spin rounded-full border-2 border-rose-400 border-t-transparent" />
+                  </div>
+                ) : displayedObsolete.length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-16 text-gray-400">
+                    <Trash2 className="h-10 w-10 opacity-30" />
+                    <p className="text-sm font-semibold">No obsolete SOPs found</p>
+                  </div>
+                ) : (
+                  <table className="w-full text-left border-collapse min-w-[900px] text-[11px]">
+                    <thead className="bg-gray-100 border-b border-gray-300 sticky top-0 z-10">
+                      <tr>
+                        {['SOP No', 'Ver', 'SOP Name', 'Department', 'Language', 'Files', 'Location', 'Expiry', 'Obsolete Date', 'Source', 'Actions'].map(h => (
+                          <th key={h} className="px-2 py-2 text-[9px] font-bold text-gray-600 uppercase tracking-wide whitespace-nowrap">
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayedObsolete.map((item: any, idx: number) => {
+                        const vNum = getVersionNum(item.identifier);
+                        const expiryDate = item.expiryDate ? new Date(item.expiryDate) : null;
+                        const now = new Date(); now.setHours(0,0,0,0);
+                        const diffDays = expiryDate ? Math.ceil((expiryDate.getTime() - now.getTime()) / 86400000) : null;
+                        const expiryLabel = !expiryDate ? '—'
+                          : diffDays! < 0 ? `Expired`
+                          : diffDays! <= 30 ? `${diffDays}d`
+                          : `${diffDays}d`;
+                        const expiryColor = !expiryDate ? 'text-gray-400'
+                          : diffDays! < 0 ? 'text-red-700 bg-red-50'
+                          : diffDays! <= 30 ? 'text-orange-700 bg-orange-50'
+                          : 'text-emerald-700 bg-emerald-50';
+
+                        // Collect all document files
+                        const allDocs: { filePath: string; fileType?: string; fileName?: string; language?: string }[] = [];
+                        if (item.sopFile?.filePath) allDocs.push(item.sopFile);
+                        (item.sopDocuments || []).forEach((d: any) => {
+                          if (d.filePath && !allDocs.some(x => x.filePath === d.filePath)) allDocs.push(d);
+                        });
+
+                        return (
+                          <tr key={item.identifier} className={`border-b border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-rose-50/30'}`}>
+                            {/* SOP No */}
+                            <td className="px-2 py-1.5 font-mono font-bold text-rose-800 whitespace-nowrap align-middle text-[12px]">
+                              {item.identifier}
+                            </td>
+                            {/* Ver */}
+                            <td className="px-2 py-1.5 text-center align-middle">
+                              {vNum != null
+                                ? <span className="font-bold text-gray-800">{vNum}</span>
+                                : <span className="text-gray-400">—</span>}
+                            </td>
+                            {/* SOP Name */}
+                            <td className="px-2 py-1.5 align-middle max-w-[240px]">
+                              {item.englishName && (
+                                <p className="font-semibold text-gray-900 truncate" title={item.englishName}>{item.englishName}</p>
+                              )}
+                              {item.gujaratiName && (
+                                <p className="text-[10px] text-indigo-700 font-semibold truncate" title={item.gujaratiName}>{item.gujaratiName}</p>
+                              )}
+                              {!item.englishName && !item.gujaratiName && (
+                                <span className="text-gray-400">—</span>
+                              )}
+                            </td>
+                            {/* Department */}
+                            <td className="px-2 py-1.5 align-middle whitespace-nowrap">
+                              <span className="bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded text-[9px] font-semibold">
+                                {item.department || 'Other'}
+                              </span>
+                            </td>
+                            {/* Language */}
+                            <td className="px-2 py-1.5 text-center align-middle whitespace-nowrap">
+                              {item.isDualLanguage
+                                ? <span className="text-[9px] font-bold text-gray-800">ENG/GUJ</span>
+                                : <span className="text-[9px] font-semibold text-gray-700">{item.language === 'Gujarati' ? 'GUJ' : 'ENG'}</span>}
+                            </td>
+                            {/* Files */}
+                            <td className="px-2 py-1.5 align-middle">
+                              {allDocs.length === 0 ? (
+                                <span className="text-gray-400">—</span>
+                              ) : (
+                                <div className="flex flex-col gap-0.5">
+                                  {allDocs.map((doc, i) => {
+                                    const kind = fileKindFromStoredPath(doc.filePath, doc.fileType);
+                                    const label = fileKindToLabel(kind);
+                                    const lang = doc.language === 'Gujarati' ? 'Gujarati' : 'English';
+                                    const href = buildPreviewHref(doc.filePath, doc.fileType, item.identifier, lang);
+                                    const dlHref = (kind === 'docx' || kind === 'doc')
+                                      ? buildDocxDownloadHref(doc.filePath, item.identifier, lang)
+                                      : kind === 'pdf'
+                                        ? buildPdfDownloadHref(doc.filePath, item.identifier, lang)
+                                        : null;
+                                    const isWord = kind === 'docx' || kind === 'doc';
+                                    return (
+                                      <div key={i} className="flex items-center gap-1">
+                                        <span className="text-[8px] font-bold text-gray-400 w-6 shrink-0">
+                                          {doc.language === 'Gujarati' ? 'GUJ' : 'ENG'}
+                                        </span>
+                                        {isWord && (
+                                          <a href={href} target="_blank" rel="noopener noreferrer"
+                                            className="shrink-0 rounded p-0.5 text-violet-600 hover:bg-violet-100">
+                                            <Eye className="h-3 w-3" />
+                                          </a>
+                                        )}
+                                        <a href={href} target="_blank" rel="noopener noreferrer"
+                                          className={`font-bold text-[9px] hover:underline ${isWord ? 'text-purple-600' : 'text-blue-600'}`}>
+                                          {label}
+                                        </a>
+                                        {dlHref && (
+                                          <a href={dlHref} target="_blank" rel="noopener noreferrer"
+                                            className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+                                            <Download className="h-3 w-3" />
+                                          </a>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </td>
+                            {/* Location */}
+                            <td className="px-2 py-1.5 align-middle max-w-[120px]">
+                              <span className="text-gray-600 text-[10px] line-clamp-2" title={item.location || ''}>
+                                {item.location || <span className="text-gray-400">—</span>}
+                              </span>
+                            </td>
+                            {/* Expiry */}
+                            <td className="px-2 py-1.5 align-middle whitespace-nowrap">
+                              <span className={`inline-block rounded px-1.5 py-0.5 text-[9px] font-semibold ${expiryColor}`}>
+                                {expiryDate
+                                  ? `${expiryLabel} · ${expiryDate.toLocaleDateString()}`
+                                  : '—'}
+                              </span>
+                            </td>
+                            {/* Obsolete Date */}
+                            <td className="px-2 py-1.5 align-middle whitespace-nowrap text-[10px] text-gray-500">
+                              {item.obsoleteAt
+                                ? new Date(item.obsoleteAt).toLocaleDateString()
+                                : item.archivedAt
+                                  ? new Date(item.archivedAt).toLocaleDateString()
+                                  : '—'}
+                            </td>
+                            {/* Source badges */}
+                            <td className="px-2 py-1.5 align-middle">
+                              <div className="flex flex-col gap-0.5">
+                                {item.fromRegistry && (
+                                  <span className="inline-block rounded-full bg-rose-100 border border-rose-200 px-1.5 py-px text-[8px] font-bold text-rose-700 uppercase tracking-wide">
+                                    Registry
+                                  </span>
+                                )}
+                                {item.fromMCQBank && (
+                                  <span className="inline-block rounded-full bg-amber-100 border border-amber-200 px-1.5 py-px text-[8px] font-bold text-amber-800 uppercase tracking-wide">
+                                    MCQ Bank {item.mcqCount != null ? `· ${item.mcqCount}Q` : ''}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            {/* Actions */}
+                            <td className="px-2 py-1.5 align-middle whitespace-nowrap">
+                              {item.fromRegistry && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setRemoveTarget({ identifier: item.identifier, name: item.englishName || item.gujaratiName || item.identifier });
+                                    setRemovePassword('');
+                                    setRemoveError('');
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-[9px] font-bold text-emerald-800 hover:bg-emerald-100 transition-colors">
+                                  <RotateCcw className="h-3 w-3" />
+                                  Remove from Obsolete
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="shrink-0 border-t border-gray-100 px-6 py-2 text-[10px] text-gray-400 text-right">
+                {obsoleteList.length} record{obsoleteList.length !== 1 ? 's' : ''} total
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Remove from Obsolete confirmation modal */}
+        {removeTarget && (
+          <div
+            className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+            onClick={() => setRemoveTarget(null)}>
+            <div
+              className="w-full max-w-sm rounded-xl border border-emerald-200 bg-white p-6 shadow-2xl"
+              onClick={e => e.stopPropagation()}>
+              <div className="flex items-start justify-between gap-2 mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100">
+                    <RotateCcw className="h-4 w-4 text-emerald-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-900">Remove from Obsolete</h3>
+                    <p className="text-[10px] text-gray-500">Restore SOP to the registry</p>
+                  </div>
+                </div>
+                <button type="button" onClick={() => setRemoveTarget(null)}
+                  className="rounded p-0.5 text-gray-400 hover:text-gray-600">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <p className="mb-1 rounded bg-emerald-50 border border-emerald-100 px-3 py-2 text-[11px] font-semibold text-emerald-900 leading-snug">
+                <span className="block font-bold text-emerald-800 font-mono">{removeTarget.identifier}</span>
+                {removeTarget.name}
+              </p>
+              <p className="mb-3 text-[10px] text-gray-600 leading-snug">
+                This SOP will be restored to the registry. Enter the obsolete password to confirm.
+              </p>
+              <input
+                type="password"
+                placeholder="Enter password"
+                value={removePassword}
+                onChange={e => { setRemovePassword(e.target.value); setRemoveError(''); }}
+                onKeyDown={e => { if (e.key === 'Enter' && removePassword && !removeBusy) handleRemoveObsolete(); }}
+                className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-800 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-300 mb-1"
+              />
+              {removeError && <p className="text-[10px] text-red-600 font-semibold mb-2">{removeError}</p>}
+              <div className="flex gap-2 mt-3">
+                <button type="button" onClick={() => setRemoveTarget(null)}
+                  className="flex-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                  Cancel
+                </button>
+                <button type="button" disabled={!removePassword || removeBusy} onClick={handleRemoveObsolete}
+                  className="flex-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                  {removeBusy ? 'Restoring…' : 'Confirm Restore'}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

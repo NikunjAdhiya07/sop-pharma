@@ -45,10 +45,13 @@ import GuidelinesComplianceWizard from "./components/GuidelinesComplianceWizard"
 import GuidelinesResultPanel, {
   type ComplianceResult,
 } from "./components/GuidelinesResultPanel";
+import ComplianceFullViewer from "./components/ComplianceFullViewer";
 import Link from "next/link";
 import {
   countRowDocxPdfAttached,
   countRowDocxPdfForCapsules,
+  expectedDocxSlotsForRow,
+  expectedPdfSlotsForRow,
 } from "@/lib/registryRowDocCounts";
 import { filterPrimaryRegistryRows } from "@/lib/registryPrimaryRows";
 import {
@@ -122,35 +125,67 @@ export default function DashboardPage() {
     Record<string, ComplianceResult>
   >({});
 
-  // Obsolete SOPs panel
-  const [showObsoletePanel, setShowObsoletePanel] = useState(false);
+  // Obsolete SOPs filter (shows in main registry table)
+  const [filterObsolete, setFilterObsolete] = useState(false);
   const [obsoleteList, setObsoleteList] = useState<any[]>([]);
   const [obsoleteListLoading, setObsoleteListLoading] = useState(false);
-  // which sopNo result panel is currently open
+  const [removingObsoleteId, setRemovingObsoleteId] = useState<string | null>(null);
+  // which sopNo result panel is currently open (old side-panel)
   const [viewingComplianceSopNo, setViewingComplianceSopNo] = useState<
+    string | null
+  >(null);
+  // which sopNo is open in the new full-screen viewer
+  const [viewingComplianceFullSopNo, setViewingComplianceFullSopNo] = useState<
     string | null
   >(null);
 
   const handleComplianceResult = useCallback(
     (sopNo: string, sopName: string, result: any) => {
-      setComplianceCache((prev) => ({
-        ...prev,
-        [sopNo]: {
-          sopNo,
-          sopName,
-          findings: Array.isArray(result.findings) ? result.findings : [],
-          overallScore: result.overallScore ?? 0,
-          clausesAnalyzed: result.clausesAnalyzed ?? 0,
-          guidelineDocumentsUsed: result.guidelineDocumentsUsed ?? 0,
-          runAt: new Date().toISOString(),
-        },
-      }));
+      const entry = {
+        sopNo,
+        sopName,
+        findings: Array.isArray(result.findings) ? result.findings : [],
+        overallScore: result.overallScore ?? 0,
+        clausesAnalyzed: result.clausesAnalyzed ?? 0,
+        guidelineDocumentsUsed: result.guidelineDocumentsUsed ?? 0,
+        runAt: new Date().toISOString(),
+      };
+      setComplianceCache((prev) => ({ ...prev, [sopNo]: entry }));
+      // Auto-open the full viewer after a new run
+      setShowGuidelinesLibrary(false);
+      setViewingComplianceFullSopNo(sopNo);
     },
     [],
   );
 
   const sopRegistryRef = useRef<HTMLDivElement | null>(null);
 
+  // ── Load persisted compliance results on mount (shuttle pre-load) ────────────
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/dashboard/sop-guideline-review?listAll=true', { cache: 'no-store' })
+      .then(res => res.json())
+      .catch(() => ({ success: false }))
+      .then((json) => {
+        if (cancelled || !json.success || !Array.isArray(json.results)) return;
+        const cache: Record<string, ComplianceResult> = {};
+        for (const r of json.results) {
+          cache[r.sopNo] = {
+            sopNo: r.sopNo,
+            sopName: r.sopName || '',
+            findings: Array.isArray(r.findings) ? r.findings : [],
+            overallScore: r.overallScore ?? 0,
+            clausesAnalyzed: r.clausesAnalyzed ?? 0,
+            guidelineDocumentsUsed: r.guidelineDocumentsUsed ?? 0,
+            runAt: r.runAt,
+            // Pass through the source so the full viewer can show the badge
+            ...(r.source ? { source: r.source } : {}),
+          } as any;
+        }
+        setComplianceCache(cache);
+      });
+    return () => { cancelled = true; };
+  }, []);
   const fetchObsoleteList = async () => {
     setObsoleteListLoading(true);
     try {
@@ -161,10 +196,42 @@ export default function DashboardPage() {
     finally { setObsoleteListLoading(false); }
   };
 
-  const handleOpenObsoletePanel = () => {
-    setShowObsoletePanel(true);
-    fetchObsoleteList();
+  const handleToggleObsoleteFilter = () => {
+    if (!filterObsolete) {
+      setFilterObsolete(true);
+      fetchObsoleteList();
+    } else {
+      setFilterObsolete(false);
+    }
   };
+
+  const handleRemoveFromObsolete = async (identifier: string) => {
+    if (removingObsoleteId) return;
+    const password = window.prompt(`Enter password to restore "${identifier}" from Obsolete:`);
+    if (!password) return;
+    setRemovingObsoleteId(identifier);
+    try {
+      const res = await fetch("/api/sop/remove-obsolete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sopIdentifier: identifier, password }),
+      });
+      const j = await res.json();
+      if (!res.ok || !j.success) {
+        window.alert(j.error || "Failed to restore SOP");
+        return;
+      }
+      setObsoleteList(prev => prev.filter(x => x.identifier !== identifier));
+      setFilterObsolete(false);
+      setLoading(true);
+      setRefreshKey(k => k + 1);
+    } catch {
+      window.alert("Network error — please try again");
+    } finally {
+      setRemovingObsoleteId(null);
+    }
+  };
+
   const [locationImportBusy, setLocationImportBusy] = useState(false);
 
   const LOCATION_XLSX_INPUT_ID = "dashboard-sop-location-xlsx";
@@ -217,6 +284,7 @@ export default function DashboardPage() {
     const hadCache = forceFresh ? false : tryLoadSessionCache();
 
     const fetchData = async () => {
+      setLoading(true);
       try {
         const sopRes = await fetch(
           `/api/dashboard/sops${forceFresh ? "?refresh=1" : ""}`,
@@ -348,6 +416,33 @@ export default function DashboardPage() {
     setSortConfig({ key, direction });
   };
 
+  // Shape obsolete list into SOPTable-compatible rows
+  const obsoleteTableRows = useMemo(() =>
+    obsoleteList.map((item: any) => ({
+      _id: item.identifier,
+      sopNo: item.identifier,
+      sopName: item.englishName || item.gujaratiName || item.identifier,
+      englishName: item.englishName || "",
+      gujaratiName: item.gujaratiName || "",
+      department: item.department || "Other",
+      language: item.language || "English",
+      isDualLanguage: item.isDualLanguage || false,
+      location: item.location || null,
+      expiryDate: item.expiryDate || null,
+      version: item.version || null,
+      sopFile: item.sopFile || null,
+      sopDocuments: item.sopDocuments || [],
+      mediaStatus: { videoCount: 0, slideCount: 0, videos: false, slides: false, videoRequired: 0, slideRequired: 0, videoAvailable: 0, slideAvailable: 0 },
+      versionArtifacts: [],
+      versionArtifactsGujarati: [],
+      previousVersionsStatus: [],
+      obsoleteAt: item.obsoleteAt || item.archivedAt || null,
+      fromRegistry: item.fromRegistry || false,
+      isObsolete: true,
+    })),
+    [obsoleteList],
+  );
+
   // The perfect sorting & filtering logic
   const filteredAndSortedData = useMemo(() => {
     let result = [...filterPrimaryRegistryRows(effectiveData)];
@@ -391,16 +486,14 @@ export default function DashboardPage() {
       // Missing if (Expected > Available)
       result = result.filter((d: any) => {
         const avail = countRowDocxPdfForCapsules(d).docx;
-        const expected = d.isDualLanguage ? 2 : 1;
-        return avail < expected;
+        return avail < expectedDocxSlotsForRow(d);
       });
     } else if (filterFileType === "PDF") {
       result = result.filter((d: any) => countRowDocxPdfForCapsules(d).pdf > 0);
     } else if (filterFileType === "NO_PDF") {
       result = result.filter((d: any) => {
         const avail = countRowDocxPdfForCapsules(d).pdf;
-        const expected = d.isDualLanguage ? 2 : 1;
-        return avail < expected;
+        return avail < expectedPdfSlotsForRow(d);
       });
     }
 
@@ -454,11 +547,11 @@ export default function DashboardPage() {
 
     if (filterVersionStatus !== "all") {
       const tier =
-        filterVersionStatus === "last2ok"
-          ? "green"
-          : filterVersionStatus === "zerov"
-              ? "grey"
-              : "red";
+        filterVersionStatus === "allTwov"
+          ? "allTwoFound"
+          : filterVersionStatus === "onlyOnev"
+              ? "onlyOneFound"
+              : "notFound";
       result = result.filter(
         (d: any) => classifySopVersionCapsule(d) === tier,
       );
@@ -501,8 +594,9 @@ export default function DashboardPage() {
     if (filterAbsoluteSop) {
       result = result.filter((d: any) => {
         const docs = countRowDocxPdfForCapsules(d);
-        const expectedSlots = d.isDualLanguage ? 2 : 1;
-        const completeFiles = docs.docx >= expectedSlots && docs.pdf >= expectedSlots;
+        const completeFiles =
+          docs.docx >= expectedDocxSlotsForRow(d) &&
+          docs.pdf >= expectedPdfSlotsForRow(d);
         const hasMeta = Boolean((d.department || "").trim()) && Boolean((d.sopName || "").trim());
         return completeFiles && hasMeta;
       });
@@ -968,6 +1062,7 @@ export default function DashboardPage() {
     setSearch("");
     setSearchField("all");
     setSortConfig({ key: "sopNo", direction: "asc" });
+    setFilterObsolete(false);
   };
 
   const handleFilterExpired = () => {
@@ -1041,8 +1136,8 @@ export default function DashboardPage() {
             </div>
             <button
               type="button"
-              onClick={handleOpenObsoletePanel}
-              className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-rose-100 hover:text-rose-700"
+              onClick={handleToggleObsoleteFilter}
+              className={`rounded-md p-1.5 transition-colors ${filterObsolete ? "bg-rose-200 text-rose-800" : "text-gray-500 hover:bg-rose-100 hover:text-rose-700"}`}
               title="Obsolete SOPs">
               <Archive className="h-4 w-4" />
             </button>
@@ -1217,10 +1312,22 @@ export default function DashboardPage() {
               <span className="px-1 text-[9px] font-bold uppercase tracking-wide text-emerald-700">
                 Single
               </span>
+              <button
+                type="button"
+                onClick={handleToggleObsoleteFilter}
+                className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-semibold shadow-sm transition-colors ${filterObsolete ? "border-rose-600 bg-rose-600 text-white hover:bg-rose-700" : "border-rose-400 bg-rose-50 text-rose-700 hover:bg-rose-100"}`}>
+                <Archive className="h-3.5 w-3.5" /> Obsolete SOPs
+              </button>
               <Link
                 href="/sop-upload"
                 className="flex items-center gap-1.5 rounded-md border border-purple-600 bg-white px-3 py-1.5 text-xs font-semibold text-purple-700 shadow-sm transition-colors hover:bg-purple-50">
                 <Plus className="h-3.5 w-3.5" /> SOP Upload
+              </Link>
+              <Link
+                href="/mcq-bank"
+                className="flex items-center gap-1.5 rounded-md border border-emerald-600 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 shadow-sm transition-colors hover:bg-emerald-100"
+                title="Navigate to MCQ Bank section">
+                <BarChart2 className="h-3.5 w-3.5" /> MCQ Bank
               </Link>
             </div>
           </div>
@@ -1261,8 +1368,8 @@ export default function DashboardPage() {
         className="flex flex-1 flex-col px-3 pt-1 pb-2">
         <div className="mb-1 flex items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-600">
-              SOP Registry
+            <h3 className={`text-xs font-bold uppercase tracking-wider ${filterObsolete ? "text-rose-700" : "text-gray-600"}`}>
+              {filterObsolete ? "Obsolete SOPs" : "SOP Registry"}
             </h3>
             <button
               type="button"
@@ -1294,14 +1401,27 @@ export default function DashboardPage() {
             </button>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-
+            {filterObsolete && (
+              <span className="rounded-full bg-rose-100 border border-rose-200 px-2 py-0.5 text-[10px] font-bold text-rose-700">
+                Obsolete filter active
+              </span>
+            )}
             <span className="text-[10px] font-semibold text-gray-500 tabular-nums">
-              {filteredAndSortedData.length} result
-              {filteredAndSortedData.length !== 1 ? "s" : ""}
+              {filterObsolete ? obsoleteTableRows.length : filteredAndSortedData.length} result
+              {(filterObsolete ? obsoleteTableRows.length : filteredAndSortedData.length) !== 1 ? "s" : ""}
             </span>
           </div>
         </div>
-        {filteredAndSortedData.length === 0 && data.length > 0 ? (
+        {filterObsolete && obsoleteListLoading ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-rose-400 border-t-transparent" />
+          </div>
+        ) : filterObsolete && obsoleteTableRows.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 py-16 text-gray-400">
+            <Archive className="h-10 w-10 opacity-30" />
+            <p className="text-sm font-semibold">No obsolete SOPs found</p>
+          </div>
+        ) : !filterObsolete && filteredAndSortedData.length === 0 && data.length > 0 ? (
           <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-[11px] leading-snug text-amber-950 shadow-sm">
             <p className="font-bold text-amber-950">
               No SOPs match the current filters
@@ -1355,11 +1475,11 @@ export default function DashboardPage() {
                 <>
                   Version:{" "}
                   <strong>
-                    {filterVersionStatus === "last2ok"
-                      ? "Last-two complete"
-                      : filterVersionStatus === "zerov"
-                        ? "No prior versions"
-                        : "Missing prior versions"}
+                    {filterVersionStatus === "allTwov"
+                      ? "All Two Found"
+                      : filterVersionStatus === "onlyOnev"
+                        ? "Only One Found"
+                        : "Not Found"}
                   </strong>
                   .{" "}
                 </>
@@ -1389,7 +1509,7 @@ export default function DashboardPage() {
               setGuidelinesWizardPreset(row);
               setShowGuidelinesLibrary(true);
             }}
-            onMarkObsolete={() => triggerRefresh()}
+            onMarkObsolete={() => setRefreshKey((k) => k + 1)}
             onMarkVersionSuperseded={handleMarkVersionSuperseded}
           />
         </div>
@@ -1515,7 +1635,6 @@ export default function DashboardPage() {
           onClose={() => setViewingComplianceSopNo(null)}
           onRerun={() => {
             const result = complianceCache[viewingComplianceSopNo];
-            // find the registry row for this sopNo to get the _id
             const row = data.find(
               (r: any) => String(r.sopNo) === viewingComplianceSopNo,
             );
@@ -1529,118 +1648,26 @@ export default function DashboardPage() {
         />
       )}
 
-      {/* Obsolete SOPs Panel */}
-      {showObsoletePanel && (
-        <div
-          className="fixed inset-0 z-[990] flex items-start justify-end bg-black/30 backdrop-blur-sm"
-          onClick={() => setShowObsoletePanel(false)}>
-          <div
-            className="relative m-3 mt-14 w-full max-w-md rounded-xl border border-rose-200 bg-white shadow-2xl flex flex-col max-h-[80vh]"
-            onClick={(e) => e.stopPropagation()}>
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-rose-100 px-4 py-3 shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-100">
-                  <Archive className="h-4 w-4 text-rose-600" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-gray-900">Obsolete SOPs</h3>
-                  <p className="text-[9px] text-gray-500 uppercase tracking-wide font-semibold">
-                    Removed from registry &amp; MCQ bank
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowObsoletePanel(false)}
-                className="rounded p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            {/* Body */}
-            <div className="flex-1 overflow-y-auto px-4 py-3 custom-scrollbar">
-              {obsoleteListLoading ? (
-                <div className="flex items-center justify-center py-10">
-                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-rose-400 border-t-transparent" />
-                </div>
-              ) : obsoleteList.length === 0 ? (
-                <div className="flex flex-col items-center gap-2 py-10 text-gray-400">
-                  <Trash2 className="h-8 w-8 opacity-30" />
-                  <p className="text-xs font-semibold">No obsolete SOPs found</p>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {obsoleteList.map((item: any) => (
-                    <div
-                      key={item.identifier}
-                      className="rounded-lg border border-rose-100 bg-rose-50/60 px-3 py-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="font-mono text-[11px] font-bold text-rose-800 tracking-wide">
-                            {item.identifier}
-                          </p>
-                          {item.englishName && (
-                            <p className="text-[10px] font-semibold text-gray-800 truncate mt-0.5">
-                              {item.englishName}
-                            </p>
-                          )}
-                          {item.gujaratiName && (
-                            <p className="text-[10px] text-indigo-700 font-semibold truncate">
-                              {item.gujaratiName}
-                            </p>
-                          )}
-                          <p className="text-[9px] text-gray-500 mt-0.5">{item.department}</p>
-                        </div>
-                        <div className="shrink-0 text-right">
-                          {item.fromMCQBank && (
-                            <span className="inline-block rounded-full bg-amber-100 border border-amber-200 px-1.5 py-px text-[8px] font-bold text-amber-800 uppercase tracking-wide">
-                              MCQ Bank
-                            </span>
-                          )}
-                          {item.fromRegistry && (
-                            <span className="ml-1 inline-block rounded-full bg-rose-100 border border-rose-200 px-1.5 py-px text-[8px] font-bold text-rose-700 uppercase tracking-wide">
-                              Registry
-                            </span>
-                          )}
-                          {item.mcqCount != null && (
-                            <p className="text-[9px] text-gray-500 mt-0.5 tabular-nums">
-                              {item.mcqCount} MCQs
-                            </p>
-                          )}
-                          {item.obsoleteAt && (
-                            <p className="text-[9px] text-gray-400 mt-0.5">
-                              {new Date(item.obsoleteAt).toLocaleDateString()}
-                            </p>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSearch(String(item.identifier || ""));
-                              setSearchField("sopNo");
-                              setShowObsoletePanel(false);
-                              requestAnimationFrame(() => {
-                                sopRegistryRef.current?.scrollIntoView({
-                                  behavior: "smooth",
-                                  block: "start",
-                                });
-                              });
-                            }}
-                            className="mt-1 rounded border border-purple-200 bg-purple-50 px-1.5 py-px text-[8px] font-bold text-purple-700 hover:bg-purple-100">
-                            View
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="shrink-0 border-t border-gray-100 px-4 py-2 text-[9px] text-gray-400 text-right">
-              {obsoleteList.length} record{obsoleteList.length !== 1 ? "s" : ""}
-            </div>
-          </div>
-        </div>
+      {/* Full-screen compliance viewer — triggered by orange button */}
+      {viewingComplianceFullSopNo && complianceCache[viewingComplianceFullSopNo] && (
+        <ComplianceFullViewer
+          result={complianceCache[viewingComplianceFullSopNo]}
+          onClose={() => setViewingComplianceFullSopNo(null)}
+          onRerun={() => {
+            const result = complianceCache[viewingComplianceFullSopNo];
+            const row = data.find(
+              (r: any) => String(r.sopNo) === viewingComplianceFullSopNo,
+            );
+            setViewingComplianceFullSopNo(null);
+            setGuidelinesWizardPreset({
+              _id: row ? String(row._id) : "",
+              sopNo: result.sopNo,
+            });
+            setShowGuidelinesLibrary(true);
+          }}
+        />
       )}
+
     </div>
   );
 }

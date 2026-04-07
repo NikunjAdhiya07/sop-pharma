@@ -3,7 +3,13 @@ import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
 import User from '@/models/User';
 
-const OBSOLETE_FIXED_PASSWORD = 'obsolete@sop';
+const OBSOLETE_FIXED_PASSWORD = 'indiana@132';
+
+// Extract family prefix: "QAGE01-10" → "QAGE01", "MAGE01-05" → "MAGE01"
+function familyPrefix(identifier: string): string | null {
+  const m = identifier.match(/^([A-Za-z]{2,6}\d+)-\d+$/);
+  return m ? m[1] : null;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,12 +25,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Password is required' }, { status: 400 });
     }
 
-    // Validate password: accept fixed password OR the user's own login password
+    // Validate password
     let authorized = password === OBSOLETE_FIXED_PASSWORD;
     if (!authorized && username) {
       const user = await User.findOne({ username }).lean() as any;
       if (user && user.password === password) {
-        // Only admin or qa-head can mark obsolete
         if (user.role === 'admin' || user.role === 'qa-head') {
           authorized = true;
         }
@@ -35,9 +40,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Incorrect password' }, { status: 403 });
     }
 
-    // Mark all SOPs with this identifier as obsolete
+    // Mark ALL revisions of this SOP family as obsolete
+    // e.g. marking QAGE01-10 also marks QAGE01-09, QAGE01-11, etc.
+    const prefix = familyPrefix(sopIdentifier);
+    const query = prefix
+      ? { identifier: { $regex: `^${prefix}-`, $options: 'i' } }
+      : { identifier: { $regex: `^${sopIdentifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } };
+
     const result = await SOP.updateMany(
-      { identifier: sopIdentifier },
+      query,
       {
         $set: {
           isObsolete: true,

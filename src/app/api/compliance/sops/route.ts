@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch SOPs with pagination
     const sops = await SOP.find(query)
-      .select('_id identifier name department version status uploadedAt')
+      .select('_id identifier name department version status uploadedAt location')
       .sort({ department: 1, identifier: 1 })
       .skip((page - 1) * limit)
       .limit(limit)

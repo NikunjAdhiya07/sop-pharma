@@ -3,7 +3,7 @@
  * (primary rows from `filterPrimaryRegistryRows`, DOCX/PDF via {@link countRowDocxPdfForCapsules}).
  */
 import { CAPSULE_DEPARTMENTS } from '@/lib/capsuleDepartments';
-import { countRowDocxPdfForCapsules } from '@/lib/registryRowDocCounts';
+import { countRowDocxPdfForCapsules, countRowDocxPdfAttached } from '@/lib/registryRowDocCounts';
 
 const DEPT_ORDER = [...CAPSULE_DEPARTMENTS];
 
@@ -93,7 +93,6 @@ export function aggregateExpiryStatusGlobal(data: any[]): {
   for (const row of data) {
     if (!row.expiryDate) {
       noExpiryDate++;
-      active++;
       continue;
     }
     const diffDays = Math.ceil((new Date(row.expiryDate).getTime() - today.getTime()) / dayMs);
@@ -107,6 +106,7 @@ export function aggregateExpiryStatusGlobal(data: any[]): {
     { name: 'Active', value: active, color: '#059669' },
     { name: 'Near expiry (≤30d)', value: nearExpiry, color: '#f59e0b' },
     { name: 'Expired', value: expired, color: '#dc2626' },
+    { name: 'No Date', value: noExpiryDate, color: '#64748b' },
   ].filter((x) => x.value > 0);
 
   return { slices, total, expired, nearExpiry, active, noExpiryDate };
@@ -218,7 +218,7 @@ export function aggregateMissingInsights(data: any[]): {
   let noExpiryDate = 0;
 
   for (const row of data) {
-    const { docx, pdf } = countRowDocxPdfForCapsules(row);
+    const { docx, pdf } = countRowDocxPdfAttached(row);
     if (pdf === 0) missingPdf++;
     if (docx === 0) missingDocx++;
     const en = Array.isArray(row.versionArtifacts) ? row.versionArtifacts.length : 0;

@@ -416,8 +416,12 @@ function MCQBankContent() {
         setTreeData(data);
 
         // Cache the data
-        localStorage.setItem(CACHE_KEY, JSON.stringify(data));
-        localStorage.setItem(CACHE_TIMESTAMP_KEY, Date.now().toString());
+        try {
+          localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+          localStorage.setItem(CACHE_TIMESTAMP_KEY, Date.now().toString());
+        } catch (e) {
+          console.warn("⚠️ Failed to cache tree data to localStorage (QuotaExceededError). Page will load from live API.", e);
+        }
 
         console.log("📊 Tree data loaded and cached:", data.stats);
         if (data.userAccess?.isRestricted) {

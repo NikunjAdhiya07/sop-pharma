@@ -44,12 +44,12 @@ export default function CompactFilterBar({
   );
 
   const versionFilterLabel =
-    filterVersionStatus === "last2ok"
-      ? "Last-two complete"
-      : filterVersionStatus === "zerov"
-        ? "No prior versions"
-        : filterVersionStatus === "missingv"
-          ? "Missing priors"
+    filterVersionStatus === "allTwov"
+      ? "All two found"
+      : filterVersionStatus === "onlyOnev"
+        ? "Only one found"
+        : filterVersionStatus === "notFoundv"
+          ? "Not found"
           : null;
 
   const activeFilters = [

@@ -448,11 +448,46 @@ export default function UploadSOPModal({ isOpen, onClose, onSuccess, initialTab 
               </label>
             </div>
 
-            {uploading && uploadProgress && uploadProgress.total > 1 && (
-              <p className="text-[11px] font-medium text-purple-700">
-                Uploading batch {Math.min(uploadProgress.done + 1, uploadProgress.total)} of {uploadProgress.total} (
-                {FILES_PER_CHUNK} files per request)…
-              </p>
+            {uploading && uploadProgress && (
+              <div className="rounded-lg border border-purple-200 bg-purple-50 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-purple-900">Upload Progress</p>
+                  <p className="text-xs font-medium text-purple-700">
+                    {uploadProgress.done}/{uploadProgress.total}
+                  </p>
+                </div>
+
+                {/* Progress bar */}
+                <div className="w-full bg-purple-200 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="bg-gradient-to-r from-purple-500 to-purple-600 h-full rounded-full transition-all duration-300"
+                    style={{
+                      width: `${(uploadProgress.done / uploadProgress.total) * 100}%`,
+                    }}
+                  />
+                </div>
+
+                <div className="text-[11px] text-purple-800 space-y-1">
+                  <p>
+                    <span className="font-medium">Batch:</span> {uploadProgress.done} of {uploadProgress.total} uploaded
+                  </p>
+                  <p>
+                    <span className="font-medium">Files per batch:</span> {FILES_PER_CHUNK}
+                  </p>
+                  {uploadProgress.total > 1 && (
+                    <p className="text-purple-700/70">
+                      Estimated time: {Math.ceil((uploadProgress.total - uploadProgress.done) * 2)} seconds remaining
+                    </p>
+                  )}
+                </div>
+
+                {uploadProgress.done === uploadProgress.total && (
+                  <p className="text-[11px] text-green-700 font-medium flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 bg-green-500 rounded-full"></span>
+                    Upload complete! Refreshing dashboard…
+                  </p>
+                )}
+              </div>
             )}
 
             {files.length > 0 && (

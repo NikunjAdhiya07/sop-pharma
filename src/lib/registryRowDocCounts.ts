@@ -5,6 +5,103 @@
 
 import { fileKindFromStoredPath } from '@/lib/filePathFileKind';
 
+/** Same heuristics as dashboard SOP API — Gujarati assets often lack `language: Gujarati`. */
+function pathSuggestsGujarati(rawPath: string): boolean {
+  const u = String(rawPath || '')
+    .toLowerCase()
+    .replace(/\\/g, '/');
+  if (!u) return false;
+  if (/\bgujarati\b/.test(u)) return true;
+  if (/\/guj(\/|$|[_.-])/i.test(u)) return true;
+  if (/[_-]guj([._/\-]|arati)/i.test(u)) return true;
+  if (/gujarati\s+sop/i.test(u)) return true;
+  return false;
+}
+
+function attachmentLanguage(doc: any, row: any): 'English' | 'Gujarati' {
+  const ex = String(doc?.language || '').trim().toLowerCase();
+  if (ex === 'gujarati') return 'Gujarati';
+  const p = String(doc?.filePath || doc?.fileUrl || '');
+  if (ex === 'english' && pathSuggestsGujarati(p)) return 'Gujarati';
+  if (pathSuggestsGujarati(p)) return 'Gujarati';
+  if (String(row?.language || '').trim().toLowerCase() === 'gujarati') return 'Gujarati';
+  return 'English';
+}
+
+export type RowLanguageFileSlots = {
+  engDocx: boolean;
+  gujDocx: boolean;
+  engPdf: boolean;
+  gujPdf: boolean;
+};
+
+/** Per-language file presence (same rules as {@link countRowDocxPdfForCapsules}). */
+export function scanRowLanguageFileSlots(row: any): RowLanguageFileSlots {
+  let engDocx = false;
+  let gujDocx = false;
+  let engPdf = false;
+  let gujPdf = false;
+
+  const docList = [...(row.sopFile ? [row.sopFile] : []), ...(row.sopDocuments || [])];
+  for (const d of docList) {
+    const p = (d.filePath || d.fileUrl || '').trim();
+    if (!p) continue;
+    const k = fileKindFromStoredPath(p, d.fileType);
+    const lang = attachmentLanguage(d, row);
+    if (k === 'docx' || k === 'doc') {
+      if (lang === 'Gujarati') gujDocx = true;
+      else engDocx = true;
+    } else if (k === 'pdf') {
+      if (lang === 'Gujarati') gujPdf = true;
+      else engPdf = true;
+    }
+  }
+
+  const artifactKeys = ['versionArtifacts', 'versionArtifactsGujarati'] as const;
+  for (const key of artifactKeys) {
+    const entries = row[key];
+    if (!Array.isArray(entries)) continue;
+    const bucketGuj = key === 'versionArtifactsGujarati';
+    for (const e of entries) {
+      for (const rawPath of [e?.docxPath, e?.pdfPath] as const) {
+        const pathStr = String(rawPath || '').trim();
+        if (!pathStr) continue;
+        const fk = fileKindFromStoredPath(pathStr, undefined);
+        const lang: 'English' | 'Gujarati' = (bucketGuj || pathSuggestsGujarati(pathStr))
+          ? 'Gujarati'
+          : 'English';
+        if (fk === 'docx' || fk === 'doc') {
+          if (lang === 'Gujarati') gujDocx = true;
+          else engDocx = true;
+        } else if (fk === 'pdf') {
+          if (lang === 'Gujarati') gujPdf = true;
+          else engPdf = true;
+        }
+      }
+    }
+  }
+
+  return { engDocx, gujDocx, engPdf, gujPdf };
+}
+
+/** Expected DOCX language slots (1 = single-language row, 2 = EN+GU both need a DOCX). */
+export function expectedDocxSlotsForRow(row: any): number {
+  if (row?.isDualLanguage === true) return 2;
+  if (row?.englishVersion && row?.gujaratiVersion) return 2;
+  const s = scanRowLanguageFileSlots(row);
+  if (s.engDocx && s.gujDocx) return 2;
+  return 1;
+}
+
+/** Expected PDF language slots (independent of DOCX — bilingual PDF may be missing while DOCX exists). */
+export function expectedPdfSlotsForRow(row: any): number {
+  if (row?.isDualLanguage === true) return 2;
+  if (row?.englishVersion && row?.gujaratiVersion) return 2;
+  const s = scanRowLanguageFileSlots(row);
+  if (s.engPdf && s.gujPdf) return 2;
+  return 1;
+}
+
 function normPathKey(p: string): string {
   return (p || '').trim().replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\/+/, '').toLowerCase();
 }
@@ -93,50 +190,9 @@ export function countRowDocxPdf(row: any, opts?: { includeSuperseded?: boolean }
  * This ensures the total reaches 470 (427 rows + 43 dual) and accurately reports gaps.
  */
 export function countRowDocxPdfForCapsules(row: any): { docx: number; pdf: number } {
-  let hasEngDocx = false;
-  let hasEngPdf = false;
-  let hasGjDocx = false;
-  let hasGjPdf = false;
-
-  const docList = [...(row.sopFile ? [row.sopFile] : []), ...(row.sopDocuments || [])];
-  
-  for (const d of docList) {
-    const p = (d.filePath || d.fileUrl || '').trim();
-    if (!p) continue;
-    const k = fileKindFromStoredPath(p, d.fileType);
-    // sopFile is usually English; sopDocuments has explicit language
-    const lang = d.language === 'Gujarati' ? 'Gujarati' : 'English';
-    
-    if (k === 'docx' || k === 'doc') {
-      if (lang === 'Gujarati') hasGjDocx = true;
-      else hasEngDocx = true;
-    } else if (k === 'pdf') {
-      if (lang === 'Gujarati') hasGjPdf = true;
-      else hasEngPdf = true;
-    }
-  }
-
-  // Also check artifact-rows if this row is an artifact-only kind
-  // or if we want to include artifacts as "available" (main registry uses artifacts for the Files column)
-  const artifactKeys = ['versionArtifacts', 'versionArtifactsGujarati'] as const;
-  for (const key of artifactKeys) {
-    const entries = row[key];
-    if (!Array.isArray(entries)) continue;
-    const lang = key === 'versionArtifactsGujarati' ? 'Gujarati' : 'English';
-    for (const e of entries) {
-      if (e?.docxPath?.trim()) {
-        if (lang === 'Gujarati') hasGjDocx = true;
-        else hasEngDocx = true;
-      }
-      if (e?.pdfPath?.trim()) {
-        if (lang === 'Gujarati') hasGjPdf = true;
-        else hasEngPdf = true;
-      }
-    }
-  }
-
+  const s = scanRowLanguageFileSlots(row);
   return {
-    docx: (hasEngDocx ? 1 : 0) + (hasGjDocx ? 1 : 0),
-    pdf: (hasEngPdf ? 1 : 0) + (hasGjPdf ? 1 : 0),
+    docx: (s.engDocx ? 1 : 0) + (s.gujDocx ? 1 : 0),
+    pdf: (s.engPdf ? 1 : 0) + (s.gujPdf ? 1 : 0),
   };
 }
