@@ -591,17 +591,9 @@ export default function DocxPreviewClient({
   }
 
   // ── In-browser docx-preview (fallback / "Quick Preview") ──────────────────
+  // `mode === 'loading'` is always handled by the early return above (incl. when switchToDocxPreview starts).
   return (
     <div className={`relative flex flex-col bg-[#d1d5db] ${layout === 'embedded' ? 'min-h-[320px]' : 'min-h-screen'}`}>
-      {mode === 'loading' && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-gray-100">
-          <div className="flex flex-col items-center gap-3">
-            <div className="h-10 w-10 animate-spin rounded-full border-4 border-purple-600 border-t-transparent" />
-            <p className="text-sm font-medium text-gray-600">Rendering document…</p>
-          </div>
-        </div>
-      )}
-
       {layout === 'full' && (
         <div className="sticky top-0 z-10 flex shrink-0 flex-col gap-1 border-b border-gray-200 bg-white px-4 py-2 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">
