@@ -13,6 +13,7 @@ import {
   ChevronUp,
   Filter,
   Clock,
+  ExternalLink,
 } from 'lucide-react';
 
 export interface StoredComplianceResult {
@@ -133,6 +134,57 @@ function FindingCard({ finding }: { finding: any }) {
       {/* Expanded detail */}
       {expanded && (
         <div className="border-t border-gray-100 p-4 space-y-4 bg-white">
+          {/* Traceability block */}
+          <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+            <p className="text-[11px] font-bold uppercase text-slate-700 mb-2.5 tracking-wider">📍 Guideline Source</p>
+            <div className="space-y-1.5 text-sm">
+              <div className="flex items-start justify-between gap-2">
+                <div className="text-gray-700">
+                  <span className="text-[10px] font-semibold text-slate-600 block">Document</span>
+                  <span className="text-xs text-gray-900 font-medium">{finding.guidelineName || 'N/A'}</span>
+                </div>
+                {finding.guidelineId && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.open(`/api/guidelines/upload?serve=${finding.guidelineId}`, '_blank');
+                    }}
+                    className="shrink-0 inline-flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded border border-indigo-200 transition-colors"
+                    title="Open guideline PDF"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    View
+                  </button>
+                )}
+              </div>
+              <div>
+                <span className="text-[10px] font-semibold text-slate-600 block">Clause</span>
+                <span className="text-xs text-gray-900 font-mono">{finding.clauseNumber || 'N/A'}</span>
+              </div>
+              {finding.clauseTitle && (
+                <div>
+                  <span className="text-[10px] font-semibold text-slate-600 block">Heading</span>
+                  <span className="text-xs text-gray-900">{finding.clauseTitle}</span>
+                </div>
+              )}
+              {finding.clauseText && (
+                <div>
+                  <span className="text-[10px] font-semibold text-slate-600 block">Exact Requirement</span>
+                  <p className="text-xs text-gray-800 leading-relaxed border-l-2 border-slate-300 pl-2 italic">
+                    "{(() => { const t = String(finding.clauseText || ''); return t.length > 400 ? t.slice(0, 400) + '…' : t; })()}"
+                  </p>
+                </div>
+              )}
+              {finding.sopSectionAffected && finding.sopSectionAffected !== 'N/A' && (
+                <div>
+                  <span className="text-[10px] font-semibold text-slate-600 block">SOP Section to Update</span>
+                  <span className="text-xs text-gray-900 font-medium">{finding.sopSectionAffected}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* SOP snippet */}
           {finding.sopTextSnippet && (
             <div className="rounded-lg bg-purple-50 border border-purple-150 p-3">

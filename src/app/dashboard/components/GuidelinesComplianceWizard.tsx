@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { X, ChevronRight, ChevronLeft, Loader2, BookOpen, AlertCircle } from 'lucide-react';
+import { X, ChevronRight, ChevronLeft, Loader2, BookOpen, AlertCircle, Eye, ChevronDown, ChevronUp, Minus } from 'lucide-react';
 import { buildRealSopPickerOptions, type RegistrySopOption } from '@/lib/registrySopPickerOptions';
 
 type GuidelineSummary = {
@@ -16,10 +16,13 @@ type GuidelineSummary = {
 
 type Props = {
   open: boolean;
+  minimized?: boolean;
   onClose: () => void;
+  onMinimize?: () => void;
   registryRows: any[];
   presetSop?: { _id: string; sopNo: string } | null;
   onResult?: (sopNo: string, sopName: string, result: any) => void;
+  onAnalysisStart?: (sopNo: string) => void;
 };
 
 // ── severity / status colour maps (same as compliance engine) ──────────────
@@ -40,10 +43,13 @@ const STATUS_STYLE: Record<string, { bg: string; text: string; label: string }> 
 
 export default function GuidelinesComplianceWizard({
   open,
+  minimized,
   onClose,
+  onMinimize,
   registryRows,
   presetSop,
   onResult,
+  onAnalysisStart,
 }: Props) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [guidelines, setGuidelines] = useState<GuidelineSummary[]>([]);
@@ -86,7 +92,7 @@ export default function GuidelinesComplianceWizard({
     reset();
   }, [open, presetSop?._id, reset]);
 
-  // Load guideline list
+  // Load guideline list with client-side caching
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -94,10 +100,41 @@ export default function GuidelinesComplianceWizard({
       setGuidelinesLoading(true);
       setGuidelinesError(null);
       try {
-        const res = await fetch('/api/guidelines/upload?summary=true', { cache: 'no-store' });
+        // Check localStorage cache first (5 min TTL)
+        const cacheKey = 'guidelines_list_cache';
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          try {
+            const { data, timestamp } = JSON.parse(cached);
+            const age = Date.now() - timestamp;
+            if (age < 5 * 60 * 1000) { // 5 minutes
+              if (!cancelled) setGuidelines(Array.isArray(data) ? data : []);
+              if (!cancelled) setGuidelinesLoading(false);
+              return;
+            }
+          } catch (e) {
+            // Invalid cache, ignore
+          }
+        }
+
+        // Fetch fresh data with cache control header
+        const res = await fetch('/api/guidelines/upload?summary=true', {
+          headers: { 'Cache-Control': 'max-age=300' }, // 5 min browser cache
+        });
         const j = await res.json().catch(() => ({}));
         if (!res.ok || !j.success) throw new Error(j.error || `Failed to load guidelines (${res.status})`);
-        if (!cancelled) setGuidelines(Array.isArray(j.guidelines) ? (j.guidelines as GuidelineSummary[]) : []);
+
+        const guidelines = Array.isArray(j.guidelines) ? (j.guidelines as GuidelineSummary[]) : [];
+
+        // Cache the result in localStorage
+        if (!cancelled) {
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify({ data: guidelines, timestamp: Date.now() }));
+          } catch (e) {
+            // Quota exceeded, ignore
+          }
+          setGuidelines(guidelines);
+        }
       } catch (e) {
         if (!cancelled) setGuidelinesError((e as Error).message || 'Could not load guidelines');
       } finally {
@@ -172,6 +209,8 @@ export default function GuidelinesComplianceWizard({
   // ── Run review (now calls batch clause analysis) ─────────────────────────
   const runReview = async () => {
     if (!selectedSopId || selectedIds.size === 0) return;
+    const sopNo = sopOptions.find((o) => o._id === selectedSopId)?.sopNo ?? '';
+    onAnalysisStart?.(sopNo);
     setReviewLoading(true);
     setReviewError(null);
     setReviewFindings([]);
@@ -182,7 +221,7 @@ export default function GuidelinesComplianceWizard({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sopId: selectedSopId,
-          sopNo: sopOptions.find((o) => o._id === selectedSopId)?.sopNo ?? '',
+          sopNo: sopNo,
           guidelineIds: [...selectedIds],
         }),
       });
@@ -196,6 +235,15 @@ export default function GuidelinesComplianceWizard({
         guidelineDocumentsUsed: j.guidelineDocumentsUsed ?? 0,
         clausesAnalyzed: j.clausesAnalyzed ?? findings.length,
       };
+
+      // Log findings for debugging
+      console.log('[GuidelinesComplianceWizard] Review complete:', {
+        foundingsCount: findings.length,
+        meta,
+        clausesAnalyzed: j.clausesAnalyzed,
+        rawResponse: j,
+      });
+
       setReviewFindings(findings);
       setReviewMeta(meta);
       setStep(3);
@@ -204,13 +252,14 @@ export default function GuidelinesComplianceWizard({
         if (sopOpt) onResult(sopOpt.sopNo, sopOpt.displayName, { findings, ...meta });
       }
     } catch (e) {
+      console.error('[GuidelinesComplianceWizard] Review error:', e);
       setReviewError((e as Error).message || 'Review failed');
     } finally {
       setReviewLoading(false);
     }
   };
 
-  if (!open) return null;
+  if (!open || minimized) return null;
 
   // ── Score bar helpers ────────────────────────────────────────────────────
   const cCount = reviewFindings.filter((f) => f.complianceLevel === 'compliant').length;
@@ -218,7 +267,7 @@ export default function GuidelinesComplianceWizard({
   const nCount = reviewFindings.filter((f) => f.complianceLevel === 'non-compliant').length;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-3 backdrop-blur-[2px]">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-3">
       <div
         className="flex max-h-[min(92vh,900px)] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-indigo-200 bg-white shadow-2xl"
         role="dialog"
@@ -232,17 +281,29 @@ export default function GuidelinesComplianceWizard({
               Guideline compliance review
             </h2>
             <p className="mt-0.5 text-[11px] text-gray-600">
-              Step {step} of 3 — stored guidelines → primary registry SOP → AI recommendations
+              {presetSop ? `Step ${step} of 2 — select guidelines → analyze` : `Step ${step} of 3 — stored guidelines → primary registry SOP → AI recommendations`}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
-            aria-label="Close"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {onMinimize && (
+              <button
+                type="button"
+                onClick={onMinimize}
+                className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 hover:text-indigo-600 transition-colors"
+                title="Minimize window"
+              >
+                <Minus className="h-5 w-5" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         {/* ── Body ── */}
@@ -300,9 +361,20 @@ export default function GuidelinesComplianceWizard({
                       Clear
                     </button>
                   </div>
-                  <p className="text-[10px] text-gray-500">
-                    Selected: <strong className="text-gray-800">{selectedIds.size}</strong>
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] text-gray-500">
+                      Selected: <strong className="text-gray-800">{selectedIds.size}</strong>
+                    </p>
+                    <button
+                      type="button"
+                      onClick={onMinimize}
+                      className="flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium text-indigo-600 hover:bg-indigo-50"
+                      title="Minimize window"
+                    >
+                      <Minus className="h-3 w-3" />
+                      Minimize
+                    </button>
+                  </div>
                   <ul className="max-h-[min(50vh,420px)] space-y-1 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50/80 p-2">
                     {filteredGuidelines.length === 0 ? (
                       <li className="py-6 text-center text-sm text-gray-500">No guidelines match filters.</li>
@@ -312,7 +384,7 @@ export default function GuidelinesComplianceWizard({
                         const checked = selectedIds.has(id);
                         return (
                           <li key={id}>
-                            <label className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 hover:bg-white">
+                            <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-white">
                               <input type="checkbox" checked={checked} onChange={() => toggleId(id)}
                                 className="mt-1 h-3.5 w-3.5 rounded border-gray-400 text-indigo-600 focus:ring-indigo-500" />
                               <span className="min-w-0 flex-1 text-xs leading-snug">
@@ -321,6 +393,18 @@ export default function GuidelinesComplianceWizard({
                                   {[g.folderName, g.guidelineType, g.category].filter(Boolean).join(' · ')}
                                 </span>
                               </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  window.open(`/api/guidelines/upload?serve=${id}`, '_blank');
+                                }}
+                                className="ml-auto shrink-0 rounded px-1.5 py-0.5 text-indigo-600 hover:bg-indigo-50 hover:text-indigo-800"
+                                title="View PDF"
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                              </button>
                             </label>
                           </li>
                         );
@@ -496,7 +580,7 @@ export default function GuidelinesComplianceWizard({
         {/* ── Footer ── */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 bg-gray-50 px-4 py-3">
           <div className="flex gap-2">
-            {step > 1 && step < 3 && (
+            {step > 1 && step < 3 && !presetSop && (
               <button
                 type="button"
                 onClick={() => { setReviewError(null); setStep((s) => (s === 2 ? 1 : 2) as 1 | 2 | 3); }}
@@ -516,6 +600,15 @@ export default function GuidelinesComplianceWizard({
                 New review
               </button>
             )}
+            {step === 2 && reviewLoading && onMinimize && (
+              <button
+                type="button"
+                onClick={onMinimize}
+                className="inline-flex items-center gap-1 rounded-lg border border-indigo-300 bg-indigo-100 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-200 transition-colors"
+              >
+                Minimize (running)
+              </button>
+            )}
           </div>
           <div className="flex gap-2">
             <button
@@ -529,10 +622,16 @@ export default function GuidelinesComplianceWizard({
               <button
                 type="button"
                 disabled={selectedIds.size === 0 || guidelinesLoading}
-                onClick={() => setStep(2)}
+                onClick={() => {
+                  if (presetSop?._id && selectedSopId) {
+                    runReview(); // jump straight to analysis when SOP is preset
+                  } else {
+                    setStep(2);
+                  }
+                }}
                 className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Next
+                {presetSop ? 'Analyze' : 'Next'}
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
             )}

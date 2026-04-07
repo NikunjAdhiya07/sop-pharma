@@ -133,12 +133,10 @@ const MCQBankSchema = new Schema<IMCQBank>({
   folderDepartment: {
     type: String,
     required: false,
-    index: true,
   },
   folderSubcategory: {
     type: String,
     required: false,
-    index: true,
   },
   mcqs: {
     type: [MCQSchema],

@@ -45,6 +45,7 @@ export default function SOPTable({
   filterDeptFromParent,
   onOpenGuidelineWizard,
   complianceCache,
+  reviewingInBackground,
   onViewCompliance,
   onMarkObsolete,
   onMarkVersionSuperseded,
@@ -750,7 +751,7 @@ export default function SOPTable({
                   Ver <SortIcon field="version" />
                 </button>
               </th>
-              <th className={`${thBase} w-full min-w-[200px]`}>
+              <th className={`${thBase} flex-1 min-w-[250px]`}>
                 <button
                   type="button"
                   className={sortBtn}
@@ -758,7 +759,7 @@ export default function SOPTable({
                   SOP Name <SortIcon field="sopName" />
                 </button>
               </th>
-              <th className={`${thBase} min-w-[100px] max-w-[160px]`}>
+              <th className={`${thBase} min-w-[80px] max-w-[100px]`}>
                 <button
                   type="button"
                   className={sortBtn}
@@ -981,7 +982,7 @@ export default function SOPTable({
                         )}
                       </td>
                       {/* SOP Name — English first, Gujarati second */}
-                      <td className="px-1 py-px font-medium text-gray-800 max-w-[280px] align-middle">
+                      <td className="px-1 py-px font-medium text-gray-800 flex-1 align-middle">
                         {(() => {
                           const norm = (s: string) =>
                             String(s || "")
@@ -1000,60 +1001,61 @@ export default function SOPTable({
                             complianceCache && complianceCache[row.sopNo];
                           return (
                             <div
-                              className="flex items-center gap-1.5"
+                              className="flex items-center gap-2 w-full"
                               title={title}>
-                              <div className="flex flex-col gap-0 leading-tight min-w-0">
-                                <span className="text-[12px] font-bold leading-tight text-gray-900 truncate">
+                              <div className="flex flex-col gap-0 leading-tight min-w-0 flex-1">
+                                <span className="text-[12px] font-bold leading-tight text-gray-900 whitespace-nowrap">
                                   {line1}
                                 </span>
                                 {showLine2 ? (
-                                  <span className="text-[10px] font-bold leading-tight text-indigo-700 truncate">
+                                  <span className="text-[10px] font-bold leading-tight text-indigo-700 whitespace-nowrap">
                                     {cleanSOPName(line2, row.sopNo)}
                                   </span>
                                 ) : null}
                               </div>
                               {/* ── Orange Guideline Button ── */}
                               {/* Opens full viewer if result cached, otherwise opens wizard */}
-                              <button
-                                type="button"
-                                title={hasResult ? `View guideline compliance results for ${row.sopNo}` : "Run guideline compliance check"}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (hasResult) {
-                                    onViewCompliance?.(row.sopNo);
-                                  } else {
-                                    onOpenGuidelineWizard?.({ _id: String(row._id), sopNo: String(row.sopNo) });
-                                  }
-                                }}
-                                className={`relative shrink-0 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold transition-all ${
-                                  hasResult
-                                    ? 'bg-orange-500 text-white hover:bg-orange-600 shadow-sm'
-                                    : 'bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100'
-                                }`}
-                              >
-                                <Sparkles className="h-2.5 w-2.5" />
-                                {hasResult ? 'Results' : 'Guidelines'}
-                                {hasResult && (
-                                  <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-emerald-400 border border-white" />
-                                )}
-                              </button>
-                              <button
-                                type="button"
-                                title="Print this SOP row"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  window.print();
-                                }}
-                                className="shrink-0 rounded-full p-0.5 text-slate-600 bg-slate-50 hover:bg-slate-100 transition-colors">
-                                <Printer className="h-3 w-3" />
-                              </button>
+                              {(() => {
+                                const isRunning = reviewingInBackground?.has(String(row.sopNo));
+                                return (
+                                  <button
+                                    type="button"
+                                    title={isRunning ? `Analyzing guideline compliance for ${row.sopNo}` : hasResult ? `View guideline compliance results for ${row.sopNo}` : "Run guideline compliance check"}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (hasResult) {
+                                        onViewCompliance?.(row.sopNo);
+                                      } else if (!isRunning) {
+                                        onOpenGuidelineWizard?.({ _id: String(row._id), sopNo: String(row.sopNo) });
+                                      }
+                                    }}
+                                    disabled={isRunning}
+                                    className={`relative shrink-0 rounded-full p-0.5 transition-colors ${
+                                      isRunning
+                                        ? 'text-indigo-700 bg-indigo-50 animate-pulse'
+                                        : hasResult
+                                        ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100'
+                                        : 'text-orange-600 bg-orange-50 hover:bg-orange-100'
+                                    }`}
+                                  >
+                                    {isRunning ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <Sparkles className="h-3 w-3" />
+                                    )}
+                                    {hasResult && (
+                                      <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-emerald-400 border border-white" />
+                                    )}
+                                  </button>
+                                );
+                              })()}
                             </div>
                           );
                         })()}
                       </td>
-                      <td className="px-1 py-px align-middle max-w-[160px]">
+                      <td className="px-1 py-px align-middle max-w-[100px]">
                         <span
-                          className="line-clamp-2 text-[9px] leading-snug text-gray-700"
+                          className="line-clamp-1 text-[8px] leading-snug text-gray-600 cursor-help"
                           title={row.location || undefined}>
                           {row.location ? (
                             row.location
@@ -1268,7 +1270,21 @@ export default function SOPTable({
                       </td>
                       {/* Expiry */}
                       <td className="px-1 py-px text-left align-middle">
-                        {formatExpiryVerbose(row.expiryDate)}
+                        <div className="flex items-center gap-0.5">
+                          {formatExpiryVerbose(row.expiryDate)}
+                          {!isObsoleteView && (
+                            <button
+                              type="button"
+                              title="Print this SOP"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                window.print();
+                              }}
+                              className="shrink-0 rounded p-0.5 text-slate-500 hover:bg-slate-100 transition-colors">
+                              <Printer className="h-2.5 w-2.5" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
 
@@ -1589,7 +1605,9 @@ export default function SOPTable({
 
                                 <div className="space-y-1 pt-2">
                                   <button type="button" onClick={(e) => { e.stopPropagation(); onOpenGuidelineWizard?.({ _id: String(row._id), sopNo: String(row.sopNo) }); }} className="inline-flex w-full items-center justify-center gap-1.5 rounded border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-[10px] font-bold text-indigo-800 hover:bg-indigo-100 transition-colors"><BookOpen className="h-3.5 w-3.5" />Guideline check</button>
-                                  <button type="button" onClick={(e) => { e.stopPropagation(); window.print(); }} className="inline-flex w-full items-center justify-center gap-1.5 rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-[10px] font-bold text-slate-700 hover:bg-slate-100 transition-colors"><Printer className="h-3.5 w-3.5" />Print record</button>
+                                  {isObsoleteView && (
+                                    <button type="button" onClick={(e) => { e.stopPropagation(); window.print(); }} className="inline-flex w-full items-center justify-center gap-1.5 rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-[10px] font-bold text-slate-700 hover:bg-slate-100 transition-colors"><Printer className="h-3.5 w-3.5" />Print record</button>
+                                  )}
                                   {isObsoleteView ? (
                                     <button type="button" disabled={!!removingObsoleteId} onClick={(e) => { e.stopPropagation(); onRemoveObsolete?.(String(row.sopNo || "")); }} className="inline-flex w-full items-center justify-center gap-1.5 rounded border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100 transition-colors"><Trash2 className="h-3.5 w-3.5" />{removingObsoleteId === String(row.sopNo || "") ? "Restoring..." : "Restore SOP"}</button>
                                   ) : (

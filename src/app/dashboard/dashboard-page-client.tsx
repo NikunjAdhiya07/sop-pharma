@@ -25,6 +25,7 @@ import {
   Archive,
   X,
   Trash2,
+  SlidersHorizontal,
 } from "lucide-react";
 
 
@@ -116,6 +117,7 @@ export default function DashboardPageClient() {
   const [showCharts, setShowCharts] = useState(false);
   const [showSuperseded, setShowSuperseded] = useState(false);
   const [showGuidelinesLibrary, setShowGuidelinesLibrary] = useState(false);
+  const [wizardMinimized, setWizardMinimized] = useState(false);
   const [guidelinesWizardPreset, setGuidelinesWizardPreset] = useState<{
     _id: string;
     sopNo: string;
@@ -124,6 +126,10 @@ export default function DashboardPageClient() {
   const [complianceCache, setComplianceCache] = useState<
     Record<string, ComplianceResult>
   >({});
+  // sopNos currently being analyzed in background
+  const [reviewingInBackground, setReviewingInBackground] = useState<
+    Set<string>
+  >(new Set());
 
   // Obsolete SOPs filter (shows in main registry table)
   const [filterObsolete, setFilterObsolete] = useState(false);
@@ -131,6 +137,20 @@ export default function DashboardPageClient() {
   const [obsoleteList, setObsoleteList] = useState<any[]>([]);
   const [obsoleteListLoading, setObsoleteListLoading] = useState(false);
   const [removingObsoleteId, setRemovingObsoleteId] = useState<string | null>(null);
+
+  // Filter panel state
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  const [panelFilterLocation, setPanelFilterLocation] = useState<string[]>([]);
+  const [panelFilterVersion, setPanelFilterVersion] = useState<string[]>([]);
+  const [panelFilterLanguage, setPanelFilterLanguage] = useState<string[]>([]);
+  const [panelFilterDateFrom, setPanelFilterDateFrom] = useState("");
+  const [panelFilterDateTo, setPanelFilterDateTo] = useState("");
+  const [panelOpenSections, setPanelOpenSections] = useState<Record<string, boolean>>({
+    location: false,
+    version: false,
+    language: false,
+    date: false,
+  });
   // which sopNo result panel is currently open (old side-panel)
   const [viewingComplianceSopNo, setViewingComplianceSopNo] = useState<
     string | null
@@ -152,8 +172,15 @@ export default function DashboardPageClient() {
         runAt: new Date().toISOString(),
       };
       setComplianceCache((prev) => ({ ...prev, [sopNo]: entry }));
+      // Remove from background tracking
+      setReviewingInBackground((prev) => {
+        const next = new Set(prev);
+        next.delete(sopNo);
+        return next;
+      });
       // Auto-open the full viewer after a new run
       setShowGuidelinesLibrary(false);
+      setWizardMinimized(false);
       setViewingComplianceFullSopNo(sopNo);
     },
     [],
@@ -244,6 +271,12 @@ export default function DashboardPageClient() {
 
   const effectiveData = data;
 
+  // Cache keys and TTLs (defined outside useEffect for consistency)
+  const SESSION_KEY = "dashboard_sops_cache";
+  const LOCAL_KEY = "dashboard_sops_cache_persistent";
+  const SESSION_TTL_MS = 5 * 60 * 1000; // 5 minutes
+  const LOCAL_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
   useEffect(() => {
     const userData = localStorage.getItem("user");
     if (!userData) {
@@ -258,11 +291,10 @@ export default function DashboardPageClient() {
       return;
     }
 
-    // --- Client-side sessionStorage cache (stale-while-revalidate) ---
-    // On first visit / hard refresh: show cached data instantly while re-fetching.
-    // After each successful fetch the fresh result is written back to sessionStorage.
-    const SESSION_KEY = "dashboard_sops_cache";
-    const SESSION_TTL_MS = 5 * 60 * 1000; // 5 minutes
+    // --- Multi-tier client-side cache (sessionStorage → localStorage → network) ---
+    // Tier 1: sessionStorage (5 min TTL) — fastest, survives page refresh
+    // Tier 2: localStorage (24 hour TTL) — survives browser close, but stale data
+    // Tier 3: Network fetch — always refreshed in background
 
     const tryLoadSessionCache = (): boolean => {
       try {
@@ -270,6 +302,7 @@ export default function DashboardPageClient() {
         if (!raw) return false;
         const { data: cachedData, meta, cachedAt } = JSON.parse(raw);
         if (Date.now() - cachedAt > SESSION_TTL_MS) return false;
+        console.log('📦 Loaded from sessionStorage (< 5min)');
         setData(cachedData ?? []);
         setDashboardMeta(meta ?? null);
         setLoading(false);
@@ -279,10 +312,33 @@ export default function DashboardPageClient() {
       }
     };
 
-    /** Bypass session + server in-memory caches (see /api/dashboard/sops?refresh=1). */
+    const tryLoadLocalStorageCache = (): boolean => {
+      try {
+        const raw = localStorage.getItem(LOCAL_KEY);
+        if (!raw) return false;
+        const { data: cachedData, meta, cachedAt } = JSON.parse(raw);
+        if (Date.now() - cachedAt > LOCAL_TTL_MS) return false;
+        console.log('💾 Loaded from localStorage (< 24h) - will refresh in background');
+        setData(cachedData ?? []);
+        setDashboardMeta(meta ?? null);
+        setLoading(false);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    /** Bypass all caches (see /api/dashboard/sops?refresh=1). */
     const forceFresh =
       refreshKey > 0 || searchParams.get("refresh") === "1";
-    const hadCache = forceFresh ? false : tryLoadSessionCache();
+
+    let hadCache = false;
+    if (!forceFresh) {
+      // Try sessionStorage first (freshest)
+      hadCache = tryLoadSessionCache();
+      // If no session cache, try localStorage (stale but better than spinner)
+      if (!hadCache) hadCache = tryLoadLocalStorageCache();
+    }
 
     const fetchData = async () => {
       // Only show the full-page spinner when there is no cached data to display.
@@ -305,12 +361,17 @@ export default function DashboardPageClient() {
           const rawData = sopsJ.data ?? [];
           setData(rawData);
           setDashboardMeta((sopsJ.metadata as Record<string, unknown>) ?? null);
-          // Persist fresh result to sessionStorage for instant next-visit display.
+          // Persist fresh result to both caches
+          const cachePayload = JSON.stringify({ data: rawData, meta: sopsJ.metadata ?? null, cachedAt: Date.now() });
           try {
-            sessionStorage.setItem(
-              SESSION_KEY,
-              JSON.stringify({ data: rawData, meta: sopsJ.metadata ?? null, cachedAt: Date.now() }),
-            );
+            // Tier 1: sessionStorage (5 min, fastest)
+            sessionStorage.setItem(SESSION_KEY, cachePayload);
+            console.log('✅ Cached to sessionStorage');
+          } catch { /* quota exceeded — ignore */ }
+          try {
+            // Tier 2: localStorage (24 hour, survives browser close)
+            localStorage.setItem(LOCAL_KEY, cachePayload);
+            console.log('✅ Cached to localStorage (24h backup)');
           } catch { /* quota exceeded — ignore */ }
         }
       } catch (e) {
@@ -333,14 +394,16 @@ export default function DashboardPageClient() {
    * fresh data load. Call this after any upload or mutation that changes SOP data.
    */
   const triggerRefresh = useCallback(async () => {
-    // Clear sessionStorage cache so the upcoming fetch writes a fresh entry.
-    try { sessionStorage.removeItem("dashboard_sops_cache"); } catch { /* ignore */ }
+    // Clear all client-side caches (both sessionStorage and localStorage)
+    try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+    try { localStorage.removeItem(LOCAL_KEY); } catch { /* ignore */ }
+    console.log('🗑️ Cleared dashboard caches');
     // Tell the server to drop its in-memory cache.
     try {
       await fetch("/api/dashboard/invalidate-cache", { method: "POST" });
     } catch { /* non-critical — server cache will expire on its own TTL */ }
     setRefreshKey((k) => k + 1);
-  }, []);
+  }, [SESSION_KEY, LOCAL_KEY]);
 
   const handleMigrateToBunny = async () => {
     // Step 1: dry-run check
@@ -448,6 +511,49 @@ export default function DashboardPageClient() {
       isObsolete: true,
     })),
     [obsoleteList],
+  );
+
+  // Compute unique values for filter panel
+  const uniqueLocations = useMemo(
+    () =>
+      [
+        ...new Set(
+          primaryRegistryData
+            .map((r: any) => r.location)
+            .filter((l: any) => l),
+        ),
+      ]
+        .sort()
+        .map(String),
+    [primaryRegistryData],
+  );
+
+  const uniqueVersions = useMemo(
+    () =>
+      [
+        ...new Set(
+          primaryRegistryData
+            .map((r: any) => r.version ?? null)
+            .filter((v: any) => v != null),
+        ),
+      ]
+        .sort((a: any, b: any) => Number(b) - Number(a))
+        .map(String),
+    [primaryRegistryData],
+  );
+
+  const uniqueLanguagesPanel = useMemo(
+    () =>
+      [
+        ...new Set(
+          primaryRegistryData.map((r: any) => {
+            if (r.isDualLanguage) return "ENG/GUJ";
+            if (r.gujaratiFileMissing) return "ENG (GUJ missing)";
+            return r.language === "Gujarati" ? "GUJ" : "ENG";
+          }),
+        ),
+      ].sort(),
+    [primaryRegistryData],
   );
 
   // The perfect sorting & filtering logic
@@ -597,6 +703,45 @@ export default function DashboardPageClient() {
         if (fromTs != null && ts < fromTs) return false;
         if (toTs != null && ts > toTs) return false;
         return true;
+      });
+    }
+
+    // Panel location filter
+    if (panelFilterLocation.length > 0) {
+      result = result.filter((d: any) => panelFilterLocation.includes(String(d.location || "")));
+    }
+
+    // Panel version filter
+    if (panelFilterVersion.length > 0) {
+      result = result.filter((d: any) => panelFilterVersion.includes(String(d.version ?? "")));
+    }
+
+    // Panel language filter
+    if (panelFilterLanguage.length > 0) {
+      const getLang = (d: any) => {
+        if (d.isDualLanguage) return "ENG/GUJ";
+        if (d.gujaratiFileMissing) return "ENG (GUJ missing)";
+        return d.language === "Gujarati" ? "GUJ" : "ENG";
+      };
+      result = result.filter((d: any) => panelFilterLanguage.includes(getLang(d)));
+    }
+
+    // Panel date filter
+    if (panelFilterDateFrom) {
+      const fromTs = new Date(`${panelFilterDateFrom}T00:00:00`).getTime();
+      result = result.filter((d: any) => {
+        if (!d.expiryDate) return false;
+        const ts = new Date(d.expiryDate).getTime();
+        return ts >= fromTs;
+      });
+    }
+
+    if (panelFilterDateTo) {
+      const toTs = new Date(`${panelFilterDateTo}T23:59:59.999`).getTime();
+      result = result.filter((d: any) => {
+        if (!d.expiryDate) return false;
+        const ts = new Date(d.expiryDate).getTime();
+        return ts <= toTs;
       });
     }
 
@@ -785,6 +930,11 @@ export default function DashboardPageClient() {
     dateFrom,
     dateTo,
     sortConfig,
+    panelFilterLocation,
+    panelFilterVersion,
+    panelFilterLanguage,
+    panelFilterDateFrom,
+    panelFilterDateTo,
   ]);
 
 
@@ -1073,6 +1223,11 @@ export default function DashboardPageClient() {
     setSearchField("all");
     setSortConfig({ key: "sopNo", direction: "asc" });
     setFilterObsolete(false);
+    setPanelFilterLocation([]);
+    setPanelFilterVersion([]);
+    setPanelFilterLanguage([]);
+    setPanelFilterDateFrom("");
+    setPanelFilterDateTo("");
   };
 
   const handleFilterExpired = () => {
@@ -1380,7 +1535,7 @@ export default function DashboardPageClient() {
               title="Download list of SOPs missing DOCX files">
               <Download className="h-3 w-3" /> Export Missing DOCX
             </button>
-            {/* Search — icon-only; expands inline */}
+            {/* Search & Filter icons */}
             <div className="flex items-center gap-1">
               <button
                 type="button"
@@ -1395,6 +1550,17 @@ export default function DashboardPageClient() {
                 }`}
                 title="Search SOPs">
                 <Search className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterPanelOpen((v) => !v)}
+                className={`shrink-0 rounded border p-0.5 transition-colors ${
+                  filterPanelOpen || panelFilterLocation.length > 0 || panelFilterVersion.length > 0 || panelFilterLanguage.length > 0 || panelFilterDateFrom || panelFilterDateTo
+                    ? "border-purple-400 bg-purple-50 text-purple-700"
+                    : "border-gray-300 bg-white text-gray-500 hover:border-purple-300 hover:text-purple-600"
+                }`}
+                title="Open filter panel">
+                <SlidersHorizontal className="h-3.5 w-3.5" />
               </button>
               {registrySearchOpen && (
                 <>
@@ -1452,6 +1618,212 @@ export default function DashboardPageClient() {
             </span>
           </div>
         </div>
+
+        {/* Filter Panel */}
+        {filterPanelOpen && (
+          <div className="mb-2 rounded-lg border border-gray-200 bg-white shadow-sm p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-bold text-gray-700 uppercase tracking-wider text-[10px]">Filters</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setPanelFilterLocation([]);
+                  setPanelFilterVersion([]);
+                  setPanelFilterLanguage([]);
+                  setPanelFilterDateFrom("");
+                  setPanelFilterDateTo("");
+                }}
+                className="text-gray-400 hover:text-gray-600 text-[10px] font-semibold">
+                Clear all
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 text-[10px]">
+              {/* Location */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPanelOpenSections((s) => ({
+                      ...s,
+                      location: !s.location,
+                    }))
+                  }
+                  className="flex items-center justify-between w-full font-semibold text-gray-700 hover:text-gray-900 transition-colors">
+                  Location
+                  {panelOpenSections.location ? (
+                    <ChevronUp className="h-3 w-3" />
+                  ) : (
+                    <ChevronDown className="h-3 w-3" />
+                  )}
+                </button>
+                {panelOpenSections.location && (
+                  <div className="mt-1 space-y-1 max-h-48 overflow-y-auto border border-gray-200 rounded p-2 bg-gray-50">
+                    {uniqueLocations.length > 0 ? (
+                      uniqueLocations.map((loc: string) => (
+                        <label key={loc} className="flex items-center gap-1.5 cursor-pointer hover:text-gray-900">
+                          <input
+                            type="checkbox"
+                            checked={panelFilterLocation.includes(loc)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setPanelFilterLocation([...panelFilterLocation, loc]);
+                              } else {
+                                setPanelFilterLocation(
+                                  panelFilterLocation.filter((l) => l !== loc),
+                                );
+                              }
+                            }}
+                            className="h-3 w-3 rounded border-gray-300"
+                          />
+                          <span className="text-gray-700">{loc}</span>
+                        </label>
+                      ))
+                    ) : (
+                      <span className="text-gray-400 text-[9px]">No locations</span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Version */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPanelOpenSections((s) => ({
+                      ...s,
+                      version: !s.version,
+                    }))
+                  }
+                  className="flex items-center justify-between w-full font-semibold text-gray-700 hover:text-gray-900 transition-colors">
+                  Version
+                  {panelOpenSections.version ? (
+                    <ChevronUp className="h-3 w-3" />
+                  ) : (
+                    <ChevronDown className="h-3 w-3" />
+                  )}
+                </button>
+                {panelOpenSections.version && (
+                  <div className="mt-1 space-y-1 max-h-48 overflow-y-auto border border-gray-200 rounded p-2 bg-gray-50">
+                    {uniqueVersions.length > 0 ? (
+                      uniqueVersions.map((ver: string) => (
+                        <label key={ver} className="flex items-center gap-1.5 cursor-pointer hover:text-gray-900">
+                          <input
+                            type="checkbox"
+                            checked={panelFilterVersion.includes(ver)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setPanelFilterVersion([...panelFilterVersion, ver]);
+                              } else {
+                                setPanelFilterVersion(
+                                  panelFilterVersion.filter((v) => v !== ver),
+                                );
+                              }
+                            }}
+                            className="h-3 w-3 rounded border-gray-300"
+                          />
+                          <span className="text-gray-700">{ver}</span>
+                        </label>
+                      ))
+                    ) : (
+                      <span className="text-gray-400 text-[9px]">No versions</span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Language */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPanelOpenSections((s) => ({
+                      ...s,
+                      language: !s.language,
+                    }))
+                  }
+                  className="flex items-center justify-between w-full font-semibold text-gray-700 hover:text-gray-900 transition-colors">
+                  Language
+                  {panelOpenSections.language ? (
+                    <ChevronUp className="h-3 w-3" />
+                  ) : (
+                    <ChevronDown className="h-3 w-3" />
+                  )}
+                </button>
+                {panelOpenSections.language && (
+                  <div className="mt-1 space-y-1 border border-gray-200 rounded p-2 bg-gray-50">
+                    {uniqueLanguagesPanel.length > 0 ? (
+                      uniqueLanguagesPanel.map((lang: string) => (
+                        <label key={lang} className="flex items-center gap-1.5 cursor-pointer hover:text-gray-900">
+                          <input
+                            type="checkbox"
+                            checked={panelFilterLanguage.includes(lang)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setPanelFilterLanguage([...panelFilterLanguage, lang]);
+                              } else {
+                                setPanelFilterLanguage(
+                                  panelFilterLanguage.filter((l) => l !== lang),
+                                );
+                              }
+                            }}
+                            className="h-3 w-3 rounded border-gray-300"
+                          />
+                          <span className="text-gray-700">{lang}</span>
+                        </label>
+                      ))
+                    ) : (
+                      <span className="text-gray-400 text-[9px]">No languages</span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Date Range */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPanelOpenSections((s) => ({
+                      ...s,
+                      date: !s.date,
+                    }))
+                  }
+                  className="flex items-center justify-between w-full font-semibold text-gray-700 hover:text-gray-900 transition-colors">
+                  Date Range
+                  {panelOpenSections.date ? (
+                    <ChevronUp className="h-3 w-3" />
+                  ) : (
+                    <ChevronDown className="h-3 w-3" />
+                  )}
+                </button>
+                {panelOpenSections.date && (
+                  <div className="mt-1 space-y-1.5 border border-gray-200 rounded p-2 bg-gray-50">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[9px] font-semibold text-gray-600">From:</label>
+                      <input
+                        type="date"
+                        value={panelFilterDateFrom}
+                        onChange={(e) => setPanelFilterDateFrom(e.target.value)}
+                        className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[9px] focus:border-purple-500 focus:outline-none"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[9px] font-semibold text-gray-600">To:</label>
+                      <input
+                        type="date"
+                        value={panelFilterDateTo}
+                        onChange={(e) => setPanelFilterDateTo(e.target.value)}
+                        className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[9px] focus:border-purple-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {filterObsolete && obsoleteListLoading ? (
           <div className="flex items-center justify-center py-16">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-rose-400 border-t-transparent" />
@@ -1543,12 +1915,14 @@ export default function DashboardPageClient() {
               onSort={handleSort}
               filterDeptFromParent={filterDept}
               complianceCache={complianceCache}
+              reviewingInBackground={reviewingInBackground}
               onViewCompliance={(sopNo: string) =>
                 setViewingComplianceSopNo(sopNo)
               }
               onOpenGuidelineWizard={(row: { _id: string; sopNo: string }) => {
                 setGuidelinesWizardPreset(row);
                 setShowGuidelinesLibrary(true);
+                setWizardMinimized(false);
               }}
               onMarkObsolete={() => setRefreshKey((k) => k + 1)}
               onMarkVersionSuperseded={handleMarkVersionSuperseded}
@@ -1662,6 +2036,25 @@ export default function DashboardPageClient() {
           </div>
         </div>
       )}
+      {/* ── Floating Resume Button for Minimized Wizard ── */}
+      {wizardMinimized && showGuidelinesLibrary && (
+        <div className="fixed bottom-6 right-6 z-[99] flex flex-col items-end gap-2">
+          <button
+            type="button"
+            onClick={() => setWizardMinimized(false)}
+            className="inline-flex items-center gap-2 rounded-full bg-indigo-600 text-white px-4 py-2 shadow-lg hover:bg-indigo-700 transition-all font-semibold text-sm"
+            title="Resume guideline analysis"
+          >
+            <Sparkles className="h-4 w-4" />
+            Resume Analysis
+          </button>
+          {[...reviewingInBackground].map((sopNo) => (
+            <div key={sopNo} className="text-xs text-gray-600 bg-white px-3 py-1.5 rounded-full shadow-sm border border-gray-200">
+              Analyzing <span className="font-semibold">{sopNo}</span>…
+            </div>
+          ))}
+        </div>
+      )}
       <SupersededVersionsPanel
         open={showSuperseded}
         onClose={() => setShowSuperseded(false)}
@@ -1669,10 +2062,18 @@ export default function DashboardPageClient() {
       />
       <GuidelinesComplianceWizard
         open={showGuidelinesLibrary}
-        onClose={() => setShowGuidelinesLibrary(false)}
+        minimized={wizardMinimized}
+        onClose={() => {
+          setShowGuidelinesLibrary(false);
+          setWizardMinimized(false);
+        }}
+        onMinimize={() => setWizardMinimized(true)}
         registryRows={data}
         presetSop={guidelinesWizardPreset}
         onResult={handleComplianceResult}
+        onAnalysisStart={(sopNo) => {
+          setReviewingInBackground((prev) => new Set(prev).add(sopNo));
+        }}
       />
       {viewingComplianceSopNo && complianceCache[viewingComplianceSopNo] && (
         <GuidelinesResultPanel

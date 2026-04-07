@@ -81,7 +81,6 @@ const MasterSOPRepositorySchema = new Schema<IMasterSOPRepository>(
     folderPath: {
       type: String,
       required: true,
-      index: true,
     },
     parentFolder: {
       type: String,

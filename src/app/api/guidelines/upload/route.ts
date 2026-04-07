@@ -4,6 +4,24 @@ import SOPGuideline from '@/models/SOPGuideline';
 import User from '@/models/User'; // Required for populate
 import fs from 'fs';
 import path from 'path';
+
+// Simple in-memory cache for guidelines summary (5 minute TTL)
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+let summaryCache: { data: any; timestamp: number } | null = null;
+
+function getCachedSummary() {
+  if (!summaryCache) return null;
+  const age = Date.now() - summaryCache.timestamp;
+  if (age > CACHE_TTL_MS) {
+    summaryCache = null;
+    return null;
+  }
+  return summaryCache.data;
+}
+
+function setCachedSummary(data: any) {
+  summaryCache = { data, timestamp: Date.now() };
+}
 import {
   processGuidelinePDF,
   normalizeText,
@@ -162,6 +180,10 @@ export async function POST(request: NextRequest) {
     console.log(`   - Failed: ${errors.length}`);
     console.log(`   - Total time: ${totalTime}ms`);
 
+    // Clear cache since we added new guidelines
+    summaryCache = null;
+    console.log('🗑️ Cleared guidelines cache');
+
     return NextResponse.json({
       success: true,
       folderName,
@@ -193,15 +215,55 @@ export async function GET(request: NextRequest) {
   try {
     await dbConnect();
     void User;
-    
+
     console.log('📚 GET /api/guidelines/upload called with params:', Object.fromEntries(new URL(request.url).searchParams));
 
     const { searchParams } = new URL(request.url);
+    const serve = searchParams.get('serve');
     const id = searchParams.get('id');
     const folderName = searchParams.get('folderName');
     const category = searchParams.get('category');
     const guidelineType = searchParams.get('guidelineType');
     const isSummary = searchParams.get('summary') === 'true';
+
+    // Serve PDF file if requested (inline viewing)
+    if (serve) {
+      try {
+        const isValidObjectId = /^[a-f\d]{24}$/i.test(serve);
+        if (!isValidObjectId) {
+          return NextResponse.json({ success: false, error: 'Invalid guideline ID' }, { status: 400 });
+        }
+
+        const guideline = await SOPGuideline.findById(serve)
+          .select('filePath pdfName')
+          .lean();
+
+        if (!guideline?.filePath) {
+          return NextResponse.json({ success: false, error: 'Guideline file not found' }, { status: 404 });
+        }
+
+        // Check if file exists on disk
+        if (!fs.existsSync(guideline.filePath)) {
+          console.warn(`Guideline file missing on disk: ${guideline.filePath}`);
+          return NextResponse.json({ success: false, error: 'Guideline file not found on disk' }, { status: 404 });
+        }
+
+        const fileBuffer = fs.readFileSync(guideline.filePath);
+        const filename = guideline.pdfName || 'guideline.pdf';
+
+        return new Response(fileBuffer, {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': `inline; filename="${filename}"`,
+            'Cache-Control': 'public, max-age=3600',
+          },
+        });
+      } catch (err: any) {
+        console.error('Error serving guideline PDF:', err.message);
+        return NextResponse.json({ success: false, error: 'Failed to serve PDF' }, { status: 500 });
+      }
+    }
 
     // Fetch individual guideline if ID is provided
     if (id) {
@@ -226,7 +288,26 @@ export async function GET(request: NextRequest) {
     if (folderName) query.folderName = folderName;
     if (category) query.category = category;
     if (guidelineType) query.guidelineType = guidelineType;
-    
+
+    // For summary, check cache first (only when no filters applied)
+    if (isSummary && !folderName && !category && !guidelineType) {
+      const cached = getCachedSummary();
+      if (cached) {
+        console.log('📦 Returning cached guidelines summary');
+        return NextResponse.json({
+          success: true,
+          guidelines: cached.guidelines,
+          totalClauses: cached.totalClauses,
+          summary: true,
+          fromCache: true,
+        }, {
+          headers: {
+            'Cache-Control': 'public, max-age=300', // 5 min browser cache
+          }
+        });
+      }
+    }
+
     // For summary, we still want clauses but we limit the number of guidelines
     // to prevent massive payload sizes that cause timeouts
     const limit = isSummary ? 2000 : 50;
@@ -250,7 +331,7 @@ export async function GET(request: NextRequest) {
           { $project: { count: { $size: { $ifNull: ["$clauses", []] } } } },
           { $group: { _id: null, total: { $sum: "$count" } } }
         ]).option({ maxTimeMS: 5000 });
-        
+
         if (globalCount.length > 0) {
           globalTotalClauses = globalCount[0].total;
         }
@@ -261,11 +342,24 @@ export async function GET(request: NextRequest) {
 
     // Skip heavy stats for summary mode to save time
     if (isSummary) {
-      return NextResponse.json({
-        success: true,
+      const responseData = {
         guidelines,
         totalClauses: globalTotalClauses,
-        summary: true
+      };
+
+      // Cache the summary for future requests (only when no filters)
+      if (!folderName && !category && !guidelineType) {
+        setCachedSummary(responseData);
+      }
+
+      return NextResponse.json({
+        success: true,
+        ...responseData,
+        summary: true,
+      }, {
+        headers: {
+          'Cache-Control': 'public, max-age=300', // 5 min browser cache
+        }
       });
     }
 
@@ -352,7 +446,11 @@ export async function DELETE(request: NextRequest) {
     }
 
     await SOPGuideline.findByIdAndDelete(id);
-    
+
+    // Clear cache since we deleted a guideline
+    summaryCache = null;
+    console.log('🗑️ Cleared guidelines cache after deletion');
+
     return NextResponse.json({
       success: true,
       message: 'Guideline deleted successfully',

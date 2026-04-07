@@ -205,6 +205,14 @@ export async function POST(request: NextRequest) {
 
     const sopData = { identifier: sop.identifier, name: sop.name, department: sop.department || 'General', content };
 
+    console.log('[sop-guideline-review POST] Analysis starting:', {
+      sopIdentifier: sop.identifier,
+      sopName: sop.name,
+      totalClauses: allClauses.length,
+      totalBatches: batches.length,
+      guidelineCount: guidelines.length,
+    });
+
     for (let bIdx = 0; bIdx < batches.length; bIdx++) {
       const batch = batches[bIdx];
 
@@ -271,6 +279,15 @@ export async function POST(request: NextRequest) {
       ? Math.round(((compliantCount * 10 + partialCount * 5) / applicable) * 10) / 10
       : 10;
 
+    console.log('[sop-guideline-review POST] Analysis completed:', {
+      findingsCount: findings.length,
+      compliant: compliantCount,
+      partial: partialCount,
+      nonCompliant: nonCompliantCount,
+      notApplicable,
+      overallScore,
+    });
+
     // ── Persist result (shuttle system) ─────────────────────────────
     try {
       await SOPGuidelineResult.findOneAndUpdate(
@@ -283,7 +300,8 @@ export async function POST(request: NextRequest) {
           clausesAnalyzed: findings.length,
           guidelineDocumentsUsed: guidelines.length,
           guidelineIds,
-          findings,
+          // Note: findings array not stored to avoid BSON 16MB limit exceeded
+          // Detailed findings are returned to client; summary stats are stored for caching
           runAt: new Date(),
         },
         { upsert: true, new: true, setDefaultsOnInsert: true }

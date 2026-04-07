@@ -1234,15 +1234,16 @@ export async function GET(request: NextRequest) {
 
     await connectDB();
 
-    const allSOPs = await SOP.find({ $or: [{ isObsolete: { $ne: true } }, { isObsolete: { $exists: false } }] })
-      .select('_id name identifier department fileUrl fileType originalFileName folderPath location metadata reviewDate expiryDate version language content createdAt')
+    // Optimized: Fetch ALL SOP records in a single query with a combined projection.
+    // This avoids redundant round-trips and reduces memory overhead by selecting only needed fields once.
+    const allSOPsIncludingObsolete = await SOP.find({})
+      .select('_id name identifier department fileUrl fileType originalFileName folderPath location metadata reviewDate expiryDate version language createdAt sopDocuments isObsolete')
       .lean();
 
-    // Fetch ALL SOP records including obsolete ones — used only for prior-version availability checks.
-    // Older revisions are typically marked isObsolete:true but must still count as "available".
-    const allSOPsIncludingObsolete = await SOP.find({})
-      .select('_id identifier fileUrl fileType language sopDocuments name originalFileName folderPath')
-      .lean();
+    // Derived filtered list for current SOPs from the full collection in-memory.
+    const allSOPs = allSOPsIncludingObsolete.filter((sop: any) => 
+      sop.isObsolete !== true && sop.isObsolete !== 'true'
+    );
 
     const masterSOPs = await MasterSOPRepository.find({})
       .select('sopIdentifier sopName englishName gujaratiName metadata.reviewDate metadata.expiryDate')
@@ -1607,11 +1608,30 @@ export async function GET(request: NextRequest) {
         if (!locationByIdentifier.has(key)) locationByIdentifier.set(key, loc);
       }
     });
-    // Use the full set (including obsolete) so prior versions aren't falsely marked missing.
+    // Pre-index the full SOP collection for O(1) lookups during the main merging loops.
+    // This eliminates O(N^2) complexity where N is the number of SOP records (potentially thousands).
+    const sopByNormKey = new Map<string, any[]>();
+    const sopByFamilyRev = new Map<string, any[]>();
+    
+    for (const sop of allSOPsIncludingObsolete as any[]) {
+      const id = (sop.identifier || '').trim().toUpperCase();
+      if (!id) continue;
+      const nk = normalizeSopIdentifierKey(id);
+      
+      if (!sopByNormKey.has(nk)) sopByNormKey.set(nk, []);
+      sopByNormKey.get(nk)!.push(sop);
+      
+      const fk = sopFamilyKeyFromIdentifier(id);
+      const rev = parseRevisionFromSopIdentifier(id);
+      if (fk && rev != null) {
+        const familyRevKey = `${fk}::${rev}`;
+        if (!sopByFamilyRev.has(familyRevKey)) sopByFamilyRev.set(familyRevKey, []);
+        sopByFamilyRev.get(familyRevKey)!.push(sop);
+      }
+    }
+
     const allSopIdentifiers = new Set(allSOPsIncludingObsolete.map((s: any) => (s.identifier || '').trim().toUpperCase()));
-    const allSopIdentifiersNorm = new Set(
-      allSOPsIncludingObsolete.map((s: any) => normalizeSopIdentifierKey((s.identifier || '').trim().toUpperCase())),
-    );
+    const allSopIdentifiersNorm = new Set(Array.from(sopByNormKey.keys()));
 
     /**
      * Prior-version SOP file map: normKey → [{version, docxPath?, pdfPath?, lang}]
@@ -1666,6 +1686,17 @@ export async function GET(request: NextRequest) {
     const versionArtifactsDocs = await SOPVersionArtifacts.find({})
       .select('identifier language entries sopName department updatedAt')
       .lean();
+      
+    // Index artifacts by normalized identifier for fast lookup
+    const versionArtifactsByIdentifier = new Map<string, any[]>();
+    for (const va of versionArtifactsDocs as any[]) {
+      const id = (va.identifier || '').trim().toUpperCase();
+      if (!id) continue;
+      const nk = normalizeSopIdentifierKey(id);
+      if (!versionArtifactsByIdentifier.has(nk)) versionArtifactsByIdentifier.set(nk, []);
+      versionArtifactsByIdentifier.get(nk)!.push(va);
+    }
+
     const versionArtifactsByKey = new Map<string, VersionArtifactEntry[]>();
     const versionArtifactNameByKey = new Map<string, string>();
     for (const va of versionArtifactsDocs as any[]) {
@@ -1822,27 +1853,27 @@ export async function GET(request: NextRequest) {
       }
 
       // ── ENRICH sopDocuments with ALL current-revision records from Mongo SOP table ──
-      // The dedupe (byKey) only keeps the NEWEST record, so if you upload a PDF then a DOCX, one is lost.
-      // Here we look through allSOPsIncludingObsolete to recover all files for the current revision.
-      for (const rawSop of allSOPsIncludingObsolete as any[]) {
-        const rsId = (rawSop.identifier || '').trim().toUpperCase();
-        if (!rsId) continue;
-        const rsNk = normalizeSopIdentifierKey(rsId);
-        const rsFamily = sopFamilyKeyFromIdentifier(rsId);
-        const rsRev = parseRevisionFromSopIdentifier(rsId);
-        
-        if (rsNk === idUpper || (rsFamily === familyKey && rsRev === currentRevision)) {
-          const docs = [...(rawSop.fileUrl ? [{ filePath: rawSop.fileUrl, fileType: 'pdf', language: rawSop.language }] : []), ...(rawSop.sopDocuments || [])];
-          for (const d of docs) {
-            if (!d.filePath) continue;
-            if (!sopDocuments.some(existing => normPathKey(existing.filePath) === normPathKey(d.filePath))) {
-              sopDocuments.push({
-                fileName: d.fileName || (d.filePath.toLowerCase().endsWith('.pdf') ? 'PDF' : 'DOCX'),
-                filePath: d.filePath,
-                fileType: d.fileType || (d.filePath.toLowerCase().endsWith('.pdf') ? 'pdf' : 'docx'),
-                language: d.language || rawSop.language || 'English'
-              });
-            }
+      // Optimized: Use the pre-indexed Maps to find matching SOPs in O(1) instead of iterating full list.
+      const matchingSopsFromFullList = [
+        ...(sopByNormKey.get(idUpper) || []),
+        ...(familyKey && currentRevision != null ? (sopByFamilyRev.get(`${familyKey}::${currentRevision}`) || []) : [])
+      ];
+      
+      const seenRawSopIds = new Set<string>();
+      for (const rawSop of matchingSopsFromFullList) {
+        if (seenRawSopIds.has(String(rawSop._id))) continue;
+        seenRawSopIds.add(String(rawSop._id));
+
+        const docs = [...(rawSop.fileUrl ? [{ filePath: rawSop.fileUrl, fileType: 'pdf', language: rawSop.language }] : []), ...(rawSop.sopDocuments || [])];
+        for (const d of docs) {
+          if (!d.filePath) continue;
+          if (!sopDocuments.some(existing => normPathKey(existing.filePath) === normPathKey(d.filePath))) {
+            sopDocuments.push({
+              fileName: d.fileName || (d.filePath.toLowerCase().endsWith('.pdf') ? 'PDF' : 'DOCX'),
+              filePath: d.filePath,
+              fileType: d.fileType || (d.filePath.toLowerCase().endsWith('.pdf') ? 'pdf' : 'docx'),
+              language: d.language || rawSop.language || 'English'
+            });
           }
         }
       }
@@ -2292,8 +2323,9 @@ export async function GET(request: NextRequest) {
 
       let deptRaw = 'General';
       let updatedMs = 0;
-      for (const va of versionArtifactsDocs as any[]) {
-        if (normalizeSopIdentifierKey(String(va.identifier || '').trim().toUpperCase()) !== mk) continue;
+      // Optimized: Use pre-indexed Map to find matching artifact docs
+      const matchingArtifactsForMk = versionArtifactsByIdentifier.get(mk) || [];
+      for (const va of matchingArtifactsForMk) {
         const t = new Date(va.updatedAt || 0).getTime();
         if (t >= updatedMs) {
           updatedMs = t;
@@ -2588,10 +2620,15 @@ export async function GET(request: NextRequest) {
     // Store in server-side cache so subsequent requests within the TTL are instant.
     setDashboardSopsCache(responsePayload);
 
-    const response = NextResponse.json(responsePayload);
-    // Tag response for on-demand revalidation from upload endpoints
-    response.headers.set('x-cache-tag', 'dashboard-sops');
-    return response;
+    try {
+      const response = NextResponse.json(responsePayload);
+      // Tag response for on-demand revalidation from upload endpoints
+      response.headers.set('x-cache-tag', 'dashboard-sops');
+      return response;
+    } catch (jsonErr: any) {
+      console.error('ERROR IN JSON SERIALIZATION:', jsonErr);
+      return NextResponse.json({ success: false, error: 'JSON Serialization Failed: ' + jsonErr.message }, { status: 500 });
+    }
   } catch (error) {
     console.error('Error fetching dashboard sops:', error);
     return NextResponse.json(

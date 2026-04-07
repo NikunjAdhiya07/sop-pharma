@@ -13,7 +13,7 @@ export interface ISOPGuidelineResult extends Document {
   clausesAnalyzed: number;
   guidelineDocumentsUsed: number;
   guidelineIds: string[];
-  findings: any[];
+  findings?: any[]; // Not persisted; exceeds BSON limit with large result sets
   runAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -28,7 +28,8 @@ const SOPGuidelineResultSchema = new Schema<ISOPGuidelineResult>(
     clausesAnalyzed: { type: Number, default: 0 },
     guidelineDocumentsUsed: { type: Number, default: 0 },
     guidelineIds: [{ type: String }],
-    findings: { type: Schema.Types.Mixed, default: [] },
+    // findings intentionally omitted — storing detailed array exceeds BSON 16MB limit
+    // Results are returned to client; persist summary stats for caching and history
     runAt: { type: Date, default: Date.now },
   },
   { timestamps: true }
