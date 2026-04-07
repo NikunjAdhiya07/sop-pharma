@@ -237,19 +237,14 @@ export default function SOPTable({
     allowSupersede = false,
   ): ReactNode => {
     if (slotVersions.length === 0) return null;
+    const safeEntries = entries ?? [];
     const entryByVersion = new Map<number, VersionArtifactEntry>(
-      entries.map((e) => [e.version, e]),
+      safeEntries.map((e) => [e.version, e]),
     );
-    const highestStored = Math.max(...entries.map((e) => e.version));
-    // Start just below current revision (prior versions only), go down to cover all stored
-    const startFrom = currentRev != null ? currentRev - 1 : highestStored;
-    const lowestStored = Math.min(...entries.map((e) => e.version));
-    const rangeSlots: (VersionArtifactEntry | { version: number; missing: true })[] = [];
-    for (let v = startFrom; v >= lowestStored; v--) {
+    const sorted = slotVersions.map((v) => {
       const entry = entryByVersion.get(v);
-      rangeSlots.push(entry ?? { version: v, missing: true });
-    }
-    const sorted = rangeSlots.slice(0, maxRows);
+      return entry ?? { version: v, missing: true };
+    });
 
     return (
       <div className="flex flex-col gap-1 py-0.5">

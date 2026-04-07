@@ -1,9 +1,4 @@
-<<<<<<< HEAD
 import { NextResponse, type NextRequest } from 'next/server';
-=======
-import { NextResponse } from 'next/server';
-import { revalidatePath } from 'next/cache';
->>>>>>> a1e7cb726049281ee12bea0460a2871510eec402
 import connectDB from '@/lib/mongodb';
 import {
   getDashboardSopsCache,
@@ -708,11 +703,7 @@ function collapsePrimaryRegistryRowsByFamily(
   rows: any[],
   versionArtifactsByKey: Map<string, VersionArtifactEntry[]>,
   artifactsMergedByFamilyLang: Map<string, VersionArtifactEntry[]>,
-<<<<<<< HEAD
   priorSopFilesByNormKey: PriorSopFileMap,
-=======
-  priorSopFilesByNormKey: Map<string, { version: number; docxPath?: string; pdfPath?: string; lang: 'English' | 'Gujarati' }[]>,
->>>>>>> a1e7cb726049281ee12bea0460a2871510eec402
 ): any[] {
   const byFamily = new Map<string, any[]>();
   const ungrouped: any[] = [];
@@ -720,16 +711,12 @@ function collapsePrimaryRegistryRowsByFamily(
     const fk = sopFamilyKeyFromIdentifier(String(row.sopNo || ''));
     if (!fk) {
       const nk0 = normalizeSopIdentifierKey(String(row.sopNo || '').trim().toUpperCase());
-<<<<<<< HEAD
-      const cur0 = parseRevisionFromSopIdentifier(nk0);
-=======
       const rawEn0 = versionArtifactsForRow(nk0, 'English', versionArtifactsByKey, artifactsMergedByFamilyLang);
       const rawGj0 = versionArtifactsForRow(nk0, 'Gujarati', versionArtifactsByKey, artifactsMergedByFamilyLang);
       const rev0 = parseRevisionFromSopIdentifier(nk0);
       const fk0 = sopFamilyKeyFromIdentifier(nk0);
       supplementArtifactsFromSopFiles(rawEn0, fk0 || '', 'English', rev0, priorSopFilesByNormKey);
       supplementArtifactsFromSopFiles(rawGj0, fk0 || '', 'Gujarati', rev0, priorSopFilesByNormKey);
->>>>>>> a1e7cb726049281ee12bea0460a2871510eec402
       ungrouped.push(
         applyRegistryPriorSplits(
           {
@@ -737,25 +724,8 @@ function collapsePrimaryRegistryRowsByFamily(
             sopNo: nk0,
             sopDocuments: dedupeSopDocumentsByPath(row.sopDocuments || []),
           },
-<<<<<<< HEAD
-          mergePriorSopFilesIntoArtifactEntries(
-            fk,
-            cur0,
-            'English',
-            versionArtifactsForRow(nk0, 'English', versionArtifactsByKey, artifactsMergedByFamilyLang),
-            priorSopFilesByNormKey,
-          ),
-          mergePriorSopFilesIntoArtifactEntries(
-            fk,
-            cur0,
-            'Gujarati',
-            versionArtifactsForRow(nk0, 'Gujarati', versionArtifactsByKey, artifactsMergedByFamilyLang),
-            priorSopFilesByNormKey,
-          ),
-=======
           rawEn0,
           rawGj0,
->>>>>>> a1e7cb726049281ee12bea0460a2871510eec402
           nk0,
         ),
       );
@@ -768,8 +738,6 @@ function collapsePrimaryRegistryRowsByFamily(
   const collapsed: any[] = [...ungrouped];
   for (const [, group] of byFamily) {
     const nkFirst = normalizeSopIdentifierKey(String(group[0].sopNo || '').trim().toUpperCase());
-    const fkFam = sopFamilyKeyFromIdentifier(nkFirst);
-    const curFirst = parseRevisionFromSopIdentifier(nkFirst);
     if (group.length === 1) {
       const only = group[0];
       const rawEn1 = versionArtifactsForRow(nkFirst, 'English', versionArtifactsByKey, artifactsMergedByFamilyLang);
@@ -785,25 +753,8 @@ function collapsePrimaryRegistryRowsByFamily(
             sopNo: nkFirst,
             sopDocuments: dedupeSopDocumentsByPath(only.sopDocuments || []),
           },
-<<<<<<< HEAD
-          mergePriorSopFilesIntoArtifactEntries(
-            fkFam,
-            curFirst,
-            'English',
-            versionArtifactsForRow(nkFirst, 'English', versionArtifactsByKey, artifactsMergedByFamilyLang),
-            priorSopFilesByNormKey,
-          ),
-          mergePriorSopFilesIntoArtifactEntries(
-            fkFam,
-            curFirst,
-            'Gujarati',
-            versionArtifactsForRow(nkFirst, 'Gujarati', versionArtifactsByKey, artifactsMergedByFamilyLang),
-            priorSopFilesByNormKey,
-          ),
-=======
           rawEn1,
           rawGj1,
->>>>>>> a1e7cb726049281ee12bea0460a2871510eec402
           nkFirst,
         ),
       );
@@ -912,11 +863,7 @@ function mergeRegistryRowsByDocumentFamily(
   rows: any[],
   versionArtifactsByKey: Map<string, VersionArtifactEntry[]>,
   artifactsMergedByFamilyLang: Map<string, VersionArtifactEntry[]>,
-<<<<<<< HEAD
   priorSopFilesByNormKey: PriorSopFileMap,
-=======
-  priorSopFilesByNormKey?: Map<string, { version: number; docxPath?: string; pdfPath?: string; lang: 'English' | 'Gujarati' }[]>,
->>>>>>> a1e7cb726049281ee12bea0460a2871510eec402
 ): any[] {
   const byFamily = new Map<string, any[]>();
   const ungrouped: any[] = [];
@@ -963,19 +910,15 @@ function mergeRegistryRowsByDocumentFamily(
 
     const rawEn = versionArtifactsForRow(nk, 'English', versionArtifactsByKey, artifactsMergedByFamilyLang);
     const rawGj = versionArtifactsForRow(nk, 'Gujarati', versionArtifactsByKey, artifactsMergedByFamilyLang);
-    if (priorSopFilesByNormKey) {
-      const fkMerge = sopFamilyKeyFromIdentifier(nk);
-      const revMerge = parseRevisionFromSopIdentifier(nk);
-      supplementArtifactsFromSopFiles(rawEn, fkMerge || '', 'English', revMerge, priorSopFilesByNormKey);
-      supplementArtifactsFromSopFiles(rawGj, fkMerge || '', 'Gujarati', revMerge, priorSopFilesByNormKey);
-    }
+    const fkMerge = sopFamilyKeyFromIdentifier(nk);
+    const currentRevision = parseRevisionFromSopIdentifier(nk);
+    supplementArtifactsFromSopFiles(rawEn, fkMerge || '', 'English', currentRevision, priorSopFilesByNormKey);
+    supplementArtifactsFromSopFiles(rawGj, fkMerge || '', 'Gujarati', currentRevision, priorSopFilesByNormKey);
 
     /** Prior versions: also collect files from any non-winner Mongo rows in this group. */
     const { en: extraEn, gj: extraGj } = extractArtifactsFromSopRows(group, winningRowForDocs._id);
     const finalEn = mergeVersionArtifactEntries(rawEn, extraEn);
     const finalGj = mergeVersionArtifactEntries(rawGj, extraGj);
-    const currentRevision = parseRevisionFromSopIdentifier(nk);
-    const fkMerge = sopFamilyKeyFromIdentifier(nk);
     const finalEnWithPriors = mergePriorSopFilesIntoArtifactEntries(
       fkMerge,
       currentRevision,
@@ -2297,16 +2240,12 @@ export async function GET(request: NextRequest) {
     });
 
     /** One row per SOP family; prior-version PDFs/DOCX stay under Prior versions, not in Files */
-<<<<<<< HEAD
     data = collapsePrimaryRegistryRowsByFamily(
       data,
       versionArtifactsByKey,
       artifactsMergedByFamilyLang,
       priorSopFilesByNormKey,
     );
-=======
-    data = collapsePrimaryRegistryRowsByFamily(data, versionArtifactsByKey, artifactsMergedByFamilyLang, priorSopFilesByNormKey);
->>>>>>> a1e7cb726049281ee12bea0460a2871510eec402
 
     const registryNormKeys = new Set(
       data.map((r: any) => normalizeSopIdentifierKey(String(r.sopNo || '').trim().toUpperCase())),
@@ -2527,16 +2466,12 @@ export async function GET(request: NextRequest) {
       artifactOnlyRowsAdded++;
     }
 
-<<<<<<< HEAD
     data = mergeRegistryRowsByDocumentFamily(
       data,
       versionArtifactsByKey,
       artifactsMergedByFamilyLang,
       priorSopFilesByNormKey,
     );
-=======
-    data = mergeRegistryRowsByDocumentFamily(data, versionArtifactsByKey, artifactsMergedByFamilyLang, priorSopFilesByNormKey);
->>>>>>> a1e7cb726049281ee12bea0460a2871510eec402
 
     const supersedeOverridesRaw = await SupersedeSOPVersion.find({})
       .select('sopNo language version docxPath pdfPath')
@@ -2620,11 +2555,7 @@ export async function GET(request: NextRequest) {
       sopNo: r.sopNo ? formatSopNoDisplay(String(r.sopNo)) : r.sopNo,
     }));
 
-<<<<<<< HEAD
     const responsePayload = {
-=======
-    const response = NextResponse.json({
->>>>>>> a1e7cb726049281ee12bea0460a2871510eec402
       success: true,
       data,
       metadata: {
@@ -2652,20 +2583,15 @@ export async function GET(request: NextRequest) {
           nearExpiryCount,
         },
       },
-<<<<<<< HEAD
     };
 
     // Store in server-side cache so subsequent requests within the TTL are instant.
     setDashboardSopsCache(responsePayload);
 
-    return NextResponse.json(responsePayload);
-=======
-    });
-
+    const response = NextResponse.json(responsePayload);
     // Tag response for on-demand revalidation from upload endpoints
     response.headers.set('x-cache-tag', 'dashboard-sops');
     return response;
->>>>>>> a1e7cb726049281ee12bea0460a2871510eec402
   } catch (error) {
     console.error('Error fetching dashboard sops:', error);
     return NextResponse.json(

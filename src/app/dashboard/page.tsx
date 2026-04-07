@@ -284,7 +284,9 @@ export default function DashboardPage() {
     const hadCache = forceFresh ? false : tryLoadSessionCache();
 
     const fetchData = async () => {
-      setLoading(true);
+      // Only show the full-page spinner when there is no cached data to display.
+      // If hadCache is true, data is already on screen — fetch silently in background.
+      if (!hadCache) setLoading(true);
       try {
         const sopRes = await fetch(
           `/api/dashboard/sops${forceFresh ? "?refresh=1" : ""}`,
@@ -313,7 +315,8 @@ export default function DashboardPage() {
       } catch (e) {
         console.error("Failed to fetch", e);
       } finally {
-        if (!hadCache) setLoading(false);
+        // Always clear loading when the fetch is done (covers both paths).
+        setLoading(false);
       }
     };
     fetchData();
