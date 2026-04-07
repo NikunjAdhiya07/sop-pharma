@@ -119,7 +119,7 @@ export default function SOPTable({
     const expiry = new Date(row.expiryDate);
     const now = new Date();
     now.setHours(0, 0, 0, 0);
-    const diffDays = Math.ceil(
+    const diffDays = Math.floor(
       (expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
     );
     if (diffDays < 0) return "Expired";
@@ -582,7 +582,7 @@ export default function SOPTable({
     const review = new Date(dateStr);
     const now = new Date();
     now.setHours(0, 0, 0, 0);
-    const diffDays = Math.ceil(
+    const diffDays = Math.floor(
       (review.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
     );
     const absDays = Math.abs(diffDays);

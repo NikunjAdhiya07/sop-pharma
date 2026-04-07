@@ -6,6 +6,7 @@ import {
   countRowDocxPdfForCapsules,
   expectedDocxSlotsForRow,
   expectedPdfSlotsForRow,
+  scanRowLanguageFileSlots,
 } from "@/lib/registryRowDocCounts";
 import { isArtifactOnlyRegistryRow, isStandardRegistrySopNumber } from "@/lib/registryPrimaryRows";
 import { CAPSULE_DEPARTMENTS } from "@/lib/capsuleDepartments";
@@ -41,6 +42,16 @@ type CapsuleAcc = {
   versionOnlyOneFound: number;
   versionNotFound: number;
   missingExpiry: number;
+  langDocx: Map<string, { found: number; missing: number }>;
+  langPdf: Map<string, { found: number; missing: number }>;
+  langDocxVersion: Map<string, { allTwoFound: number; onlyOneFound: number; notFound: number }>;
+  langPdfVersion: Map<string, { allTwoFound: number; onlyOneFound: number; notFound: number }>;
+  docxVersionAllTwoFound: number;
+  docxVersionOnlyOneFound: number;
+  docxVersionNotFound: number;
+  pdfVersionAllTwoFound: number;
+  pdfVersionOnlyOneFound: number;
+  pdfVersionNotFound: number;
 };
 
 function emptyCapsuleAcc(): CapsuleAcc {
@@ -69,7 +80,33 @@ function emptyCapsuleAcc(): CapsuleAcc {
     versionOnlyOneFound: 0,
     versionNotFound: 0,
     missingExpiry: 0,
+    langDocx: new Map(),
+    langPdf: new Map(),
+    langDocxVersion: new Map(),
+    langPdfVersion: new Map(),
+    docxVersionAllTwoFound: 0,
+    docxVersionOnlyOneFound: 0,
+    docxVersionNotFound: 0,
+    pdfVersionAllTwoFound: 0,
+    pdfVersionOnlyOneFound: 0,
+    pdfVersionNotFound: 0,
   };
+}
+
+function langShortCode(lang: string): string {
+  if (lang === "English") return "EN";
+  if (lang === "Gujarati") return "GJ";
+  return lang.substring(0, 2).toUpperCase();
+}
+
+function sortLangCodes(codes: string[]): string[] {
+  return [...codes].sort((a, b) => {
+    if (a === "EN") return -1;
+    if (b === "EN") return 1;
+    if (a === "GJ") return -1;
+    if (b === "GJ") return 1;
+    return a.localeCompare(b);
+  });
 }
 
 function foldRegistryRowIntoCapsuleAcc(
@@ -85,9 +122,11 @@ function foldRegistryRowIntoCapsuleAcc(
 
   if (row.expiryDate) {
     const exp = new Date(row.expiryDate).getTime();
-    const diffDays = (exp - today.getTime()) / dayMs;
+    // Use Math.floor so that a SOP whose date is fractionally past midnight is
+    // counted the same way the parent expiry filter counts it (diffDays < 0 → expired).
+    const diffDays = Math.floor((exp - today.getTime()) / dayMs);
     if (diffDays < 0) s.expired++;
-    else if (diffDays <= 90) s.nearExpiry++;
+    else if (diffDays <= 30) s.nearExpiry++; // "Near" matches the "high" filter (0-30 days)
   }
 
   const { docx: nDocxFiles, pdf: nPdfFiles } = countRowDocxPdfForCapsules(row);
@@ -120,6 +159,90 @@ function foldRegistryRowIntoCapsuleAcc(
   else s.versionNotFound++;
 
   if (!row.expiryDate) s.missingExpiry++;
+
+  // Per-language breakdown
+  const slots = scanRowLanguageFileSlots(row);
+  const isDualDocx = expectedDocxSlotsForRow(row) >= 2;
+  const isDualPdf = expectedPdfSlotsForRow(row) >= 2;
+
+  const langPairs: Array<{
+    code: string;
+    docxFound: boolean;
+    pdfFound: boolean;
+    expectDocx: boolean;
+    expectPdf: boolean;
+  }> = [
+    {
+      code: "EN",
+      docxFound: slots.engDocx,
+      pdfFound: slots.engPdf,
+      expectDocx: true,
+      expectPdf: true,
+    },
+  ];
+
+  if (isDualDocx || isDualPdf) {
+    langPairs.push({
+      code: "GJ",
+      docxFound: slots.gujDocx,
+      pdfFound: slots.gujPdf,
+      expectDocx: isDualDocx,
+      expectPdf: isDualPdf,
+    });
+  }
+
+  for (const lp of langPairs) {
+    // DOCX per-language
+    if (lp.expectDocx) {
+      if (!s.langDocx.has(lp.code)) {
+        s.langDocx.set(lp.code, { found: 0, missing: 0 });
+      }
+      const ld = s.langDocx.get(lp.code)!;
+      if (lp.docxFound) ld.found++;
+      else ld.missing++;
+
+      // DOCX versions per-language
+      if (!s.langDocxVersion.has(lp.code)) {
+        s.langDocxVersion.set(lp.code, { allTwoFound: 0, onlyOneFound: 0, notFound: 0 });
+      }
+      const ldv = s.langDocxVersion.get(lp.code)!;
+      if (vt === "allTwoFound") ldv.allTwoFound++;
+      else if (vt === "onlyOneFound") ldv.onlyOneFound++;
+      else ldv.notFound++;
+    }
+
+    // PDF per-language
+    if (lp.expectPdf) {
+      if (!s.langPdf.has(lp.code)) {
+        s.langPdf.set(lp.code, { found: 0, missing: 0 });
+      }
+      const lp2 = s.langPdf.get(lp.code)!;
+      if (lp.pdfFound) lp2.found++;
+      else lp2.missing++;
+
+      // PDF versions per-language
+      if (!s.langPdfVersion.has(lp.code)) {
+        s.langPdfVersion.set(lp.code, { allTwoFound: 0, onlyOneFound: 0, notFound: 0 });
+      }
+      const lpv = s.langPdfVersion.get(lp.code)!;
+      if (vt === "allTwoFound") lpv.allTwoFound++;
+      else if (vt === "onlyOneFound") lpv.onlyOneFound++;
+      else lpv.notFound++;
+    }
+  }
+
+  // Aggregate version counts by file type
+  if (nDocxFiles > 0) {
+    if (vt === "allTwoFound") s.docxVersionAllTwoFound++;
+    else if (vt === "onlyOneFound") s.docxVersionOnlyOneFound++;
+    else s.docxVersionNotFound++;
+  }
+
+  if (nPdfFiles > 0) {
+    if (vt === "allTwoFound") s.pdfVersionAllTwoFound++;
+    else if (vt === "onlyOneFound") s.pdfVersionOnlyOneFound++;
+    else s.pdfVersionNotFound++;
+  }
 }
 
 function accToDeptCapsuleStats(department: string, s: CapsuleAcc): DeptCapsuleStats {
@@ -149,6 +272,16 @@ function accToDeptCapsuleStats(department: string, s: CapsuleAcc): DeptCapsuleSt
     versionOnlyOneFound: s.versionOnlyOneFound,
     versionNotFound: s.versionNotFound,
     missingExpiry: s.missingExpiry,
+    langDocx: s.langDocx,
+    langPdf: s.langPdf,
+    langDocxVersion: s.langDocxVersion,
+    langPdfVersion: s.langPdfVersion,
+    docxVersionAllTwoFound: s.docxVersionAllTwoFound,
+    docxVersionOnlyOneFound: s.docxVersionOnlyOneFound,
+    docxVersionNotFound: s.docxVersionNotFound,
+    pdfVersionAllTwoFound: s.pdfVersionAllTwoFound,
+    pdfVersionOnlyOneFound: s.pdfVersionOnlyOneFound,
+    pdfVersionNotFound: s.pdfVersionNotFound,
   };
 }
 
@@ -195,6 +328,16 @@ export interface DeptCapsuleStats {
   /** Not Found: expected prior versions exist but none were found */
   versionNotFound: number;
   missingExpiry: number;
+  langDocx: Map<string, { found: number; missing: number }>;
+  langPdf: Map<string, { found: number; missing: number }>;
+  langDocxVersion: Map<string, { allTwoFound: number; onlyOneFound: number; notFound: number }>;
+  langPdfVersion: Map<string, { allTwoFound: number; onlyOneFound: number; notFound: number }>;
+  docxVersionAllTwoFound: number;
+  docxVersionOnlyOneFound: number;
+  docxVersionNotFound: number;
+  pdfVersionAllTwoFound: number;
+  pdfVersionOnlyOneFound: number;
+  pdfVersionNotFound: number;
 }
 
 function computeDepartmentStats(data: any[]): DeptCapsuleStats[] {
@@ -392,6 +535,7 @@ function CapsuleMetricVersionTriple({
   highlightRed,
   filterRowActive,
   titleSummary,
+  label = "Versions",
 }: {
   totalSOPs: number;
   allTwoFoundV: number;
@@ -406,6 +550,7 @@ function CapsuleMetricVersionTriple({
   highlightRed: boolean;
   filterRowActive: boolean;
   titleSummary: string;
+  label?: ReactNode;
 }) {
   return (
     <div
@@ -424,7 +569,7 @@ function CapsuleMetricVersionTriple({
         title={`Filter: ${titleSummary}`}
         aria-pressed={filterRowActive ? true : undefined}
         className="min-w-0 cursor-pointer truncate text-left text-gray-600 transition-colors hover:text-purple-800 focus:z-10 focus:outline-none focus:ring-1 focus:ring-purple-400 rounded px-0.5 -mx-0.5">
-        Version
+        {label}
       </button>
       <div
         className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums"
@@ -818,7 +963,7 @@ function DepartmentCapsuleCard({
           }
         />
         <CapsuleMetricAvailMissing
-          label="DOCX"
+          label={`DOCX (${stat.docxFiles})`}
           totalExpected={stat.expectedDocx}
           available={stat.docxFiles}
           onFilterClick={() => apply("docx")}
@@ -860,8 +1005,27 @@ function DepartmentCapsuleCard({
               : `${stat.docxFiles} DOCX slots in ${label} · green = filled, red = missing`
           }
         />
+        {sortLangCodes([...stat.langDocx.keys()]).map((lang) => {
+          const ld = stat.langDocx.get(lang)!;
+          return (
+            <CapsuleMetricAvailMissing
+              key={`docx-lang-${lang}`}
+              label={<span className="pl-3 text-gray-500 text-[9px]">[{lang}]</span>}
+              totalExpected={ld.found + ld.missing}
+              available={ld.found}
+              missingCount={ld.missing}
+              onFilterClick={() => {}}
+              onAvailableClick={() => {}}
+              onMissingClick={() => {}}
+              highlightAvailable={false}
+              highlightMissing={false}
+              filterRowActive={false}
+              titleSummary={`${lang} DOCX: ${ld.found} found, ${ld.missing} missing`}
+            />
+          );
+        })}
         <CapsuleMetricAvailMissing
-          label="PDF"
+          label={`PDF (${stat.pdfFiles})`}
           totalExpected={stat.expectedPdf}
           available={stat.pdfFiles}
           onFilterClick={() => apply("pdf")}
@@ -903,6 +1067,25 @@ function DepartmentCapsuleCard({
               : `${stat.pdfFiles} PDF slots in ${label} · green = filled, red = missing`
           }
         />
+        {sortLangCodes([...stat.langPdf.keys()]).map((lang) => {
+          const lp = stat.langPdf.get(lang)!;
+          return (
+            <CapsuleMetricAvailMissing
+              key={`pdf-lang-${lang}`}
+              label={<span className="pl-3 text-gray-500 text-[9px]">[{lang}]</span>}
+              totalExpected={lp.found + lp.missing}
+              available={lp.found}
+              missingCount={lp.missing}
+              onFilterClick={() => {}}
+              onAvailableClick={() => {}}
+              onMissingClick={() => {}}
+              highlightAvailable={false}
+              highlightMissing={false}
+              filterRowActive={false}
+              titleSummary={`${lang} PDF: ${lp.found} found, ${lp.missing} missing`}
+            />
+          );
+        })}
         <CapsuleMetricVersionTriple
           totalSOPs={stat.totalSOPs}
           allTwoFoundV={stat.versionAllTwoFound}
@@ -946,6 +1129,60 @@ function DepartmentCapsuleCard({
               : `Version in ${scopeHint} · green = All Two Found, amber = Only One Found, red = Not Found`
           }
         />
+        {stat.docxVersionAllTwoFound > 0 || stat.docxVersionOnlyOneFound > 0 || stat.docxVersionNotFound > 0 ? (
+          <>
+            <div className="ml-1 text-[9px] text-gray-400 mt-1 font-medium">DOCX</div>
+            {sortLangCodes([...stat.langDocxVersion.keys()]).map((lang) => {
+              const ldv = stat.langDocxVersion.get(lang)!;
+              return (
+                <CapsuleMetricVersionTriple
+                  key={`docx-version-${lang}`}
+                  totalSOPs={stat.totalSOPs}
+                  allTwoFoundV={ldv.allTwoFound}
+                  onlyOneFoundV={ldv.onlyOneFound}
+                  notFoundV={ldv.notFound}
+                  onLabelClick={() => {}}
+                  onGreenClick={() => {}}
+                  onAmberClick={() => {}}
+                  onRedClick={() => {}}
+                  highlightGreen={false}
+                  highlightAmber={false}
+                  highlightRed={false}
+                  filterRowActive={false}
+                  titleSummary={`${lang} DOCX versions`}
+                  label={<span className="pl-3 text-gray-500 text-[9px]">[{lang}]</span>}
+                />
+              );
+            })}
+          </>
+        ) : null}
+        {stat.pdfVersionAllTwoFound > 0 || stat.pdfVersionOnlyOneFound > 0 || stat.pdfVersionNotFound > 0 ? (
+          <>
+            <div className="ml-1 text-[9px] text-gray-400 mt-1 font-medium">PDF</div>
+            {sortLangCodes([...stat.langPdfVersion.keys()]).map((lang) => {
+              const lpv = stat.langPdfVersion.get(lang)!;
+              return (
+                <CapsuleMetricVersionTriple
+                  key={`pdf-version-${lang}`}
+                  totalSOPs={stat.totalSOPs}
+                  allTwoFoundV={lpv.allTwoFound}
+                  onlyOneFoundV={lpv.onlyOneFound}
+                  notFoundV={lpv.notFound}
+                  onLabelClick={() => {}}
+                  onGreenClick={() => {}}
+                  onAmberClick={() => {}}
+                  onRedClick={() => {}}
+                  highlightGreen={false}
+                  highlightAmber={false}
+                  highlightRed={false}
+                  filterRowActive={false}
+                  titleSummary={`${lang} PDF versions`}
+                  label={<span className="pl-3 text-gray-500 text-[9px]">[{lang}]</span>}
+                />
+              );
+            })}
+          </>
+        ) : null}
         <CapsuleMetricAvailMissing
           label={
             <>

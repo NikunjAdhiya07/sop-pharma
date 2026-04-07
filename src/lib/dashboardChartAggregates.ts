@@ -58,7 +58,7 @@ export function aggregateDepartmentDistribution(data: any[]): DeptChartRow[] {
       s.active++;
       continue;
     }
-    const diffDays = Math.ceil((new Date(row.expiryDate).getTime() - today.getTime()) / dayMs);
+    const diffDays = Math.floor((new Date(row.expiryDate).getTime() - today.getTime()) / dayMs);
     if (diffDays < 0) s.expired++;
     else if (diffDays <= 30) s.near++;
     else s.active++;
@@ -99,7 +99,7 @@ export function aggregateExpiryStatusGlobal(data: any[]): {
       noExpiryDate++;
       continue;
     }
-    const diffDays = Math.ceil((new Date(row.expiryDate).getTime() - today.getTime()) / dayMs);
+    const diffDays = Math.floor((new Date(row.expiryDate).getTime() - today.getTime()) / dayMs);
     if (diffDays < 0) expired++;
     else if (diffDays <= 30) nearExpiry++;
     else active++;
@@ -176,7 +176,7 @@ export function aggregateExpiryTimeline(data: any[]): { window: string; count: n
 
   for (const row of data) {
     if (!row.expiryDate) continue;
-    const diffDays = Math.ceil((new Date(row.expiryDate).getTime() - today.getTime()) / dayMs);
+    const diffDays = Math.floor((new Date(row.expiryDate).getTime() - today.getTime()) / dayMs);
     if (diffDays < 0) continue;
     if (diffDays <= 30) w30++;
     else if (diffDays <= 60) w60++;

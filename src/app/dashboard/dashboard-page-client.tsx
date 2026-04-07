@@ -431,6 +431,9 @@ export default function DashboardPageClient() {
       department: item.department || "Other",
       language: item.language || "English",
       isDualLanguage: item.isDualLanguage || false,
+      englishVersion: item.englishVersion || false,
+      gujaratiVersion: item.gujaratiVersion || false,
+      gujaratiFileMissing: item.gujaratiFileMissing || false,
       location: item.location || null,
       expiryDate: item.expiryDate || null,
       version: item.version || null,
@@ -565,10 +568,12 @@ export default function DashboardPageClient() {
     if (filterExpiry !== "all") {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
+    // Use Math.floor (same as capsule accumulator) so that expired vs near-expiry
+    // boundaries are consistent between the capsule counts and the filter results.
       result = result.filter((d: any) => {
         if (filterExpiry === "nodate") return !d.expiryDate;
         if (!d.expiryDate) return false;
-        const diffDays = Math.ceil(
+        const diffDays = Math.floor(
           (new Date(d.expiryDate).getTime() - today.getTime()) /
             (1000 * 60 * 60 * 24),
         );
@@ -1529,24 +1534,29 @@ export default function DashboardPageClient() {
             </p>
           </div>
         ) : null}
-        <div className="rounded-lg border border-gray-200 bg-gray-50 shadow-sm">
-          <SOPTable
-            data={filteredAndSortedData}
-            sortConfig={sortConfig}
-            onSort={handleSort}
-            filterDeptFromParent={filterDept}
-            complianceCache={complianceCache}
-            onViewCompliance={(sopNo: string) =>
-              setViewingComplianceSopNo(sopNo)
-            }
-            onOpenGuidelineWizard={(row: { _id: string; sopNo: string }) => {
-              setGuidelinesWizardPreset(row);
-              setShowGuidelinesLibrary(true);
-            }}
-            onMarkObsolete={() => setRefreshKey((k) => k + 1)}
-            onMarkVersionSuperseded={handleMarkVersionSuperseded}
-          />
-        </div>
+        {!(filterObsolete && obsoleteListLoading) && (
+          <div className="rounded-lg border border-gray-200 bg-gray-50 shadow-sm">
+            <SOPTable
+              data={filterObsolete ? obsoleteTableRows : filteredAndSortedData}
+              sortConfig={sortConfig}
+              onSort={handleSort}
+              filterDeptFromParent={filterDept}
+              complianceCache={complianceCache}
+              onViewCompliance={(sopNo: string) =>
+                setViewingComplianceSopNo(sopNo)
+              }
+              onOpenGuidelineWizard={(row: { _id: string; sopNo: string }) => {
+                setGuidelinesWizardPreset(row);
+                setShowGuidelinesLibrary(true);
+              }}
+              onMarkObsolete={() => setRefreshKey((k) => k + 1)}
+              onMarkVersionSuperseded={handleMarkVersionSuperseded}
+              isObsoleteView={filterObsolete}
+              onRemoveObsolete={handleRemoveFromObsolete}
+              removingObsoleteId={removingObsoleteId}
+            />
+          </div>
+        )}
       </main>
 
       <DepartmentStatsModal

@@ -30,6 +30,8 @@ export async function GET() {
       const fk = familyPrefix(id);
 
       if (!byFamily.has(fk)) {
+        const hasEnglishFile = sop.language !== 'Gujarati' && sop.fileUrl;
+        const hasGujaratiFile = sop.language === 'Gujarati' && sop.fileUrl;
         byFamily.set(fk, {
           // Use this SOP's identifier as the representative (we'll pick highest revision below)
           identifier: id,
@@ -43,11 +45,15 @@ export async function GET() {
           language: sop.language,
           englishName: sop.language !== 'Gujarati' ? sop.name : undefined,
           gujaratiName: sop.language === 'Gujarati' ? sop.name : undefined,
-          sopFile: sop.language !== 'Gujarati' && sop.fileUrl ? {
+          englishVersion: hasEnglishFile,
+          gujaratiVersion: hasGujaratiFile,
+          isDualLanguage: hasEnglishFile && hasGujaratiFile,
+          gujaratiFileMissing: !hasGujaratiFile && (hasEnglishFile || sop.language === 'English'),
+          sopFile: hasEnglishFile ? {
             filePath: sop.fileUrl,
             fileType: sop.fileType,
             fileName: sop.originalFileName || sop.name,
-            language: sop.language || 'English',
+            language: 'English',
           } : undefined,
           sopDocuments: sop.sopDocuments || [],
           mediaStatus: { videoCount: 0, slideCount: 0, videos: false, slides: false, videoRequired: 0, slideRequired: 0, videoAvailable: 0, slideAvailable: 0 },
@@ -66,12 +72,13 @@ export async function GET() {
           entry.obsoleteAt = sop.obsoleteAt;
         }
 
-        // Merge names
+        // Merge names and version flags
         if (sop.language === 'Gujarati') {
           entry.gujaratiName = sop.name;
-          entry.isDualLanguage = true;
+          entry.gujaratiVersion = sop.fileUrl || entry.gujaratiVersion;
         } else {
           entry.englishName = sop.name;
+          entry.englishVersion = sop.fileUrl || entry.englishVersion;
           if (sop.fileUrl && !entry.sopFile) {
             entry.sopFile = {
               filePath: sop.fileUrl,
@@ -81,6 +88,10 @@ export async function GET() {
             };
           }
         }
+
+        // Update derived flags after merging versions
+        entry.isDualLanguage = entry.englishVersion && entry.gujaratiVersion;
+        entry.gujaratiFileMissing = !entry.gujaratiVersion && entry.englishVersion;
 
         // Merge sopDocuments
         (sop.sopDocuments || []).forEach((doc: any) => {
