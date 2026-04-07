@@ -5,6 +5,47 @@ import { signViewerToken } from '@/lib/viewerToken';
 import { sopIdentifierMatchFilter } from '@/lib/sopIdentifierNormalize';
 import { extractBunnyPath, getBunnyCdnUrl } from '@/lib/bunnyStorage';
 
+// ---------------------------------------------------------------------------
+// Server-side in-memory cache for resolved viewer URLs
+// Keyed by "identifier::language::path" → publicUrl
+// TTL: 10 minutes. Eliminates repeated DB queries when the same document is
+// opened multiple times within a session.
+// ---------------------------------------------------------------------------
+const VIEWER_CACHE_TTL_MS = 10 * 60 * 1000;
+interface ViewerCacheEntry { publicUrl: string; cachedAt: number }
+const g = global as typeof global & { __viewerUrlCache?: Map<string, ViewerCacheEntry> };
+if (!g.__viewerUrlCache) g.__viewerUrlCache = new Map();
+const viewerUrlCache = g.__viewerUrlCache;
+
+function viewerCacheKey(
+  identifier: string | null,
+  language: string | null,
+  pathParam: string | null,
+): string {
+  return `${identifier ?? ''}::${language ?? ''}::${pathParam ?? ''}`;
+}
+
+function getCachedViewerUrl(key: string): string | null {
+  const entry = viewerUrlCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.cachedAt > VIEWER_CACHE_TTL_MS) {
+    viewerUrlCache.delete(key);
+    return null;
+  }
+  return entry.publicUrl;
+}
+
+function setCachedViewerUrl(key: string, publicUrl: string): void {
+  viewerUrlCache.set(key, { publicUrl, cachedAt: Date.now() });
+  // Evict old entries if cache grows too large
+  if (viewerUrlCache.size > 500) {
+    const now = Date.now();
+    for (const [k, v] of viewerUrlCache) {
+      if (now - v.cachedAt > VIEWER_CACHE_TTL_MS) viewerUrlCache.delete(k);
+    }
+  }
+}
+
 export function getOrigin(request: NextRequest): string {
   // Use explicit public URL so Office Online Viewer can reach serve-docx (viewer fetches from internet)
   const explicit = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL;
@@ -48,6 +89,13 @@ export async function resolvePublicDocUrl(
   language: string | null,
   pathParam: string | null
 ): Promise<{ publicUrl: string } | { error: string; status: number }> {
+  // Check server-side cache first — avoids DB round-trip for recently opened documents.
+  const cacheKey = viewerCacheKey(identifier, language, pathParam);
+  const cachedUrl = getCachedViewerUrl(cacheKey);
+  if (cachedUrl) {
+    return { publicUrl: cachedUrl };
+  }
+
   let fileUrl: string | null = null;
 
   // Comprehensive resolution: checks SOPLibrary + SOP, verifies reachability (Bunny CDN, local disk, https).
@@ -107,6 +155,9 @@ export async function resolvePublicDocUrl(
     const token = signViewerToken({ path: fileUrl });
     publicUrl = `${origin}/api/files/serve-docx?t=${encodeURIComponent(token)}`;
   }
+
+  // Cache the resolved URL so future requests for the same doc skip the DB query.
+  setCachedViewerUrl(cacheKey, publicUrl);
 
   return { publicUrl };
 }

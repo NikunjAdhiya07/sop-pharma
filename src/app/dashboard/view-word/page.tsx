@@ -5,6 +5,9 @@ import { useEffect, useState, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, FileText, AlertCircle, ExternalLink, Maximize2, Minimize2, RefreshCw } from 'lucide-react';
 
+const OFFICE_VIEW = 'https://view.officeapps.live.com/op/view.aspx';
+const GOOGLE_VIEWER = 'https://docs.google.com/gview?url=';
+
 function ViewWordContent() {
   const searchParams = useSearchParams();
   const identifier = searchParams.get('identifier');
@@ -12,25 +15,45 @@ function ViewWordContent() {
   const pathParam = searchParams.get('path');
   const viewerParam = searchParams.get('viewer'); // 'office' | 'google'
 
-  const [officeUrl, setOfficeUrl] = useState<string | null>(null);
-  const [googleUrl, setGoogleUrl] = useState<string | null>(null);
-  const [currentViewer, setCurrentViewer] = useState<'office' | 'google'>(viewerParam === 'google' ? 'google' : 'office');
+  // Build the open-in-viewer URL immediately — the browser follows the 302 redirect inside
+  // the iframe without any JS round-trip, so the iframe starts loading right away.
+  const openInViewerParams = new URLSearchParams();
+  if (identifier) openInViewerParams.set('identifier', identifier);
+  if (language) openInViewerParams.set('language', language);
+  if (pathParam) openInViewerParams.set('path', pathParam);
+  if (viewerParam === 'google') openInViewerParams.set('viewer', 'google');
+  const immediateIframeSrc = `/api/files/open-in-viewer?${openInViewerParams.toString()}`;
+
   const [iframeLoading, setIframeLoading] = useState(true);
-  const [message, setMessage] = useState<string | null>(null);
-  const [isPublic, setIsPublic] = useState(true);
-  const [canUseOfficeViewer, setCanUseOfficeViewer] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [currentViewer, setCurrentViewer] = useState<'office' | 'google'>(
+    viewerParam === 'google' ? 'google' : 'office',
+  );
+
+  // Background fetch for viewer controls (switch viewer button, Google URL).
+  // This does NOT block the iframe from starting — it only drives the toggle button.
+  const [googleUrl, setGoogleUrl] = useState<string | null>(null);
+  const [officeUrl, setOfficeUrl] = useState<string | null>(null);
+  const [canUseOfficeViewer, setCanUseOfficeViewer] = useState<boolean | null>(null);
+  const [fallbackMessage, setFallbackMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // iframeSrc starts as the open-in-viewer redirect URL so the iframe loads immediately.
+  // When the user switches viewers, we update it to the explicit viewer URL.
+  const [iframeSrc, setIframeSrc] = useState<string>(immediateIframeSrc);
+
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Validate params early (no round-trip needed).
   useEffect(() => {
     if (!identifier && !pathParam) {
       setError('Provide identifier or path (e.g. ?identifier=BSGE01-05&language=English).');
-      setLoading(false);
-      return;
     }
+  }, [identifier, pathParam]);
 
+  // Background fetch: resolve the actual viewer URLs for controls + fallback detection.
+  useEffect(() => {
+    if (!identifier && !pathParam) return;
     let cancelled = false;
     (async () => {
       try {
@@ -42,25 +65,41 @@ function ViewWordContent() {
         const data = await res.json();
         if (cancelled) return;
         if (data.success) {
-          setOfficeUrl(data.officeUrl);
-          setGoogleUrl(data.googleUrl);
-          setIsPublic(!!data.isPublic);
+          setOfficeUrl(data.officeUrl ?? null);
+          setGoogleUrl(data.googleUrl ?? null);
           setCanUseOfficeViewer(!!data.canUseOfficeViewer);
-          if (data.message) setMessage(data.message);
-          setCurrentViewer(viewerParam === 'google' ? 'google' : 'office');
+          if (data.message) setFallbackMessage(data.message);
         } else {
-          setError(data.error || 'Failed to get viewer URL.');
+          setCanUseOfficeViewer(false);
+          setFallbackMessage(data.error || 'Failed to get viewer URL.');
         }
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load.');
-      } finally {
-        if (!cancelled) setLoading(false);
+      } catch {
+        // Non-critical: iframe may already be showing the document.
       }
     })();
     return () => { cancelled = true; };
-  }, [identifier, language, pathParam, viewerParam]);
+  }, [identifier, language, pathParam]);
 
-  const iframeSrc = currentViewer === 'google' ? googleUrl : officeUrl;
+  const switchViewer = (viewer: 'office' | 'google') => {
+    setCurrentViewer(viewer);
+    setIframeLoading(true);
+    if (viewer === 'google' && googleUrl) {
+      setIframeSrc(googleUrl);
+    } else if (viewer === 'office' && officeUrl) {
+      setIframeSrc(officeUrl);
+    } else {
+      // Fallback: re-use the redirect route with the viewer param
+      const p = new URLSearchParams(openInViewerParams);
+      if (viewer === 'google') p.set('viewer', 'google'); else p.delete('viewer');
+      setIframeSrc(`/api/files/open-in-viewer?${p.toString()}`);
+    }
+  };
+
+  useEffect(() => {
+    const onFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
 
   const toggleFullscreen = () => {
     if (!containerRef.current) return;
@@ -70,12 +109,6 @@ function ViewWordContent() {
       document.exitFullscreen?.();
     }
   };
-
-  useEffect(() => {
-    const onFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
-    document.addEventListener('fullscreenchange', onFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
-  }, []);
 
   const openInAppPreview = () => {
     const params = new URLSearchParams();
@@ -93,17 +126,6 @@ function ViewWordContent() {
     if (currentViewer === 'google') params.set('viewer', 'google');
     window.open(`/api/files/open-in-viewer?${params.toString()}`, '_blank', 'noopener');
   };
-
-  if (loading) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-gray-100">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-purple-600 border-t-transparent" />
-          <p className="text-sm font-medium text-gray-600">Preparing document viewer…</p>
-        </div>
-      </div>
-    );
-  }
 
   if (error) {
     return (
@@ -127,8 +149,9 @@ function ViewWordContent() {
     );
   }
 
-  // When the document URL is not reachable by Office/Google (localhost serve-docx URL), offer in-app preview
-  if (!canUseOfficeViewer) {
+  // If background check confirms Office Online cannot reach the file, show fallback UI.
+  // (canUseOfficeViewer === null means still loading — show the iframe optimistically.)
+  if (canUseOfficeViewer === false) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-gray-100 p-4">
         <div className="max-w-lg rounded-xl border border-amber-200 bg-white p-6 shadow-sm">
@@ -137,7 +160,8 @@ function ViewWordContent() {
             <p className="font-semibold">Office Online cannot access this document</p>
           </div>
           <p className="mt-2 text-sm text-gray-600">
-            {message || 'The file is not publicly reachable (local path or CDN file not found). Use in-app preview below.'}
+            {fallbackMessage ||
+              'The file is not publicly reachable (local path or CDN file not found). Use in-app preview below.'}
           </p>
           <p className="mt-2 text-sm text-gray-600">
             In-app preview renders the document directly in the browser with accurate formatting.
@@ -177,17 +201,19 @@ function ViewWordContent() {
           </span>
         </div>
         <div className="flex items-center gap-2">
+          {/* Show toggle only once we know both URLs are available */}
           {officeUrl && googleUrl && (
             <button
               type="button"
-              onClick={() => {
-                setCurrentViewer(currentViewer === 'office' ? 'google' : 'office');
-                setIframeLoading(true);
-              }}
+              onClick={() => switchViewer(currentViewer === 'office' ? 'google' : 'office')}
               className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-              title={currentViewer === 'office' ? 'If the document did not load, try Google Docs Viewer' : 'Switch back to Office Viewer'}
+              title={
+                currentViewer === 'office'
+                  ? 'If the document did not load, try Google Docs Viewer'
+                  : 'Switch back to Office Viewer'
+              }
             >
-            <RefreshCw className="h-3.5 w-3.5" />
+              <RefreshCw className="h-3.5 w-3.5" />
               {currentViewer === 'office' ? 'Try Google Viewer' : 'Use Office Viewer'}
             </button>
           )}
@@ -216,20 +242,15 @@ function ViewWordContent() {
             <p className="mt-3 text-sm text-gray-600">Loading document…</p>
           </div>
         )}
-        {iframeSrc ? (
-          <iframe
-            title="Document viewer"
-            src={iframeSrc}
-            className="h-full w-full border-0 bg-white"
-            allow="fullscreen"
-            sandbox="allow-same-origin allow-scripts allow-popups"
-            onLoad={() => setIframeLoading(false)}
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center text-gray-500">
-            No viewer URL available.
-          </div>
-        )}
+        <iframe
+          key={iframeSrc}
+          title="Document viewer"
+          src={iframeSrc}
+          className="h-full w-full border-0 bg-white"
+          allow="fullscreen"
+          sandbox="allow-same-origin allow-scripts allow-popups"
+          onLoad={() => setIframeLoading(false)}
+        />
         {!iframeLoading && (
           <div className="absolute bottom-3 right-3 z-10">
             <button

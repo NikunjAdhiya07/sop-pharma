@@ -196,87 +196,117 @@ export default function SOPTable({
       entries.map((e) => [e.version, e]),
     );
     const highestStored = Math.max(...entries.map((e) => e.version));
-    // Start just below current revision (prior versions only), go down to cover all stored
-    const startFrom = currentRev != null ? currentRev - 1 : highestStored;
     const lowestStored = Math.min(...entries.map((e) => e.version));
-    const rangeSlots: (VersionArtifactEntry | { version: number; missing: true })[] = [];
-    for (let v = startFrom; v >= lowestStored; v--) {
-      const entry = entryByVersion.get(v);
-      rangeSlots.push(entry ?? { version: v, missing: true });
+    /** Top of the prior chain: one below current revision, or highest stored when SOP No has no rev */
+    const startFrom =
+      currentRev != null ? currentRev - 1 : highestStored;
+    const rangeSlots: (VersionArtifactEntry | { version: number; missing: true })[] =
+      [];
+    if (currentRev != null) {
+      // Always show the newest `maxRows` prior revision numbers (fill gaps as missing),
+      // e.g. current V5 with only V4 on disk → V4 + V3 missing.
+      for (let i = 0; i < maxRows; i++) {
+        const v = startFrom - i;
+        if (v < 1) break;
+        const entry = entryByVersion.get(v);
+        rangeSlots.push(entry ?? { version: v, missing: true });
+      }
+    } else {
+      // No revision in SOP No: walk downward from highest stored through consecutive slots
+      for (
+        let v = startFrom;
+        v >= lowestStored && rangeSlots.length < maxRows;
+        v--
+      ) {
+        const entry = entryByVersion.get(v);
+        rangeSlots.push(entry ?? { version: v, missing: true });
+      }
     }
-    const sorted = rangeSlots.slice(0, maxRows);
+
+    /** Newest prior revision first (V5 above V4) everywhere */
+    const rowsSorted = [...rangeSlots].sort((a, b) => b.version - a.version);
 
     return (
-      <div className="flex flex-col gap-1 py-0.5">
-        {subLabel && (
-          <span className="text-[9px] font-bold uppercase tracking-wide text-gray-500 leading-none mb-0.5">
-            {subLabel}
-          </span>
-        )}
-        <div className="flex flex-row flex-nowrap gap-4 items-start">
-          {sorted.map((e) => (
-            <div key={`${lang}-v${e.version}`} className="flex flex-col gap-0.5 min-w-[50px]">
-              <span className="text-[10px] font-bold text-gray-900 leading-tight">
+      <table className="w-full border-collapse text-[9px] leading-tight table-fixed">
+        <colgroup>
+          <col className="w-[2.25rem]" />
+          <col />
+        </colgroup>
+        <tbody>
+          {subLabel ? (
+            <tr>
+              <td
+                colSpan={2}
+                className="pb-0.5 align-middle text-[8px] font-bold uppercase tracking-wide text-gray-500">
+                {subLabel}
+              </td>
+            </tr>
+          ) : null}
+          {rowsSorted.map((e) => (
+            <tr key={`${lang}-v${e.version}`}>
+              <td className="py-px pr-1 align-middle font-bold text-gray-900 tabular-nums whitespace-nowrap">
                 {formatPriorVersionLabel(e.version)}
-              </span>
-              {"missing" in e ? (
-                <span
-                  className="text-[8px] font-bold text-red-500 leading-none"
-                  title="This version was not uploaded — not available">
-                  ✗
-                </span>
-              ) : (
-              <div className="flex items-center gap-1 leading-none text-[8px] font-bold h-[14px]">
-                {e.docxPath ? (
-                  <a
-                    href={buildPreviewHref(e.docxPath, "docx", row.sopNo, lang)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(ev) => ev.stopPropagation()}
-                    className="text-purple-600 hover:underline">
-                    DOCX
-                  </a>
-                ) : null}
-                {e.docxPath && e.pdfPath ? (
-                  <span className="text-gray-300 select-none">/</span>
-                ) : null}
-                {e.pdfPath ? (
-                  <a
-                    href={buildPreviewHref(e.pdfPath, "pdf", row.sopNo, lang)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(ev) => ev.stopPropagation()}
-                    className="text-blue-600 hover:underline">
-                    PDF
-                  </a>
-                ) : null}
-                {!e.docxPath && !e.pdfPath ? (
-                  <span className="text-gray-400">—</span>
-                ) : null}
-                {allowSupersede ? (
-                  <button
-                    type="button"
-                    onClick={(ev) => {
-                      ev.stopPropagation();
-                      onMarkVersionSuperseded?.({
-                        sopNo: String(row.sopNo || ""),
-                        lang,
-                        version: Number(e.version),
-                        docxPath: e.docxPath,
-                        pdfPath: e.pdfPath,
-                      });
-                    }}
-                    className="ml-1 rounded border border-amber-300 bg-amber-50 px-1 py-px text-[7px] font-bold text-amber-900 hover:bg-amber-100"
-                    title="Move this version to Supersede SOP section">
-                    Supersede
-                  </button>
-                ) : null}
-              </div>
-              )}
-            </div>
+              </td>
+              <td className="py-px align-middle">
+                {"missing" in e ? (
+                  <span
+                    className="text-[8px] font-bold text-red-500 leading-none"
+                    title="This version was not uploaded — not available">
+                    ✗
+                  </span>
+                ) : (
+                  <div className="inline-flex flex-row flex-wrap items-center gap-x-1 gap-y-0 leading-none text-[8px] font-bold">
+                    {e.docxPath ? (
+                      <a
+                        href={buildPreviewHref(e.docxPath, "docx", row.sopNo, lang)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(ev) => ev.stopPropagation()}
+                        className="text-purple-600 hover:underline whitespace-nowrap">
+                        DOCX
+                      </a>
+                    ) : null}
+                    {e.docxPath && e.pdfPath ? (
+                      <span className="text-gray-300 select-none">/</span>
+                    ) : null}
+                    {e.pdfPath ? (
+                      <a
+                        href={buildPreviewHref(e.pdfPath, "pdf", row.sopNo, lang)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(ev) => ev.stopPropagation()}
+                        className="text-blue-600 hover:underline whitespace-nowrap">
+                        PDF
+                      </a>
+                    ) : null}
+                    {!e.docxPath && !e.pdfPath ? (
+                      <span className="text-gray-400">—</span>
+                    ) : null}
+                    {allowSupersede ? (
+                      <button
+                        type="button"
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          onMarkVersionSuperseded?.({
+                            sopNo: String(row.sopNo || ""),
+                            lang,
+                            version: Number(e.version),
+                            docxPath: e.docxPath,
+                            pdfPath: e.pdfPath,
+                          });
+                        }}
+                        className="ml-0.5 rounded border border-amber-300 bg-amber-50 px-1 py-px text-[7px] font-bold text-amber-900 hover:bg-amber-100"
+                        title="Move this version to Supersede SOP section">
+                        Supersede
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+              </td>
+            </tr>
           ))}
-        </div>
-      </div>
+        </tbody>
+      </table>
     );
   };
 
@@ -982,7 +1012,7 @@ export default function SOPTable({
                             : [];
                           if (eng.length > 0 || guj.length > 0) {
                             return (
-                              <div className="flex flex-col gap-1 py-0.5">
+                              <div className="flex flex-col gap-1 py-0.5 min-w-0">
                                 {eng.length > 0 &&
                                   renderVersionArtifactLinks(
                                     eng,
@@ -1004,6 +1034,7 @@ export default function SOPTable({
                             label: string;
                             ok: boolean;
                             key: string;
+                            version: number;
                           }[] = [];
                           if (Array.isArray(row.previousVersionsStatus)) {
                             row.previousVersionsStatus
@@ -1013,9 +1044,11 @@ export default function SOPTable({
                                   label: formatPriorVersionLabel(v.version),
                                   ok: !!v.available,
                                   key: `p-${v.version}`,
+                                  version: Number(v.version),
                                 });
                               });
                           }
+                          items.sort((a, b) => b.version - a.version);
                           if (items.length === 0)
                             return (
                               <span className="text-[8px] text-gray-400">
@@ -1023,25 +1056,31 @@ export default function SOPTable({
                               </span>
                             );
                           return (
-                            <div className="flex flex-col gap-0.5 text-[11px] text-gray-600">
-                              {items.map((it) => (
-                                <span
-                                  key={it.key}
-                                  className="inline-flex items-center gap-px">
-                                  <span className="font-semibold">
-                                    {it.label}
-                                  </span>
-                                  <span
-                                    className={
-                                      it.ok
-                                        ? "text-emerald-600"
-                                        : "text-red-500"
-                                    }>
-                                    {it.ok ? "✓" : "✗"}
-                                  </span>
-                                </span>
-                              ))}
-                            </div>
+                            <table className="w-full border-collapse text-[10px] leading-tight text-gray-600 table-fixed">
+                              <colgroup>
+                                <col className="w-[2.25rem]" />
+                                <col />
+                              </colgroup>
+                              <tbody>
+                                {items.map((it) => (
+                                  <tr key={it.key}>
+                                    <td className="py-px pr-1 align-middle font-semibold whitespace-nowrap">
+                                      {it.label}
+                                    </td>
+                                    <td className="py-px align-middle">
+                                      <span
+                                        className={
+                                          it.ok
+                                            ? "text-emerald-600"
+                                            : "text-red-500"
+                                        }>
+                                        {it.ok ? "✓" : "✗"}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
                           );
                         })()}
                       </td>

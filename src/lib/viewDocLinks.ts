@@ -1,14 +1,16 @@
 /**
  * Shared links for dashboard document preview and downloads.
- * All DOCX files route through /api/files/open-in-viewer which resolves
- * bunny:// paths to CDN URLs and redirects straight to Office Live Viewer.
+ * Routes to the in-app DOCX viewer (/dashboard/view-doc) which renders
+ * directly in the browser using docx-preview — much faster than Office Online.
+ * An "Open in Office Online" button is available inside the viewer for users
+ * who need pixel-perfect rendering.
  */
 export function buildViewDocHref(path: string, identifier?: string, language?: string): string {
   const params = new URLSearchParams();
   if (identifier) params.set('identifier', identifier);
   if (language) params.set('language', language);
   if (path) params.set('path', path);
-  return `/api/files/open-in-viewer?${params.toString()}`;
+  return `/dashboard/view-doc?${params.toString()}`;
 }
 
 /** Forces server-resolved Word bytes as attachment (same resolution as preview). */

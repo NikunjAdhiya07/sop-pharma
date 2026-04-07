@@ -7,7 +7,7 @@ import {
   useCallback,
   type ChangeEvent,
 } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   User,
   LogOut,
@@ -71,6 +71,7 @@ export default function DashboardPage() {
   const [showSOPFolderUploadModal, setShowSOPFolderUploadModal] =
     useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const searchParams = useSearchParams();
   const [migrateBunnyState, setMigrateBunnyState] = useState<
     | { status: 'idle' }
     | { status: 'checking'; localCount: number | null }
@@ -189,11 +190,40 @@ export default function DashboardPage() {
       return;
     }
 
+    // --- Client-side sessionStorage cache (stale-while-revalidate) ---
+    // On first visit / hard refresh: show cached data instantly while re-fetching.
+    // After each successful fetch the fresh result is written back to sessionStorage.
+    const SESSION_KEY = "dashboard_sops_cache";
+    const SESSION_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+    const tryLoadSessionCache = (): boolean => {
+      try {
+        const raw = sessionStorage.getItem(SESSION_KEY);
+        if (!raw) return false;
+        const { data: cachedData, meta, cachedAt } = JSON.parse(raw);
+        if (Date.now() - cachedAt > SESSION_TTL_MS) return false;
+        setData(cachedData ?? []);
+        setDashboardMeta(meta ?? null);
+        setLoading(false);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    /** Bypass session + server in-memory caches (see /api/dashboard/sops?refresh=1). */
+    const forceFresh =
+      refreshKey > 0 || searchParams.get("refresh") === "1";
+    const hadCache = forceFresh ? false : tryLoadSessionCache();
+
     const fetchData = async () => {
       try {
-        const sopRes = await fetch("/api/dashboard/sops", {
-          cache: "no-store",
-        });
+        const sopRes = await fetch(
+          `/api/dashboard/sops${forceFresh ? "?refresh=1" : ""}`,
+          {
+            cache: "no-store",
+          },
+        );
         if (!sopRes.ok) {
           console.error("Failed to fetch SOPs", sopRes.status);
           return;
@@ -204,20 +234,41 @@ export default function DashboardPage() {
           const rawData = sopsJ.data ?? [];
           setData(rawData);
           setDashboardMeta((sopsJ.metadata as Record<string, unknown>) ?? null);
+          // Persist fresh result to sessionStorage for instant next-visit display.
+          try {
+            sessionStorage.setItem(
+              SESSION_KEY,
+              JSON.stringify({ data: rawData, meta: sopsJ.metadata ?? null, cachedAt: Date.now() }),
+            );
+          } catch { /* quota exceeded — ignore */ }
         }
       } catch (e) {
         console.error("Failed to fetch", e);
       } finally {
-        setLoading(false);
+        if (!hadCache) setLoading(false);
       }
     };
     fetchData();
-  }, [router, refreshKey]);
+  }, [router, refreshKey, searchParams]);
 
   const handleLogout = () => {
     localStorage.removeItem("user");
     router.push("/login");
   };
+
+  /**
+   * Invalidate both the server-side and client-side caches, then trigger a
+   * fresh data load. Call this after any upload or mutation that changes SOP data.
+   */
+  const triggerRefresh = useCallback(async () => {
+    // Clear sessionStorage cache so the upcoming fetch writes a fresh entry.
+    try { sessionStorage.removeItem("dashboard_sops_cache"); } catch { /* ignore */ }
+    // Tell the server to drop its in-memory cache.
+    try {
+      await fetch("/api/dashboard/invalidate-cache", { method: "POST" });
+    } catch { /* non-critical — server cache will expire on its own TTL */ }
+    setRefreshKey((k) => k + 1);
+  }, []);
 
   const handleMigrateToBunny = async () => {
     // Step 1: dry-run check
@@ -281,7 +332,7 @@ export default function DashboardPage() {
         );
         return;
       }
-      setRefreshKey((k) => k + 1);
+      triggerRefresh();
       window.alert(j.message || `Imported ${j.rowsProcessed ?? 0} row(s).`);
     } catch {
       window.alert("Could not import locations");
@@ -887,12 +938,12 @@ export default function DashboardPage() {
           window.alert(j.error || "Failed to move version to Supersede SOP");
           return;
         }
-        setRefreshKey((k) => k + 1);
+        triggerRefresh();
       } catch {
         window.alert("Network error while superseding version");
       }
     },
-    [],
+    [triggerRefresh],
   );
 
   if (loading) {
@@ -1338,7 +1389,7 @@ export default function DashboardPage() {
               setGuidelinesWizardPreset(row);
               setShowGuidelinesLibrary(true);
             }}
-            onMarkObsolete={() => setRefreshKey((k) => k + 1)}
+            onMarkObsolete={() => triggerRefresh()}
             onMarkVersionSuperseded={handleMarkVersionSuperseded}
           />
         </div>
@@ -1353,17 +1404,17 @@ export default function DashboardPage() {
         isOpen={showUploadModal}
         initialTab={uploadModalTab}
         onClose={() => setShowUploadModal(false)}
-        onSuccess={() => setRefreshKey((k) => k + 1)}
+        onSuccess={() => triggerRefresh()}
       />
       <UploadPDFModal
         isOpen={showPdfUploadModal}
         onClose={() => setShowPdfUploadModal(false)}
-        onSuccess={() => setRefreshKey((k) => k + 1)}
+        onSuccess={() => triggerRefresh()}
       />
       <SOPFolderUploadModal
         isOpen={showSOPFolderUploadModal}
         onClose={() => setShowSOPFolderUploadModal(false)}
-        onSuccess={() => setRefreshKey((k) => k + 1)}
+        onSuccess={() => triggerRefresh()}
       />
 
       {/* Migrate to Bunny modal */}

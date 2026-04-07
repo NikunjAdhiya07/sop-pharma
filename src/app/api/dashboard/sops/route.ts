@@ -1,5 +1,10 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import connectDB from '@/lib/mongodb';
+import {
+  getDashboardSopsCache,
+  invalidateDashboardSopsCache,
+  setDashboardSopsCache,
+} from '@/lib/dashboardSopsCache';
 import SOPLibrary from '@/models/SOPLibrary';
 import SOP from '@/models/SOP';
 import User from '@/models/User';
@@ -44,6 +49,35 @@ function mergeVersionArtifactEntries(a: VersionArtifactEntry[], b: VersionArtifa
     .map(([version, p]) => ({ version, ...p }))
     .filter((e) => (e.docxPath && String(e.docxPath).trim()) || (e.pdfPath && String(e.pdfPath).trim()))
     .sort((x, y) => y.version - x.version);
+}
+
+type PriorSopFileMap = Map<
+  string,
+  { version: number; docxPath?: string; pdfPath?: string; lang: 'English' | 'Gujarati' }[]
+>;
+
+/**
+ * Older revision rows in the SOP collection (per language) — same source as the initial MERGED_DATA.map
+ * supplement. Family collapse / document merge must merge this again or English priors are dropped for
+ * dual-language SOPs when only Gujarati exists in folder-upload artifacts.
+ */
+function mergePriorSopFilesIntoArtifactEntries(
+  familyKey: string | null,
+  currentRevision: number | null,
+  lang: 'English' | 'Gujarati',
+  entries: VersionArtifactEntry[],
+  priorSopFilesByNormKey: PriorSopFileMap,
+): VersionArtifactEntry[] {
+  if (!familyKey || currentRevision == null) return entries;
+  const priorEntries = priorSopFilesByNormKey.get(`${familyKey}::${lang}`) || [];
+  if (priorEntries.length === 0) return entries;
+  const fromDb: VersionArtifactEntry[] = [];
+  for (const pe of priorEntries) {
+    if (pe.version >= currentRevision) continue;
+    fromDb.push({ version: pe.version, docxPath: pe.docxPath, pdfPath: pe.pdfPath });
+  }
+  if (fromDb.length === 0) return entries;
+  return mergeVersionArtifactEntries(entries, fromDb);
 }
 
 /**
@@ -533,6 +567,7 @@ function collapsePrimaryRegistryRowsByFamily(
   rows: any[],
   versionArtifactsByKey: Map<string, VersionArtifactEntry[]>,
   artifactsMergedByFamilyLang: Map<string, VersionArtifactEntry[]>,
+  priorSopFilesByNormKey: PriorSopFileMap,
 ): any[] {
   const byFamily = new Map<string, any[]>();
   const ungrouped: any[] = [];
@@ -540,6 +575,7 @@ function collapsePrimaryRegistryRowsByFamily(
     const fk = sopFamilyKeyFromIdentifier(String(row.sopNo || ''));
     if (!fk) {
       const nk0 = normalizeSopIdentifierKey(String(row.sopNo || '').trim().toUpperCase());
+      const cur0 = parseRevisionFromSopIdentifier(nk0);
       ungrouped.push(
         applyRegistryPriorSplits(
           {
@@ -547,8 +583,20 @@ function collapsePrimaryRegistryRowsByFamily(
             sopNo: nk0,
             sopDocuments: dedupeSopDocumentsByPath(row.sopDocuments || []),
           },
-          versionArtifactsForRow(nk0, 'English', versionArtifactsByKey, artifactsMergedByFamilyLang),
-          versionArtifactsForRow(nk0, 'Gujarati', versionArtifactsByKey, artifactsMergedByFamilyLang),
+          mergePriorSopFilesIntoArtifactEntries(
+            fk,
+            cur0,
+            'English',
+            versionArtifactsForRow(nk0, 'English', versionArtifactsByKey, artifactsMergedByFamilyLang),
+            priorSopFilesByNormKey,
+          ),
+          mergePriorSopFilesIntoArtifactEntries(
+            fk,
+            cur0,
+            'Gujarati',
+            versionArtifactsForRow(nk0, 'Gujarati', versionArtifactsByKey, artifactsMergedByFamilyLang),
+            priorSopFilesByNormKey,
+          ),
           nk0,
         ),
       );
@@ -561,6 +609,8 @@ function collapsePrimaryRegistryRowsByFamily(
   const collapsed: any[] = [...ungrouped];
   for (const [, group] of byFamily) {
     const nkFirst = normalizeSopIdentifierKey(String(group[0].sopNo || '').trim().toUpperCase());
+    const fkFam = sopFamilyKeyFromIdentifier(nkFirst);
+    const curFirst = parseRevisionFromSopIdentifier(nkFirst);
     if (group.length === 1) {
       const only = group[0];
       collapsed.push(
@@ -570,8 +620,20 @@ function collapsePrimaryRegistryRowsByFamily(
             sopNo: nkFirst,
             sopDocuments: dedupeSopDocumentsByPath(only.sopDocuments || []),
           },
-          versionArtifactsForRow(nkFirst, 'English', versionArtifactsByKey, artifactsMergedByFamilyLang),
-          versionArtifactsForRow(nkFirst, 'Gujarati', versionArtifactsByKey, artifactsMergedByFamilyLang),
+          mergePriorSopFilesIntoArtifactEntries(
+            fkFam,
+            curFirst,
+            'English',
+            versionArtifactsForRow(nkFirst, 'English', versionArtifactsByKey, artifactsMergedByFamilyLang),
+            priorSopFilesByNormKey,
+          ),
+          mergePriorSopFilesIntoArtifactEntries(
+            fkFam,
+            curFirst,
+            'Gujarati',
+            versionArtifactsForRow(nkFirst, 'Gujarati', versionArtifactsByKey, artifactsMergedByFamilyLang),
+            priorSopFilesByNormKey,
+          ),
           nkFirst,
         ),
       );
@@ -593,6 +655,22 @@ function collapsePrimaryRegistryRowsByFamily(
     const { en: extraEn, gj: extraGj } = extractArtifactsFromSopRows(group, winner._id);
     const finalEn = mergeVersionArtifactEntries(mergedEn, extraEn);
     const finalGj = mergeVersionArtifactEntries(mergedGj, extraGj);
+    const curWinner = parseRevisionFromSopIdentifier(nk);
+    const fkWinner = sopFamilyKeyFromIdentifier(nk);
+    const finalEnWithPriors = mergePriorSopFilesIntoArtifactEntries(
+      fkWinner,
+      curWinner,
+      'English',
+      finalEn,
+      priorSopFilesByNormKey,
+    );
+    const finalGjWithPriors = mergePriorSopFilesIntoArtifactEntries(
+      fkWinner,
+      curWinner,
+      'Gujarati',
+      finalGj,
+      priorSopFilesByNormKey,
+    );
 
     const userSet = new Set<string>();
     for (const r of group) {
@@ -635,8 +713,8 @@ function collapsePrimaryRegistryRowsByFamily(
           _expired: bestExpired,
           _nearExpiry: bestNearExpiry,
         },
-        finalEn,
-        finalGj,
+        finalEnWithPriors,
+        finalGjWithPriors,
         nk,
       ),
     );
@@ -653,6 +731,7 @@ function mergeRegistryRowsByDocumentFamily(
   rows: any[],
   versionArtifactsByKey: Map<string, VersionArtifactEntry[]>,
   artifactsMergedByFamilyLang: Map<string, VersionArtifactEntry[]>,
+  priorSopFilesByNormKey: PriorSopFileMap,
 ): any[] {
   const byFamily = new Map<string, any[]>();
   const ungrouped: any[] = [];
@@ -701,10 +780,25 @@ function mergeRegistryRowsByDocumentFamily(
     const finalEn = mergeVersionArtifactEntries(rawEn, extraEn);
     const finalGj = mergeVersionArtifactEntries(rawGj, extraGj);
     const currentRevision = parseRevisionFromSopIdentifier(nk);
-    appendLatestArtifactWordIfMissing(mergedDocs, finalEn, 'English', currentRevision);
-    appendLatestArtifactWordIfMissing(mergedDocs, finalGj, 'Gujarati', currentRevision);
-    appendLatestArtifactPdfIfMissing(mergedDocs, finalEn, 'English', currentRevision);
-    appendLatestArtifactPdfIfMissing(mergedDocs, finalGj, 'Gujarati', currentRevision);
+    const fkMerge = sopFamilyKeyFromIdentifier(nk);
+    const finalEnWithPriors = mergePriorSopFilesIntoArtifactEntries(
+      fkMerge,
+      currentRevision,
+      'English',
+      finalEn,
+      priorSopFilesByNormKey,
+    );
+    const finalGjWithPriors = mergePriorSopFilesIntoArtifactEntries(
+      fkMerge,
+      currentRevision,
+      'Gujarati',
+      finalGj,
+      priorSopFilesByNormKey,
+    );
+    appendLatestArtifactWordIfMissing(mergedDocs, finalEnWithPriors, 'English', currentRevision);
+    appendLatestArtifactWordIfMissing(mergedDocs, finalGjWithPriors, 'Gujarati', currentRevision);
+    appendLatestArtifactPdfIfMissing(mergedDocs, finalEnWithPriors, 'English', currentRevision);
+    appendLatestArtifactPdfIfMissing(mergedDocs, finalGjWithPriors, 'Gujarati', currentRevision);
 
     let bestEnglish: string | null = null;
     let bestGujarati: string | null = null;
@@ -813,8 +907,8 @@ function mergeRegistryRowsByDocumentFamily(
           ? primaryRow.previousVersionsStatus
           : winner.previousVersionsStatus || [],
       },
-      finalEn,
-      finalGj,
+      finalEnWithPriors,
+      finalGjWithPriors,
       nk,
     );
 
@@ -981,8 +1075,21 @@ function mergeKeysOnlyInArtifacts(docs: any[], registryNormKeys: Set<string>): s
   return [...keys];
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const skipCache =
+      request.nextUrl.searchParams.get('refresh') === '1' ||
+      request.nextUrl.searchParams.get('nocache') === '1';
+    if (skipCache) {
+      invalidateDashboardSopsCache();
+    } else {
+      // Serve from in-memory cache if still warm (avoids full DB round-trip on every page load).
+      const cached = getDashboardSopsCache();
+      if (cached) {
+        return NextResponse.json(cached.payload);
+      }
+    }
+
     await connectDB();
 
     const allSOPs = await SOP.find({ $or: [{ isObsolete: { $ne: true } }, { isObsolete: { $exists: false } }] })
@@ -1365,7 +1472,7 @@ export async function GET() {
      * can surface files that were uploaded for older revisions but are no longer
      * the "current" version.  This supplements SOPVersionArtifacts folder-uploads.
      */
-    const priorSopFilesByNormKey = new Map<string, { version: number; docxPath?: string; pdfPath?: string; lang: 'English' | 'Gujarati' }[]>();
+    const priorSopFilesByNormKey: PriorSopFileMap = new Map();
     for (const sop of allSOPsIncludingObsolete as any[]) {
       const sopId = (sop.identifier || '').trim().toUpperCase();
       const rev = parseRevisionFromSopIdentifier(sopId);
@@ -1816,7 +1923,12 @@ export async function GET() {
     });
 
     /** One row per SOP family; prior-version PDFs/DOCX stay under Prior versions, not in Files */
-    data = collapsePrimaryRegistryRowsByFamily(data, versionArtifactsByKey, artifactsMergedByFamilyLang);
+    data = collapsePrimaryRegistryRowsByFamily(
+      data,
+      versionArtifactsByKey,
+      artifactsMergedByFamilyLang,
+      priorSopFilesByNormKey,
+    );
 
     const registryNormKeys = new Set(
       data.map((r: any) => normalizeSopIdentifierKey(String(r.sopNo || '').trim().toUpperCase())),
@@ -2032,7 +2144,12 @@ export async function GET() {
       artifactOnlyRowsAdded++;
     }
 
-    data = mergeRegistryRowsByDocumentFamily(data, versionArtifactsByKey, artifactsMergedByFamilyLang);
+    data = mergeRegistryRowsByDocumentFamily(
+      data,
+      versionArtifactsByKey,
+      artifactsMergedByFamilyLang,
+      priorSopFilesByNormKey,
+    );
 
     const supersedeOverridesRaw = await SupersedeSOPVersion.find({})
       .select('sopNo language version docxPath pdfPath')
@@ -2116,7 +2233,7 @@ export async function GET() {
       sopNo: r.sopNo ? formatSopNoDisplay(String(r.sopNo)) : r.sopNo,
     }));
 
-    return NextResponse.json({
+    const responsePayload = {
       success: true,
       data,
       metadata: {
@@ -2144,7 +2261,12 @@ export async function GET() {
           nearExpiryCount,
         },
       },
-    });
+    };
+
+    // Store in server-side cache so subsequent requests within the TTL are instant.
+    setDashboardSopsCache(responsePayload);
+
+    return NextResponse.json(responsePayload);
   } catch (error) {
     console.error('Error fetching dashboard sops:', error);
     return NextResponse.json(
