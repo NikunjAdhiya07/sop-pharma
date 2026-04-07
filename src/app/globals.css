@@ -97,7 +97,8 @@ body {
   box-sizing: border-box;
   position: relative;
   color: #111827;
-  overflow: visible;
+  overflow-x: hidden;
+  overflow-y: visible;
 }
 
 /* Scroll wrapper: grey page background like Word/Acrobat */
@@ -107,6 +108,9 @@ body {
   overflow-x: auto;
   overflow-y: visible;
   min-height: 400px;
+  /* Prevent flex parent from squeezing this below content width */
+  min-width: 0;
+  width: 100%;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────

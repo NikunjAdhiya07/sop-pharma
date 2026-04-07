@@ -127,6 +127,7 @@ export default function DashboardPageClient() {
 
   // Obsolete SOPs filter (shows in main registry table)
   const [filterObsolete, setFilterObsolete] = useState(false);
+  const [registrySearchOpen, setRegistrySearchOpen] = useState(false);
   const [obsoleteList, setObsoleteList] = useState<any[]>([]);
   const [obsoleteListLoading, setObsoleteListLoading] = useState(false);
   const [removingObsoleteId, setRemovingObsoleteId] = useState<string | null>(null);
@@ -1168,35 +1169,6 @@ export default function DashboardPageClient() {
 
 
           <div className="flex flex-wrap items-center justify-end gap-2 flex-1 lg:flex-none">
-            <select
-              value={searchField}
-              onChange={(e) =>
-                setSearchField(
-                  e.target.value as
-                    | "all"
-                    | "sopNo"
-                    | "sopName"
-                    | "department"
-                    | "location",
-                )
-              }
-              className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-[11px] font-semibold text-gray-700">
-              <option value="all">All fields</option>
-              <option value="sopNo">SOP No</option>
-              <option value="sopName">SOP Name</option>
-              <option value="department">Department</option>
-              <option value="location">Location</option>
-            </select>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Advanced search..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-48 rounded-md border border-gray-300 bg-white py-1.5 pl-8 pr-3 text-xs text-gray-700 outline-none placeholder:text-gray-400 focus:border-purple-500 focus:ring-1 focus:ring-purple-500/20"
-              />
-            </div>
             <button
               type="button"
               onClick={() => {
@@ -1370,7 +1342,7 @@ export default function DashboardPageClient() {
         ref={sopRegistryRef}
         className="flex flex-1 flex-col px-3 pt-1 pb-2">
         <div className="mb-1 flex items-center justify-between gap-2 shrink-0">
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-2 min-w-0 flex-wrap">
             <h3 className={`text-xs font-bold uppercase tracking-wider ${filterObsolete ? "text-rose-700" : "text-gray-600"}`}>
               {filterObsolete ? "Obsolete SOPs" : "SOP Registry"}
             </h3>
@@ -1402,6 +1374,65 @@ export default function DashboardPageClient() {
               title="Download list of SOPs missing DOCX files">
               <Download className="h-3 w-3" /> Export Missing DOCX
             </button>
+            {/* Search — icon-only; expands inline */}
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setRegistrySearchOpen((v) => !v);
+                  if (registrySearchOpen) setSearch("");
+                }}
+                className={`shrink-0 rounded border p-0.5 transition-colors ${
+                  search || registrySearchOpen
+                    ? "border-purple-400 bg-purple-50 text-purple-700"
+                    : "border-gray-300 bg-white text-gray-500 hover:border-purple-300 hover:text-purple-600"
+                }`}
+                title="Search SOPs">
+                <Search className="h-3.5 w-3.5" />
+              </button>
+              {registrySearchOpen && (
+                <>
+                  <select
+                    value={searchField}
+                    onChange={(e) =>
+                      setSearchField(
+                        e.target.value as
+                          | "all"
+                          | "sopNo"
+                          | "sopName"
+                          | "department"
+                          | "location",
+                      )
+                    }
+                    className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-gray-700 focus:border-purple-500 focus:outline-none">
+                    <option value="all">All fields</option>
+                    <option value="sopNo">SOP No</option>
+                    <option value="sopName">SOP Name</option>
+                    <option value="department">Department</option>
+                    <option value="location">Location</option>
+                  </select>
+                  <div className="relative">
+                    <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400" />
+                    <input
+                      autoFocus
+                      type="text"
+                      placeholder="Search..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="w-40 rounded border border-gray-300 bg-white py-0.5 pl-6 pr-2 text-[11px] text-gray-700 outline-none placeholder:text-gray-400 focus:border-purple-500 focus:ring-1 focus:ring-purple-500/20"
+                    />
+                    {search && (
+                      <button
+                        type="button"
+                        onClick={() => setSearch("")}
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                        <X className="h-2.5 w-2.5" />
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             {filterObsolete && (

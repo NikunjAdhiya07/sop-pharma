@@ -247,16 +247,16 @@ export default function SOPTable({
     });
 
     return (
-      <div className="flex flex-col gap-1 py-0.5">
+      <div className="flex flex-row flex-nowrap items-center gap-x-2 leading-none">
         {subLabel && (
-          <span className="text-[9px] font-bold uppercase tracking-wide text-gray-500 leading-none mb-0.5">
+          <span className="text-[8px] font-bold uppercase text-gray-400 leading-none w-[18px] shrink-0">
             {subLabel}
           </span>
         )}
-        <div className="flex flex-row flex-nowrap gap-4 items-start">
+        <div className="flex flex-row flex-nowrap gap-3 items-center">
           {sorted.map((e) => (
-            <div key={`${lang}-v${e.version}`} className="flex flex-col gap-0.5 min-w-[50px]">
-              <span className="text-[10px] font-bold text-gray-900 leading-tight">
+            <div key={`${lang}-v${e.version}`} className="flex flex-row items-center gap-0.5">
+              <span className="text-[9px] font-bold text-gray-700 leading-none whitespace-nowrap">
                 {formatPriorVersionLabel(e.version)}
               </span>
               {"missing" in e ? (
@@ -266,7 +266,7 @@ export default function SOPTable({
                   ✗
                 </span>
               ) : (
-              <div className="flex items-center gap-1 leading-none text-[8px] font-bold h-[14px]">
+              <div className="flex items-center gap-0.5 leading-none text-[8px] font-bold">
                 {e.docxPath ? (
                   <a
                     href={buildPreviewHref(e.docxPath, "docx", row.sopNo, lang)}
@@ -525,7 +525,7 @@ export default function SOPTable({
       const pdfDoc = docs.find((d) => d.type === "PDF");
 
       return (
-        <div className="grid grid-cols-[24px_58px_6px_50px] items-center gap-x-0.5 text-left leading-none min-h-[12px]">
+        <div className="grid grid-cols-[24px_58px_6px_50px] items-center gap-x-0.5 text-left leading-none min-h-[10px]">
           <span className="text-[8px] font-bold text-gray-500">
             {langLabel}
           </span>
@@ -1088,7 +1088,7 @@ export default function SOPTable({
                             dualSlots.length > 0
                           ) {
                             return (
-                              <div className="flex flex-col gap-[3px] py-0 leading-none">
+                              <div className="flex flex-col gap-[1px] py-0 leading-none">
                                 {renderVersionArtifactSlotRow(
                                   eng,
                                   row,
