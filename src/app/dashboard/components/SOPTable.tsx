@@ -442,11 +442,12 @@ export default function SOPTable({
       .filter((d) => d.lang === "GUJ")
       .sort((a, b) => typeOrder(a.type) - typeOrder(b.type));
     const hasBothFileLangs = engDocs.length > 0 && gujDocs.length > 0;
-    /** Same layout as before: ENG row + GUJ row for true dual-file rows, or when registry expects GUJ but file is missing */
+    /** Same layout as prior-version columns: bilingual DB row, both version flags, both langs in Files, or GUJ file missing */
     const useLangRows =
       Boolean(row.isDualLanguage) ||
       hasBothFileLangs ||
-      Boolean(row.gujaratiFileMissing);
+      Boolean(row.gujaratiFileMissing) ||
+      (Boolean(row.englishVersion) && Boolean(row.gujaratiVersion));
 
     const isWordType = (t: string) => t === "DOCX" || t === "DOC";
 
@@ -532,11 +533,27 @@ export default function SOPTable({
             <span className="text-gray-400 text-[9px] translate-y-px">—</span>
           ) : (
             <>
-              {renderSlot(wordDoc)}
+              {wordDoc ? (
+                renderSlot(wordDoc)
+              ) : (
+                <span
+                  className="text-[8px] font-bold leading-none text-red-600"
+                  title="DOCX missing for this language (current revision)">
+                  DOCX ✗
+                </span>
+              )}
               <div className="flex justify-center text-gray-300 text-[9px] select-none">
                 {wordDoc && pdfDoc ? "·" : ""}
               </div>
-              {renderSlot(pdfDoc)}
+              {pdfDoc ? (
+                renderSlot(pdfDoc)
+              ) : (
+                <span
+                  className="text-[8px] font-bold leading-none text-red-600"
+                  title="PDF missing for this language (current revision)">
+                  PDF ✗
+                </span>
+              )}
             </>
           )}
         </div>

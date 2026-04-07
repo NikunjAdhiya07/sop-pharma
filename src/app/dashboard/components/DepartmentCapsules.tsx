@@ -80,7 +80,8 @@ function foldRegistryRowIntoCapsuleAcc(
 ) {
   s.total++;
 
-  if (row.isDualLanguage === true) s.dualLang++;
+  /** Bilingual for registry math: expect EN + GU document slots (not only DB `isDualLanguage`). */
+  if (expectedDocxSlotsForRow(row) >= 2) s.dualLang++;
 
   if (row.expiryDate) {
     const exp = new Date(row.expiryDate).getTime();
@@ -281,7 +282,7 @@ function CapsuleMetric({
 
 export type CapsuleAvailMetric = "docx" | "pdf" | "video" | "slides";
 
-/** Label = same filter as green (has asset); green = rows with asset + sort desc; red = rows missing + sort asc. */
+/** Green = filled slots (DOCX/PDF); red = missing slots; click filters still use row-level “has any” / “has gap”. */
 function CapsuleMetricAvailMissing({
   label,
   totalExpected,
@@ -330,7 +331,7 @@ function CapsuleMetricAvailMissing({
       </button>
       <div
         className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums"
-        aria-label={`${available} with attachment, ${missing} missing of ${totalExpected} expected`}>
+        aria-label={`${available} slots filled, ${missing} missing of ${totalExpected} expected`}>
         <button
           type="button"
           onClick={(e) => {
@@ -748,8 +749,8 @@ function DepartmentCapsuleCard({
           isActive={capsuleMetricMatches(deptForFilter, "dual", filterSnapshot)}
           title={
             isGrand
-              ? "All departments: rows with both English and Gujarati files."
-              : "Rows with both English and Gujarati files."
+              ? "All departments: SOP rows that expect two language document slots (English + Gujarati), including bilingual pairs detected from files or version flags—not only the DB dual-language flag."
+              : "Rows that expect English + Gujarati document slots (two-slot bilingual rows)."
           }
         />
         <CapsuleMetric
@@ -819,8 +820,7 @@ function DepartmentCapsuleCard({
         <CapsuleMetricAvailMissing
           label="DOCX"
           totalExpected={stat.expectedDocx}
-          available={stat.docxSOPs}
-          missingCount={stat.missingDocxRows}
+          available={stat.docxFiles}
           onFilterClick={() => apply("docx")}
           onAvailableClick={() =>
             applyCapsuleAvailMiss(deptForFilter, "docx", "available")
@@ -856,15 +856,14 @@ function DepartmentCapsuleCard({
           }
           titleSummary={
             isGrand
-              ? `${stat.docxSOPs} rows with ≥1 DOCX · ${stat.missingDocxRows} rows missing expected DOCX · green = with DOCX, red = missing DOCX`
-              : `${stat.docxSOPs} with DOCX in ${label} · green = with DOCX, red = missing`
+              ? `${stat.docxFiles} DOCX slots filled · ${Math.max(0, stat.expectedDocx - stat.docxFiles)} missing of ${stat.expectedDocx} expected (EN+GU per bilingual row) · green = filled slots, red = missing slots`
+              : `${stat.docxFiles} DOCX slots in ${label} · green = filled, red = missing`
           }
         />
         <CapsuleMetricAvailMissing
           label="PDF"
           totalExpected={stat.expectedPdf}
-          available={stat.pdfSOPs}
-          missingCount={stat.missingPdfRows}
+          available={stat.pdfFiles}
           onFilterClick={() => apply("pdf")}
           onAvailableClick={() =>
             applyCapsuleAvailMiss(deptForFilter, "pdf", "available")
@@ -900,8 +899,8 @@ function DepartmentCapsuleCard({
           }
           titleSummary={
             isGrand
-              ? `${stat.pdfSOPs} rows with ≥1 PDF · ${stat.missingPdfRows} rows missing expected PDF · green = with PDF, red = missing PDF`
-              : `${stat.pdfSOPs} with PDF in ${label} · green = with PDF, red = missing`
+              ? `${stat.pdfFiles} PDF slots filled · ${Math.max(0, stat.expectedPdf - stat.pdfFiles)} missing of ${stat.expectedPdf} expected · green = filled slots, red = missing slots`
+              : `${stat.pdfFiles} PDF slots in ${label} · green = filled, red = missing`
           }
         />
         <CapsuleMetricVersionTriple

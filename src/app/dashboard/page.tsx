@@ -477,9 +477,9 @@ export default function DashboardPage() {
       result = result.filter((d: any) => d.department === filterDept);
     }
 
-    // Dual-language: match capsule "Dual" (true bilingual rows with separate GUJ file, not EN-only)
+    // Dual-language: match capsule "Dual" — rows that expect two EN+GU document slots (same as expectedDocxSlotsForRow === 2)
     if (filterDualLang) {
-      result = result.filter((d: any) => d.isDualLanguage === true);
+      result = result.filter((d: any) => expectedDocxSlotsForRow(d) >= 2);
     }
 
     // Filter File Type — same as capsules: is it fully/partially missing an expected language slot?

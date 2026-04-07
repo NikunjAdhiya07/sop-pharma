@@ -3,7 +3,11 @@
  * (primary rows from `filterPrimaryRegistryRows`, DOCX/PDF via {@link countRowDocxPdfForCapsules}).
  */
 import { CAPSULE_DEPARTMENTS } from '@/lib/capsuleDepartments';
-import { countRowDocxPdfForCapsules, countRowDocxPdfAttached } from '@/lib/registryRowDocCounts';
+import {
+  countRowDocxPdfForCapsules,
+  countRowDocxPdfAttached,
+  expectedDocxSlotsForRow,
+} from '@/lib/registryRowDocCounts';
 
 const DEPT_ORDER = [...CAPSULE_DEPARTMENTS];
 
@@ -196,7 +200,7 @@ export function aggregateDualLanguageByDept(data: any[]): DualDeptRow[] {
     const dept = normalizeDeptForChart(String(row?.department || ''));
     if (!dept || !map.has(dept)) continue;
     const s = map.get(dept)!;
-    if (row.isDualLanguage === true) s.dual++;
+    if (expectedDocxSlotsForRow(row) >= 2) s.dual++;
     else s.single++;
   }
 

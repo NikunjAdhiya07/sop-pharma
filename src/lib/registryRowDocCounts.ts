@@ -35,7 +35,12 @@ export type RowLanguageFileSlots = {
   gujPdf: boolean;
 };
 
-/** Per-language file presence (same rules as {@link countRowDocxPdfForCapsules}). */
+/**
+ * Per-language file presence for the **current** revision (same rules as {@link countRowDocxPdfForCapsules}).
+ * Uses `sopFile` + `sopDocuments` only — these match the dashboard Files column and API `filterDocsToCurrentRevision`.
+ * Do **not** merge in `versionArtifacts*`: those lists are **prior** revisions only (see dashboard `priorVersionArtifactEntries`),
+ * and counting them here made a missing current-language DOCX/PDF look present when an older revision still had it.
+ */
 export function scanRowLanguageFileSlots(row: any): RowLanguageFileSlots {
   let engDocx = false;
   let gujDocx = false;
@@ -54,30 +59,6 @@ export function scanRowLanguageFileSlots(row: any): RowLanguageFileSlots {
     } else if (k === 'pdf') {
       if (lang === 'Gujarati') gujPdf = true;
       else engPdf = true;
-    }
-  }
-
-  const artifactKeys = ['versionArtifacts', 'versionArtifactsGujarati'] as const;
-  for (const key of artifactKeys) {
-    const entries = row[key];
-    if (!Array.isArray(entries)) continue;
-    const bucketGuj = key === 'versionArtifactsGujarati';
-    for (const e of entries) {
-      for (const rawPath of [e?.docxPath, e?.pdfPath] as const) {
-        const pathStr = String(rawPath || '').trim();
-        if (!pathStr) continue;
-        const fk = fileKindFromStoredPath(pathStr, undefined);
-        const lang: 'English' | 'Gujarati' = (bucketGuj || pathSuggestsGujarati(pathStr))
-          ? 'Gujarati'
-          : 'English';
-        if (fk === 'docx' || fk === 'doc') {
-          if (lang === 'Gujarati') gujDocx = true;
-          else engDocx = true;
-        } else if (fk === 'pdf') {
-          if (lang === 'Gujarati') gujPdf = true;
-          else engPdf = true;
-        }
-      }
     }
   }
 
