@@ -217,6 +217,64 @@ async function buildPrimaryArtifactIdByNorm(language: string): Promise<Map<strin
   return new Map([...best.entries()].map(([k, v]) => [k, v._id]));
 }
 
+/**
+ * Fallback parser: when parseRelativePath fails, try to extract identifier from file name.
+ * Supports files like MAGE01-06.pdf, MAGE01-07.docx, or any DOCX/PDF with optional version in stem.
+ * Falls back to using sanitized filename as identifier with version=1.
+ */
+function fallbackParseRelativePath(relativePath: string): Parsed | null {
+  const relNorm = normalizeUnicodeHyphens(relativePath);
+  const parts = relNorm.split(/[/\\]/).filter(Boolean);
+  if (parts.length === 0) return null;
+
+  const fileName = parts[parts.length - 1];
+  const ext = fileName.toLowerCase().endsWith('.pdf')
+    ? 'pdf'
+    : fileName.toLowerCase().endsWith('.docx') || fileName.toLowerCase().endsWith('.doc')
+      ? 'docx'
+      : null;
+  if (!ext) return null;
+
+  const department = detectDepartmentFromPathParts(parts);
+  const stem = fileName.replace(/\.(docx|doc|pdf)$/i, '');
+
+  // Try code-version prefix from stem (e.g. MAGE01-07)
+  const fromStem = parseSopCodeVersionPrefix(stem);
+  if (fromStem) {
+    return {
+      identifier: `${fromStem.base}-${padVersionSuffix(fromStem.version)}`,
+      department,
+      version: fromStem.version,
+      ext,
+      relativePath,
+    };
+  }
+
+  // Try extracting full identifier from stem (e.g. MAGE01-07 with spaces)
+  const idFromStem = extractIdentifier(stem);
+  if (idFromStem) {
+    const split = splitCodeVersionIdentifier(idFromStem);
+    return {
+      identifier: idFromStem,
+      department,
+      version: split ? split.version : 1,
+      ext,
+      relativePath,
+    };
+  }
+
+  // Last resort: use stem as-is, version 1
+  const sanitized = stem.replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  if (!sanitized) return null;
+  return {
+    identifier: sanitized.toUpperCase(),
+    department,
+    version: 1,
+    ext,
+    relativePath,
+  };
+}
+
 /** Next.js / proxies: allow long runs for big folder jobs (e.g. Vercel). */
 export const maxDuration = 300;
 
@@ -807,14 +865,18 @@ export async function POST(request: NextRequest) {
         skippedAnnexureFiles++;
         continue;
       }
-      const parsed = parseRelativePath(relativePath);
+      let parsed = parseRelativePath(relativePath);
       if (!parsed) {
-        errors.push({
-          path: relativePath,
-          error:
-            'Could not parse path. Use e.g. …/QAGE01-08/, …/QAGE136 - Title/ (annexes inherit doc no), …/QCGE04 - Title/Annexure.docx, …/QCMI06 - Title/Annexure.docx (Microbiology), …/PRPA11 - Title/Annexure.docx or …/PRPA11 - Title/Prepared for Audit/file.pdf, …/QAIO42 - Title/Reference/file.pdf, CODE-NN in the file name, or …/SOPFolder/V8/file.pdf.',
-        });
-        continue;
+        // Fallback: try to extract identifier from file name stem
+        parsed = fallbackParseRelativePath(relativePath);
+        if (!parsed) {
+          errors.push({
+            path: relativePath,
+            error:
+              'Could not determine SOP identifier from file name. Use e.g. MAGE01-06.pdf, MAGE01-07.docx, or any DOCX/PDF in a folder with an SOP code.',
+          });
+          continue;
+        }
       }
 
       const buffer = Buffer.from(await value.arrayBuffer());
