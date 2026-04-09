@@ -1316,7 +1316,7 @@ export async function GET(request: NextRequest) {
         reviewDate = new Date(sop.expiryDate);
       }
 
-      const expiryDateIso = reviewDate ? reviewDate.toISOString() : null;
+      const expiryDateIso = (reviewDate && !isNaN(reviewDate.getTime())) ? reviewDate.toISOString() : null;
       let expired = false;
       let nearExpiry = false;
       if (reviewDate) {
@@ -2436,14 +2436,20 @@ export async function GET(request: NextRequest) {
       let expiryDateIso: string | null = null;
       for (const vid of expandSopIdentifierVariants(idUpper)) {
         if (reviewDateByIdentifier.has(vid)) {
-          expiryDateIso = reviewDateByIdentifier.get(vid)!.toISOString();
-          break;
+          const rd = reviewDateByIdentifier.get(vid)!;
+          if (!isNaN(rd.getTime())) {
+            expiryDateIso = rd.toISOString();
+            break;
+          }
         }
       }
       if (!expiryDateIso) {
         const fk = sopFamilyKeyFromIdentifier(idUpper);
         if (fk && reviewDateByFamily.has(fk)) {
-          expiryDateIso = reviewDateByFamily.get(fk)!.date.toISOString();
+          const rd = reviewDateByFamily.get(fk)!.date;
+          if (!isNaN(rd.getTime())) {
+            expiryDateIso = rd.toISOString();
+          }
         }
       }
 
@@ -2493,7 +2499,7 @@ export async function GET(request: NextRequest) {
         versionArtifactsGujarati: vaGj.slice(0, 3), // Limit to top 3 versions
         versionArtifactsSuperseded: vaEnSplit.superseded.slice(0, 2), // Limit superseded
         versionArtifactsGujaratiSuperseded: vaGjSplit.superseded.slice(0, 2), // Limit superseded
-        createdAt: updatedMs ? new Date(updatedMs).toISOString() : null,
+        createdAt: (updatedMs && !isNaN(new Date(updatedMs).getTime())) ? new Date(updatedMs).toISOString() : null,
       });
       artifactOnlyRowsAdded++;
     }
