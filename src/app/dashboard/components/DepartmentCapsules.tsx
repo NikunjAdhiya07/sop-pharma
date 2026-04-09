@@ -515,7 +515,7 @@ function CapsuleMetricAvailMissing({
   );
 }
 
-/** Compact language sub-row for aligned layout (EN, GUJ underneath parent rows) */
+/** Compact language sub-row for aligned layout (EN, GUJ on one line with counts) */
 function CompactLanguageSubRow({
   lang,
   found,
@@ -534,22 +534,22 @@ function CompactLanguageSubRow({
   highlightMissing: boolean;
 }) {
   return (
-    <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 px-1 py-0.5 text-[10px]">
-      <span className="text-gray-500 text-[9px] font-medium">{lang}</span>
+    <div className="flex w-full min-h-[22px] items-center justify-between gap-2 px-1 py-0 text-[10px]">
+      <span className="text-gray-500 text-[9px] font-medium min-w-fit">{lang}</span>
       <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white/90 px-0.5 py-0.5 shadow-sm tabular-nums">
         <button
           type="button"
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); onAvailableClick(); }}
-          className={`min-w-[1.2rem] cursor-pointer rounded px-0.5 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 ${
+          className={`min-w-[1.3rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400 ${
             highlightAvailable ? "bg-emerald-100 ring-1 ring-emerald-400/80" : ""
           }`}>
           {found}
         </button>
-        <span className="select-none text-[7px] text-gray-300">|</span>
+        <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
         <button
           type="button"
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); onMissingClick(); }}
-          className={`min-w-[1.2rem] cursor-pointer rounded px-0.5 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 ${
+          className={`min-w-[1.3rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400 ${
             highlightMissing ? "bg-red-100 ring-1 ring-red-400/80" : ""
           }`}>
           {missing}
@@ -1089,8 +1089,8 @@ function DepartmentCapsuleCard({
           );
         })}
 
-        {/* PDF Section — with spacing */}
-        <div className="h-1" />
+        {/* PDF Section — with minimal spacing */}
+        <div className="h-0.5" />
         <CapsuleMetricAvailMissing
           label={`PDF (${stat.pdfFiles})`}
           totalExpected={stat.expectedPdf}
