@@ -1093,7 +1093,7 @@ function DepartmentCapsuleCard({
         />
         {/* DOCX Section */}
         <CapsuleMetricAvailMissing
-          label={`DOCX (${stat.docxFiles})`}
+          label="DOCX"
           totalExpected={stat.expectedDocx}
           available={stat.docxFiles}
           onFilterClick={() => apply("docx")}
@@ -1161,7 +1161,7 @@ function DepartmentCapsuleCard({
         {/* PDF Section — with minimal spacing */}
         <div className="h-0.5" />
         <CapsuleMetricAvailMissing
-          label={`PDF (${stat.pdfFiles})`}
+          label="PDF"
           totalExpected={stat.expectedPdf}
           available={stat.pdfFiles}
           onFilterClick={() => apply("pdf")}
@@ -1274,41 +1274,45 @@ function DepartmentCapsuleCard({
         {/* DOCX Versions Sub-section (EN and GUJ side-by-side) */}
         {stat.docxVersionAllTwoFound > 0 || stat.docxVersionOnlyOneFound > 0 || stat.docxVersionNotFound > 0 ? (
           <>
-            <div className="text-[9px] text-gray-400 font-medium pl-1 pt-0.5">DOCX</div>
-            {stat.langDocxVersion.size > 0 && (
-              <CompactLanguageVersionPairRow
-                langVersionDataMap={new Map(
-                  sortLangCodes([...stat.langDocxVersion.keys()]).map((lang) => [
-                    lang,
-                    {
-                      allTwoFound: stat.langDocxVersion.get(lang)!.allTwoFound,
-                      onlyOneFound: stat.langDocxVersion.get(lang)!.onlyOneFound,
-                      notFound: stat.langDocxVersion.get(lang)!.notFound,
-                    },
-                  ])
-                )}
-              />
-            )}
+            <div className="flex w-full min-h-[20px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
+              <span className="text-gray-400 font-medium">DOCX</span>
+              {stat.langDocxVersion.size > 0 && (
+                <CompactLanguageVersionPairRow
+                  langVersionDataMap={new Map(
+                    sortLangCodes([...stat.langDocxVersion.keys()]).map((lang) => [
+                      lang,
+                      {
+                        allTwoFound: stat.langDocxVersion.get(lang)!.allTwoFound,
+                        onlyOneFound: stat.langDocxVersion.get(lang)!.onlyOneFound,
+                        notFound: stat.langDocxVersion.get(lang)!.notFound,
+                      },
+                    ])
+                  )}
+                />
+              )}
+            </div>
           </>
         ) : null}
         {/* PDF Versions Sub-section (EN and GUJ side-by-side) */}
         {stat.pdfVersionAllTwoFound > 0 || stat.pdfVersionOnlyOneFound > 0 || stat.pdfVersionNotFound > 0 ? (
           <>
-            <div className="text-[9px] text-gray-400 font-medium pl-1 pt-0.5">PDF</div>
-            {stat.langPdfVersion.size > 0 && (
-              <CompactLanguageVersionPairRow
-                langVersionDataMap={new Map(
-                  sortLangCodes([...stat.langPdfVersion.keys()]).map((lang) => [
-                    lang,
-                    {
-                      allTwoFound: stat.langPdfVersion.get(lang)!.allTwoFound,
-                      onlyOneFound: stat.langPdfVersion.get(lang)!.onlyOneFound,
-                      notFound: stat.langPdfVersion.get(lang)!.notFound,
-                    },
-                  ])
-                )}
-              />
-            )}
+            <div className="flex w-full min-h-[20px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
+              <span className="text-gray-400 font-medium">PDF</span>
+              {stat.langPdfVersion.size > 0 && (
+                <CompactLanguageVersionPairRow
+                  langVersionDataMap={new Map(
+                    sortLangCodes([...stat.langPdfVersion.keys()]).map((lang) => [
+                      lang,
+                      {
+                        allTwoFound: stat.langPdfVersion.get(lang)!.allTwoFound,
+                        onlyOneFound: stat.langPdfVersion.get(lang)!.onlyOneFound,
+                        notFound: stat.langPdfVersion.get(lang)!.notFound,
+                      },
+                    ])
+                  )}
+                />
+              )}
+            </div>
           </>
         ) : null}
 
