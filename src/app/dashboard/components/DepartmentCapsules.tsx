@@ -515,46 +515,66 @@ function CapsuleMetricAvailMissing({
   );
 }
 
-/** Compact language sub-row for aligned layout (EN, GUJ on one line with counts) */
-function CompactLanguageSubRow({
-  lang,
-  found,
-  missing,
+/** Two language sub-rows (EN, GUJ) on same horizontal line with aligned counts */
+function CompactLanguagePairRow({
+  langDataMap,
   onAvailableClick,
   onMissingClick,
-  highlightAvailable,
-  highlightMissing,
+  filterSnapshot,
 }: {
-  lang: string;
-  found: number;
-  missing: number;
-  onAvailableClick: () => void;
-  onMissingClick: () => void;
-  highlightAvailable: boolean;
-  highlightMissing: boolean;
+  langDataMap: Map<string, { found: number; missing: number; filter: "ENG" | "GUJ" }>;
+  onAvailableClick: (lang: "ENG" | "GUJ") => void;
+  onMissingClick: (lang: "ENG" | "GUJ") => void;
+  filterSnapshot: CapsuleFilterSnapshot;
 }) {
+  const langs = sortLangCodes([...langDataMap.keys()]);
+
   return (
-    <div className="flex w-full min-h-[22px] items-center justify-between gap-2 px-1 py-0 text-[10px]">
-      <span className="text-gray-500 text-[9px] font-medium min-w-fit">{lang}</span>
-      <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white/90 px-0.5 py-0.5 shadow-sm tabular-nums">
-        <button
-          type="button"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onAvailableClick(); }}
-          className={`min-w-[1.3rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400 ${
-            highlightAvailable ? "bg-emerald-100 ring-1 ring-emerald-400/80" : ""
-          }`}>
-          {found}
-        </button>
-        <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-        <button
-          type="button"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onMissingClick(); }}
-          className={`min-w-[1.3rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400 ${
-            highlightMissing ? "bg-red-100 ring-1 ring-red-400/80" : ""
-          }`}>
-          {missing}
-        </button>
-      </div>
+    <div className="flex w-full min-h-[22px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
+      {langs.map((lang) => {
+        const data = langDataMap.get(lang)!;
+        const langFilter = data.filter;
+        const isAvailActive =
+          filterSnapshot.filterLanguage === langFilter &&
+          filterSnapshot.filterFileType !== "NO_DOCX" &&
+          filterSnapshot.filterFileType !== "NO_PDF" &&
+          !filterSnapshot.filterDualLang &&
+          filterSnapshot.filterExpiry === "all" &&
+          filterSnapshot.filterMedia === "all" &&
+          filterSnapshot.filterVersionStatus === "all";
+        const isMissingActive =
+          filterSnapshot.filterLanguage === langFilter &&
+          (filterSnapshot.filterFileType === "NO_DOCX" || filterSnapshot.filterFileType === "NO_PDF") &&
+          !filterSnapshot.filterDualLang &&
+          filterSnapshot.filterExpiry === "all" &&
+          filterSnapshot.filterMedia === "all" &&
+          filterSnapshot.filterVersionStatus === "all";
+
+        return (
+          <div key={lang} className="flex items-center gap-0.5">
+            <span className="text-gray-500 text-[9px] font-medium min-w-fit">{lang}</span>
+            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white/90 px-0.5 py-0.5 shadow-sm tabular-nums">
+              <button
+                type="button"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onAvailableClick(langFilter); }}
+                className={`min-w-[1.3rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400 ${
+                  isAvailActive ? "bg-emerald-100 ring-1 ring-emerald-400/80" : ""
+                }`}>
+                {data.found}
+              </button>
+              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
+              <button
+                type="button"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onMissingClick(langFilter); }}
+                className={`min-w-[1.3rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400 ${
+                  isMissingActive ? "bg-red-100 ring-1 ring-red-400/80" : ""
+                }`}>
+                {data.missing}
+              </button>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1051,43 +1071,28 @@ function DepartmentCapsuleCard({
               : `${stat.docxFiles} DOCX slots in ${label} · green = filled, red = missing`
           }
         />
-        {/* DOCX Language Sub-rows */}
-        {sortLangCodes([...stat.langDocx.keys()]).map((lang) => {
-          const ld = stat.langDocx.get(lang)!;
-          const langFilter = lang === "EN" ? "ENG" : lang === "GJ" ? "GUJ" : lang.toUpperCase();
-          const docxAvailActive =
-            filterSnapshot.filterDept === deptForFilter &&
-            filterSnapshot.filterFileType === "DOCX" &&
-            filterSnapshot.filterLanguage === langFilter &&
-            !filterSnapshot.filterDualLang &&
-            filterSnapshot.filterExpiry === "all" &&
-            filterSnapshot.filterMedia === "all" &&
-            filterSnapshot.filterVersionStatus === "all";
-          const docxMissingActive =
-            filterSnapshot.filterDept === deptForFilter &&
-            filterSnapshot.filterFileType === "NO_DOCX" &&
-            filterSnapshot.filterLanguage === langFilter &&
-            !filterSnapshot.filterDualLang &&
-            filterSnapshot.filterExpiry === "all" &&
-            filterSnapshot.filterMedia === "all" &&
-            filterSnapshot.filterVersionStatus === "all";
-          return (
-            <CompactLanguageSubRow
-              key={`docx-lang-${lang}`}
-              lang={lang}
-              found={ld.found}
-              missing={ld.missing}
-              onAvailableClick={() => {
-                applyCapsuleAvailMiss(deptForFilter, "docx", "available", langFilter as "ENG" | "GUJ");
-              }}
-              onMissingClick={() => {
-                applyCapsuleAvailMiss(deptForFilter, "docx", "missing", langFilter as "ENG" | "GUJ");
-              }}
-              highlightAvailable={docxAvailActive}
-              highlightMissing={docxMissingActive}
-            />
-          );
-        })}
+        {/* DOCX Language Sub-rows (EN and GUJ side-by-side) */}
+        {stat.langDocx.size > 0 && (
+          <CompactLanguagePairRow
+            langDataMap={new Map(
+              sortLangCodes([...stat.langDocx.keys()]).map((lang) => [
+                lang,
+                {
+                  found: stat.langDocx.get(lang)!.found,
+                  missing: stat.langDocx.get(lang)!.missing,
+                  filter: (lang === "EN" ? "ENG" : lang === "GJ" ? "GUJ" : lang.toUpperCase()) as "ENG" | "GUJ",
+                },
+              ])
+            )}
+            onAvailableClick={(langFilter) => {
+              applyCapsuleAvailMiss(deptForFilter, "docx", "available", langFilter);
+            }}
+            onMissingClick={(langFilter) => {
+              applyCapsuleAvailMiss(deptForFilter, "docx", "missing", langFilter);
+            }}
+            filterSnapshot={filterSnapshot}
+          />
+        )}
 
         {/* PDF Section — with minimal spacing */}
         <div className="h-0.5" />
@@ -1134,43 +1139,28 @@ function DepartmentCapsuleCard({
               : `${stat.pdfFiles} PDF slots in ${label} · green = filled, red = missing`
           }
         />
-        {/* PDF Language Sub-rows */}
-        {sortLangCodes([...stat.langPdf.keys()]).map((lang) => {
-          const lp = stat.langPdf.get(lang)!;
-          const langFilter = lang === "EN" ? "ENG" : lang === "GJ" ? "GUJ" : lang.toUpperCase();
-          const pdfAvailActive =
-            filterSnapshot.filterDept === deptForFilter &&
-            filterSnapshot.filterFileType === "PDF" &&
-            filterSnapshot.filterLanguage === langFilter &&
-            !filterSnapshot.filterDualLang &&
-            filterSnapshot.filterExpiry === "all" &&
-            filterSnapshot.filterMedia === "all" &&
-            filterSnapshot.filterVersionStatus === "all";
-          const pdfMissingActive =
-            filterSnapshot.filterDept === deptForFilter &&
-            filterSnapshot.filterFileType === "NO_PDF" &&
-            filterSnapshot.filterLanguage === langFilter &&
-            !filterSnapshot.filterDualLang &&
-            filterSnapshot.filterExpiry === "all" &&
-            filterSnapshot.filterMedia === "all" &&
-            filterSnapshot.filterVersionStatus === "all";
-          return (
-            <CompactLanguageSubRow
-              key={`pdf-lang-${lang}`}
-              lang={lang}
-              found={lp.found}
-              missing={lp.missing}
-              onAvailableClick={() => {
-                applyCapsuleAvailMiss(deptForFilter, "pdf", "available", langFilter as "ENG" | "GUJ");
-              }}
-              onMissingClick={() => {
-                applyCapsuleAvailMiss(deptForFilter, "pdf", "missing", langFilter as "ENG" | "GUJ");
-              }}
-              highlightAvailable={pdfAvailActive}
-              highlightMissing={pdfMissingActive}
-            />
-          );
-        })}
+        {/* PDF Language Sub-rows (EN and GUJ side-by-side) */}
+        {stat.langPdf.size > 0 && (
+          <CompactLanguagePairRow
+            langDataMap={new Map(
+              sortLangCodes([...stat.langPdf.keys()]).map((lang) => [
+                lang,
+                {
+                  found: stat.langPdf.get(lang)!.found,
+                  missing: stat.langPdf.get(lang)!.missing,
+                  filter: (lang === "EN" ? "ENG" : lang === "GJ" ? "GUJ" : lang.toUpperCase()) as "ENG" | "GUJ",
+                },
+              ])
+            )}
+            onAvailableClick={(langFilter) => {
+              applyCapsuleAvailMiss(deptForFilter, "pdf", "available", langFilter);
+            }}
+            onMissingClick={(langFilter) => {
+              applyCapsuleAvailMiss(deptForFilter, "pdf", "missing", langFilter);
+            }}
+            filterSnapshot={filterSnapshot}
+          />
+        )}
 
         {/* Versions Section — with spacing */}
         <div className="h-1" />
