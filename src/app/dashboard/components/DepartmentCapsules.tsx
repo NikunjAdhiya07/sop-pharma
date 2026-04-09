@@ -515,6 +515,50 @@ function CapsuleMetricAvailMissing({
   );
 }
 
+/** Compact language sub-row for aligned layout (EN, GUJ underneath parent rows) */
+function CompactLanguageSubRow({
+  lang,
+  found,
+  missing,
+  onAvailableClick,
+  onMissingClick,
+  highlightAvailable,
+  highlightMissing,
+}: {
+  lang: string;
+  found: number;
+  missing: number;
+  onAvailableClick: () => void;
+  onMissingClick: () => void;
+  highlightAvailable: boolean;
+  highlightMissing: boolean;
+}) {
+  return (
+    <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 px-1 py-0.5 text-[10px]">
+      <span className="text-gray-500 text-[9px] font-medium">{lang}</span>
+      <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white/90 px-0.5 py-0.5 shadow-sm tabular-nums">
+        <button
+          type="button"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onAvailableClick(); }}
+          className={`min-w-[1.2rem] cursor-pointer rounded px-0.5 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 ${
+            highlightAvailable ? "bg-emerald-100 ring-1 ring-emerald-400/80" : ""
+          }`}>
+          {found}
+        </button>
+        <span className="select-none text-[7px] text-gray-300">|</span>
+        <button
+          type="button"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onMissingClick(); }}
+          className={`min-w-[1.2rem] cursor-pointer rounded px-0.5 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 ${
+            highlightMissing ? "bg-red-100 ring-1 ring-red-400/80" : ""
+          }`}>
+          {missing}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Version row: 3 buckets.
  * Green = All Two Found (version-0 SOPs or all expected prior versions present)
@@ -963,6 +1007,7 @@ function DepartmentCapsuleCard({
               : `SOPs with no expiry date in ${scopeHint}`
           }
         />
+        {/* DOCX Section */}
         <CapsuleMetricAvailMissing
           label={`DOCX (${stat.docxFiles})`}
           totalExpected={stat.expectedDocx}
@@ -1006,6 +1051,7 @@ function DepartmentCapsuleCard({
               : `${stat.docxFiles} DOCX slots in ${label} · green = filled, red = missing`
           }
         />
+        {/* DOCX Language Sub-rows */}
         {sortLangCodes([...stat.langDocx.keys()]).map((lang) => {
           const ld = stat.langDocx.get(lang)!;
           const langFilter = lang === "EN" ? "ENG" : lang === "GJ" ? "GUJ" : lang.toUpperCase();
@@ -1026,15 +1072,11 @@ function DepartmentCapsuleCard({
             filterSnapshot.filterMedia === "all" &&
             filterSnapshot.filterVersionStatus === "all";
           return (
-            <CapsuleMetricAvailMissing
+            <CompactLanguageSubRow
               key={`docx-lang-${lang}`}
-              label={<span className="pl-3 text-gray-500 text-[9px]">[{lang}]</span>}
-              totalExpected={ld.found + ld.missing}
-              available={ld.found}
-              missingCount={ld.missing}
-              onFilterClick={() => {
-                applyCapsuleAvailMiss(deptForFilter, "docx", "available", langFilter as "ENG" | "GUJ");
-              }}
+              lang={lang}
+              found={ld.found}
+              missing={ld.missing}
               onAvailableClick={() => {
                 applyCapsuleAvailMiss(deptForFilter, "docx", "available", langFilter as "ENG" | "GUJ");
               }}
@@ -1043,11 +1085,12 @@ function DepartmentCapsuleCard({
               }}
               highlightAvailable={docxAvailActive}
               highlightMissing={docxMissingActive}
-              filterRowActive={docxAvailActive || docxMissingActive}
-              titleSummary={`${lang} DOCX: ${ld.found} found, ${ld.missing} missing`}
             />
           );
         })}
+
+        {/* PDF Section — with spacing */}
+        <div className="h-1" />
         <CapsuleMetricAvailMissing
           label={`PDF (${stat.pdfFiles})`}
           totalExpected={stat.expectedPdf}
@@ -1091,6 +1134,7 @@ function DepartmentCapsuleCard({
               : `${stat.pdfFiles} PDF slots in ${label} · green = filled, red = missing`
           }
         />
+        {/* PDF Language Sub-rows */}
         {sortLangCodes([...stat.langPdf.keys()]).map((lang) => {
           const lp = stat.langPdf.get(lang)!;
           const langFilter = lang === "EN" ? "ENG" : lang === "GJ" ? "GUJ" : lang.toUpperCase();
@@ -1111,15 +1155,11 @@ function DepartmentCapsuleCard({
             filterSnapshot.filterMedia === "all" &&
             filterSnapshot.filterVersionStatus === "all";
           return (
-            <CapsuleMetricAvailMissing
+            <CompactLanguageSubRow
               key={`pdf-lang-${lang}`}
-              label={<span className="pl-3 text-gray-500 text-[9px]">[{lang}]</span>}
-              totalExpected={lp.found + lp.missing}
-              available={lp.found}
-              missingCount={lp.missing}
-              onFilterClick={() => {
-                applyCapsuleAvailMiss(deptForFilter, "pdf", "available", langFilter as "ENG" | "GUJ");
-              }}
+              lang={lang}
+              found={lp.found}
+              missing={lp.missing}
               onAvailableClick={() => {
                 applyCapsuleAvailMiss(deptForFilter, "pdf", "available", langFilter as "ENG" | "GUJ");
               }}
@@ -1128,11 +1168,12 @@ function DepartmentCapsuleCard({
               }}
               highlightAvailable={pdfAvailActive}
               highlightMissing={pdfMissingActive}
-              filterRowActive={pdfAvailActive || pdfMissingActive}
-              titleSummary={`${lang} PDF: ${lp.found} found, ${lp.missing} missing`}
             />
           );
         })}
+
+        {/* Versions Section — with spacing */}
+        <div className="h-1" />
         <CapsuleMetricVersionTriple
           totalSOPs={stat.totalSOPs}
           allTwoFoundV={stat.versionAllTwoFound}
@@ -1176,9 +1217,10 @@ function DepartmentCapsuleCard({
               : `Version in ${scopeHint} · green = All Two Found, amber = Only One Found, red = Not Found`
           }
         />
+        {/* DOCX Versions Sub-section */}
         {stat.docxVersionAllTwoFound > 0 || stat.docxVersionOnlyOneFound > 0 || stat.docxVersionNotFound > 0 ? (
           <>
-            <div className="ml-1 text-[9px] text-gray-400 mt-1 font-medium">DOCX</div>
+            <div className="text-[9px] text-gray-400 font-medium pl-1 pt-0.5">DOCX</div>
             {sortLangCodes([...stat.langDocxVersion.keys()]).map((lang) => {
               const ldv = stat.langDocxVersion.get(lang)!;
               return (
@@ -1197,15 +1239,16 @@ function DepartmentCapsuleCard({
                   highlightRed={false}
                   filterRowActive={false}
                   titleSummary={`${lang} DOCX versions`}
-                  label={<span className="pl-3 text-gray-500 text-[9px]">[{lang}]</span>}
+                  label={<span className="text-gray-500 text-[9px]">{lang}</span>}
                 />
               );
             })}
           </>
         ) : null}
+        {/* PDF Versions Sub-section */}
         {stat.pdfVersionAllTwoFound > 0 || stat.pdfVersionOnlyOneFound > 0 || stat.pdfVersionNotFound > 0 ? (
           <>
-            <div className="ml-1 text-[9px] text-gray-400 mt-1 font-medium">PDF</div>
+            <div className="text-[9px] text-gray-400 font-medium pl-1 pt-0.5">PDF</div>
             {sortLangCodes([...stat.langPdfVersion.keys()]).map((lang) => {
               const lpv = stat.langPdfVersion.get(lang)!;
               return (
@@ -1224,12 +1267,15 @@ function DepartmentCapsuleCard({
                   highlightRed={false}
                   filterRowActive={false}
                   titleSummary={`${lang} PDF versions`}
-                  label={<span className="pl-3 text-gray-500 text-[9px]">[{lang}]</span>}
+                  label={<span className="text-gray-500 text-[9px]">{lang}</span>}
                 />
               );
             })}
           </>
         ) : null}
+
+        {/* Videos Section — with spacing */}
+        <div className="h-1" />
         <CapsuleMetricAvailMissing
           label={
             <>
@@ -1279,6 +1325,9 @@ function DepartmentCapsuleCard({
               : `Videos in ${scopeHint} · ${stat.videoAvailable} of ${stat.videoRequired} slots · green = filled, red = missing`
           }
         />
+
+        {/* Slides Section — with spacing */}
+        <div className="h-1" />
         <CapsuleMetricAvailMissing
           label={
             <>
