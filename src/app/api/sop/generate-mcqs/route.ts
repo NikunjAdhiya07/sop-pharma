@@ -93,6 +93,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Auto-generate Gujarati MCQs if this is English and a paired Gujarati SOP exists
+    if (effectiveLang === 'English') {
+      try {
+        const gujSop = await SOP.findOne({
+          identifier: sop.identifier,
+          language: 'Gujarati'
+        }).select('_id identifier').catch(() => null);
+
+        if (gujSop) {
+          const gujBankExists = await MCQBank.exists({
+            sopId: gujSop._id,
+            language: 'Gujarati'
+          });
+
+          if (!gujBankExists && !mcqQueue.isProcessing(gujSop._id.toString())) {
+            console.log(`🌐 Auto-queuing Gujarati MCQs for paired SOP: ${gujSop.identifier}`);
+            mcqQueue.addTask({
+              sopId: gujSop._id.toString(),
+              targetCount: targetCount || 100,
+              priority: 9, // slightly lower than user-triggered
+              language: 'Gujarati',
+            });
+            mcqQueue.start().catch(err => console.error('Gujarati auto-gen error:', err));
+          }
+        }
+      } catch (autoGenErr) {
+        console.warn('Auto-generation of Gujarati MCQs failed silently:', autoGenErr);
+        // Don't fail the English response — auto-gen is fire-and-forget
+      }
+    }
+
     // Log the MCQ generation activity if userInfo is provided
     if (userInfo) {
       await logAction({

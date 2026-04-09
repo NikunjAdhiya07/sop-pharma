@@ -110,6 +110,8 @@ function MCQBankContent() {
   const [selectedMCQBank, setSelectedMCQBank] = useState<MCQBank | null>(null);
   /** All banks for current SOP (English + Gujarati); used to show sections when multiple languages */
   const [selectedMCQBanks, setSelectedMCQBanks] = useState<MCQBank[] | null>(null);
+  /** Controls which language's questions are displayed (EN or GU) */
+  const [viewLanguage, setViewLanguage] = useState<'English' | 'Gujarati'>('English');
   const [selectedMCQ, setSelectedMCQ] = useState<{
     mcq: MCQ;
     index: number;
@@ -539,6 +541,7 @@ function MCQBankContent() {
       setSelectedMCQBanks(sorted);
       setSelectedMCQBank(first);
       setRegenLanguage(first.language || "English");
+      setViewLanguage(first.language || "English");
       await fetchSimilarityDetails(first._id);
     } catch (err) {
       console.error("Error loading SOP banks:", err);
@@ -572,6 +575,7 @@ function MCQBankContent() {
         setSelectedMCQBank(bank);
         setSelectedMCQBanks([bank]);
         setRegenLanguage(bank.language || 'English');
+        setViewLanguage(bank.language || 'English');
         setActiveTab("active"); // Reset to active tab when opening modal
         setSimilarityResults(null); // Clear previous similarity results
         return;
@@ -597,6 +601,7 @@ function MCQBankContent() {
         setSelectedMCQBank(fullBank);
         setSelectedMCQBanks([fullBank]);
         setRegenLanguage(fullBank.language || 'English');
+        setViewLanguage(fullBank.language || 'English');
         setActiveTab("active"); // Reset to active tab
         setSimilarityResults(null); // Clear previous similarity results
 
@@ -1901,7 +1906,7 @@ function MCQBankContent() {
                     <div className="flex items-center justify-between px-6 py-4">
                       <div className="flex items-center gap-4 min-w-0">
                         <button
-                          onClick={() => { setSelectedMCQBank(null); setSelectedMCQBanks(null); }}
+                          onClick={() => { setSelectedMCQBank(null); setSelectedMCQBanks(null); setViewLanguage('English'); }}
                           className="p-2 rounded-xl bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 transition-all border border-white/5"
                         >
                           <ArrowLeft className="h-5 w-5" />
@@ -1914,7 +1919,7 @@ function MCQBankContent() {
                             </span>
                             <span className="h-1 w-1 rounded-full bg-gray-600" />
                             <span className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">
-                              {selectedMCQBank.language || "English"} Version
+                              {viewLanguage || "English"} Version
                             </span>
                             {selectedMCQBank.department &&
                               trainerMappings[
@@ -1998,22 +2003,35 @@ function MCQBankContent() {
                                 : "Check Similar"}
                             </span>
                           </button>
-                          {/* Language toggle for regeneration */}
+                          {/* Language switch toggle */}
                           <div className="flex items-center rounded-xl border border-white/10 overflow-hidden">
-                            {(['English', 'Gujarati'] as const).map((lang) => (
-                              <button
-                                key={lang}
-                                onClick={() => setRegenLanguage(lang)}
-                                className={`px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition-all ${
-                                  regenLanguage === lang
-                                    ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
-                                    : 'bg-white/5 text-gray-500 hover:text-gray-300 hover:bg-white/10'
-                                }`}
-                                title={`Generate MCQs in ${lang}`}
-                              >
-                                {lang === 'English' ? 'EN' : 'GU'}
-                              </button>
-                            ))}
+                            {(['English', 'Gujarati'] as const).map((lang) => {
+                              const hasBank = selectedMCQBanks?.some(b => b.language === lang);
+                              const isActive = viewLanguage === lang;
+                              return (
+                                <button
+                                  key={lang}
+                                  onClick={() => {
+                                    if (!hasBank) return;
+                                    setViewLanguage(lang);
+                                    setRegenLanguage(lang);
+                                    const targetBank = selectedMCQBanks?.find(b => b.language === lang);
+                                    if (targetBank) setSelectedMCQBank(targetBank);
+                                  }}
+                                  disabled={!hasBank}
+                                  className={`px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition-all ${
+                                    isActive
+                                      ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+                                      : hasBank
+                                        ? 'bg-white/5 text-gray-500 hover:text-gray-300 hover:bg-white/10'
+                                        : 'bg-white/5 text-gray-600 cursor-not-allowed opacity-40'
+                                  }`}
+                                  title={!hasBank ? 'Gujarati version not available for this SOP' : `View ${lang} MCQs`}
+                                >
+                                  {lang === 'English' ? 'EN' : 'GU'}
+                                </button>
+                              );
+                            })}
                           </div>
                           {/* Reset & Regenerate: auto-fix content + delete bank + regenerate */}
                           <button
