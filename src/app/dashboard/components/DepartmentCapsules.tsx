@@ -515,6 +515,70 @@ function CapsuleMetricAvailMissing({
   );
 }
 
+/** Version triple (3-color) for a single language on same line */
+function CompactVersionTripleForLang({
+  lang,
+  allTwoFoundV,
+  onlyOneFoundV,
+  notFoundV,
+}: {
+  lang: string;
+  allTwoFoundV: number;
+  onlyOneFoundV: number;
+  notFoundV: number;
+}) {
+  return (
+    <div className="flex items-center gap-0.5">
+      <span className="text-gray-500 text-[9px] font-medium min-w-fit">{lang}</span>
+      <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white/90 px-0.5 py-0.5 shadow-sm tabular-nums">
+        <button
+          type="button"
+          className="min-w-[1.3rem] cursor-default rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700">
+          {allTwoFoundV}
+        </button>
+        <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
+        <button
+          type="button"
+          className="min-w-[1.3rem] cursor-default rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-amber-600">
+          {onlyOneFoundV}
+        </button>
+        <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
+        <button
+          type="button"
+          className="min-w-[1.3rem] cursor-default rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-red-600">
+          {notFoundV}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Two language version pairs (EN, GUJ) on same horizontal line */
+function CompactLanguageVersionPairRow({
+  langVersionDataMap,
+}: {
+  langVersionDataMap: Map<string, { allTwoFound: number; onlyOneFound: number; notFound: number }>;
+}) {
+  const langs = sortLangCodes([...langVersionDataMap.keys()]);
+
+  return (
+    <div className="flex w-full min-h-[22px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
+      {langs.map((lang) => {
+        const data = langVersionDataMap.get(lang)!;
+        return (
+          <CompactVersionTripleForLang
+            key={lang}
+            lang={lang}
+            allTwoFoundV={data.allTwoFound}
+            onlyOneFoundV={data.onlyOneFound}
+            notFoundV={data.notFound}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 /** Two language sub-rows (EN, GUJ) on same horizontal line with aligned counts */
 function CompactLanguagePairRow({
   langDataMap,
@@ -1207,60 +1271,44 @@ function DepartmentCapsuleCard({
               : `Version in ${scopeHint} · green = All Two Found, amber = Only One Found, red = Not Found`
           }
         />
-        {/* DOCX Versions Sub-section */}
+        {/* DOCX Versions Sub-section (EN and GUJ side-by-side) */}
         {stat.docxVersionAllTwoFound > 0 || stat.docxVersionOnlyOneFound > 0 || stat.docxVersionNotFound > 0 ? (
           <>
             <div className="text-[9px] text-gray-400 font-medium pl-1 pt-0.5">DOCX</div>
-            {sortLangCodes([...stat.langDocxVersion.keys()]).map((lang) => {
-              const ldv = stat.langDocxVersion.get(lang)!;
-              return (
-                <CapsuleMetricVersionTriple
-                  key={`docx-version-${lang}`}
-                  totalSOPs={stat.totalSOPs}
-                  allTwoFoundV={ldv.allTwoFound}
-                  onlyOneFoundV={ldv.onlyOneFound}
-                  notFoundV={ldv.notFound}
-                  onLabelClick={() => {}}
-                  onGreenClick={() => {}}
-                  onAmberClick={() => {}}
-                  onRedClick={() => {}}
-                  highlightGreen={false}
-                  highlightAmber={false}
-                  highlightRed={false}
-                  filterRowActive={false}
-                  titleSummary={`${lang} DOCX versions`}
-                  label={<span className="text-gray-500 text-[9px]">{lang}</span>}
-                />
-              );
-            })}
+            {stat.langDocxVersion.size > 0 && (
+              <CompactLanguageVersionPairRow
+                langVersionDataMap={new Map(
+                  sortLangCodes([...stat.langDocxVersion.keys()]).map((lang) => [
+                    lang,
+                    {
+                      allTwoFound: stat.langDocxVersion.get(lang)!.allTwoFound,
+                      onlyOneFound: stat.langDocxVersion.get(lang)!.onlyOneFound,
+                      notFound: stat.langDocxVersion.get(lang)!.notFound,
+                    },
+                  ])
+                )}
+              />
+            )}
           </>
         ) : null}
-        {/* PDF Versions Sub-section */}
+        {/* PDF Versions Sub-section (EN and GUJ side-by-side) */}
         {stat.pdfVersionAllTwoFound > 0 || stat.pdfVersionOnlyOneFound > 0 || stat.pdfVersionNotFound > 0 ? (
           <>
             <div className="text-[9px] text-gray-400 font-medium pl-1 pt-0.5">PDF</div>
-            {sortLangCodes([...stat.langPdfVersion.keys()]).map((lang) => {
-              const lpv = stat.langPdfVersion.get(lang)!;
-              return (
-                <CapsuleMetricVersionTriple
-                  key={`pdf-version-${lang}`}
-                  totalSOPs={stat.totalSOPs}
-                  allTwoFoundV={lpv.allTwoFound}
-                  onlyOneFoundV={lpv.onlyOneFound}
-                  notFoundV={lpv.notFound}
-                  onLabelClick={() => {}}
-                  onGreenClick={() => {}}
-                  onAmberClick={() => {}}
-                  onRedClick={() => {}}
-                  highlightGreen={false}
-                  highlightAmber={false}
-                  highlightRed={false}
-                  filterRowActive={false}
-                  titleSummary={`${lang} PDF versions`}
-                  label={<span className="text-gray-500 text-[9px]">{lang}</span>}
-                />
-              );
-            })}
+            {stat.langPdfVersion.size > 0 && (
+              <CompactLanguageVersionPairRow
+                langVersionDataMap={new Map(
+                  sortLangCodes([...stat.langPdfVersion.keys()]).map((lang) => [
+                    lang,
+                    {
+                      allTwoFound: stat.langPdfVersion.get(lang)!.allTwoFound,
+                      onlyOneFound: stat.langPdfVersion.get(lang)!.onlyOneFound,
+                      notFound: stat.langPdfVersion.get(lang)!.notFound,
+                    },
+                  ])
+                )}
+              />
+            )}
           </>
         ) : null}
 
