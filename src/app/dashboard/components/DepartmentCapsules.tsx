@@ -39,18 +39,15 @@ type CapsuleAcc = {
   videoAvailable: number;
   slideAvailable: number;
   versionAllTwoFound: number;
-  versionOnlyOneFound: number;
   versionNotFound: number;
   missingExpiry: number;
   langDocx: Map<string, { found: number; missing: number }>;
   langPdf: Map<string, { found: number; missing: number }>;
-  langDocxVersion: Map<string, { allTwoFound: number; onlyOneFound: number; notFound: number }>;
-  langPdfVersion: Map<string, { allTwoFound: number; onlyOneFound: number; notFound: number }>;
+  langDocxVersion: Map<string, { allTwoFound: number; notFound: number }>;
+  langPdfVersion: Map<string, { allTwoFound: number; notFound: number }>;
   docxVersionAllTwoFound: number;
-  docxVersionOnlyOneFound: number;
   docxVersionNotFound: number;
   pdfVersionAllTwoFound: number;
-  pdfVersionOnlyOneFound: number;
   pdfVersionNotFound: number;
 };
 
@@ -77,7 +74,6 @@ function emptyCapsuleAcc(): CapsuleAcc {
     videoAvailable: 0,
     slideAvailable: 0,
     versionAllTwoFound: 0,
-    versionOnlyOneFound: 0,
     versionNotFound: 0,
     missingExpiry: 0,
     langDocx: new Map(),
@@ -85,10 +81,8 @@ function emptyCapsuleAcc(): CapsuleAcc {
     langDocxVersion: new Map(),
     langPdfVersion: new Map(),
     docxVersionAllTwoFound: 0,
-    docxVersionOnlyOneFound: 0,
     docxVersionNotFound: 0,
     pdfVersionAllTwoFound: 0,
-    pdfVersionOnlyOneFound: 0,
     pdfVersionNotFound: 0,
   };
 }
@@ -155,7 +149,6 @@ function foldRegistryRowIntoCapsuleAcc(
 
   const vt = classifySopVersionCapsule(row);
   if (vt === "allTwoFound") s.versionAllTwoFound++;
-  else if (vt === "onlyOneFound") s.versionOnlyOneFound++;
   else s.versionNotFound++;
 
   if (!row.expiryDate) s.missingExpiry++;
@@ -203,11 +196,10 @@ function foldRegistryRowIntoCapsuleAcc(
 
       // DOCX versions per-language
       if (!s.langDocxVersion.has(lp.code)) {
-        s.langDocxVersion.set(lp.code, { allTwoFound: 0, onlyOneFound: 0, notFound: 0 });
+        s.langDocxVersion.set(lp.code, { allTwoFound: 0, notFound: 0 });
       }
       const ldv = s.langDocxVersion.get(lp.code)!;
       if (vt === "allTwoFound") ldv.allTwoFound++;
-      else if (vt === "onlyOneFound") ldv.onlyOneFound++;
       else ldv.notFound++;
     }
 
@@ -222,11 +214,10 @@ function foldRegistryRowIntoCapsuleAcc(
 
       // PDF versions per-language
       if (!s.langPdfVersion.has(lp.code)) {
-        s.langPdfVersion.set(lp.code, { allTwoFound: 0, onlyOneFound: 0, notFound: 0 });
+        s.langPdfVersion.set(lp.code, { allTwoFound: 0, notFound: 0 });
       }
       const lpv = s.langPdfVersion.get(lp.code)!;
       if (vt === "allTwoFound") lpv.allTwoFound++;
-      else if (vt === "onlyOneFound") lpv.onlyOneFound++;
       else lpv.notFound++;
     }
   }
@@ -234,13 +225,11 @@ function foldRegistryRowIntoCapsuleAcc(
   // Aggregate version counts by file type
   if (nDocxFiles > 0) {
     if (vt === "allTwoFound") s.docxVersionAllTwoFound++;
-    else if (vt === "onlyOneFound") s.docxVersionOnlyOneFound++;
     else s.docxVersionNotFound++;
   }
 
   if (nPdfFiles > 0) {
     if (vt === "allTwoFound") s.pdfVersionAllTwoFound++;
-    else if (vt === "onlyOneFound") s.pdfVersionOnlyOneFound++;
     else s.pdfVersionNotFound++;
   }
 }
@@ -269,7 +258,6 @@ function accToDeptCapsuleStats(department: string, s: CapsuleAcc): DeptCapsuleSt
     videoAvailable: s.videoAvailable,
     slideAvailable: s.slideAvailable,
     versionAllTwoFound: s.versionAllTwoFound,
-    versionOnlyOneFound: s.versionOnlyOneFound,
     versionNotFound: s.versionNotFound,
     missingExpiry: s.missingExpiry,
     langDocx: s.langDocx,
@@ -277,10 +265,8 @@ function accToDeptCapsuleStats(department: string, s: CapsuleAcc): DeptCapsuleSt
     langDocxVersion: s.langDocxVersion,
     langPdfVersion: s.langPdfVersion,
     docxVersionAllTwoFound: s.docxVersionAllTwoFound,
-    docxVersionOnlyOneFound: s.docxVersionOnlyOneFound,
     docxVersionNotFound: s.docxVersionNotFound,
     pdfVersionAllTwoFound: s.pdfVersionAllTwoFound,
-    pdfVersionOnlyOneFound: s.pdfVersionOnlyOneFound,
     pdfVersionNotFound: s.pdfVersionNotFound,
   };
 }
@@ -323,20 +309,16 @@ export interface DeptCapsuleStats {
   slideAvailable: number;
   /** All Two Found: version-0 SOPs or all expected prior versions available */
   versionAllTwoFound: number;
-  /** Only One Found: exactly 1 of 2 expected prior versions available */
-  versionOnlyOneFound: number;
-  /** Not Found: expected prior versions exist but none were found */
+  /** Not Found: expected prior versions exist but not all were found */
   versionNotFound: number;
   missingExpiry: number;
   langDocx: Map<string, { found: number; missing: number }>;
   langPdf: Map<string, { found: number; missing: number }>;
-  langDocxVersion: Map<string, { allTwoFound: number; onlyOneFound: number; notFound: number }>;
-  langPdfVersion: Map<string, { allTwoFound: number; onlyOneFound: number; notFound: number }>;
+  langDocxVersion: Map<string, { allTwoFound: number; notFound: number }>;
+  langPdfVersion: Map<string, { allTwoFound: number; notFound: number }>;
   docxVersionAllTwoFound: number;
-  docxVersionOnlyOneFound: number;
   docxVersionNotFound: number;
   pdfVersionAllTwoFound: number;
-  pdfVersionOnlyOneFound: number;
   pdfVersionNotFound: number;
 }
 
@@ -515,16 +497,14 @@ function CapsuleMetricAvailMissing({
   );
 }
 
-/** Version triple (3-color) for a single language on same line */
-function CompactVersionTripleForLang({
+/** Version pair (2-color) for a single language on same line */
+function CompactVersionPairForLang({
   lang,
   allTwoFoundV,
-  onlyOneFoundV,
   notFoundV,
 }: {
   lang: string;
   allTwoFoundV: number;
-  onlyOneFoundV: number;
   notFoundV: number;
 }) {
   return (
@@ -535,12 +515,6 @@ function CompactVersionTripleForLang({
           type="button"
           className="min-w-[1.3rem] cursor-default rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700">
           {allTwoFoundV}
-        </button>
-        <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-        <button
-          type="button"
-          className="min-w-[1.3rem] cursor-default rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-amber-600">
-          {onlyOneFoundV}
         </button>
         <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
         <button
@@ -557,7 +531,7 @@ function CompactVersionTripleForLang({
 function CompactLanguageVersionPairRow({
   langVersionDataMap,
 }: {
-  langVersionDataMap: Map<string, { allTwoFound: number; onlyOneFound: number; notFound: number }>;
+  langVersionDataMap: Map<string, { allTwoFound: number; notFound: number }>;
 }) {
   const langs = sortLangCodes([...langVersionDataMap.keys()]);
 
@@ -566,11 +540,10 @@ function CompactLanguageVersionPairRow({
       {langs.map((lang) => {
         const data = langVersionDataMap.get(lang)!;
         return (
-          <CompactVersionTripleForLang
+          <CompactVersionPairForLang
             key={lang}
             lang={lang}
             allTwoFoundV={data.allTwoFound}
-            onlyOneFoundV={data.onlyOneFound}
             notFoundV={data.notFound}
           />
         );
@@ -644,22 +617,18 @@ function CompactLanguagePairRow({
 }
 
 /**
- * Version row: 3 buckets.
+ * Version row: 2 buckets.
  * Green = All Two Found (version-0 SOPs or all expected prior versions present)
- * Amber = Only One Found (exactly 1 of 2 expected prior versions present)
- * Red   = Not Found (expected prior versions exist but none were found)
+ * Red   = Not Found (expected prior versions exist but not all were found)
  */
-function CapsuleMetricVersionTriple({
+function CapsuleMetricVersionPair({
   totalSOPs,
   allTwoFoundV,
-  onlyOneFoundV,
   notFoundV,
   onLabelClick,
   onGreenClick,
-  onAmberClick,
   onRedClick,
   highlightGreen,
-  highlightAmber,
   highlightRed,
   filterRowActive,
   titleSummary,
@@ -667,14 +636,11 @@ function CapsuleMetricVersionTriple({
 }: {
   totalSOPs: number;
   allTwoFoundV: number;
-  onlyOneFoundV: number;
   notFoundV: number;
   onLabelClick: () => void;
   onGreenClick: () => void;
-  onAmberClick: () => void;
   onRedClick: () => void;
   highlightGreen: boolean;
-  highlightAmber: boolean;
   highlightRed: boolean;
   filterRowActive: boolean;
   titleSummary: string;
@@ -701,7 +667,7 @@ function CapsuleMetricVersionTriple({
       </button>
       <div
         className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums"
-        aria-label={`Version status: ${allTwoFoundV} all two found, ${onlyOneFoundV} only one found, ${notFoundV} not found of ${totalSOPs} SOPs`}>
+        aria-label={`Version status: ${allTwoFoundV} all two found, ${notFoundV} not found of ${totalSOPs} SOPs`}>
         {/* All Two Found — version-0 SOPs or all expected prior versions available */}
         <button
           type="button"
@@ -714,23 +680,11 @@ function CapsuleMetricVersionTriple({
           {allTwoFoundV}
         </button>
         <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
-        {/* Only One Found — exactly 1 of 2 expected prior versions available */}
-        <button
-          type="button"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onAmberClick(); }}
-          title={`Only One Found: ${onlyOneFoundV} SOPs with exactly 1 of 2 prior versions available`}
-          aria-pressed={highlightAmber ? true : undefined}
-          className={`min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-amber-400/70 ${
-            highlightAmber ? "bg-amber-100 ring-1 ring-amber-400/80" : ""
-          }`}>
-          {onlyOneFoundV}
-        </button>
-        <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
-        {/* Not Found — expected prior versions but none found */}
+        {/* Not Found — expected prior versions exist but not all were found */}
         <button
           type="button"
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRedClick(); }}
-          title={`Not Found: ${notFoundV} SOPs with expected prior versions but none stored`}
+          title={`Not Found: ${notFoundV} SOPs with expected prior versions but not all found`}
           aria-pressed={highlightRed ? true : undefined}
           className={`min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-400/70 ${
             highlightRed ? "bg-red-100 ring-1 ring-red-400/80" : ""
@@ -1228,19 +1182,15 @@ function DepartmentCapsuleCard({
 
         {/* Versions Section — with spacing */}
         <div className="h-1" />
-        <CapsuleMetricVersionTriple
+        <CapsuleMetricVersionPair
           totalSOPs={stat.totalSOPs}
           allTwoFoundV={stat.versionAllTwoFound}
-          onlyOneFoundV={stat.versionOnlyOneFound}
           notFoundV={stat.versionNotFound}
           onLabelClick={() =>
             applyCapsuleVersionSegment(deptForFilter, "notFoundv")
           }
           onGreenClick={() =>
             applyCapsuleVersionSegment(deptForFilter, "allTwov")
-          }
-          onAmberClick={() =>
-            applyCapsuleVersionSegment(deptForFilter, "onlyOnev")
           }
           onRedClick={() =>
             applyCapsuleVersionSegment(deptForFilter, "notFoundv")
@@ -1250,11 +1200,6 @@ function DepartmentCapsuleCard({
             "allTwov",
             filterSnapshot,
           )}
-          highlightAmber={capsuleVersionSegmentMatches(
-            deptForFilter,
-            "onlyOnev",
-            filterSnapshot,
-          )}
           highlightRed={capsuleVersionSegmentMatches(
             deptForFilter,
             "notFoundv",
@@ -1262,17 +1207,16 @@ function DepartmentCapsuleCard({
           )}
           filterRowActive={
             capsuleVersionSegmentMatches(deptForFilter, "allTwov", filterSnapshot) ||
-            capsuleVersionSegmentMatches(deptForFilter, "onlyOnev", filterSnapshot) ||
             capsuleVersionSegmentMatches(deptForFilter, "notFoundv", filterSnapshot)
           }
           titleSummary={
             isGrand
-              ? "Green = All Two Found (version-0 or all prior versions present); amber = Only One Found; red = Not Found"
-              : `Version in ${scopeHint} · green = All Two Found, amber = Only One Found, red = Not Found`
+              ? "Green = All Two Found (version-0 or all prior versions present); red = Not Found"
+              : `Version in ${scopeHint} · green = All Two Found, red = Not Found`
           }
         />
         {/* DOCX Versions Sub-section (EN and GUJ side-by-side) */}
-        {stat.docxVersionAllTwoFound > 0 || stat.docxVersionOnlyOneFound > 0 || stat.docxVersionNotFound > 0 ? (
+        {stat.docxVersionAllTwoFound > 0 || stat.docxVersionNotFound > 0 ? (
           <>
             <div className="flex w-full min-h-[20px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
               <span className="text-gray-400 font-medium">DOCX</span>
@@ -1283,7 +1227,6 @@ function DepartmentCapsuleCard({
                       lang,
                       {
                         allTwoFound: stat.langDocxVersion.get(lang)!.allTwoFound,
-                        onlyOneFound: stat.langDocxVersion.get(lang)!.onlyOneFound,
                         notFound: stat.langDocxVersion.get(lang)!.notFound,
                       },
                     ])
@@ -1294,7 +1237,7 @@ function DepartmentCapsuleCard({
           </>
         ) : null}
         {/* PDF Versions Sub-section (EN and GUJ side-by-side) */}
-        {stat.pdfVersionAllTwoFound > 0 || stat.pdfVersionOnlyOneFound > 0 || stat.pdfVersionNotFound > 0 ? (
+        {stat.pdfVersionAllTwoFound > 0 || stat.pdfVersionNotFound > 0 ? (
           <>
             <div className="flex w-full min-h-[20px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
               <span className="text-gray-400 font-medium">PDF</span>
@@ -1305,7 +1248,6 @@ function DepartmentCapsuleCard({
                       lang,
                       {
                         allTwoFound: stat.langPdfVersion.get(lang)!.allTwoFound,
-                        onlyOneFound: stat.langPdfVersion.get(lang)!.onlyOneFound,
                         notFound: stat.langPdfVersion.get(lang)!.notFound,
                       },
                     ])

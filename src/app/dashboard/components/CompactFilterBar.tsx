@@ -46,11 +46,9 @@ export default function CompactFilterBar({
   const versionFilterLabel =
     filterVersionStatus === "allTwov"
       ? "All two found"
-      : filterVersionStatus === "onlyOnev"
-        ? "Only one found"
-        : filterVersionStatus === "notFoundv"
-          ? "Not found"
-          : null;
+      : filterVersionStatus === "notFoundv"
+        ? "Not found"
+        : null;
 
   const activeFilters = [
     filterDept !== "All" ? `Dept: ${filterDept}` : null,

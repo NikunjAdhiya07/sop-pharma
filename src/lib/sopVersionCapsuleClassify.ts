@@ -1,10 +1,9 @@
 /**
- * Dashboard version status — exactly 3 user-facing buckets:
+ * Dashboard version status — exactly 2 user-facing buckets:
  *
- *  - "allTwoFound"  : Version-0 SOPs (no prior versions expected), OR all
- *                     expected prior versions have actual files (DOCX or PDF) → green
- *  - "onlyOneFound" : Some expected prior versions have files but at least one is missing → amber
- *  - "notFound"     : No expected prior versions have any files at all → red
+ *  - "allTwoFound" : Version-0 SOPs (no prior versions expected), OR all
+ *                    expected prior versions have actual files (DOCX or PDF) → green
+ *  - "notFound"    : Expected prior versions exist but not all have files → red
  *
  * "Available" means the version slot has at least one actual file (docxPath or pdfPath).
  * A prior SOP record that exists in the DB but has no files is NOT counted as found.
@@ -13,9 +12,9 @@
 import { parseRevisionFromSopIdentifier } from "./sopIdentifierNormalize";
 import { expectedDocxSlotsForRow } from "./registryRowDocCounts";
 
-export type SopVersionCapsuleTier = "allTwoFound" | "onlyOneFound" | "notFound";
+export type SopVersionCapsuleTier = "allTwoFound" | "notFound";
 
-export type SopVersionFilterSegment = "allTwov" | "onlyOnev" | "notFoundv";
+export type SopVersionFilterSegment = "allTwov" | "notFoundv";
 
 /** Returns true if a VersionArtifactEntry has at least one actual file path. */
 function artifactHasFiles(e: { docxPath?: string; pdfPath?: string }): boolean {
@@ -70,7 +69,6 @@ export function classifySopVersionCapsule(row: any): SopVersionCapsuleTier {
     }
 
     if (foundCount >= expectedSlots) return "allTwoFound";
-    if (foundCount >= 1) return "onlyOneFound";
     return "notFound";
   }
 
@@ -85,8 +83,6 @@ export function classifySopVersionCapsule(row: any): SopVersionCapsuleTier {
     const availableCount = top.filter((p: { available?: boolean }) => p.available).length;
 
     if (availableCount >= expectedSlots) return "allTwoFound";
-    if (availableCount === 1) return "onlyOneFound";
-    return "notFound";
   }
 
   return "notFound";

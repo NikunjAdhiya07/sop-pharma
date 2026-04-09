@@ -662,9 +662,7 @@ export default function DashboardPageClient() {
       const tier =
         filterVersionStatus === "allTwov"
           ? "allTwoFound"
-          : filterVersionStatus === "onlyOnev"
-              ? "onlyOneFound"
-              : "notFound";
+          : "notFound";
       result = result.filter(
         (d: any) => classifySopVersionCapsule(d) === tier,
       );
@@ -1889,9 +1887,7 @@ export default function DashboardPageClient() {
                   <strong>
                     {filterVersionStatus === "allTwov"
                       ? "All Two Found"
-                      : filterVersionStatus === "onlyOnev"
-                        ? "Only One Found"
-                        : "Not Found"}
+                      : "Not Found"}
                   </strong>
                   .{" "}
                 </>
