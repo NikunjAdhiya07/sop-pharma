@@ -140,6 +140,7 @@ function MCQBankContent() {
   // Similarity Check State
   const [checkingSimilarity, setCheckingSimilarity] = useState(false);
   const [fixingAnswers, setFixingAnswers] = useState(false);
+  const [autoResolvingSimilar, setAutoResolvingSimilar] = useState(false);
   const [regenLanguage, setRegenLanguage] = useState<'English' | 'Gujarati'>('English');
   const [similarityResults, setSimilarityResults] = useState<{
     count: number;
@@ -745,6 +746,66 @@ function MCQBankContent() {
       alert("Failed to check similarities. Please try again.");
     } finally {
       setCheckingSimilarity(false);
+    }
+  };
+
+  const handleAutoResolveSimilar = async (bank: MCQBank) => {
+    if (autoResolvingSimilar) return;
+
+    if (!confirm(
+      `🤖 Auto-Resolve Similar Questions?\n\n` +
+      `This will automatically detect and regenerate duplicate/similar questions in "${bank.sopIdentifier}".\n\n` +
+      `The process will:\n` +
+      `1. Find all similar question clusters\n` +
+      `2. Keep the best question in each cluster\n` +
+      `3. Regenerate replacements for duplicates\n` +
+      `4. Update the bank with fresh questions\n\n` +
+      `Continue?`
+    )) return;
+
+    setAutoResolvingSimilar(true);
+    try {
+      const response = await fetch(`/api/mcq-bank/bulk-resolve-similar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mcqBankId: bank._id,
+          dryRun: false, // Execute the replacement
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Show summary
+        const summary = data.summary;
+        alert(
+          `✅ Auto-Resolve Complete!\n\n` +
+          `Similar Clusters Found: ${summary.found}\n` +
+          `Eligible for Replacement: ${summary.eligible}\n` +
+          `Questions Replaced: ${summary.replaced}\n` +
+          `Questions Kept: ${summary.kept}\n` +
+          `Failed Replacements: ${summary.failed}\n` +
+          `Questions Eliminated: ${summary.eliminatedCount}\n\n` +
+          `Your MCQ bank has been updated with fresh questions!`
+        );
+
+        // Refresh the bank to show updated questions
+        if (selectedMCQBank) {
+          await fetchFullBankDetails(bank, 'all');
+        }
+
+        // Clear similarity results
+        setSimilarityResults(null);
+        setSimilarQuestionDetails({});
+      } else {
+        alert(`Failed to auto-resolve: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Error auto-resolving similar questions:', error);
+      alert('Failed to auto-resolve similar questions. Please try again.');
+    } finally {
+      setAutoResolvingSimilar(false);
     }
   };
 
@@ -1996,6 +2057,25 @@ function MCQBankContent() {
                               {checkingSimilarity
                                 ? "Checking..."
                                 : "Check Similar"}
+                            </span>
+                          </button>
+                          <button
+                            onClick={() =>
+                              handleAutoResolveSimilar(selectedMCQBank)
+                            }
+                            disabled={autoResolvingSimilar || checkingSimilarity}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-green-400 bg-green-500/10 hover:bg-green-500/20 transition-all border border-green-500/20 hover:border-green-500/30 disabled:opacity-50 text-xs font-bold uppercase tracking-wider"
+                            title="Automatically detect and regenerate similar questions"
+                          >
+                            {autoResolvingSimilar ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-4 w-4" />
+                            )}
+                            <span className="hidden sm:inline">
+                              {autoResolvingSimilar
+                                ? "Resolving..."
+                                : "Auto Resolve"}
                             </span>
                           </button>
                           {/* Language switch toggle */}
