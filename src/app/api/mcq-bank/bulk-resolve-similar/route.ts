@@ -377,25 +377,8 @@ export async function POST(request: NextRequest) {
             const newQuestion = genResult.mcqs[0];
             log.push(`✓ Generated: "${newQuestion.question.substring(0, 50)}..."`);
 
-            // Archive old question
+            // Get the old question BEFORE replacing it
             const oldQuestion = freshBank.mcqs[replacementTarget.questionIndex];
-            if (oldQuestion) {
-              await EliminatedQuestion.create({
-                sopId: bank.sopId,
-                sopName: bank.sopName,
-                sopIdentifier: bank.sopIdentifier,
-                question: oldQuestion,
-                originalQuestionIndex: replacementTarget.questionIndex,
-                eliminationReason: 'duplicate',
-                eliminatedAt: new Date(),
-                eliminatedBy: 'Bulk-Auto-Resolve',
-                duplicateOf: `Q${cluster.primaryQuestionIndex + 1}`,
-                similarityScore: replacementTarget.similarityScore,
-                replacedWith: newQuestion.question.substring(0, 100),
-              });
-              eliminatedCount++;
-              log.push(`✓ Archived old question`);
-            }
 
             // Splice in-place replacement
             freshBank.mcqs.splice(replacementTarget.questionIndex, 1, newQuestion);
@@ -440,6 +423,32 @@ export async function POST(request: NextRequest) {
               continue;
             }
 
+            // Only increment eliminated count if we successfully saved the replacement
+            eliminatedCount++;
+            log.push(`✓ Replaced Q${replacementTarget.questionIndex + 1} - old question will be archived`);
+
+            // Archive old question (non-critical - don't block on failure)
+            if (oldQuestion) {
+              try {
+                await EliminatedQuestion.create({
+                  sopId: bank.sopId,
+                  sopName: bank.sopName,
+                  sopIdentifier: bank.sopIdentifier,
+                  question: oldQuestion,
+                  originalQuestionIndex: replacementTarget.questionIndex,
+                  eliminationReason: 'duplicate',
+                  eliminatedAt: new Date(),
+                  eliminatedBy: 'Bulk-Auto-Resolve',
+                  duplicateOf: `Q${cluster.primaryQuestionIndex + 1}`,
+                  similarityScore: replacementTarget.similarityScore,
+                  replacedWith: newQuestion.question.substring(0, 100),
+                });
+                log.push(`✓ Archived old question to history`);
+              } catch (archiveError: any) {
+                log.push(`⚠ Failed to archive old question (non-critical): ${archiveError.message}`);
+              }
+            }
+
             processedIndices.add(replacementTarget.questionIndex);
             cluster.replacedQuestions!.push(replacementTarget.questionIndex);
             replacedCount++;
@@ -454,6 +463,10 @@ export async function POST(request: NextRequest) {
       log.push(`Marking clusters as reviewed...`);
       const updatedClusters = clusters.filter(c => c.replacedQuestions && c.replacedQuestions.length > 0);
 
+      // Fetch the final bank state with all replacements
+      const finalBank = await MCQBank.findById(mcqBankId);
+      let bankModified = false;
+
       for (const cluster of updatedClusters) {
         try {
           await SimilarQuestion.findByIdAndUpdate(
@@ -467,14 +480,23 @@ export async function POST(request: NextRequest) {
             }
           );
 
-          // Clear isSimilar flag on the kept question
-          const bankForClear = await MCQBank.findById(mcqBankId);
-          if (bankForClear) {
-            bankForClear.mcqs[cluster.bestKeptIndex].isSimilar = false;
-            await bankForClear.save();
+          // Clear isSimilar flag on the kept question (from the final bank with all replacements)
+          if (finalBank && finalBank.mcqs[cluster.bestKeptIndex]) {
+            finalBank.mcqs[cluster.bestKeptIndex].isSimilar = false;
+            bankModified = true;
           }
         } catch (error: any) {
           log.push(`⚠ Failed to mark cluster as reviewed: ${error.message}`);
+        }
+      }
+
+      // Save the final bank state once with all flags updated
+      if (finalBank && bankModified) {
+        try {
+          await finalBank.save();
+          log.push(`✓ Cleared similarity flags on kept questions`);
+        } catch (error: any) {
+          log.push(`⚠ Failed to save similarity flags: ${error.message}`);
         }
       }
 
