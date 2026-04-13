@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
       mcqBankId,
       mode = 'balanced',
       dryRun = false,
-      threshold = 75,
+      threshold = 50,  // Match "Check Similar" detection threshold
     } = body;
 
     if (!mcqBankId) {
