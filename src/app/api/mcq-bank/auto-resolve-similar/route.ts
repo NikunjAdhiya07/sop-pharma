@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
     // In production, this would be a proper job queue (Bull, RabbitMQ, etc.)
     // For now, we'll trigger it via an internal API call
     triggerAutoResolveInBackground(mcqBankId, job._id.toString()).catch((err) => {
-      console.error('Failed to trigger auto-resolve:', err);
+      console.error('🚨 Failed to trigger auto-resolve:', err);
     });
 
     return NextResponse.json({
@@ -96,11 +96,14 @@ export async function GET(request: NextRequest) {
 
     const job = await AutoResolveJob.findById(jobId);
     if (!job) {
+      console.warn(`Job not found: ${jobId}`);
       return NextResponse.json(
         { success: false, error: 'Job not found' },
         { status: 404 }
       );
     }
+
+    console.log(`📋 Job status check - ID: ${jobId}, Status: ${job.status}, Completed: ${!!job.completedAt}`);
 
     return NextResponse.json({
       success: true,
@@ -141,7 +144,7 @@ async function triggerAutoResolveInBackground(
         'http://localhost:3000';
 
       const response = await fetch(
-        `${baseUrl}/api/mcq-bank/bulk-resolve-similar-bg`,
+        `${baseUrl}/api/mcq-bank/bulk-resolve-similar`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

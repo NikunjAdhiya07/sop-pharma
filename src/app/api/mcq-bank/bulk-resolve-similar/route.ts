@@ -4,6 +4,7 @@ import MCQBank from '@/models/MCQBank';
 import SOP from '@/models/SOP';
 import SimilarQuestion from '@/models/SimilarQuestion';
 import EliminatedQuestion from '@/models/EliminatedQuestion';
+import AutoResolveJob from '@/models/AutoResolveJob';
 import { generateMCQsFromSOP } from '@/lib/gemini';
 import { IMCQ } from '@/models/MCQBank';
 
@@ -113,6 +114,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       mcqBankId,
+      jobId,
       mode = 'balanced',
       dryRun = false,
       threshold = 50,  // Match "Check Similar" detection threshold
@@ -145,6 +147,14 @@ export async function POST(request: NextRequest) {
       const bank = await MCQBank.findById(mcqBankId);
       if (!bank) {
         log.push('❌ MCQ bank not found');
+        if (jobId) {
+          await AutoResolveJob.findByIdAndUpdate(jobId, {
+            status: 'failed',
+            error: 'MCQ bank not found',
+            logs: log,
+            completedAt: new Date(),
+          });
+        }
         return NextResponse.json(
           { success: false, error: 'MCQ bank not found', log },
           { status: 404 }
@@ -152,6 +162,21 @@ export async function POST(request: NextRequest) {
       }
 
       log.push(`✓ Found bank: ${bank.sopIdentifier} (${bank.mcqs.length} questions)`);
+
+      // Update job status to running
+      if (jobId) {
+        console.log(`📝 Updating job ${jobId} to running status with logs`);
+        const updated = await AutoResolveJob.findByIdAndUpdate(
+          jobId,
+          {
+            status: 'running',
+            logs: log,
+            startedAt: new Date(),
+          },
+          { new: true }
+        );
+        console.log(`✓ Job status updated: ${updated?.status}`);
+      }
 
       // Find SOP with stale-sopId fallback
       let sop = await SOP.findById(bank.sopId);
@@ -314,6 +339,7 @@ export async function POST(request: NextRequest) {
       let failedCount = 0;
       let eliminatedCount = 0;
       const processedIndices = new Set<number>(); // Guard against double-processing
+      let updateInterval = 0; // Track updates to avoid spamming
 
       for (const cluster of clusters) {
         if (cluster.status === 'below_threshold') {
@@ -452,6 +478,20 @@ export async function POST(request: NextRequest) {
             processedIndices.add(replacementTarget.questionIndex);
             cluster.replacedQuestions!.push(replacementTarget.questionIndex);
             replacedCount++;
+
+            // Periodic job update (every 5 replacements)
+            updateInterval++;
+            if (updateInterval % 5 === 0 && jobId) {
+              await AutoResolveJob.findByIdAndUpdate(jobId, {
+                logs: log,
+                progress: {
+                  clustersFound: clusters.length,
+                  clustersProcessed: clusters.filter(c => c.replacedQuestions && c.replacedQuestions.length > 0).length,
+                  questionsReplaced: replacedCount,
+                  questionsFailed: failedCount,
+                },
+              }).catch(err => console.error('Failed to update progress:', err));
+            }
           } catch (error: any) {
             log.push(`❌ Error replacing Q${replacementTarget.questionIndex + 1}: ${error.message}`);
             failedCount++;
@@ -502,6 +542,30 @@ export async function POST(request: NextRequest) {
 
       log.push(`✓ Resolution complete`);
 
+      // Update job status to completed
+      if (jobId) {
+        console.log(`📝 Updating job ${jobId} to completed status`);
+        const summary = {
+          found: clusters.length,
+          eligible: clusters.filter(c => c.questionsToReplace > 0).length,
+          replaced: replacedCount,
+          kept: clusters.filter(c => c.replacedQuestions && c.replacedQuestions.length > 0).length,
+          failed: failedCount,
+          eliminatedCount,
+        };
+        const updated = await AutoResolveJob.findByIdAndUpdate(
+          jobId,
+          {
+            status: 'completed',
+            logs: log,
+            summary: summary,
+            completedAt: new Date(),
+          },
+          { new: true }
+        );
+        console.log(`✓ Job completed with status: ${updated?.status}, summary:`, summary);
+      }
+
       return NextResponse.json({
         success: true,
         dryRun: false,
@@ -521,6 +585,28 @@ export async function POST(request: NextRequest) {
     }
   } catch (error: any) {
     console.error('Error in bulk-resolve-similar:', error);
+
+    // Update job status to failed
+    if (jobId) {
+      console.log(`❌ Updating job ${jobId} to failed status: ${error.message}`);
+      const updated = await AutoResolveJob.findByIdAndUpdate(
+        jobId,
+        {
+          status: 'failed',
+          error: error.message || 'Unknown error during bulk resolution',
+          logs: log,
+          completedAt: new Date(),
+        },
+        { new: true }
+      ).catch(err => {
+        console.error('Failed to update job status:', err);
+        return null;
+      });
+      if (updated) {
+        console.log(`✓ Job marked as failed, status: ${updated.status}`);
+      }
+    }
+
     return NextResponse.json(
       {
         success: false,
