@@ -109,6 +109,8 @@ export async function POST(request: NextRequest) {
   const log: string[] = [];
 
   try {
+    console.log(`\n🚀🚀🚀 BULK-RESOLVE-SIMILAR ENDPOINT CALLED 🚀🚀🚀`);
+
     await dbConnect();
 
     const body = await request.json();
@@ -120,7 +122,10 @@ export async function POST(request: NextRequest) {
       threshold = 50,  // Match "Check Similar" detection threshold
     } = body;
 
+    console.log(`📥 Received request:`, { mcqBankId, jobId, mode, dryRun, threshold });
+
     if (!mcqBankId) {
+      console.error(`❌ No mcqBankId provided`);
       return NextResponse.json(
         { success: false, error: 'mcqBankId is required' },
         { status: 400 }

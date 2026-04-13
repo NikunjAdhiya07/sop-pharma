@@ -143,6 +143,10 @@ async function triggerAutoResolveInBackground(
         process.env.NEXT_PUBLIC_APP_URL ||
         'http://localhost:3000';
 
+      console.log(`🔥 Background trigger firing for bank ${mcqBankId}, job ${jobId}`);
+      console.log(`📍 Using baseUrl: ${baseUrl}`);
+      console.log(`📡 Calling: ${baseUrl}/api/mcq-bank/bulk-resolve-similar`);
+
       const response = await fetch(
         `${baseUrl}/api/mcq-bank/bulk-resolve-similar`,
         {
@@ -157,13 +161,19 @@ async function triggerAutoResolveInBackground(
         }
       );
 
+      console.log(`📊 Background job response status: ${response.status} ${response.statusText}`);
+
       if (!response.ok) {
+        const errorText = await response.text();
         console.error(
-          `Background job failed: ${response.status} ${response.statusText}`
+          `❌ Background job failed: ${response.status} ${response.statusText}\n${errorText}`
         );
+      } else {
+        const data = await response.json();
+        console.log(`✅ Background job started successfully:`, data);
       }
     } catch (error) {
-      console.error('Error running background job:', error);
+      console.error('🚨 Error running background job:', error);
     }
   }, 100); // Small delay to ensure HTTP response completes
 }
