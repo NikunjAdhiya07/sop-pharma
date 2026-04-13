@@ -10,15 +10,6 @@ import { IMCQ } from '@/models/MCQBank';
 // Concurrency guard: prevent multiple bulk-resolve jobs on the same bank
 const CONCURRENT_JOBS = new Set<string>();
 
-const STYLE_TEMPLATES = [
-  'DIRECT_FACTUAL: According to this SOP, what is the required or expected [key concept]?',
-  'SCENARIO_BASED: A [role/position] is performing [procedure]. [Situation] occurs. What must they do next?',
-  'NEGATIVE_EXCEPTION: Which of the following is NOT [acceptable/required/permitted] according to this SOP?',
-  'SEQUENCE_BASED: In the correct order, what is the [first/second/last] step when [procedure]?',
-  'ROLE_RESPONSIBILITY: Who or which department is responsible for ensuring [activity/task] per this SOP?',
-  'SOP_LINE_INTERPRET: Based on this SOP requirement for [specific requirement], what does it mean in practice?',
-];
-
 interface ClusterResult {
   similarQuestionDocId: string;
   primaryQuestionIndex: number;
@@ -319,16 +310,10 @@ export async function POST(request: NextRequest) {
       // --- STEP 4-7: Generation, Splicing, and Review Marking ---
       log.push(`Starting generation and replacement phase...`);
 
-      // Keep original question list for AI to avoid duplicates during generation
-      const originalQuestionTexts = bank.mcqs.map(q => q.question);
-      log.push(`📝 Storing ${originalQuestionTexts.length} original questions as reference for duplicate detection`);
-
       let replacedCount = 0;
       let failedCount = 0;
       let eliminatedCount = 0;
-      let replacementCounter = 0;
       const processedIndices = new Set<number>(); // Guard against double-processing
-      const modeSimilarityThreshold = mode === 'conservative' ? 90 : mode === 'balanced' ? 80 : 70;
 
       for (const cluster of clusters) {
         if (cluster.status === 'below_threshold') {
@@ -357,13 +342,7 @@ export async function POST(request: NextRequest) {
           }
 
           try {
-            // Get style directive
-            const styleDirective = STYLE_TEMPLATES[replacementCounter % STYLE_TEMPLATES.length];
-            const augmentedSopContent = `${sop.content}\n\n[GENERATION DIRECTIVE - INTERNAL]\nFor this question, use style:\n${styleDirective}`;
-
-            replacementCounter++;
-
-            log.push(`Generating replacement for Q${replacementTarget.questionIndex + 1} (style: ${replacementCounter % 6})`);
+            log.push(`Generating replacement for Q${replacementTarget.questionIndex + 1}`);
 
             // Re-fetch fresh bank to get latest state
             const freshBank = await MCQBank.findById(mcqBankId);
@@ -374,18 +353,17 @@ export async function POST(request: NextRequest) {
             }
 
             // Generate replacement
-            // Use ORIGINAL question list + already-replaced questions to avoid new duplicates
-            const allQuestionsToAvoid = [
-              ...originalQuestionTexts,
-              ...freshBank.mcqs.map(q => q.question) // Current state to avoid recent replacements
-            ];
+            // Pass the current bank questions to avoid duplicates, but don't count the question being replaced
+            const questionsToAvoid = freshBank.mcqs
+              .filter((_, idx) => idx !== replacementTarget.questionIndex) // Exclude the one being replaced
+              .map(q => q.question);
 
             const genResult = await generateMCQsFromSOP({
-              sopContent: augmentedSopContent,
+              sopContent: sop.content,
               sopName: sop.name,
               sopIdentifier: sop.identifier || sop.name,
-              existingQuestions: allQuestionsToAvoid,
-              targetCount: freshBank.mcqs.length + 1,
+              existingQuestions: questionsToAvoid,
+              targetCount: questionsToAvoid.length + 1, // Total count after adding the new question
               isBulk: false,
               language: sop.language || 'English',
             });
