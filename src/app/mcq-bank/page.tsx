@@ -372,6 +372,42 @@ function MCQBankContent() {
     }
   }, [currentPage, viewMode]);
 
+  // Auto-open bank when sopId is in URL (refresh persistence)
+  useEffect(() => {
+    if (sopIdFromUrl && !selectedMCQBank) {
+      const openBankFromUrl = async () => {
+        try {
+          // Fetch bank by sopId and optional language
+          const params = new URLSearchParams();
+          params.set('sopId', sopIdFromUrl);
+          if (langFromUrl) params.set('lang', langFromUrl);
+
+          const response = await fetch(
+            `/api/mcq-bank?${params.toString()}&limit=100`,
+            { cache: 'no-store' }
+          );
+          const data = await response.json();
+
+          if (data.success && data.mcqBanks.length > 0) {
+            let bank = data.mcqBanks[0];
+            // If langFromUrl is specified, find exact language match
+            if (langFromUrl) {
+              const langMatch = data.mcqBanks.find(
+                (b: MCQBank) => b.language === langFromUrl
+              );
+              if (langMatch) bank = langMatch;
+            }
+            fetchFullBankDetails(bank);
+          }
+        } catch (error) {
+          console.error('Error opening bank from URL:', error);
+        }
+      };
+
+      openBankFromUrl();
+    }
+  }, [sopIdFromUrl]);
+
   const fetchTreeData = async (forceRefresh = false) => {
     try {
       // Only show full loading state if we don't have data yet
@@ -440,24 +476,6 @@ function MCQBankContent() {
       setLoadingTree(false);
     }
   };
-
-  // Auto-select MCQ bank when sopId is in URL (prefer matching language if specified)
-  useEffect(() => {
-    if (sopIdFromUrl && mcqBanks.length > 0) {
-      let matchingBank: MCQBank | undefined;
-      if (langFromUrl) {
-        matchingBank = mcqBanks.find(
-          (bank) => bank.sopId === sopIdFromUrl && bank.language === langFromUrl
-        );
-      }
-      if (!matchingBank) {
-        matchingBank = mcqBanks.find((bank) => bank.sopId === sopIdFromUrl);
-      }
-      if (matchingBank) {
-        fetchFullBankDetails(matchingBank);
-      }
-    }
-  }, [sopIdFromUrl, langFromUrl, mcqBanks]);
 
   // Auto-open department when dept is in URL
   useEffect(() => {
