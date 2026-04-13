@@ -107,6 +107,7 @@ function scoreClusterQuestion(
  */
 export async function POST(request: NextRequest) {
   const log: string[] = [];
+  let jobId: string | null = null;
 
   try {
     console.log(`\n🚀🚀🚀 BULK-RESOLVE-SIMILAR ENDPOINT CALLED 🚀🚀🚀`);
@@ -116,11 +117,13 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       mcqBankId,
-      jobId,
+      jobId: bodyJobId,
       mode = 'balanced',
       dryRun = false,
       threshold = 50,  // Match "Check Similar" detection threshold
     } = body;
+
+    jobId = bodyJobId;
 
     console.log(`📥 Received request:`, { mcqBankId, jobId, mode, dryRun, threshold });
 

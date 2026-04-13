@@ -140,7 +140,19 @@ function MCQBankContent() {
   // Similarity Check State
   const [checkingSimilarity, setCheckingSimilarity] = useState(false);
   const [fixingAnswers, setFixingAnswers] = useState(false);
-  const [autoResolvingSimilar, setAutoResolvingSimilar] = useState(false);
+  const [smartRegenProgress, setSmartRegenProgress] = useState<{
+    phase: 'detecting' | 'regenerating' | 'complete';
+    totalFound: number;
+    totalReplaced: number;
+    totalFailed: number;
+    currentQuestion: number;
+    details: Array<{
+      questionIndex: number;
+      oldQuestion: string;
+      newQuestion: string;
+      status: 'replaced' | 'failed' | 'skipped';
+    }>;
+  } | null>(null);
   const [regenLanguage, setRegenLanguage] = useState<'English' | 'Gujarati'>('English');
   const [similarityResults, setSimilarityResults] = useState<{
     count: number;
@@ -696,8 +708,6 @@ function MCQBankContent() {
     if (checkingSimilarity) return;
 
     setCheckingSimilarity(true);
-    setSimilarityResults(null);
-    setSimilarQuestionDetails({}); // Clear previous details
 
     try {
       const response = await fetch("/api/similar-questions/detect", {
@@ -706,83 +716,24 @@ function MCQBankContent() {
         body: JSON.stringify({
           mcqBankId: bank._id,
           sopId: bank.sopId,
-          threshold: 50, // Higher threshold to only flag truly similar questions
-          scanAllBanks: false, // Only check within this bank
+          threshold: 50,
+          scanAllBanks: false,
         }),
       });
 
       const data = await response.json();
 
       if (data.success) {
-        // Build groups showing which questions are similar to each other
-        const groups = data.similarities.map((sim: any) => ({
-          primary: sim.primaryQuestion.questionIndex,
-          similar: sim.similarQuestions.map((sq: any) => sq.questionIndex),
-        }));
+        const count = data.flaggedCount || 0;
 
-        // Create a map of question index -> similar question indices
-        const detailsMap: Record<number, number[]> = {};
-        groups.forEach((group: any) => {
-          detailsMap[group.primary] = group.similar;
-        });
-
-        console.log("📊 Similarity Details Map:", detailsMap);
-        console.log("📊 Groups:", groups);
-
-        setSimilarQuestionDetails(detailsMap);
-
-        // Create a summary string like "Q92 = Q71, Q67, Q2..."
-        const summaryParts = groups.slice(0, 3).map((group: any) => {
-          const similarList = group.similar
-            .slice(0, 3)
-            .map((i: number) => `Q${i + 1}`)
-            .join(", ");
-          const more = group.similar.length > 3 ? "..." : "";
-          return `Q${group.primary + 1} = ${similarList}${more}`;
-        });
-        const moreSummary =
-          groups.length > 3 ? ` +${groups.length - 3} more` : "";
-        const summary = summaryParts.join("; ") + moreSummary;
-
-        setSimilarityResults({
-          count: data.flaggedCount || 0,
-          groups,
-          summary,
-        });
-
-        // DON'T refresh the bank here - it would overwrite our similarity details
-        // The isSimilar flags are already updated by the API
-        // Just update the local bank state with the new flags
-        if (selectedMCQBank) {
-          const updatedMcqs = selectedMCQBank.mcqs.map((mcq, idx) => {
-            const isFlagged = detailsMap.hasOwnProperty(idx);
-            return isFlagged ? { ...mcq, isSimilar: true } : mcq;
-          });
-          setSelectedMCQBank({ ...selectedMCQBank, mcqs: updatedMcqs });
-        }
-
-        if (data.flaggedCount > 0) {
-          // Build detailed alert message
-          const detailsText = groups
-            .slice(0, 10)
-            .map((group: any) => {
-              const similarList = group.similar
-                .map((i: number) => `Q${i + 1}`)
-                .join(", ");
-              return `Q${group.primary + 1} = ${similarList}`;
-            })
-            .join("\n");
-          const moreText =
-            groups.length > 10
-              ? `\n... and ${groups.length - 10} more groups`
-              : "";
-
-          alert(
-            `Found ${data.flaggedCount} question(s) with similarities!\n\n${detailsText}${moreText}`,
-          );
+        // Simple alert - just show the count
+        if (count === 0) {
+          alert(`✅ No similar questions found!`);
         } else {
-          alert("No similar questions found in this SOP.");
+          alert(`⚠️ Found ${count} similar question(s)`);
         }
+
+        console.log(`📊 Similar questions check: ${count} found`);
       } else {
         alert(`Failed to check similarities: ${data.error}`);
       }
@@ -794,8 +745,204 @@ function MCQBankContent() {
     }
   };
 
+  const handleSmartRegenerate = async (bank: MCQBank) => {
+    if (checkingSimilarity) return;
+
+    setCheckingSimilarity(true);
+    setSmartRegenProgress({
+      phase: 'detecting',
+      totalFound: 0,
+      totalReplaced: 0,
+      totalFailed: 0,
+      currentQuestion: 0,
+      details: [],
+    });
+
+    try {
+      // PHASE 1: Detect similar questions
+      console.log('🔍 Phase 1: Detecting similar questions...');
+      const detectResponse = await fetch("/api/similar-questions/detect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mcqBankId: bank._id,
+          sopId: bank.sopId,
+          threshold: 50,
+          scanAllBanks: false,
+        }),
+      });
+
+      const detectData = await detectResponse.json();
+
+      if (!detectData.success || !detectData.similarities) {
+        alert("Failed to detect similar questions");
+        setSmartRegenProgress(null);
+        setCheckingSimilarity(false);
+        return;
+      }
+
+      const similarQuestions = detectData.similarities;
+      const totalSimilar = detectData.flaggedCount || 0;
+
+      if (totalSimilar === 0) {
+        alert("✅ No similar questions found!");
+        setSmartRegenProgress(null);
+        setCheckingSimilarity(false);
+        return;
+      }
+
+      console.log(`✅ Phase 1 Complete: Found ${totalSimilar} similar questions`);
+
+      // Update progress
+      setSmartRegenProgress(prev => prev ? {
+        ...prev,
+        phase: 'regenerating',
+        totalFound: totalSimilar,
+      } : null);
+
+      // PHASE 2: Regenerate similar questions one by one
+      let replaced = 0;
+      let failed = 0;
+      const details: Array<{
+        questionIndex: number;
+        oldQuestion: string;
+        newQuestion: string;
+        status: 'replaced' | 'failed' | 'skipped';
+      }> = [];
+
+      // Use the selected bank from state (already loaded in memory)
+      const allMcqs = bank.mcqs || [];
+
+      // Collect all unique indices that need regeneration
+      // Include BOTH the primary question AND all similar questions
+      const indicesToRegenerate = new Set<number>();
+      for (const similarity of similarQuestions) {
+        // Add the primary question that has similar matches
+        indicesToRegenerate.add(similarity.primaryQuestion.questionIndex);
+        // Add all the questions that are similar to it
+        similarity.similarQuestions.forEach((sq: any) => {
+          indicesToRegenerate.add(sq.questionIndex);
+        });
+      }
+
+      // Regenerate each one
+      let processCount = 0;
+      for (const simIdx of Array.from(indicesToRegenerate).sort((a, b) => a - b)) {
+        processCount++;
+        setSmartRegenProgress(prev => prev ? {
+          ...prev,
+          currentQuestion: simIdx + 1,
+        } : null);
+
+        try {
+          const oldQuestion = allMcqs[simIdx];
+          if (!oldQuestion) continue;
+
+          console.log(`[${processCount}/${totalSimilar}] Regenerating Q${simIdx + 1}...`);
+
+          // Use the proven generate-replacement endpoint
+          const genResponse = await fetch("/api/mcq-bank/generate-replacement", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              mcqBankId: bank._id,
+              sopId: bank.sopId,
+              questionIndex: simIdx,
+            }),
+          });
+
+          const genData = await genResponse.json();
+
+          if (genData.success) {
+            replaced++;
+            details.push({
+              questionIndex: simIdx,
+              oldQuestion: oldQuestion.question?.substring(0, 80) || 'Old Q',
+              newQuestion: 'Regenerated',
+              status: 'replaced',
+            });
+            console.log(`✅ Q${simIdx + 1} regenerated`);
+          } else {
+            failed++;
+            details.push({
+              questionIndex: simIdx,
+              oldQuestion: oldQuestion.question?.substring(0, 80) || 'Old Q',
+              newQuestion: 'Failed',
+              status: 'failed',
+            });
+            console.log(`❌ Q${simIdx + 1}: ${genData.error}`);
+          }
+
+          // Update progress
+          setSmartRegenProgress(prev => prev ? {
+            ...prev,
+            totalReplaced: replaced,
+            totalFailed: failed,
+            details,
+          } : null);
+
+          // Small delay to avoid rate limiting
+          await new Promise(r => setTimeout(r, 300));
+
+        } catch (error) {
+          console.error(`Error regenerating Q${simIdx + 1}:`, error);
+          failed++;
+        }
+      }
+
+      // PHASE 3: Show completion and verify
+      console.log('🎉 Phase 2 Complete: Regeneration finished');
+
+      setSmartRegenProgress(prev => prev ? {
+        ...prev,
+        phase: 'complete',
+      } : null);
+
+      // Refresh the bank
+      if (selectedMCQBank) {
+        await fetchFullBankDetails(bank, 'all');
+      }
+
+      // Re-check similarities to see if they're resolved
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const verifyResponse = await fetch("/api/similar-questions/detect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mcqBankId: bank._id,
+          sopId: bank.sopId,
+          threshold: 50,
+          scanAllBanks: false,
+        }),
+      });
+
+      const verifyData = await verifyResponse.json();
+      const remaining = verifyData.flaggedCount || 0;
+
+      alert(
+        (`✅ Smart Regeneration Complete!\n\n` +
+        `Total Similar Questions Found: ${totalSimilar}\n` +
+        `Questions Regenerated: ${replaced}\n` +
+        `Failed Regenerations: ${failed}\n` +
+        `Remaining Similar Questions: ${remaining}\n\n`) +
+        (remaining === 0
+          ? "🎉 Excellent! All similar questions have been resolved!"
+          : `Note: ${remaining} questions still need attention.`)
+      );
+
+      setSmartRegenProgress(null);
+
+    } catch (error) {
+      console.error('Error in smart regenerate:', error);
+      alert('An error occurred during smart regeneration. Please try again.');
+      setSmartRegenProgress(null);
+    } finally {
+      setCheckingSimilarity(false);
+    }
+  };
+
   const handleAutoResolveSimilar = async (bank: MCQBank) => {
-    if (autoResolvingSimilar) return;
+    if (checkingSimilarity) return;
 
     if (!confirm(
       `🤖 Auto-Resolve Similar Questions?\n\n` +
@@ -809,7 +956,7 @@ function MCQBankContent() {
       `Continue?`
     )) return;
 
-    setAutoResolvingSimilar(true);
+    setCheckingSimilarity(true);
     try {
       // Queue the job (returns immediately)
       const response = await fetch(`/api/mcq-bank/auto-resolve-similar`, {
@@ -890,7 +1037,7 @@ function MCQBankContent() {
       console.error('Error queuing auto-resolve:', error);
       alert('Failed to queue auto-resolve. Please try again.');
     } finally {
-      setAutoResolvingSimilar(false);
+      setCheckingSimilarity(false);
     }
   };
 
@@ -2165,21 +2312,21 @@ function MCQBankContent() {
                           </button>
                           <button
                             onClick={() =>
-                              handleAutoResolveSimilar(selectedMCQBank)
+                              handleSmartRegenerate(selectedMCQBank)
                             }
-                            disabled={autoResolvingSimilar || checkingSimilarity}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-green-400 bg-green-500/10 hover:bg-green-500/20 transition-all border border-green-500/20 hover:border-green-500/30 disabled:opacity-50 text-xs font-bold uppercase tracking-wider"
-                            title="Automatically detect and regenerate similar questions"
+                            disabled={checkingSimilarity}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-violet-400 bg-violet-500/10 hover:bg-violet-500/20 transition-all border border-violet-500/20 hover:border-violet-500/30 disabled:opacity-50 text-xs font-bold uppercase tracking-wider"
+                            title="Detect similar questions and regenerate them with unique content"
                           >
-                            {autoResolvingSimilar ? (
+                            {checkingSimilarity ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
                               <RefreshCw className="h-4 w-4" />
                             )}
                             <span className="hidden sm:inline">
-                              {autoResolvingSimilar
-                                ? "Resolving..."
-                                : "Auto Resolve"}
+                              {checkingSimilarity
+                                ? "Processing..."
+                                : "Smart Regenerate"}
                             </span>
                           </button>
                           {/* Language switch toggle */}
@@ -3636,8 +3783,92 @@ function MCQBankContent() {
 
 
       {/* Modals */}
-      <TrainerUploadModal 
-        isOpen={showTrainerModal} 
+      {/* Smart Regenerate Progress Modal */}
+      {smartRegenProgress && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 rounded-2xl border border-purple-500/20 shadow-2xl max-w-md w-full animate-in fade-in zoom-in duration-300">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-slate-900/95 to-purple-900/95 backdrop-blur border-b border-purple-500/20 p-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-violet-500/20 flex items-center justify-center animate-spin">
+                  <Loader2 className="h-6 w-6 text-violet-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-violet-400">Smart Regenerate</h2>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {smartRegenProgress.phase === 'detecting' && 'Detecting similar questions...'}
+                    {smartRegenProgress.phase === 'regenerating' && `Regenerating (Q${smartRegenProgress.currentQuestion})`}
+                    {smartRegenProgress.phase === 'complete' && 'Complete!'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 space-y-6">
+              {/* Found */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">Similar Questions Found</span>
+                  <span className="text-sm font-bold text-blue-400">{smartRegenProgress.totalFound}</span>
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              {smartRegenProgress.phase !== 'detecting' && smartRegenProgress.totalFound > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">Progress</span>
+                    <span className="text-sm font-bold text-violet-400">
+                      {smartRegenProgress.totalReplaced + smartRegenProgress.totalFailed}/{smartRegenProgress.totalFound}
+                    </span>
+                  </div>
+                  <div className="h-3 bg-white/10 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-violet-500 to-purple-500 rounded-full transition-all duration-300"
+                      style={{
+                        width: smartRegenProgress.totalFound > 0
+                          ? `${((smartRegenProgress.totalReplaced + smartRegenProgress.totalFailed) / smartRegenProgress.totalFound) * 100}%`
+                          : '0%'
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Stats */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3">
+                  <div className="text-xs font-bold text-green-400 uppercase tracking-wider mb-1">Replaced</div>
+                  <div className="text-2xl font-bold text-green-300">{smartRegenProgress.totalReplaced}</div>
+                </div>
+
+                <div className="bg-rose-500/10 border border-rose-500/20 rounded-lg p-3">
+                  <div className="text-xs font-bold text-rose-400 uppercase tracking-wider mb-1">Failed</div>
+                  <div className="text-2xl font-bold text-rose-300">{smartRegenProgress.totalFailed}</div>
+                </div>
+              </div>
+
+              {/* Status */}
+              <div className="bg-white/5 border border-white/10 rounded-lg p-3">
+                <p className="text-xs text-gray-400 text-center">
+                  {smartRegenProgress.phase === 'complete' ? (
+                    <span>✅ Smart regeneration completed!</span>
+                  ) : (
+                    <span>
+                      <span className="inline-block animate-bounce mr-1">⏳</span>
+                      Processing... Do not close this dialog.
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <TrainerUploadModal
+        isOpen={showTrainerModal}
         onClose={() => setShowTrainerModal(false)}
         onSuccess={() => fetchTrainerMappings()}
       />

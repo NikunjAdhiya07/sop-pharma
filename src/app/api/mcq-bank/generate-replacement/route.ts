@@ -152,8 +152,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Insert the new question at the specified position in the fresh copy
-    freshBank.mcqs.splice(questionIndex, 0, newQuestion);
+    // REPLACE the old question at the specified position with the new one
+    // splice(index, deleteCount, ...items)
+    // questionIndex = position, 1 = delete 1 question, newQuestion = insert this
+    freshBank.mcqs.splice(questionIndex, 1, newQuestion);
 
     // Save with retry logic for version conflicts
     let saveAttempts = 0;
@@ -180,8 +182,8 @@ export async function POST(request: NextRequest) {
         console.log(`🔄 Refreshing and retrying save...`);
         const retryBank = await MCQBank.findById(mcqBankId);
         if (retryBank) {
-          // Re-apply the new question to the fresh copy
-          retryBank.mcqs.splice(questionIndex, 0, newQuestion);
+          // Re-apply the new question by REPLACING the old one
+          retryBank.mcqs.splice(questionIndex, 1, newQuestion);
           Object.assign(freshBank, retryBank.toObject());
         } else {
           saveError = new Error('MCQ bank no longer exists');
