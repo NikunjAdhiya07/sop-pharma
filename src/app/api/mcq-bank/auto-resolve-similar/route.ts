@@ -31,20 +31,35 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if a job is already running for this bank
+    // But allow restarting if the existing job is stale (> 10 minutes old)
     const existingJob = await AutoResolveJob.findOne({
       mcqBankId,
       status: { $in: ['pending', 'running'] },
     });
 
     if (existingJob) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'A resolution job is already running for this bank',
-          jobId: existingJob._id,
-        },
-        { status: 409 }
-      );
+      const jobAge = Date.now() - existingJob.createdAt.getTime();
+      const TEN_MINUTES = 10 * 60 * 1000;
+
+      if (jobAge < TEN_MINUTES) {
+        // Job is recent, don't allow another one
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'A resolution job is already running for this bank',
+            jobId: existingJob._id,
+          },
+          { status: 409 }
+        );
+      } else {
+        // Job is stale, mark it as failed and allow a new one
+        console.warn(`⚠️ Found stale job (${Math.round(jobAge / 1000)}s old), marking as failed and creating new one`);
+        await AutoResolveJob.findByIdAndUpdate(existingJob._id, {
+          status: 'failed',
+          error: 'Job timeout - no progress for 10+ minutes',
+          completedAt: new Date(),
+        });
+      }
     }
 
     // Create a new job
