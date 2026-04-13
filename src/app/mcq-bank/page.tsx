@@ -805,50 +805,90 @@ function MCQBankContent() {
       `2. Keep the best question in each cluster\n` +
       `3. Regenerate replacements for duplicates\n` +
       `4. Update the bank with fresh questions\n\n` +
+      `This runs in the background - you can continue working while it processes.\n\n` +
       `Continue?`
     )) return;
 
     setAutoResolvingSimilar(true);
     try {
-      const response = await fetch(`/api/mcq-bank/bulk-resolve-similar`, {
+      // Queue the job (returns immediately)
+      const response = await fetch(`/api/mcq-bank/auto-resolve-similar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mcqBankId: bank._id,
-          dryRun: false, // Execute the replacement
         }),
       });
 
       const data = await response.json();
 
       if (data.success) {
-        // Show summary
-        const summary = data.summary;
+        const jobId = data.jobId;
+
+        // Show that job is queued
         alert(
-          `✅ Auto-Resolve Complete!\n\n` +
-          `Similar Clusters Found: ${summary.found}\n` +
-          `Eligible for Replacement: ${summary.eligible}\n` +
-          `Questions Replaced: ${summary.replaced}\n` +
-          `Questions Kept: ${summary.kept}\n` +
-          `Failed Replacements: ${summary.failed}\n` +
-          `Questions Eliminated: ${summary.eliminatedCount}\n\n` +
-          `Your MCQ bank has been updated with fresh questions!`
+          `✅ Auto-Resolve Job Queued!\n\n` +
+          `Processing will run in the background.\n` +
+          `You can close this dialog and continue working.\n\n` +
+          `Job ID: ${jobId}\n` +
+          `Status will update automatically.`
         );
 
-        // Refresh the bank to show updated questions
-        if (selectedMCQBank) {
-          await fetchFullBankDetails(bank, 'all');
+        // Poll for job completion
+        let isComplete = false;
+        let attempts = 0;
+        const MAX_ATTEMPTS = 360; // 30 minutes with 5s intervals
+
+        while (!isComplete && attempts < MAX_ATTEMPTS) {
+          await new Promise(resolve => setTimeout(resolve, 5000)); // Check every 5 seconds
+          attempts++;
+
+          const statusResponse = await fetch(
+            `/api/mcq-bank/auto-resolve-similar?jobId=${jobId}`
+          );
+          const statusData = await statusResponse.json();
+
+          if (statusData.success) {
+            const job = statusData.job;
+
+            if (job.status === 'completed') {
+              isComplete = true;
+              const summary = job.summary;
+              alert(
+                `✅ Auto-Resolve Complete!\n\n` +
+                `Similar Clusters Found: ${summary.found}\n` +
+                `Eligible for Replacement: ${summary.eligible}\n` +
+                `Questions Replaced: ${summary.replaced}\n` +
+                `Questions Kept: ${summary.kept}\n` +
+                `Failed Replacements: ${summary.failed}\n` +
+                `Questions Eliminated: ${summary.eliminatedCount}\n\n` +
+                `Your MCQ bank has been updated with fresh questions!`
+              );
+
+              // Refresh the bank to show updated questions
+              if (selectedMCQBank) {
+                await fetchFullBankDetails(bank, 'all');
+              }
+
+              // Clear similarity results
+              setSimilarityResults(null);
+              setSimilarQuestionDetails({});
+            } else if (job.status === 'failed') {
+              isComplete = true;
+              alert(`❌ Auto-Resolve Failed!\n\n${job.error}`);
+            }
+          }
         }
 
-        // Clear similarity results
-        setSimilarityResults(null);
-        setSimilarQuestionDetails({});
+        if (!isComplete) {
+          alert('Job processing timed out. Check back later for status.');
+        }
       } else {
-        alert(`Failed to auto-resolve: ${data.error}`);
+        alert(`Failed to queue auto-resolve: ${data.error}`);
       }
     } catch (error) {
-      console.error('Error auto-resolving similar questions:', error);
-      alert('Failed to auto-resolve similar questions. Please try again.');
+      console.error('Error queuing auto-resolve:', error);
+      alert('Failed to queue auto-resolve. Please try again.');
     } finally {
       setAutoResolvingSimilar(false);
     }
