@@ -579,6 +579,13 @@ function MCQBankContent() {
         setViewLanguage(bank.language || 'English');
         setActiveTab("active"); // Reset to active tab when opening modal
         setSimilarityResults(null); // Clear previous similarity results
+        // Update URL to preserve selection on refresh
+        if (typeof window !== 'undefined') {
+          const params = new URLSearchParams(window.location.search);
+          params.set('sopId', bank.sopId);
+          params.set('lang', bank.language || 'English');
+          window.history.replaceState({ ...window.history.state }, '', `${window.location.pathname}?${params.toString()}`);
+        }
         return;
       }
 
@@ -605,6 +612,14 @@ function MCQBankContent() {
         setViewLanguage(fullBank.language || 'English');
         setActiveTab("active"); // Reset to active tab
         setSimilarityResults(null); // Clear previous similarity results
+
+        // Update URL to preserve selection on refresh
+        if (typeof window !== 'undefined') {
+          const params = new URLSearchParams(window.location.search);
+          params.set('sopId', fullBank.sopId);
+          params.set('lang', fullBank.language || 'English');
+          window.history.replaceState({ ...window.history.state }, '', `${window.location.pathname}?${params.toString()}`);
+        }
 
         // Fetch similarity details for questions with isSimilar flag
         await fetchSimilarityDetails(fullBank._id);
@@ -1962,7 +1977,19 @@ function MCQBankContent() {
                     <div className="flex items-center justify-between px-6 py-4">
                       <div className="flex items-center gap-4 min-w-0">
                         <button
-                          onClick={() => { setSelectedMCQBank(null); setSelectedMCQBanks(null); setViewLanguage('English'); }}
+                          onClick={() => {
+                            setSelectedMCQBank(null);
+                            setSelectedMCQBanks(null);
+                            setViewLanguage('English');
+                            // Clear URL parameters when going back
+                            if (typeof window !== 'undefined') {
+                              const params = new URLSearchParams(window.location.search);
+                              params.delete('sopId');
+                              params.delete('lang');
+                              const newUrl = params.toString() ? `${window.location.pathname}?${params.toString()}` : window.location.pathname;
+                              window.history.replaceState({ ...window.history.state }, '', newUrl);
+                            }
+                          }}
                           className="p-2 rounded-xl bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 transition-all border border-white/5"
                         >
                           <ArrowLeft className="h-5 w-5" />
@@ -2231,7 +2258,18 @@ function MCQBankContent() {
                             )}
                           </button>
                           <button
-                            onClick={() => { setSelectedMCQBank(null); setSelectedMCQBanks(null); }}
+                            onClick={() => {
+                              setSelectedMCQBank(null);
+                              setSelectedMCQBanks(null);
+                              // Clear URL parameters when closing
+                              if (typeof window !== 'undefined') {
+                                const params = new URLSearchParams(window.location.search);
+                                params.delete('sopId');
+                                params.delete('lang');
+                                const newUrl = params.toString() ? `${window.location.pathname}?${params.toString()}` : window.location.pathname;
+                                window.history.replaceState({ ...window.history.state }, '', newUrl);
+                              }
+                            }}
                             className="p-2 rounded-xl text-gray-400 hover:text-white hover:bg-[#FE4A49]/10 hover:text-[#FE4A49] transition-all border border-transparent hover:border-[#FE4A49]/20"
                           >
                             <X className="h-5 w-5" />
