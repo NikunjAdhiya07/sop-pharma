@@ -151,6 +151,9 @@ function MCQBankContent() {
     summary: string;
   } | null>(null);
 
+  // Refresh persistence state
+  const [isOpeningFromUrl, setIsOpeningFromUrl] = useState(!!sopIdFromUrl);
+
   // Store similar question details for inline display
   const [similarQuestionDetails, setSimilarQuestionDetails] = useState<
     Record<number, number[]>
@@ -374,39 +377,48 @@ function MCQBankContent() {
 
   // Auto-open bank when sopId is in URL (refresh persistence)
   useEffect(() => {
-    if (sopIdFromUrl && !selectedMCQBank) {
+    if (sopIdFromUrl && !selectedMCQBank && isOpeningFromUrl) {
+      console.log('[REFRESH] Opening bank from URL:', sopIdFromUrl, langFromUrl);
       const openBankFromUrl = async () => {
         try {
           // Fetch bank by sopId and optional language
-          const params = new URLSearchParams();
-          params.set('sopId', sopIdFromUrl);
-          if (langFromUrl) params.set('lang', langFromUrl);
-
           const response = await fetch(
-            `/api/mcq-bank?${params.toString()}&limit=100`,
+            `/api/mcq-bank?sopId=${encodeURIComponent(sopIdFromUrl)}&limit=100`,
             { cache: 'no-store' }
           );
           const data = await response.json();
+          console.log('[REFRESH] API response:', data);
 
           if (data.success && data.mcqBanks.length > 0) {
             let bank = data.mcqBanks[0];
+            console.log('[REFRESH] Found banks:', data.mcqBanks.map((b: any) => ({ sopId: b.sopId, language: b.language })));
+
             // If langFromUrl is specified, find exact language match
             if (langFromUrl) {
               const langMatch = data.mcqBanks.find(
                 (b: MCQBank) => b.language === langFromUrl
               );
-              if (langMatch) bank = langMatch;
+              if (langMatch) {
+                console.log('[REFRESH] Using language match:', langFromUrl);
+                bank = langMatch;
+              }
             }
-            fetchFullBankDetails(bank);
+            console.log('[REFRESH] Opening bank:', bank.sopId, bank.language);
+            await fetchFullBankDetails(bank);
+            setIsOpeningFromUrl(false);
+          } else {
+            console.warn('[REFRESH] No banks found in API response');
+            setIsOpeningFromUrl(false);
           }
         } catch (error) {
-          console.error('Error opening bank from URL:', error);
+          console.error('[REFRESH] Error opening bank from URL:', error);
+          setIsOpeningFromUrl(false);
         }
       };
 
       openBankFromUrl();
     }
-  }, [sopIdFromUrl]);
+  }, [sopIdFromUrl, langFromUrl, isOpeningFromUrl, selectedMCQBank]);
 
   const fetchTreeData = async (forceRefresh = false) => {
     try {
