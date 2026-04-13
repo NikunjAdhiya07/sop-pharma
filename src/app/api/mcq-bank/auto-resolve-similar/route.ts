@@ -56,16 +56,18 @@ export async function POST(request: NextRequest) {
 
     // Trigger the actual resolution in the background (fire and forget)
     // In production, this would be a proper job queue (Bull, RabbitMQ, etc.)
-    // For now, we'll trigger it via an internal API call
+    // For now, we'll trigger it via a Promise-based background call
 
-    console.log(`🚀 QUEUING AUTO-RESOLVE JOB: ${job._id}`);
+    console.log(`\n🚀 QUEUING AUTO-RESOLVE JOB: ${job._id}`);
+    console.log(`🏦 Bank ID: ${mcqBankId}`);
 
-    // Fire background trigger without waiting
-    triggerAutoResolveInBackground(mcqBankId, job._id.toString()).catch((err) => {
-      console.error('🚨 Failed to trigger auto-resolve:', err);
-    });
+    // Start background processing IMMEDIATELY (don't wait)
+    // Use Promise without await to allow response to return while processing continues
+    triggerAutoResolveInBackground(mcqBankId, job._id.toString())
+      .then(() => console.log(`✅ Background auto-resolve completed`))
+      .catch((err) => console.error(`🚨 Background auto-resolve failed:`, err));
 
-    console.log(`✅ AUTO-RESOLVE JOB QUEUED, returning to client immediately`);
+    console.log(`✅ AUTO-RESOLVE JOB QUEUED, returning to client immediately\n`);
 
     return NextResponse.json({
       success: true,
@@ -140,67 +142,61 @@ async function triggerAutoResolveInBackground(
   mcqBankId: string,
   jobId: string
 ): Promise<void> {
-  // Use a setTimeout to fire this in the background
-  // In production, use a proper job queue system
-  setTimeout(async () => {
-    console.log(`\n⏰ [DELAYED EXECUTION] Background trigger starting (100ms delay)...`);
+  // Fire the background job immediately without setTimeout
+  // This allows the HTTP response to return while processing continues in the background
 
-    try {
-      // Try multiple baseUrl options
-      const baseUrl =
-        process.env.NEXTAUTH_URL?.replace(/\/$/, '') ||
-        process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
-        process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
+  console.log(`\n🔥 BACKGROUND TRIGGER STARTING (no delay)`);
+  console.log(`   mcqBankId: ${mcqBankId}`);
+  console.log(`   jobId: ${jobId}`);
 
-      console.log(`🔥 Background trigger firing for bank ${mcqBankId}, job ${jobId}`);
-      console.log(`📍 Environment variables:`);
-      console.log(`   NEXTAUTH_URL: ${process.env.NEXTAUTH_URL}`);
-      console.log(`   NEXT_PUBLIC_APP_URL: ${process.env.NEXT_PUBLIC_APP_URL}`);
-      console.log(`   VERCEL_URL: ${process.env.VERCEL_URL}`);
-      console.log(`📍 Using baseUrl: ${baseUrl}`);
+  try {
+    // Try multiple baseUrl options
+    const baseUrl =
+      process.env.NEXTAUTH_URL?.replace(/\/$/, '') ||
+      process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
 
-      const endpoint = `${baseUrl}/api/mcq-bank/bulk-resolve-similar`;
-      console.log(`📡 Calling endpoint: ${endpoint}`);
+    console.log(`📍 Using baseUrl: ${baseUrl}`);
 
-      const payload = {
-        mcqBankId,
-        jobId,
-        threshold: 50,
-        dryRun: false,
-      };
-      console.log(`📦 Payload:`, payload);
+    const endpoint = `${baseUrl}/api/mcq-bank/bulk-resolve-similar`;
+    console.log(`📡 POST ${endpoint}`);
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+    const payload = {
+      mcqBankId,
+      jobId,
+      threshold: 50,
+      dryRun: false,
+    };
 
-      console.log(`📊 Background job response status: ${response.status} ${response.statusText}`);
+    console.log(`📦 Request payload:`, JSON.stringify(payload, null, 2));
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(
-          `❌ Background job failed: ${response.status} ${response.statusText}`
-        );
-        console.error(`Response body:`, errorText);
-      } else {
-        try {
-          const data = await response.json();
-          console.log(`✅ Background job response received:`, {
-            success: data.success,
-            dryRun: data.dryRun,
-            summary: data.summary ? 'present' : 'none',
-          });
-        } catch (e) {
-          console.log(`✅ Background job response received (non-JSON)`);
-        }
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    console.log(`📊 Response status: ${response.status} ${response.statusText}`);
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '(no body)');
+      console.error(`❌ Bulk-resolve failed: ${response.status}`);
+      console.error(`   Body: ${errorText}`);
+    } else {
+      try {
+        const data = await response.json();
+        console.log(`✅ Bulk-resolve started successfully`);
+        console.log(`   Summary will update as processing completes`);
+      } catch (e) {
+        console.log(`✅ Bulk-resolve endpoint responded (non-JSON body)`);
       }
-    } catch (error) {
-      console.error('🚨 Error running background job:', error);
-      console.error('Stack:', (error as Error).stack);
     }
-  }, 100); // Small delay to ensure HTTP response completes
+  } catch (error) {
+    console.error(`🚨 Background trigger failed:`);
+    console.error(error);
+  }
+
+  console.log(`\n`);
 }
 
 export const maxDuration = 30; // Keep timeout short since we return immediately
