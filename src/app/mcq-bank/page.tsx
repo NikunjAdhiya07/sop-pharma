@@ -1667,7 +1667,14 @@ function MCQBankContent() {
         )}
 
         {/* Tree View */}
-        {viewMode === "tree" && !sopIdFromUrl ? (
+        {isOpeningFromUrl ? (
+          <div className="text-center py-16">
+            <Loader2 className="h-12 w-12 text-purple-400 animate-spin mx-auto mb-4" />
+            <p className="text-gray-400 text-xl">
+              Opening MCQ Bank...
+            </p>
+          </div>
+        ) : viewMode === "tree" && !sopIdFromUrl ? (
           loadingTree ? (
             <div className="text-center py-16">
               <Loader2 className="h-12 w-12 text-purple-400 animate-spin mx-auto mb-4" />
