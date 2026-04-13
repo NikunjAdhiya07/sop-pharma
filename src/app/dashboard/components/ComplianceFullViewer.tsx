@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   X,
   RefreshCw,
@@ -31,6 +31,8 @@ interface Props {
   result: StoredComplianceResult;
   onClose: () => void;
   onRerun: () => void;
+  initialFilterStatus?: 'all' | 'compliant' | 'partial' | 'non-compliant' | 'not-applicable';
+  initialFilterSeverity?: 'all' | 'critical' | 'major' | 'minor' | 'informational';
 }
 
 const SEVERITY_CONFIG = {
@@ -252,9 +254,20 @@ function FindingCard({ finding }: { finding: any }) {
   );
 }
 
-export default function ComplianceFullViewer({ result, onClose, onRerun }: Props) {
+export default function ComplianceFullViewer({
+  result,
+  onClose,
+  onRerun,
+  initialFilterStatus = 'all',
+  initialFilterSeverity = 'all',
+}: Props) {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterSeverity, setFilterSeverity] = useState<string>('all');
+
+  useEffect(() => {
+    setFilterStatus(initialFilterStatus);
+    setFilterSeverity(initialFilterSeverity);
+  }, [initialFilterSeverity, initialFilterStatus, result.sopNo, result.runAt]);
 
   const scoreColor = getScoreColor(result.overallScore);
 

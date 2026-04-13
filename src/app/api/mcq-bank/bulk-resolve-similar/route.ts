@@ -1,0 +1,535 @@
+import { NextRequest, NextResponse } from 'next/server';
+import dbConnect from '@/lib/mongodb';
+import MCQBank from '@/models/MCQBank';
+import SOP from '@/models/SOP';
+import SimilarQuestion from '@/models/SimilarQuestion';
+import EliminatedQuestion from '@/models/EliminatedQuestion';
+import { generateMCQsFromSOP } from '@/lib/gemini';
+import { IMCQ } from '@/models/MCQBank';
+
+// Concurrency guard: prevent multiple bulk-resolve jobs on the same bank
+const CONCURRENT_JOBS = new Set<string>();
+
+const STYLE_TEMPLATES = [
+  'DIRECT_FACTUAL: According to this SOP, what is the required or expected [key concept]?',
+  'SCENARIO_BASED: A [role/position] is performing [procedure]. [Situation] occurs. What must they do next?',
+  'NEGATIVE_EXCEPTION: Which of the following is NOT [acceptable/required/permitted] according to this SOP?',
+  'SEQUENCE_BASED: In the correct order, what is the [first/second/last] step when [procedure]?',
+  'ROLE_RESPONSIBILITY: Who or which department is responsible for ensuring [activity/task] per this SOP?',
+  'SOP_LINE_INTERPRET: Based on this SOP requirement for [specific requirement], what does it mean in practice?',
+];
+
+interface ClusterResult {
+  similarQuestionDocId: string;
+  primaryQuestionIndex: number;
+  clusterSize: number;
+  maxScore: number;
+  bestKeptIndex: number;
+  questionsToReplace: number;
+  status: 'skipped' | 'dry_run' | 'replaced' | 'failed' | 'below_threshold';
+  replacedQuestions?: number[];
+  failureReason?: string;
+  eligibleScores: Array<{ questionIndex: number; score: number; question: string }>;
+}
+
+interface BulkResolveResponse {
+  success: boolean;
+  dryRun: boolean;
+  summary: {
+    found: number;
+    eligible: number;
+    replaced: number;
+    kept: number;
+    failed: number;
+    eliminatedCount: number;
+  };
+  clusters: ClusterResult[];
+  log: string[];
+  error?: string;
+}
+
+/**
+ * Score a single MCQ within a cluster context
+ * Returns 0-100 score based on: wording clarity, answer quality, SOP reference, style uniqueness
+ */
+function scoreClusterQuestion(
+  mcq: IMCQ,
+  allBankMcqs: IMCQ[],
+  clusterMcqs: IMCQ[]
+): number {
+  let score = 0;
+
+  // 1. WORDING_CLARITY (0-25)
+  const questionLength = mcq.question.length;
+  if (questionLength >= 50 && questionLength <= 150) {
+    score += 25;
+  } else if (questionLength > 150 && questionLength <= 200) {
+    score += 15;
+  } else {
+    score += 5;
+  }
+
+  // 2. ANSWER_QUALITY (0-25)
+  const uniqueOptions = new Set(mcq.options.map(o => o.toLowerCase().trim()));
+  if (uniqueOptions.size === 4) {
+    score += 10; // All 4 options are unique
+  }
+  if (mcq.options.some(opt => opt.toLowerCase().trim() === mcq.correctAnswer.toLowerCase().trim())) {
+    score += 10; // correctAnswer exists in options
+  }
+  if (mcq.options.every(opt => opt.length > 10)) {
+    score += 5; // All options > 10 chars
+  }
+
+  // 3. SOP_REFERENCE_SPECIFICITY (0-25)
+  if (mcq.sopReference) {
+    if (/\d+/.test(mcq.sopReference)) {
+      score += 25; // Contains section numbers like "4.2" or "SOP-12"
+    } else {
+      score += 10; // Non-empty but no digits
+    }
+  }
+
+  // 4. STYLE_UNIQUENESS (0-25)
+  const firstThreeWords = mcq.question.split(' ').slice(0, 3).join(' ').toLowerCase();
+  const duplicateStarts = allBankMcqs.filter(q => {
+    if (q === mcq) return false; // Don't count self
+    const qFirstThree = q.question.split(' ').slice(0, 3).join(' ').toLowerCase();
+    return qFirstThree === firstThreeWords;
+  }).length;
+
+  if (duplicateStarts === 0) {
+    score += 25;
+  } else if (duplicateStarts === 1) {
+    score += 15;
+  } else {
+    score += 5;
+  }
+
+  return score;
+}
+
+/**
+ * POST /api/mcq-bank/bulk-resolve-similar
+ * Bulk auto-resolution of similar questions in an MCQ bank
+ */
+export async function POST(request: NextRequest) {
+  const log: string[] = [];
+
+  try {
+    await dbConnect();
+
+    const body = await request.json();
+    const {
+      mcqBankId,
+      mode = 'balanced',
+      dryRun = false,
+      threshold = 75,
+    } = body;
+
+    if (!mcqBankId) {
+      return NextResponse.json(
+        { success: false, error: 'mcqBankId is required' },
+        { status: 400 }
+      );
+    }
+
+    // Concurrency guard
+    if (CONCURRENT_JOBS.has(mcqBankId)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'A resolution job is already running for this bank. Please wait.',
+        },
+        { status: 409 }
+      );
+    }
+
+    CONCURRENT_JOBS.add(mcqBankId);
+
+    try {
+      // --- STEP 0: Validation & DB Connect ---
+      log.push(`Starting bulk similarity resolution (mode: ${mode})`);
+
+      const bank = await MCQBank.findById(mcqBankId);
+      if (!bank) {
+        log.push('❌ MCQ bank not found');
+        return NextResponse.json(
+          { success: false, error: 'MCQ bank not found', log },
+          { status: 404 }
+        );
+      }
+
+      log.push(`✓ Found bank: ${bank.sopIdentifier} (${bank.mcqs.length} questions)`);
+
+      // Find SOP with stale-sopId fallback
+      let sop = await SOP.findById(bank.sopId);
+      if (sop && bank.sopIdentifier && sop.identifier &&
+          sop.identifier.toUpperCase().trim() !== bank.sopIdentifier.toUpperCase().trim()) {
+        log.push(`⚠ SOP ID mismatch detected, falling back to identifier lookup`);
+        sop = null;
+      }
+      if (!sop) {
+        sop = await SOP.findOne({ identifier: bank.sopIdentifier });
+        if (sop) {
+          bank.sopId = sop._id as any;
+          await bank.save();
+          log.push(`✓ Fixed stale sopId in bank`);
+        }
+      }
+
+      if (!sop || !sop.content || sop.content.trim().length === 0) {
+        log.push('❌ SOP has no content');
+        return NextResponse.json(
+          { success: false, error: 'SOP has no content', log },
+          { status: 400 }
+        );
+      }
+
+      log.push(`✓ Using SOP: ${sop.name}`);
+
+      // --- STEP 1: Detection ---
+      log.push(`Running similarity detection...`);
+
+      // Call detect endpoint to find similarities
+      const detectUrl = new URL('/api/similar-questions/detect', process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
+      const detectResponse = await fetch(detectUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mcqBankId,
+          threshold,
+          similarityMethod: 'combined_text',
+        }),
+      });
+
+      if (!detectResponse.ok) {
+        throw new Error(`Detection endpoint failed: ${detectResponse.statusText}`);
+      }
+
+      const detectData = await detectResponse.json();
+      log.push(`✓ Detection complete: ${detectData.flaggedCount} clusters found`);
+
+      // Use the fresh detection results directly - don't rely on old database records
+      // Convert detection results to SimilarQuestion-like structure for processing
+      const similarQuestions = detectData.similarities || [];
+
+      log.push(`✓ Using ${similarQuestions.length} fresh similarity clusters from detection`);
+
+      // --- STEP 2: Score Each Cluster ---
+      log.push(`Scoring cluster candidates...`);
+
+      const clusters: ClusterResult[] = [];
+      let eligibleCount = 0;
+
+      for (const similarQuestion of similarQuestions) {
+        const primaryIdx = similarQuestion.primaryQuestion.questionIndex;
+        const primaryMcq = bank.mcqs[primaryIdx];
+
+        if (!primaryMcq) {
+          log.push(`⚠ Primary question at index ${primaryIdx} not found, skipping cluster`);
+          continue;
+        }
+
+        // Build candidate list: primary + all similar
+        const candidates = [
+          { mcq: primaryMcq, index: primaryIdx, score: 0, isFromCluster: 'primary' },
+          ...similarQuestion.similarQuestions.map((sq: any, idx: number) => ({
+            mcq: sq.question,
+            index: sq.questionIndex,
+            score: 0,
+            similarityScore: sq.similarityScore,
+            isFromCluster: 'similar',
+          })),
+        ];
+
+        // Score each candidate
+        candidates.forEach(cand => {
+          cand.score = scoreClusterQuestion(cand.mcq, bank.mcqs, candidates.map(c => c.mcq));
+        });
+
+        // Find best (highest score)
+        const best = candidates.reduce((a, b) => (a.score > b.score ? a : b));
+        const bestIndex = best.index;
+        const bestScore = best.score;
+
+        // Determine questions to replace based on detection threshold (not mode)
+        // Mode is now ignored in favor of the detection threshold
+        const toReplace = similarQuestion.similarQuestions.filter(
+          (sq: any) => sq.similarityScore >= threshold
+        );
+
+        const docId = similarQuestion._id ? similarQuestion._id.toString() : `${primaryIdx}-cluster`;
+
+        if (toReplace.length === 0) {
+          clusters.push({
+            similarQuestionDocId: docId,
+            primaryQuestionIndex: primaryIdx,
+            clusterSize: similarQuestion.similarQuestions.length + 1,
+            maxScore: bestScore,
+            bestKeptIndex: bestIndex,
+            questionsToReplace: 0,
+            status: 'below_threshold',
+            eligibleScores: candidates.map(c => ({
+              questionIndex: c.index,
+              score: c.score,
+              question: c.mcq.question.substring(0, 60),
+            })),
+          });
+        } else {
+          eligibleCount++;
+          clusters.push({
+            similarQuestionDocId: docId,
+            primaryQuestionIndex: primaryIdx,
+            clusterSize: similarQuestion.similarQuestions.length + 1,
+            maxScore: bestScore,
+            bestKeptIndex: bestIndex,
+            questionsToReplace: toReplace.length,
+            status: 'dry_run',
+            eligibleScores: candidates.map(c => ({
+              questionIndex: c.index,
+              score: c.score,
+              question: c.mcq.question.substring(0, 60),
+            })),
+          });
+        }
+      }
+
+      log.push(`✓ Scoring complete: ${eligibleCount}/${clusters.length} clusters eligible for replacement`);
+
+      // --- STEP 3: Return if dry-run ---
+      if (dryRun) {
+        log.push(`Dry-run mode: returning preview without making changes`);
+        return NextResponse.json({
+          success: true,
+          dryRun: true,
+          summary: {
+            found: clusters.length,
+            eligible: eligibleCount,
+            replaced: 0,
+            kept: clusters.length,
+            failed: 0,
+            eliminatedCount: 0,
+          },
+          clusters,
+          log,
+        });
+      }
+
+      // --- STEP 4-7: Generation, Splicing, and Review Marking ---
+      log.push(`Starting generation and replacement phase...`);
+
+      // Keep original question list for AI to avoid duplicates during generation
+      const originalQuestionTexts = bank.mcqs.map(q => q.question);
+      log.push(`📝 Storing ${originalQuestionTexts.length} original questions as reference for duplicate detection`);
+
+      let replacedCount = 0;
+      let failedCount = 0;
+      let eliminatedCount = 0;
+      let replacementCounter = 0;
+      const processedIndices = new Set<number>(); // Guard against double-processing
+      const modeSimilarityThreshold = mode === 'conservative' ? 90 : mode === 'balanced' ? 80 : 70;
+
+      for (const cluster of clusters) {
+        if (cluster.status === 'below_threshold') {
+          log.push(`Skipping cluster (score below ${threshold}%)`);
+          continue;
+        }
+
+        const similarQuestion = similarQuestions.find((sq: any) => {
+          const sqId = sq._id ? sq._id.toString() : `${sq.primaryQuestion.questionIndex}-cluster`;
+          return sqId === cluster.similarQuestionDocId;
+        });
+        if (!similarQuestion) continue;
+        const toReplace = similarQuestion.similarQuestions.filter(
+          (sq: any) => sq.similarityScore >= threshold && !processedIndices.has(sq.questionIndex)
+        );
+
+        if (toReplace.length === 0) continue;
+
+        log.push(`Processing cluster: replacing ${toReplace.length} question(s)...`);
+        cluster.replacedQuestions = [];
+
+        for (const replacementTarget of toReplace) {
+          if (processedIndices.has(replacementTarget.questionIndex)) {
+            log.push(`Q${replacementTarget.questionIndex + 1} already processed, skipping`);
+            continue;
+          }
+
+          try {
+            // Get style directive
+            const styleDirective = STYLE_TEMPLATES[replacementCounter % STYLE_TEMPLATES.length];
+            const augmentedSopContent = `${sop.content}\n\n[GENERATION DIRECTIVE - INTERNAL]\nFor this question, use style:\n${styleDirective}`;
+
+            replacementCounter++;
+
+            log.push(`Generating replacement for Q${replacementTarget.questionIndex + 1} (style: ${replacementCounter % 6})`);
+
+            // Re-fetch fresh bank to get latest state
+            const freshBank = await MCQBank.findById(mcqBankId);
+            if (!freshBank) {
+              log.push(`❌ Bank no longer exists during generation`);
+              failedCount++;
+              continue;
+            }
+
+            // Generate replacement
+            // Use ORIGINAL question list + already-replaced questions to avoid new duplicates
+            const allQuestionsToAvoid = [
+              ...originalQuestionTexts,
+              ...freshBank.mcqs.map(q => q.question) // Current state to avoid recent replacements
+            ];
+
+            const genResult = await generateMCQsFromSOP({
+              sopContent: augmentedSopContent,
+              sopName: sop.name,
+              sopIdentifier: sop.identifier || sop.name,
+              existingQuestions: allQuestionsToAvoid,
+              targetCount: freshBank.mcqs.length + 1,
+              isBulk: false,
+              language: sop.language || 'English',
+            });
+
+            if (!genResult.mcqs || genResult.mcqs.length === 0) {
+              log.push(`⚠ Generation failed for Q${replacementTarget.questionIndex + 1}, keeping original`);
+              failedCount++;
+              continue;
+            }
+
+            const newQuestion = genResult.mcqs[0];
+            log.push(`✓ Generated: "${newQuestion.question.substring(0, 50)}..."`);
+
+            // Archive old question
+            const oldQuestion = freshBank.mcqs[replacementTarget.questionIndex];
+            if (oldQuestion) {
+              await EliminatedQuestion.create({
+                sopId: bank.sopId,
+                sopName: bank.sopName,
+                sopIdentifier: bank.sopIdentifier,
+                question: oldQuestion,
+                originalQuestionIndex: replacementTarget.questionIndex,
+                eliminationReason: 'duplicate',
+                eliminatedAt: new Date(),
+                eliminatedBy: 'Bulk-Auto-Resolve',
+                duplicateOf: `Q${cluster.primaryQuestionIndex + 1}`,
+                similarityScore: replacementTarget.similarityScore,
+                replacedWith: newQuestion.question.substring(0, 100),
+              });
+              eliminatedCount++;
+              log.push(`✓ Archived old question`);
+            }
+
+            // Splice in-place replacement
+            freshBank.mcqs.splice(replacementTarget.questionIndex, 1, newQuestion);
+
+            // Save with retry
+            let saveAttempts = 0;
+            const MAX_SAVE_ATTEMPTS = 3;
+            let saveError: any = null;
+
+            while (saveAttempts < MAX_SAVE_ATTEMPTS) {
+              try {
+                await freshBank.save();
+                log.push(`✓ Saved replacement at Q${replacementTarget.questionIndex + 1}`);
+                saveError = null;
+                break;
+              } catch (versionError: any) {
+                saveAttempts++;
+                log.push(`⚠ Save attempt ${saveAttempts}/${MAX_SAVE_ATTEMPTS} failed`);
+
+                if (saveAttempts >= MAX_SAVE_ATTEMPTS) {
+                  saveError = versionError;
+                  break;
+                }
+
+                // Refresh and retry
+                const retryBank = await MCQBank.findById(mcqBankId);
+                if (retryBank) {
+                  retryBank.mcqs.splice(replacementTarget.questionIndex, 1, newQuestion);
+                  Object.assign(freshBank, retryBank.toObject());
+                } else {
+                  saveError = new Error('Bank no longer exists');
+                  break;
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 500));
+              }
+            }
+
+            if (saveError) {
+              log.push(`❌ Failed to save after retries, keeping original`);
+              failedCount++;
+              continue;
+            }
+
+            processedIndices.add(replacementTarget.questionIndex);
+            cluster.replacedQuestions!.push(replacementTarget.questionIndex);
+            replacedCount++;
+          } catch (error: any) {
+            log.push(`❌ Error replacing Q${replacementTarget.questionIndex + 1}: ${error.message}`);
+            failedCount++;
+          }
+        }
+      }
+
+      // --- STEP 6: Mark SimilarQuestion as Reviewed ---
+      log.push(`Marking clusters as reviewed...`);
+      const updatedClusters = clusters.filter(c => c.replacedQuestions && c.replacedQuestions.length > 0);
+
+      for (const cluster of updatedClusters) {
+        try {
+          await SimilarQuestion.findByIdAndUpdate(
+            cluster.similarQuestionDocId,
+            {
+              reviewStatus: 'reviewed',
+              actionTaken: 'keep_primary',
+              reviewedAt: new Date(),
+              reviewedBy: 'Bulk-Auto-Resolve',
+              reviewNotes: `Auto-resolved via bulk similarity resolution. Mode: ${mode}. Replaced ${cluster.replacedQuestions?.length} questions.`,
+            }
+          );
+
+          // Clear isSimilar flag on the kept question
+          const bankForClear = await MCQBank.findById(mcqBankId);
+          if (bankForClear) {
+            bankForClear.mcqs[cluster.bestKeptIndex].isSimilar = false;
+            await bankForClear.save();
+          }
+        } catch (error: any) {
+          log.push(`⚠ Failed to mark cluster as reviewed: ${error.message}`);
+        }
+      }
+
+      log.push(`✓ Resolution complete`);
+
+      return NextResponse.json({
+        success: true,
+        dryRun: false,
+        summary: {
+          found: clusters.length,
+          eligible: clusters.filter(c => c.questionsToReplace > 0).length,
+          replaced: replacedCount,
+          kept: clusters.filter(c => c.replacedQuestions && c.replacedQuestions.length > 0).length,
+          failed: failedCount,
+          eliminatedCount,
+        },
+        clusters,
+        log,
+      });
+    } finally {
+      CONCURRENT_JOBS.delete(mcqBankId);
+    }
+  } catch (error: any) {
+    console.error('Error in bulk-resolve-similar:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: error.message || 'Failed to resolve similarities',
+        log,
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export const maxDuration = 300; // 5 minutes for long-running operations

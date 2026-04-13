@@ -172,17 +172,15 @@ function foldRegistryRowIntoCapsuleAcc(
       expectDocx: true,
       expectPdf: true,
     },
-  ];
-
-  if (isDualDocx || isDualPdf) {
-    langPairs.push({
+    // Always add GJ to ensure consistent EN/GJ layout in capsules, even if no Gujarati data
+    {
       code: "GJ",
       docxFound: slots.gujDocx,
       pdfFound: slots.gujPdf,
       expectDocx: isDualDocx,
       expectPdf: isDualPdf,
-    });
-  }
+    },
+  ];
 
   for (const lp of langPairs) {
     // DOCX per-language
@@ -502,10 +500,18 @@ function CompactVersionPairForLang({
   lang,
   allTwoFoundV,
   notFoundV,
+  onGreenClick,
+  onRedClick,
+  highlightGreen,
+  highlightRed,
 }: {
   lang: string;
   allTwoFoundV: number;
   notFoundV: number;
+  onGreenClick?: () => void;
+  onRedClick?: () => void;
+  highlightGreen?: boolean;
+  highlightRed?: boolean;
 }) {
   return (
     <div className="flex items-center gap-0.5">
@@ -513,13 +519,15 @@ function CompactVersionPairForLang({
       <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white/90 px-0.5 py-0.5 shadow-sm tabular-nums">
         <button
           type="button"
-          className="min-w-[1.3rem] cursor-default rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700">
+          onClick={onGreenClick ? (e) => { e.preventDefault(); e.stopPropagation(); onGreenClick(); } : undefined}
+          className={`min-w-[1.3rem] rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700 transition-colors ${onGreenClick ? "cursor-pointer hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400" : "cursor-default"} ${highlightGreen ? "bg-emerald-100 ring-1 ring-emerald-400/80" : ""}`}>
           {allTwoFoundV}
         </button>
         <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
         <button
           type="button"
-          className="min-w-[1.3rem] cursor-default rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-red-600">
+          onClick={onRedClick ? (e) => { e.preventDefault(); e.stopPropagation(); onRedClick(); } : undefined}
+          className={`min-w-[1.3rem] rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-red-600 transition-colors ${onRedClick ? "cursor-pointer hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400" : "cursor-default"} ${highlightRed ? "bg-red-100 ring-1 ring-red-400/80" : ""}`}>
           {notFoundV}
         </button>
       </div>
@@ -530,8 +538,16 @@ function CompactVersionPairForLang({
 /** Two language version pairs (EN, GUJ) on same horizontal line */
 function CompactLanguageVersionPairRow({
   langVersionDataMap,
+  onGreenClick,
+  onRedClick,
+  filterSnapshot,
+  deptScope,
 }: {
-  langVersionDataMap: Map<string, { allTwoFound: number; notFound: number }>;
+  langVersionDataMap: Map<string, { allTwoFound: number; notFound: number; filter: "ENG" | "GUJ" }>;
+  onGreenClick?: (lang: "ENG" | "GUJ") => void;
+  onRedClick?: (lang: "ENG" | "GUJ") => void;
+  filterSnapshot?: CapsuleFilterSnapshot;
+  deptScope?: string;
 }) {
   const langs = sortLangCodes([...langVersionDataMap.keys()]);
 
@@ -539,12 +555,27 @@ function CompactLanguageVersionPairRow({
     <div className="flex w-full min-h-[22px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
       {langs.map((lang) => {
         const data = langVersionDataMap.get(lang)!;
+        const langFilter = data.filter;
+        const highlightGreen = filterSnapshot && deptScope
+          ? filterSnapshot.filterDept === deptScope &&
+            filterSnapshot.filterVersionStatus === "allTwov" &&
+            filterSnapshot.filterLanguage === langFilter
+          : false;
+        const highlightRed = filterSnapshot && deptScope
+          ? filterSnapshot.filterDept === deptScope &&
+            filterSnapshot.filterVersionStatus === "notFoundv" &&
+            filterSnapshot.filterLanguage === langFilter
+          : false;
         return (
           <CompactVersionPairForLang
             key={lang}
             lang={lang}
             allTwoFoundV={data.allTwoFound}
             notFoundV={data.notFound}
+            onGreenClick={onGreenClick ? () => onGreenClick(langFilter) : undefined}
+            onRedClick={onRedClick ? () => onRedClick(langFilter) : undefined}
+            highlightGreen={highlightGreen}
+            highlightRed={highlightRed}
           />
         );
       })}
@@ -558,13 +589,19 @@ function CompactLanguagePairRow({
   onAvailableClick,
   onMissingClick,
   filterSnapshot,
+  deptScope,
+  metric,
 }: {
   langDataMap: Map<string, { found: number; missing: number; filter: "ENG" | "GUJ" }>;
   onAvailableClick: (lang: "ENG" | "GUJ") => void;
   onMissingClick: (lang: "ENG" | "GUJ") => void;
   filterSnapshot: CapsuleFilterSnapshot;
+  deptScope: string;
+  metric: "docx" | "pdf";
 }) {
   const langs = sortLangCodes([...langDataMap.keys()]);
+  const availableFileType = metric === "docx" ? "DOCX" : "PDF";
+  const missingFileType = metric === "docx" ? "NO_DOCX" : "NO_PDF";
 
   return (
     <div className="flex w-full min-h-[22px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
@@ -572,16 +609,17 @@ function CompactLanguagePairRow({
         const data = langDataMap.get(lang)!;
         const langFilter = data.filter;
         const isAvailActive =
+          filterSnapshot.filterDept === deptScope &&
           filterSnapshot.filterLanguage === langFilter &&
-          filterSnapshot.filterFileType !== "NO_DOCX" &&
-          filterSnapshot.filterFileType !== "NO_PDF" &&
+          filterSnapshot.filterFileType === availableFileType &&
           !filterSnapshot.filterDualLang &&
           filterSnapshot.filterExpiry === "all" &&
           filterSnapshot.filterMedia === "all" &&
           filterSnapshot.filterVersionStatus === "all";
         const isMissingActive =
+          filterSnapshot.filterDept === deptScope &&
           filterSnapshot.filterLanguage === langFilter &&
-          (filterSnapshot.filterFileType === "NO_DOCX" || filterSnapshot.filterFileType === "NO_PDF") &&
+          filterSnapshot.filterFileType === missingFileType &&
           !filterSnapshot.filterDualLang &&
           filterSnapshot.filterExpiry === "all" &&
           filterSnapshot.filterMedia === "all" &&
@@ -674,7 +712,7 @@ function CapsuleMetricVersionPair({
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); onGreenClick(); }}
           title={`All Two Found: ${allTwoFoundV} SOPs (version-0 or all expected prior versions available)`}
           aria-pressed={highlightGreen ? true : undefined}
-          className={`min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-emerald-500/70 ${
+          className={`min-w-[1.35rem] cursor-pointer rounded px-0.5 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-emerald-500/70 ${
             highlightGreen ? "bg-emerald-100 ring-1 ring-emerald-400/80" : ""
           }`}>
           {allTwoFoundV}
@@ -686,7 +724,7 @@ function CapsuleMetricVersionPair({
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRedClick(); }}
           title={`Not Found: ${notFoundV} SOPs with expected prior versions but not all found`}
           aria-pressed={highlightRed ? true : undefined}
-          className={`min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-400/70 ${
+          className={`min-w-[1.35rem] cursor-pointer rounded px-0.5 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-400/70 ${
             highlightRed ? "bg-red-100 ring-1 ring-red-400/80" : ""
           }`}>
           {notFoundV}
@@ -909,6 +947,7 @@ function DepartmentCapsuleCard({
   applyCapsuleVersionSegment: (
     dept: string,
     segment: SopVersionFilterSegment,
+    lang?: "ENG" | "GUJ",
   ) => void;
   filterSnapshot: CapsuleFilterSnapshot;
   variant?: "department" | "grand";
@@ -1003,48 +1042,57 @@ function DepartmentCapsuleCard({
               : `Rows with Gujarati in ${label} (overlaps w/ EN for dual)`
           }
         />
-        <CapsuleMetric
-          label="Expired"
-          value={stat.expired}
-          valueClass={stat.expired > 0 ? "text-red-600" : "text-gray-700"}
-          onClick={() => apply("expired")}
-          isActive={capsuleMetricMatches(
-            deptForFilter,
-            "expired",
-            filterSnapshot,
-          )}
-          title={
-            isGrand ? "All departments: expired." : `Expired in ${scopeHint}`
-          }
-        />
-        <CapsuleMetric
-          label="Near"
-          value={stat.nearExpiry}
-          valueClass={stat.nearExpiry > 0 ? "text-amber-600" : "text-gray-700"}
-          onClick={() => apply("near")}
-          isActive={capsuleMetricMatches(deptForFilter, "near", filterSnapshot)}
-          title={
-            isGrand
-              ? "All departments: near expiry (≤30 days)."
-              : `Near expiry in ${scopeHint}`
-          }
-        />
-        <CapsuleMetric
-          label="No Date"
-          value={stat.missingExpiry}
-          valueClass={stat.missingExpiry > 0 ? "text-slate-700" : "text-gray-700"}
-          onClick={() => apply("nodate")}
-          isActive={capsuleMetricMatches(
-            deptForFilter,
-            "nodate",
-            filterSnapshot,
-          )}
-          title={
-            isGrand
-              ? "All departments: SOPs with null/empty expiry date."
-              : `SOPs with no expiry date in ${scopeHint}`
-          }
-        />
+        {/* Expiry metrics: always render in one horizontal row for alignment */}
+        <div className="flex w-full gap-0.5">
+          <div className="flex-1 min-w-0">
+            <CapsuleMetric
+              label="Expired"
+              value={stat.expired}
+              valueClass={stat.expired > 0 ? "text-red-600" : "text-gray-700"}
+              onClick={() => apply("expired")}
+              isActive={capsuleMetricMatches(
+                deptForFilter,
+                "expired",
+                filterSnapshot,
+              )}
+              title={
+                isGrand ? "All departments: expired." : `Expired in ${scopeHint}`
+              }
+            />
+          </div>
+          <div className="flex-1 min-w-0">
+            <CapsuleMetric
+              label="Near"
+              value={stat.nearExpiry}
+              valueClass={stat.nearExpiry > 0 ? "text-amber-600" : "text-gray-700"}
+              onClick={() => apply("near")}
+              isActive={capsuleMetricMatches(deptForFilter, "near", filterSnapshot)}
+              title={
+                isGrand
+                  ? "All departments: near expiry (≤30 days)."
+                  : `Near expiry in ${scopeHint}`
+              }
+            />
+          </div>
+          <div className="flex-1 min-w-0">
+            <CapsuleMetric
+              label="No Date"
+              value={stat.missingExpiry}
+              valueClass={stat.missingExpiry > 0 ? "text-slate-700" : "text-gray-700"}
+              onClick={() => apply("nodate")}
+              isActive={capsuleMetricMatches(
+                deptForFilter,
+                "nodate",
+                filterSnapshot,
+              )}
+              title={
+                isGrand
+                  ? "All departments: SOPs with null/empty expiry date."
+                  : `SOPs with no expiry date in ${scopeHint}`
+              }
+            />
+          </div>
+        </div>
         {/* DOCX Section */}
         <CapsuleMetricAvailMissing
           label="DOCX"
@@ -1089,16 +1137,16 @@ function DepartmentCapsuleCard({
               : `${stat.docxFiles} DOCX slots in ${label} · green = filled, red = missing`
           }
         />
-        {/* DOCX Language Sub-rows (EN and GUJ side-by-side) */}
-        {stat.langDocx.size > 0 && (
+        {/* DOCX Language Sub-rows (EN and GUJ side-by-side) — always show both */}
+        <div className="mt-0.5">
           <CompactLanguagePairRow
             langDataMap={new Map(
-              sortLangCodes([...stat.langDocx.keys()]).map((lang) => [
+              ["EN", "GJ"].map((lang) => [
                 lang,
                 {
-                  found: stat.langDocx.get(lang)!.found,
-                  missing: stat.langDocx.get(lang)!.missing,
-                  filter: (lang === "EN" ? "ENG" : lang === "GJ" ? "GUJ" : lang.toUpperCase()) as "ENG" | "GUJ",
+                  found: stat.langDocx.get(lang)?.found ?? 0,
+                  missing: stat.langDocx.get(lang)?.missing ?? 0,
+                  filter: (lang === "EN" ? "ENG" : "GUJ") as "ENG" | "GUJ",
                 },
               ])
             )}
@@ -1109,8 +1157,10 @@ function DepartmentCapsuleCard({
               applyCapsuleAvailMiss(deptForFilter, "docx", "missing", langFilter);
             }}
             filterSnapshot={filterSnapshot}
+            deptScope={deptForFilter}
+            metric="docx"
           />
-        )}
+        </div>
 
         {/* PDF Section — with minimal spacing */}
         <div className="h-0.5" />
@@ -1157,16 +1207,16 @@ function DepartmentCapsuleCard({
               : `${stat.pdfFiles} PDF slots in ${label} · green = filled, red = missing`
           }
         />
-        {/* PDF Language Sub-rows (EN and GUJ side-by-side) */}
-        {stat.langPdf.size > 0 && (
+        {/* PDF Language Sub-rows (EN and GUJ side-by-side) — always show both */}
+        <div className="mt-0.5">
           <CompactLanguagePairRow
             langDataMap={new Map(
-              sortLangCodes([...stat.langPdf.keys()]).map((lang) => [
+              ["EN", "GJ"].map((lang) => [
                 lang,
                 {
-                  found: stat.langPdf.get(lang)!.found,
-                  missing: stat.langPdf.get(lang)!.missing,
-                  filter: (lang === "EN" ? "ENG" : lang === "GJ" ? "GUJ" : lang.toUpperCase()) as "ENG" | "GUJ",
+                  found: stat.langPdf.get(lang)?.found ?? 0,
+                  missing: stat.langPdf.get(lang)?.missing ?? 0,
+                  filter: (lang === "EN" ? "ENG" : "GUJ") as "ENG" | "GUJ",
                 },
               ])
             )}
@@ -1177,8 +1227,10 @@ function DepartmentCapsuleCard({
               applyCapsuleAvailMiss(deptForFilter, "pdf", "missing", langFilter);
             }}
             filterSnapshot={filterSnapshot}
+            deptScope={deptForFilter}
+            metric="pdf"
           />
-        )}
+        </div>
 
         {/* Versions Section — with spacing */}
         <div className="h-1" />
@@ -1215,48 +1267,46 @@ function DepartmentCapsuleCard({
               : `Version in ${scopeHint} · green = All Two Found, red = Not Found`
           }
         />
-        {/* DOCX Versions Sub-section (EN and GUJ side-by-side) */}
-        {stat.docxVersionAllTwoFound > 0 || stat.docxVersionNotFound > 0 ? (
-          <>
-            <div className="flex w-full min-h-[20px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
-              <span className="text-gray-400 font-medium">DOCX</span>
-              {stat.langDocxVersion.size > 0 && (
-                <CompactLanguageVersionPairRow
-                  langVersionDataMap={new Map(
-                    sortLangCodes([...stat.langDocxVersion.keys()]).map((lang) => [
-                      lang,
-                      {
-                        allTwoFound: stat.langDocxVersion.get(lang)!.allTwoFound,
-                        notFound: stat.langDocxVersion.get(lang)!.notFound,
-                      },
-                    ])
-                  )}
-                />
-              )}
-            </div>
-          </>
-        ) : null}
-        {/* PDF Versions Sub-section (EN and GUJ side-by-side) */}
-        {stat.pdfVersionAllTwoFound > 0 || stat.pdfVersionNotFound > 0 ? (
-          <>
-            <div className="flex w-full min-h-[20px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
-              <span className="text-gray-400 font-medium">PDF</span>
-              {stat.langPdfVersion.size > 0 && (
-                <CompactLanguageVersionPairRow
-                  langVersionDataMap={new Map(
-                    sortLangCodes([...stat.langPdfVersion.keys()]).map((lang) => [
-                      lang,
-                      {
-                        allTwoFound: stat.langPdfVersion.get(lang)!.allTwoFound,
-                        notFound: stat.langPdfVersion.get(lang)!.notFound,
-                      },
-                    ])
-                  )}
-                />
-              )}
-            </div>
-          </>
-        ) : null}
+        {/* DOCX Versions Sub-section (EN and GUJ side-by-side) — always show */}
+        <div className="mt-0.5 flex w-full min-h-[20px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
+          <span className="text-gray-400 font-medium">DOCX</span>
+          <CompactLanguageVersionPairRow
+            langVersionDataMap={new Map(
+              ["EN", "GJ"].map((lang) => [
+                lang,
+                {
+                  allTwoFound: stat.langDocxVersion.get(lang)?.allTwoFound ?? 0,
+                  notFound: stat.langDocxVersion.get(lang)?.notFound ?? 0,
+                  filter: (lang === "EN" ? "ENG" : "GUJ") as "ENG" | "GUJ",
+                },
+              ])
+            )}
+            onGreenClick={(langFilter) => applyCapsuleVersionSegment(deptForFilter, "allTwov", langFilter)}
+            onRedClick={(langFilter) => applyCapsuleVersionSegment(deptForFilter, "notFoundv", langFilter)}
+            filterSnapshot={filterSnapshot}
+            deptScope={deptForFilter}
+          />
+        </div>
+        {/* PDF Versions Sub-section (EN and GUJ side-by-side) — always show */}
+        <div className="mt-0.5 flex w-full min-h-[20px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
+          <span className="text-gray-400 font-medium">PDF</span>
+          <CompactLanguageVersionPairRow
+            langVersionDataMap={new Map(
+              ["EN", "GJ"].map((lang) => [
+                lang,
+                {
+                  allTwoFound: stat.langPdfVersion.get(lang)?.allTwoFound ?? 0,
+                  notFound: stat.langPdfVersion.get(lang)?.notFound ?? 0,
+                  filter: (lang === "EN" ? "ENG" : "GUJ") as "ENG" | "GUJ",
+                },
+              ])
+            )}
+            onGreenClick={(langFilter) => applyCapsuleVersionSegment(deptForFilter, "allTwov", langFilter)}
+            onRedClick={(langFilter) => applyCapsuleVersionSegment(deptForFilter, "notFoundv", langFilter)}
+            filterSnapshot={filterSnapshot}
+            deptScope={deptForFilter}
+          />
+        </div>
 
         {/* Videos Section — with spacing */}
         <div className="h-1" />
@@ -1386,6 +1436,7 @@ export default function DepartmentCapsules({
   applyCapsuleVersionSegment: (
     dept: string,
     segment: SopVersionFilterSegment,
+    lang?: "ENG" | "GUJ",
   ) => void;
   filterSnapshot: CapsuleFilterSnapshot;
 }) {

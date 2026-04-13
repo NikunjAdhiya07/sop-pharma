@@ -6,6 +6,7 @@ import SOPLibrary from '@/models/SOPLibrary';
 import { uploadToBunny, generateSOPDocumentPath } from '@/lib/bunnyStorage';
 import { persistUploadPath } from '@/lib/persistUploadPath';
 import { getDepartmentForSubcategory, extractSubcategoryFromIdentifier } from '@/lib/mcqTreeBuilder';
+import { invalidateDashboardSopsCache } from '@/lib/dashboardSopsCache';
 
 const useBunny = () =>
   Boolean(
@@ -173,7 +174,7 @@ export async function POST(request: NextRequest) {
             sopName,
             department,
             departmentCode,
-            language: libraryLanguage,
+            language: documentLanguage,
             sopDocuments: [newDoc],
             videos: [],
             slides: [],
@@ -219,6 +220,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (results.length > 0) invalidateDashboardSopsCache();
     return NextResponse.json({
       success: true,
       uploaded: results.length,

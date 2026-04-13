@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import MCQBank from '@/models/MCQBank';
 import SimilarQuestion from '@/models/SimilarQuestion';
+import { computeWeightedSimilarity } from '@/lib/weightedSimilarity';
 
 /**
  * Calculate similarity between two strings using Levenshtein distance
@@ -332,6 +333,17 @@ function findMatchingText(str1: string, str2: string): string {
     .join(', ');
 }
 
+function scoreQuestionPair(
+  q1: { question: string },
+  q2: { question: string },
+  similarityMethod: 'combined_text' | 'weighted_mcq',
+): number {
+  if (similarityMethod === 'weighted_mcq') {
+    return computeWeightedSimilarity(q1 as any, q2 as any);
+  }
+  return calculateCombinedSimilarity(q1.question, q2.question);
+}
+
 /**
  * POST /api/similar-questions/detect
  * Detect similar questions within an MCQ bank or across all banks
@@ -344,9 +356,10 @@ export async function POST(request: NextRequest) {
     const {
       mcqBankId,
       sopId,
-      threshold = 30, // Lowered to 30 for better detection
+      threshold = 30, // Used with combined_text; use ~80 with weighted_mcq to match bulk "balanced"
       scanAllBanks = false, // If true, scan across all banks for the SOP
       targetQuestionIndex, // If provided, only detect for this specific question
+      similarityMethod = 'combined_text' as 'combined_text' | 'weighted_mcq',
     } = body;
     
     if (!mcqBankId && !sopId) {
@@ -383,6 +396,17 @@ export async function POST(request: NextRequest) {
         error: 'No MCQ banks found',
       }, { status: 404 });
     }
+
+    // Full-bank scan: clear stale isSimilar flags so this run is the source of truth
+    if (mcqBankId && targetQuestionIndex === undefined && mcqBanks.length === 1) {
+      const bankToReset = await MCQBank.findById(mcqBankId);
+      if (bankToReset?.mcqs?.length) {
+        for (const m of bankToReset.mcqs) {
+          m.isSimilar = false;
+        }
+        await bankToReset.save();
+      }
+    }
     
     // Detect similarities
     const similarities: any[] = [];
@@ -411,25 +435,27 @@ export async function POST(request: NextRequest) {
           if (processedPairs.has(pairKey)) continue;
           
           
-          const similarity = calculateCombinedSimilarity(q1.question, q2.question);
+          const similarity = scoreQuestionPair(q1, q2, similarityMethod);
           
           // Detailed logging for debugging
           if (q1Idx === 109 || q2Idx === 28) { // Q110 (index 109) or Q29 (index 28)
             const lev = calculateSimilarity(q1.question, q2.question);
             const kw = calculateKeywordSimilarity(q1.question, q2.question);
             const con = calculateConceptSimilarity(q1.question, q2.question);
+            const combined = calculateCombinedSimilarity(q1.question, q2.question);
             console.log(`\n=== DETAILED COMPARISON Q${q1Idx + 1} vs Q${q2Idx + 1} ===`);
             console.log(`Q${q1Idx + 1}: "${q1.question.substring(0, 80)}..."`);
             console.log(`Q${q2Idx + 1}: "${q2.question.substring(0, 80)}..."`);
             console.log(`Levenshtein: ${lev}%`);
             console.log(`Keywords: ${kw}%`);
             console.log(`Concepts: ${con}%`);
-            console.log(`Combined: ${similarity}%`);
+            console.log(`Combined (text-only): ${combined}%`);
+            console.log(`Score used (${similarityMethod}): ${similarity}%`);
             console.log(`Threshold: ${threshold}`);
             console.log(`Match: ${similarity >= threshold ? 'YES ✅' : 'NO ❌'}`);
             console.log(`===================================\n`);
           } else {
-            console.log(`Comparing Q${q1Idx + 1} with Q${q2Idx + 1}: ${similarity}% similarity`);
+            console.log(`Comparing Q${q1Idx + 1} with Q${q2Idx + 1}: ${similarity}% (${similarityMethod})`);
           }
           
           if (similarity >= threshold) {
@@ -457,7 +483,7 @@ export async function POST(request: NextRequest) {
               if (processedPairs.has(pairKey)) continue;
               
               
-              const similarity = calculateCombinedSimilarity(q1.question, q2.question);
+              const similarity = scoreQuestionPair(q1, q2, similarityMethod);
               
               if (similarity >= threshold) {
                 similarQuestions.push({
@@ -582,6 +608,7 @@ export async function POST(request: NextRequest) {
       flaggedCount,
       similarities,
       threshold,
+      similarityMethod,
     });
   } catch (error: any) {
     console.error('Error detecting similarities:', error);

@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { 
-  Search, Filter, ArrowLeft, Loader2, CheckCircle2, XCircle, 
+import {
+  Search, Filter, ArrowLeft, Loader2, CheckCircle2, XCircle,
   GitMerge, Trash2, Eye, FileText, AlertTriangle, FolderOpen,
-  ChevronDown, ChevronRight, Percent, Edit3, Save, X, RefreshCw
+  ChevronDown, ChevronRight, Percent, Edit3, Save, X, RefreshCw, Zap
 } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 import { formatSOPDisplayName } from '@/lib/sopLibraryHelper';
+import SimilarityResolutionCenter from './SimilarityResolutionCenter';
 
 interface MCQ {
   aiIcon: string;
@@ -78,6 +79,13 @@ export default function SimilarQuestionsPage() {
   const [mostSimilarQuestion, setMostSimilarQuestion] = useState<SimilarQuestionItem | null>(null);
   const [checkingSimilar, setCheckingSimilar] = useState(false);
   const [replacingQuestion, setReplacingQuestion] = useState<string | null>(null); // Format: "bankId-index"
+  const [resolverOpen, setResolverOpen] = useState(false);
+  const [resolverTarget, setResolverTarget] = useState<{
+    mcqBankId: string;
+    sopId: string;
+    sopName: string;
+    sopIdentifier: string;
+  } | null>(null);
 
   useEffect(() => {
     fetchSimilarQuestions();
@@ -241,32 +249,19 @@ export default function SimilarQuestionsPage() {
 
     try {
       setReplacingQuestion(`${bankId}-${questionIndex}`);
-      
+
       // Get user info from localStorage
       const userInfo = localStorage.getItem('user');
       const headers: HeadersInit = { 'Content-Type': 'application/json' };
       if (userInfo) {
         headers['x-user-info'] = userInfo;
       }
-      
-      // 1. Delete the question (archives it to EliminatedQuestions with reason 'duplicate')
-      const deleteResponse = await fetch(
-        `/api/mcq-bank/delete-question?bankId=${bankId}&index=${questionIndex}&source=similarity&duplicateOf=Similar question - deleted and regenerated`,
-        {
-          method: 'DELETE',
-          headers,
-        }
-      );
-      
-      const deleteData = await deleteResponse.json();
-      
-      if (!deleteData.success) {
-        alert(`Failed to delete question: ${deleteData.error}`);
-        setReplacingQuestion(null);
-        return;
-      }
 
-      // 2. Generate Replacement
+      // CRITICAL: Generate FIRST before deleting
+      // This way if generation fails, the original question stays safe
+      console.log('🔄 Starting MCQ generation for replacement...');
+      console.log('⚠️ Generating BEFORE delete to protect the original question...');
+
       const genResponse = await fetch('/api/mcq-bank/generate-replacement', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -274,25 +269,53 @@ export default function SimilarQuestionsPage() {
           mcqBankId: bankId,
           sopId: sopId,
           questionIndex: questionIndex,
+          dryRun: true, // Don't actually insert yet - just generate
         }),
       });
 
+      console.log(`📊 Generation response status: ${genResponse.status}`);
       const genData = await genResponse.json();
+      console.log('📥 Generation response:', genData);
 
-      if (genData.success) {
-        alert('Question replaced successfully!');
-        // Refresh the similar questions list
-        fetchSimilarQuestions();
-        // Close the modal
-        setSelectedQuestion(null);
-      } else {
-        alert('Question deleted but failed to generate replacement.');
-        fetchSimilarQuestions();
+      if (!genData.success) {
+        const errorMsg = genData.details || genData.error || 'Unknown error';
+        console.error('❌ Generation failed:', errorMsg);
+        alert(`Failed to generate replacement question.\n\nError: ${errorMsg}\n\nOriginal question is safe.`);
+        setReplacingQuestion(null);
+        return; // STOP - don't delete the original
       }
+
+      // Generation succeeded! Now we can safely delete the old question
+      console.log('✅ Generation successful! Now deleting old question...');
+
+      // 2. Delete the question (archives it to EliminatedQuestions with reason 'duplicate')
+      const deleteResponse = await fetch(
+        `/api/mcq-bank/delete-question?bankId=${bankId}&index=${questionIndex}&source=similarity&duplicateOf=Similar question - deleted and regenerated&replaceWithGenerated=true`,
+        {
+          method: 'DELETE',
+          headers,
+        }
+      );
+
+      const deleteData = await deleteResponse.json();
+
+      if (!deleteData.success) {
+        alert(`Failed to delete old question: ${deleteData.error}\n\nNew question should have been added.`);
+        setReplacingQuestion(null);
+        fetchSimilarQuestions();
+        return;
+      }
+
+      // Success!
+      alert('Question replaced successfully!');
+      // Refresh the similar questions list
+      fetchSimilarQuestions();
+      // Close the modal
+      setSelectedQuestion(null);
 
     } catch (error) {
       console.error('Error replacing question:', error);
-      alert('Failed to replace question');
+      alert('Failed to replace question. Please check console for details.');
     } finally {
       setReplacingQuestion(null);
     }
@@ -447,30 +470,53 @@ export default function SimilarQuestionsPage() {
                 className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 overflow-hidden"
               >
                 {/* SOP Header */}
-                <button
-                  onClick={() => toggleSOPExpansion(group.sopIdentifier)}
-                  className="w-full p-6 flex items-center justify-between hover:bg-white/5 transition-all"
-                >
-                  <div className="flex items-center gap-4">
-                    {expandedSOPs.has(group.sopIdentifier) ? (
-                      <ChevronDown className="h-6 w-6 text-orange-400" />
-                    ) : (
-                      <ChevronRight className="h-6 w-6 text-orange-400" />
-                    )}
-                    <FolderOpen className="h-6 w-6 text-orange-400" />
-                    <div className="text-left">
-                      <h3 className="text-lg font-bold text-white">
-                        {formatSOPDisplayName(group.sopName, group.sopIdentifier)}
-                      </h3>
-                      <p className="text-sm text-gray-400">
-                        {group.department} • {group.questions.length} similar question{group.questions.length !== 1 ? 's' : ''}
-                      </p>
+                <div className="p-6 flex items-center justify-between hover:bg-white/5 transition-all">
+                  <button
+                    onClick={() => toggleSOPExpansion(group.sopIdentifier)}
+                    className="flex-1 flex items-center gap-4 text-left"
+                  >
+                    <div className="flex items-center gap-4">
+                      {expandedSOPs.has(group.sopIdentifier) ? (
+                        <ChevronDown className="h-6 w-6 text-orange-400" />
+                      ) : (
+                        <ChevronRight className="h-6 w-6 text-orange-400" />
+                      )}
+                      <FolderOpen className="h-6 w-6 text-orange-400" />
+                      <div>
+                        <h3 className="text-lg font-bold text-white">
+                          {formatSOPDisplayName(group.sopName, group.sopIdentifier)}
+                        </h3>
+                        <p className="text-sm text-gray-400">
+                          {group.department} • {group.questions.length} similar question{group.questions.length !== 1 ? 's' : ''}
+                        </p>
+                      </div>
                     </div>
+                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => {
+                        // Find the first question's bank ID to get mcqBankId
+                        const firstQuestion = group.questions[0];
+                        if (firstQuestion) {
+                          setResolverTarget({
+                            mcqBankId: firstQuestion.primaryQuestion.mcqBankId,
+                            sopId: group.sopId,
+                            sopName: group.sopName,
+                            sopIdentifier: group.sopIdentifier,
+                          });
+                          setResolverOpen(true);
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                    >
+                      <Zap className="w-3 h-3" />
+                      Fetch & Replace
+                    </button>
+                    <span className="px-4 py-2 bg-orange-500/20 text-orange-300 rounded-lg font-semibold">
+                      {group.questions.length}
+                    </span>
                   </div>
-                  <span className="px-4 py-2 bg-orange-500/20 text-orange-300 rounded-lg font-semibold">
-                    {group.questions.length}
-                  </span>
-                </button>
+                </div>
 
                 {/* Questions List */}
                 {expandedSOPs.has(group.sopIdentifier) && (
@@ -906,6 +952,25 @@ export default function SimilarQuestionsPage() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Similarity Resolution Modal */}
+        {resolverOpen && resolverTarget && (
+          <SimilarityResolutionCenter
+            mcqBankId={resolverTarget.mcqBankId}
+            sopId={resolverTarget.sopId}
+            sopName={resolverTarget.sopName}
+            sopIdentifier={resolverTarget.sopIdentifier}
+            isOpen={resolverOpen}
+            onClose={() => {
+              setResolverOpen(false);
+              setResolverTarget(null);
+            }}
+            onComplete={(summary) => {
+              // Refresh the list after resolution completes
+              fetchSimilarQuestions();
+            }}
+          />
         )}
       </div>
     </div>

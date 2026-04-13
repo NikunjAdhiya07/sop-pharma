@@ -8,6 +8,7 @@ import User from '@/models/User';
 import { Notification } from '@/models/Notification';
 import { uploadToBunny, generateSOPDocumentPath } from '@/lib/bunnyStorage';
 import { persistUploadPath } from '@/lib/persistUploadPath';
+import { invalidateDashboardSopsCache } from '@/lib/dashboardSopsCache';
 
 export async function POST(request: NextRequest) {
   console.log('📤 Upload API called');
@@ -270,6 +271,68 @@ export async function POST(request: NextRequest) {
 
     console.log('✅ SOP saved with ID:', sop._id);
 
+    // AUTOMATIC VERSION SHIFT: Detect and record older revisions as version artifacts
+    try {
+      const { normalizeSopIdentifierKey, sopFamilyKeyFromIdentifier, parseRevisionFromSopIdentifier } =
+        await import('@/lib/sopIdentifierNormalize');
+      const SOPVersionArtifacts = (await import('@/models/SOPVersionArtifacts')).default;
+
+      const currentRevision = parseRevisionFromSopIdentifier(sopIdentifier.toUpperCase());
+      const normalizedId = normalizeSopIdentifierKey(sopIdentifier.toUpperCase());
+      const familyKey = sopFamilyKeyFromIdentifier(sopIdentifier.toUpperCase());
+
+      if (currentRevision != null && familyKey) {
+        // Find all older revisions of the same SOP family in SOP collection
+        // Regex pattern: match same family letters + different revision number
+        const familyPattern = new RegExp(`^${familyKey.split(':')[0]}\\d+-\\d+$`, 'i');
+        const olderSops = await SOP.find({
+          identifier: familyPattern,
+          language: language,
+          _id: { $ne: sop._id }, // Exclude the newly saved SOP itself
+        }).lean();
+
+        for (const older of olderSops) {
+          const olderRev = parseRevisionFromSopIdentifier(String(older.identifier || '').toUpperCase());
+          if (olderRev == null || olderRev >= currentRevision) continue; // Only record truly older revisions
+
+          const ext = (older.fileType || 'docx').toLowerCase();
+          const versionNum = olderRev; // Use the SOP revision number as the version
+
+          // Check if this version entry already exists to avoid duplicates
+          const existing = await SOPVersionArtifacts.findOne({
+            identifier: normalizedId,
+            language: language,
+            'entries.version': versionNum,
+          });
+
+          if (!existing) {
+            // Add as a new version artifact entry
+            await SOPVersionArtifacts.findOneAndUpdate(
+              { identifier: normalizedId, language: language },
+              {
+                $push: {
+                  entries: {
+                    version: versionNum,
+                    docxPath: ext === 'docx' ? older.fileUrl : undefined,
+                    pdfPath: ext === 'pdf' ? older.fileUrl : undefined,
+                  }
+                }
+              },
+              { upsert: true, setDefaultsOnInsert: true }
+            );
+
+            console.log(
+              `[VERSION_SHIFT] Recorded older revision ${olderRev} of ${sopIdentifier} (${language}) ` +
+              `as version artifact V${versionNum}`
+            );
+          }
+        }
+      }
+    } catch (versionShiftErr) {
+      console.error('[VERSION_SHIFT] Error recording prior versions:', versionShiftErr);
+      // Don't fail the upload if version shift fails - log and continue
+    }
+
     const response = {
       success: true,
       message: 'SOP uploaded successfully',
@@ -282,8 +345,9 @@ export async function POST(request: NextRequest) {
         language: sop.language,
       },
     };
-    
+
     console.log('🎉 Upload successful!', response);
+    invalidateDashboardSopsCache();
     return NextResponse.json(response, { status: 201 });
 
   } catch (error) {

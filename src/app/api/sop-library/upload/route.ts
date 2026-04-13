@@ -6,6 +6,7 @@ import SOPLibrary from '@/models/SOPLibrary';
 import { generateFilePath, validateFileType, getAllowedExtensions } from '@/lib/sopLibraryHelper';
 import { uploadToBunny, generateBunnyPath } from '@/lib/bunnyStorage';
 import { persistUploadPath } from '@/lib/persistUploadPath';
+import { invalidateDashboardSopsCache } from '@/lib/dashboardSopsCache';
 
 // Check if Bunny Storage is configured
 const isBunnyConfigured = () => {
@@ -28,6 +29,10 @@ export async function POST(request: NextRequest) {
     const description = formData.get('description') as string | null;
     // Option to force local storage even if Bunny is configured
     const forceLocal = formData.get('forceLocal') === 'true';
+    // Language field for document uploads (especially Gujarati supersede files)
+    const languageRaw = (formData.get('language') as string) || 'English';
+    const resolvedLanguage: 'English' | 'Gujarati' =
+      languageRaw.toLowerCase() === 'gujarati' ? 'Gujarati' : 'English';
 
     if (!sopLibraryId || !fileType) {
       return NextResponse.json(
@@ -143,6 +148,8 @@ export async function POST(request: NextRequest) {
         sopLibrary.slides.push(fileMetadata);
       } else if (fileType === 'document') {
         fileMetadata.fileType = fileExtension as 'pdf' | 'docx';
+        // Add language field for Gujarati supersede documents - prevents misclassification
+        fileMetadata.language = resolvedLanguage;
         sopLibrary.sopDocuments.push(fileMetadata);
       }
 
@@ -156,6 +163,7 @@ export async function POST(request: NextRequest) {
 
     // Save updated SOP Library entry
     await sopLibrary.save();
+    invalidateDashboardSopsCache();
 
     return NextResponse.json({
       success: true,

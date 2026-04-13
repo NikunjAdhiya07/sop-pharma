@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { revalidateTag } from 'next/cache';
+import { invalidateDashboardSopsCache } from '@/lib/dashboardSopsCache';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
@@ -564,12 +564,13 @@ export async function POST(request: NextRequest) {
           // Don't fail the upload if audit log creation fails
         }
 
-        // Revalidate dashboard cache after successful uploads
+        // Invalidate server-side dashboard cache after successful uploads
         try {
-          await revalidateTag('dashboard-sops', 'max');
+          invalidateDashboardSopsCache();
+          console.log('✅ Dashboard server cache invalidated after bulk upload');
         } catch (revalidateError) {
-          console.warn('⚠️ Failed to revalidate dashboard cache:', revalidateError);
-          // Don't fail the upload if cache revalidation fails
+          console.warn('⚠️ Failed to invalidate dashboard cache:', revalidateError);
+          // Don't fail the upload if cache invalidation fails
         }
 
         controller.close();

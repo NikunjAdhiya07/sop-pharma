@@ -305,7 +305,7 @@ function MCQBankContent() {
   }, [selectedMCQBank?.sopId, fullScreenDept?.name]);
 
   // Modal dragging and expansion state
-  const [isMaximized, setIsMaximized] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
   const [modalPosition, setModalPosition] = useState({ x: 0, y: 0 });
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -1893,13 +1893,8 @@ function MCQBankContent() {
             };
 
             return (
-              <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-300">
-                <div
-                  className={`bg-[#0f0d1e] border border-indigo-500/20 shadow-2xl flex flex-col overflow-hidden transition-all duration-300 ${isMaximized
-                    ? "w-full h-full rounded-none"
-                    : "w-full max-w-[1400px] h-[90vh] rounded-[28px]"
-                    }`}
-                >
+              <div className="fixed inset-0 z-[60] flex items-center justify-center animate-in fade-in duration-300">
+                <div className="bg-[#0f0d1e] w-full h-full rounded-none flex flex-col overflow-hidden shadow-2xl">
                   {/* ── PREMIUM STICKY HEADER ── */}
                   <div className="sticky top-0 z-20 bg-[#13102a]/95 border-b border-indigo-500/10 flex-shrink-0 backdrop-blur-xl">
                     {/* Brand / Navigation Row */}
@@ -3444,17 +3439,6 @@ function MCQBankContent() {
           })()}
       </div>
 
-      {/* Non-blocking loading overlay for bank detail fetch — tree stays mounted */}
-      {loadingBankDetail && (
-        <div className="fixed inset-0 z-[55] bg-black/50 backdrop-blur-sm flex items-center justify-center pointer-events-all">
-          <div className="flex flex-col items-center gap-3 bg-[#0f1117] border border-white/10 rounded-2xl px-8 py-6 shadow-2xl">
-            <Loader2 className="h-8 w-8 text-purple-400 animate-spin" />
-            <p className="text-gray-300 text-sm font-medium">
-              Loading questions...
-            </p>
-          </div>
-        </div>
-      )}
 
       {/* Modals */}
       <TrainerUploadModal 

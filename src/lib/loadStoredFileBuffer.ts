@@ -8,6 +8,7 @@ import SOPLibrary from '@/models/SOPLibrary';
 import SOPVersionArtifacts from '@/models/SOPVersionArtifacts';
 import { sopIdentifierMatchFilter } from '@/lib/sopIdentifierNormalize';
 import { fileKindFromStoredPath } from '@/lib/filePathFileKind';
+import { pathSuggestsGujarati } from '@/lib/pathLanguageDetection';
 import {
   collectSopIdentifierCandidates,
   extractRawHyphenatedSopCodesFromPath,
@@ -102,14 +103,41 @@ async function resolveLibraryDocumentPath(
     .select('sopDocuments language')
     .lean();
   const row = pickLibraryRow(libs, wantGuj);
-  const docs = row?.sopDocuments;
-  if (!docs?.length) return null;
-  // First pass: prefer non-annexure files
+  const allDocs = row?.sopDocuments || [];
+  if (!allDocs.length) return null;
+
+  // CRITICAL FIX: Filter documents by language BEFORE scanning
+  // This prevents English requests from getting Gujarati files when both are in the same library row
+  const langFilteredDocs = allDocs.filter((d: any) => {
+    const docLang = String(d.language || '').trim().toLowerCase();
+    const docPath = String(d.filePath || '');
+
+    if (wantGuj) {
+      // Request is for Gujarati: accept if explicitly marked OR path suggests Gujarati
+      return docLang === 'gujarati' || docLang === 'guj' || pathSuggestsGujarati(docPath);
+    }
+
+    // Request is for English: accept if NOT marked Gujarati AND path doesn't suggest Gujarati
+    return docLang !== 'gujarati' && docLang !== 'guj' && !pathSuggestsGujarati(docPath);
+  });
+
+  // Use language-filtered documents if available, otherwise warn and use all
+  const docs = langFilteredDocs.length > 0 ? langFilteredDocs : allDocs;
+  if (langFilteredDocs.length === 0 && allDocs.length > 0) {
+    console.warn(
+      `[FILE_LANG] No ${wantGuj ? 'Gujarati' : 'English'} document found in library ` +
+      `for "${identifier}" (${wantKind}). Using any available document. ` +
+      `This may cause language mismatch.`
+    );
+  }
+
+  // Scan documents for matching type
   for (const d of docs) {
     const p = (d as { filePath?: string; fileType?: string }).filePath?.trim();
     if (!p || isAnnexurePath(p)) continue;
     if (fileKindFromStoredPath(p, (d as { fileType?: string }).fileType) === wantKind) return p;
   }
+
   return null;
 }
 
@@ -393,14 +421,27 @@ async function resolveFromVersionArtifacts(
 ): Promise<string | null> {
   const wantGuj = language === 'Gujarati';
   const lang = wantGuj ? 'Gujarati' : 'English';
-  // Try exact language first, then the other as fallback
-  for (const langTry of [lang, wantGuj ? 'English' : 'Gujarati']) {
+  const fallbackLang = wantGuj ? 'English' : 'Gujarati';
+  let usedFallback = false;
+
+  // Try exact language first, then the other as fallback (with logging)
+  for (const [langIndex, langTry] of [[0, lang], [1, fallbackLang]].map(([idx, l]) => [idx as number, l as string])) {
+    if (langIndex === 1) {
+      // This is the fallback attempt — log it
+      console.warn(
+        `[FILE_LANG_FALLBACK] Requested ${lang} ${wantKind} for "${identifier}" not found in ` +
+        `SOPVersionArtifacts. Falling back to ${fallbackLang}.`
+      );
+      usedFallback = true;
+    }
+
     const docs = await SOPVersionArtifacts.find({
       ...sopIdentifierMatchFilter(identifier, 'identifier'),
       language: langTry,
     })
       .select('entries')
       .lean();
+
     for (const doc of docs) {
       const sorted = [...(doc.entries || [])].sort((a, b) => b.version - a.version);
       for (const e of sorted) {
@@ -413,7 +454,14 @@ async function resolveFromVersionArtifacts(
           if (!s) continue;
           const k = fileKindFromStoredPath(s);
           if (k !== wantKind && !(wantKind !== 'pdf' && (k === 'docx' || k === 'doc'))) continue;
-          if (await isLocalStoredPathReachable(s)) return s;
+          if (await isLocalStoredPathReachable(s)) {
+            if (usedFallback) {
+              console.warn(
+                `[FILE_LANG_FALLBACK] Serving ${fallbackLang} ${wantKind} (request was ${lang}): ${s}`
+              );
+            }
+            return s;
+          }
         }
       }
     }

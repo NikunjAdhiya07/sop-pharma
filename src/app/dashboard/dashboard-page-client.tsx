@@ -159,6 +159,10 @@ export default function DashboardPageClient() {
   const [viewingComplianceFullSopNo, setViewingComplianceFullSopNo] = useState<
     string | null
   >(null);
+  const [viewingComplianceFilter, setViewingComplianceFilter] = useState<{
+    status: 'all' | 'compliant' | 'partial' | 'non-compliant' | 'not-applicable';
+    severity: 'all' | 'critical' | 'major' | 'minor' | 'informational';
+  }>({ status: 'all', severity: 'all' });
 
   const handleComplianceResult = useCallback(
     (sopNo: string, sopName: string, result: any) => {
@@ -181,6 +185,7 @@ export default function DashboardPageClient() {
       // Auto-open the full viewer after a new run
       setShowGuidelinesLibrary(false);
       setWizardMinimized(false);
+      setViewingComplianceFilter({ status: 'all', severity: 'all' });
       setViewingComplianceFullSopNo(sopNo);
     },
     [],
@@ -896,6 +901,34 @@ export default function DashboardPageClient() {
           break;
         }
 
+        case "guidelineScore": {
+          const summarizeFindings = (row: any) => {
+            const findings = complianceCache[String(row.sopNo)]?.findings ?? [];
+            const nonCompliant = findings.filter(
+              (f: any) => f?.complianceLevel === "non-compliant",
+            ).length;
+            const partial = findings.filter(
+              (f: any) => f?.complianceLevel === "partial",
+            ).length;
+            const informational = findings.filter(
+              (f: any) =>
+                String(f?.issueSeverity || "").toLowerCase() ===
+                "informational",
+            ).length;
+            const score = complianceCache[String(row.sopNo)]?.overallScore ?? -1;
+            const weighted = nonCompliant * 1000 + partial * 100 + informational;
+            return { weighted, score, total: findings.length };
+          };
+          const aStats = summarizeFindings(a);
+          const bStats = summarizeFindings(b);
+          cmp = aStats.weighted - bStats.weighted;
+          if (cmp !== 0) break;
+          cmp = aStats.total - bStats.total;
+          if (cmp !== 0) break;
+          cmp = aStats.score - bStats.score;
+          break;
+        }
+
         default: {
           const va = a[sortConfig.key];
           const vb = b[sortConfig.key];
@@ -933,6 +966,7 @@ export default function DashboardPageClient() {
     panelFilterLanguage,
     panelFilterDateFrom,
     panelFilterDateTo,
+    complianceCache,
   ]);
 
 
@@ -1041,13 +1075,13 @@ export default function DashboardPageClient() {
   );
 
   const applyCapsuleVersionSegment = useCallback(
-    (dept: string, segment: SopVersionFilterSegment) => {
+    (dept: string, segment: SopVersionFilterSegment, lang?: "ENG" | "GUJ") => {
       setFilterDept(dept);
       setFilterDualLang(false);
       setFilterExpiry("all");
       setFilterMedia("all");
       setFilterFileType("all");
-      setFilterLanguage("all");
+      setFilterLanguage(lang ?? "all");
       setFilterVersionStatus(segment);
       setSortConfig({ key: "sopNo", direction: "asc" });
       requestAnimationFrame(() => {
@@ -1912,9 +1946,20 @@ export default function DashboardPageClient() {
               filterDeptFromParent={filterDept}
               complianceCache={complianceCache}
               reviewingInBackground={reviewingInBackground}
-              onViewCompliance={(sopNo: string) =>
-                setViewingComplianceSopNo(sopNo)
-              }
+              onViewCompliance={(
+                sopNo: string,
+                filters?: {
+                  status?: 'all' | 'compliant' | 'partial' | 'non-compliant' | 'not-applicable';
+                  severity?: 'all' | 'critical' | 'major' | 'minor' | 'informational';
+                },
+              ) => {
+                setViewingComplianceSopNo(null);
+                setViewingComplianceFilter({
+                  status: filters?.status ?? "all",
+                  severity: filters?.severity ?? "all",
+                });
+                setViewingComplianceFullSopNo(sopNo);
+              }}
               onOpenGuidelineWizard={(row: { _id: string; sopNo: string }) => {
                 setGuidelinesWizardPreset(row);
                 setShowGuidelinesLibrary(true);
@@ -2101,12 +2146,15 @@ export default function DashboardPageClient() {
               (r: any) => String(r.sopNo) === viewingComplianceFullSopNo,
             );
             setViewingComplianceFullSopNo(null);
+            setViewingComplianceFilter({ status: "all", severity: "all" });
             setGuidelinesWizardPreset({
               _id: row ? String(row._id) : "",
               sopNo: result.sopNo,
             });
             setShowGuidelinesLibrary(true);
           }}
+          initialFilterStatus={viewingComplianceFilter.status}
+          initialFilterSeverity={viewingComplianceFilter.severity}
         />
       )}
 

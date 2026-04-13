@@ -9,6 +9,8 @@ import {
   Video,
   Presentation,
   CheckCircle2,
+  AlertTriangle,
+  Info,
   File,
   Calendar,
   User as UserIcon,
@@ -32,8 +34,10 @@ import {
   buildDocxDownloadHref,
   buildPdfDownloadHref,
 } from "@/lib/viewDocLinks";
+const buildPreviewHref = buildViewDocHref;
 import { cleanSOPName } from "@/lib/sopLibraryHelper";
 import { normalizeUnicodeHyphens } from "@/lib/sopIdentifierNormalize";
+import { pathSuggestsGujarati } from "@/lib/pathLanguageDetection";
 
 const DEPT_ALL = "All";
 
@@ -85,8 +89,10 @@ export default function SOPTable({
   const getRawLanguage = (row: any) => {
     if (row.isDualLanguage) return "ENG/GUJ";
     if (row.gujaratiFileMissing) return "ENG (GUJ missing)";
-    return row.language === "Gujarati" ? "GUJ" : "ENG";
+    return isGujaratiLanguage(row.language) ? "GUJ" : "ENG";
   };
+  const isGujaratiLanguage = (value: unknown) =>
+    String(value || "").trim().toLowerCase() === "gujarati";
 
   const getRawFileTypes = (row: any) => {
     const types = new Set<string>();
@@ -127,6 +133,28 @@ export default function SOPTable({
     if (diffDays <= 30) return "High Priority";
     if (diffDays <= 60) return "Medium Priority";
     return "Active";
+  };
+
+  const getGuidelineMetrics = (row: any) => {
+    const result = complianceCache && complianceCache[row.sopNo];
+    const findings = Array.isArray(result?.findings) ? result.findings : [];
+    const nonCompliant = findings.filter(
+      (f: any) => f?.complianceLevel === "non-compliant",
+    ).length;
+    const partial = findings.filter(
+      (f: any) => f?.complianceLevel === "partial",
+    ).length;
+    const informational = findings.filter(
+      (f: any) =>
+        String(f?.issueSeverity || "").toLowerCase() === "informational",
+    ).length;
+    return {
+      result,
+      nonCompliant,
+      partial,
+      informational,
+      total: findings.length,
+    };
   };
 
   const SortIcon = ({ field }: { field: string }) => {
@@ -270,7 +298,7 @@ export default function SOPTable({
               <div className="flex items-center gap-0.5 leading-none text-[8px] font-bold">
                 {e.docxPath ? (
                   <a
-                    href={buildPreviewHref(e.docxPath, "docx", row.sopNo, lang)}
+                    href={buildPreviewHref(e.docxPath, row.sopNo, lang)}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(ev) => ev.stopPropagation()}
@@ -283,7 +311,7 @@ export default function SOPTable({
                 ) : null}
                 {e.pdfPath ? (
                   <a
-                    href={buildPreviewHref(e.pdfPath, "pdf", row.sopNo, lang)}
+                    href={buildPreviewHref(e.pdfPath, row.sopNo, lang)}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(ev) => ev.stopPropagation()}
@@ -369,6 +397,15 @@ export default function SOPTable({
   };
 
   const getFileTypes = (row: any) => {
+    // Enhanced language detection: checks both explicit language field and path-based heuristics
+    const detectDocLang = (doc: any): "GUJ" | "ENG" => {
+      if (isGujaratiLanguage(doc.language)) return "GUJ";
+      // If no explicit language but path contains Gujarati signals, classify as GUJ
+      const pathStr = doc.filePath || doc.fileUrl || '';
+      if (pathStr && pathSuggestsGujarati(pathStr)) return "GUJ";
+      return "ENG";
+    };
+
     const rawDocs: Array<{ type: string; path: string; lang: string }> = [];
 
     (row.sopDocuments || []).forEach((doc: any) => {
@@ -378,7 +415,7 @@ export default function SOPTable({
             fileKindFromStoredPath(doc.filePath, doc.fileType),
           ),
           path: doc.filePath,
-          lang: doc.language === "Gujarati" ? "GUJ" : "ENG",
+          lang: detectDocLang(doc),
         });
       }
     });
@@ -393,7 +430,7 @@ export default function SOPTable({
             fileKindFromStoredPath(row.sopFile.filePath, row.sopFile.fileType),
           ),
           path: row.sopFile.filePath,
-          lang: row.sopFile.language === "Gujarati" ? "GUJ" : "ENG",
+          lang: detectDocLang(row.sopFile),
         });
       }
     }
@@ -458,7 +495,6 @@ export default function SOPTable({
       const langParam = doc.lang === "GUJ" ? "Gujarati" : "English";
       const previewHref = buildPreviewHref(
         doc.path,
-        doc.type,
         row.sopNo,
         langParam,
       );
@@ -919,12 +955,23 @@ export default function SOPTable({
                   </select>
                 </div>
               </th>
+              <th className={thBase}>
+                <div className="flex flex-col gap-px min-w-[60px]">
+                  <button
+                    type="button"
+                    className={sortBtn}
+                    onClick={() => onSort("guidelineScore")}
+                    title="Sort by guideline compliance score">
+                    Guideline <SortIcon field="guidelineScore" />
+                  </button>
+                </div>
+              </th>
             </tr>
           </thead>
           <tbody className="text-[10px] text-gray-700">
             {isObsoleteView && displayedData.length > 0 && (
               <tr className="bg-rose-50 border-b border-rose-200">
-                <td colSpan={11} className="px-3 py-1.5 text-[10px] font-semibold text-rose-700">
+                <td colSpan={12} className="px-3 py-1.5 text-[10px] font-semibold text-rose-700">
                   Showing {displayedData.length} obsolete SOP{displayedData.length !== 1 ? "s" : ""} — these have been removed from the active registry. Expand a row to restore.
                 </td>
               </tr>
@@ -932,7 +979,7 @@ export default function SOPTable({
             {displayedData.length === 0 ? (
               <tr>
                 <td
-                  colSpan={11}
+                  colSpan={12}
                   className="px-4 py-6 text-center text-gray-500">
                   <div className="flex flex-col items-center gap-1">
                     <FileText className="h-5 w-5 text-gray-300" />
@@ -1017,6 +1064,7 @@ export default function SOPTable({
                               {/* Opens full viewer if result cached, otherwise opens wizard */}
                               {(() => {
                                 const isRunning = reviewingInBackground?.has(String(row.sopNo));
+                                const guidelineCount = getGuidelineMetrics(row).total;
                                 return (
                                   <button
                                     type="button"
@@ -1043,9 +1091,13 @@ export default function SOPTable({
                                     ) : (
                                       <Sparkles className="h-3 w-3" />
                                     )}
-                                    {hasResult && (
-                                      <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-emerald-400 border border-white" />
-                                    )}
+                                    {hasResult ? (
+                                      <span
+                                        className="absolute -top-2 -right-2 min-w-[16px] rounded-full border border-white bg-emerald-600 px-1 py-[1px] text-center text-[8px] font-black leading-none text-white tabular-nums"
+                                        title={`Total guideline findings: ${guidelineCount}`}>
+                                        {guidelineCount}
+                                      </span>
+                                    ) : null}
                                   </button>
                                 );
                               })()}
@@ -1286,12 +1338,103 @@ export default function SOPTable({
                           )}
                         </div>
                       </td>
+                      {/* Guideline compliance score */}
+                      <td className="px-1 py-px text-center align-middle">
+                        {(() => {
+                          const {
+                            result,
+                            nonCompliant,
+                            partial,
+                            informational,
+                            total,
+                          } = getGuidelineMetrics(row);
+                          if (!result) return <span className="text-gray-300 text-[9px]">—</span>;
+                          const score = result.overallScore ?? 0;
+                          const colorClass =
+                            score >= 7 ? 'text-emerald-700 bg-emerald-50 border-emerald-200' :
+                            score >= 4 ? 'text-amber-700 bg-amber-50 border-amber-200' :
+                                         'text-red-700 bg-red-50 border-red-200';
+                          return (
+                            <div className="inline-flex flex-col items-center gap-0.5">
+                              <span
+                                className={`inline-flex items-baseline gap-px rounded border px-1 py-0.5 text-[10px] font-black tabular-nums ${colorClass}`}
+                                title={`Score: ${score}/10 · ${result.clausesAnalyzed ?? 0} clauses · ${total} findings`}
+                              >
+                                {score}
+                                <span className="text-[8px] font-normal opacity-60">/10</span>
+                              </span>
+                              <div className="flex items-center gap-0.5">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onViewCompliance?.(row.sopNo, {
+                                      status: "non-compliant",
+                                      severity: "all",
+                                    });
+                                  }}
+                                  className="inline-flex items-center gap-0.5 rounded border border-rose-200 bg-rose-50 px-1 py-px text-[8px] font-bold text-rose-700 hover:bg-rose-100"
+                                  title="Open non-compliant findings"
+                                >
+                                  <AlertTriangle className="h-2.5 w-2.5" />
+                                  <span className="tabular-nums">{nonCompliant}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onViewCompliance?.(row.sopNo, {
+                                      status: "partial",
+                                      severity: "all",
+                                    });
+                                  }}
+                                  className="inline-flex items-center gap-0.5 rounded border border-amber-200 bg-amber-50 px-1 py-px text-[8px] font-bold text-amber-700 hover:bg-amber-100"
+                                  title="Open partial findings"
+                                >
+                                  <Sparkles className="h-2.5 w-2.5" />
+                                  <span className="tabular-nums">{partial}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onViewCompliance?.(row.sopNo, {
+                                      status: "all",
+                                      severity: "informational",
+                                    });
+                                  }}
+                                  className="inline-flex items-center gap-0.5 rounded border border-blue-200 bg-blue-50 px-1 py-px text-[8px] font-bold text-blue-700 hover:bg-blue-100"
+                                  title="Open informational findings"
+                                >
+                                  <Info className="h-2.5 w-2.5" />
+                                  <span className="tabular-nums">{informational}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onViewCompliance?.(row.sopNo, {
+                                      status: "all",
+                                      severity: "all",
+                                    });
+                                  }}
+                                  className="inline-flex items-center gap-0.5 rounded border border-emerald-200 bg-emerald-50 px-1 py-px text-[8px] font-bold text-emerald-700 hover:bg-emerald-100"
+                                  title="Open all compliance details"
+                                >
+                                  <CheckCircle2 className="h-2.5 w-2.5" />
+                                  <span className="tabular-nums">{total}</span>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </td>
                     </tr>
 
                     {/* Expanded detail panel */}
                     {isExpanded && (
                       <tr className="bg-purple-50 border-b border-purple-200">
-                        <td colSpan={11} className="px-4 py-3">
+                        <td colSpan={12} className="px-4 py-3">
                           <div className="grid grid-cols-3 gap-3">
                             <div className="space-y-2">
                               <h4 className="text-[10px] font-bold text-gray-700 uppercase tracking-wide border-b border-gray-300 pb-0.5">
@@ -1431,8 +1574,8 @@ export default function SOPTable({
                                       return (
                                         <div className="flex flex-col gap-0.5">
                                           {allDocs.map((doc, i) => {
-                                            const docLang = doc.language === "Gujarati" ? "Gujarati" : "English";
-                                            const prevHref = buildPreviewHref(doc.filePath, doc.fileType, row.sopNo, docLang);
+                                            const docLang = isGujaratiLanguage(doc.language) ? "Gujarati" : "English";
+                                            const prevHref = buildPreviewHref(doc.filePath, row.sopNo, docLang);
                                             const dk = fileKindFromStoredPath(doc.filePath, doc.fileType);
                                             const dDocx = (dk === "docx" || dk === "doc") ? buildDocxDownloadHref(doc.filePath, row.sopNo, docLang) : null;
                                             const dPdf = (dk === "pdf") ? buildPdfDownloadHref(doc.filePath, row.sopNo, docLang) : null;
@@ -1444,7 +1587,7 @@ export default function SOPTable({
                                                     <span className="text-[7px] font-bold uppercase tracking-wider text-purple-400">{doc.label}</span>
                                                     <span className="truncate" title={doc.fileName}>{cleanSOPName(doc.fileName, row.sopNo)}</span>
                                                   </div>
-                                                  {doc.language === "Gujarati" && <span className="text-[8px] text-indigo-600 font-bold ml-auto shrink-0 bg-indigo-50 px-1 rounded border border-indigo-100">GUJ</span>}
+                                                  {isGujaratiLanguage(doc.language) && <span className="text-[8px] text-indigo-600 font-bold ml-auto shrink-0 bg-indigo-50 px-1 rounded border border-indigo-100">GUJ</span>}
                                                 </a>
                                                 <a href={prevHref} target="_blank" rel="noopener noreferrer" className="p-1 text-violet-600 hover:bg-violet-100"><Eye className="h-3 w-3" /></a>
                                                 {dDocx && <a href={dDocx} className="p-1 text-blue-600 hover:bg-blue-50" title="Download DOCX" onClick={(e) => e.stopPropagation()}><Download className="h-3 w-3" /></a>}

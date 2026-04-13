@@ -1,0 +1,74 @@
+{
+  "success": true,
+  "timestamp": "2026-04-10T12:00:00Z",
+  "overall": {
+    "totalDepartments": 7,
+    "totalSOPs": 430,
+    "totalQuestions": 43313,
+    "totalReviewed": 2,
+    "totalNotReviewed": 499,
+    "reviewPercentage": 0
+  },
+  "byDepartment": [
+    {
+      "department": "Engineering",
+      "totalSOPs": 2,
+      "totalQuestions": 222,
+      "reviewedQuestions": 0,
+      "notReviewedQuestions": 0,
+      "reviewPercentage": 0
+    },
+    {
+      "department": "Personnel",
+      "totalSOPs": 23,
+      "totalQuestions": 2295,
+      "reviewedQuestions": 0,
+      "notReviewedQuestions": 0,
+      "reviewPercentage": 0
+    },
+    {
+      "department": "Production",
+      "totalSOPs": 119,
+      "totalQuestions": 11908,
+      "reviewedQuestions": 0,
+      "notReviewedQuestions": 0,
+      "reviewPercentage": 0
+    },
+    {
+      "department": "QA",
+      "totalSOPs": 13,
+      "totalQuestions": 1294,
+      "reviewedQuestions": 0,
+      "notReviewedQuestions": 0,
+      "reviewPercentage": 0
+    },
+    {
+      "department": "Quality Assurance",
+      "totalSOPs": 221,
+      "totalQuestions": 22356,
+      "reviewedQuestions": 2,
+      "notReviewedQuestions": 499,
+      "reviewPercentage": 0
+    },
+    {
+      "department": "Quality Control",
+      "totalSOPs": 9,
+      "totalQuestions": 900,
+      "reviewedQuestions": 0,
+      "notReviewedQuestions": 0,
+      "reviewPercentage": 0
+    },
+    {
+      "department": "Store",
+      "totalSOPs": 43,
+      "totalQuestions": 4338,
+      "reviewedQuestions": 0,
+      "notReviewedQuestions": 0,
+      "reviewPercentage": 0
+    }
+  ],
+  "reviewStatusBreakdown": {
+    "done": 2,
+    "pending": 499
+  }
+}
