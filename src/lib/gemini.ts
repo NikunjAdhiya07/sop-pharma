@@ -10,26 +10,26 @@ const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 // Model selection for MCQ generation - Using Gemini models
 // Try models in order of preference:
-// 1. gemini-2.0-flash - Latest Gemini 2.0 Flash (PAID TIER - unlimited quota)
-// 2. gemini-1.5-pro - Gemini 1.5 Pro (PAID TIER - reliable, unlimited quota)
-// 3. gemini-3-flash-preview - Fallback (has free tier quota limit)
+// 1. gemini-2.0-flash - Latest Gemini 2.0 Flash (PAID TIER - unlimited quota, best performance)
+// 2. gemini-1.5-pro - Gemini 1.5 Pro (PAID TIER - reliable, very capable)
+// 3. gemini-1.5-flash - Fallback (fast, good quality)
 const MODEL_CANDIDATES = [
   'gemini-2.0-flash',
   'gemini-1.5-pro',
-  'gemini-3-flash-preview'
+  'gemini-1.5-flash'
 ];
 let DEFAULT_MODEL = MODEL_CANDIDATES[0];
 let currentModelIndex = 0;
 
 const createGeminiModel = (modelName: string) => {
-  console.log(`🤖 Initializing Gemini model: ${modelName} (PAID TIER - Unlimited Quota)`);
+  console.log(`🤖 Initializing Gemini model: ${modelName} (PAID TIER - Best Quality)`);
   return genAI.getGenerativeModel({
     model: modelName,
     generationConfig: {
       maxOutputTokens: 32768,
-      temperature: 0.6,  // Slightly lower for better quality in paid tier
-      topP: 0.9,
-      topK: 50,
+      temperature: 0.5,  // Lower temp for more focused, consistent quality
+      topP: 0.95,
+      topK: 40,  // Slightly more conservative for better coherence
     },
     safetySettings: [
       {
@@ -318,6 +318,7 @@ ${safeExistingQuestions.map(q => `- ${q}`).join('\n')}
 You are an expert pharmaceutical compliance and training specialist. Your task is to generate high-quality Multiple Choice Questions (MCQs) from the SOP provided below.
 
 TASK: Generate EXACTLY ${batchCount} unique, well-crafted MCQs from this pharmaceutical SOP.
+QUALITY STANDARD: Create professional, pharmaceutical-industry-grade questions that test practical knowledge and compliance understanding.
 
 📄 SOP DETAILS:
 - Name: ${request.sopName}
@@ -333,13 +334,21 @@ ${forbiddenSection}
 2. Generate EXACTLY ${batchCount} questions - no more, no less
 3. Each question must start with ⭐
 4. Each question must have exactly 4 options
-5. Each option must be a realistic answer choice
+5. Each option must be a realistic, plausible answer choice (avoid obviously wrong options)
 6. correctAnswer must be one of the actual option texts (not a letter)
-7. Explanations: concise, 1-2 sentences max
-8. No questions about section numbers - focus on content, procedures, concepts
-9. Every question must be unique - no concept repetition
-10. Cover different parts of the SOP - vary the topics
-11. Return VALID JSON only - no markdown, no extra text
+7. Explanations: concise, 1-2 sentences with SOP reference where applicable
+8. NO questions about section numbers or document structure - focus on content, procedures, and concepts
+9. Every question must be unique - no concept repetition or similar wording
+10. Vary question types: definitions, procedures, scenarios, compliance requirements
+11. Test practical application, not just memorization
+12. Return VALID JSON only - no markdown, no code blocks, no extra text
+
+🎯 QUALITY CHECKLIST:
+- Are options realistic and plausible? (avoid "obviously wrong" answers)
+- Does the question test actual SOP knowledge? (not trivia)
+- Is the difficulty level appropriate? (not too hard/easy)
+- Are distractors (wrong answers) logically related to the topic?
+- Does the question have a single clear correct answer?
 
 📋 JSON SCHEMA - FOLLOW EXACTLY:
 {
