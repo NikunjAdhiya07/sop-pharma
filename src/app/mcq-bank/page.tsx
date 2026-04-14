@@ -95,6 +95,77 @@ interface MCQBank {
   similarCount?: number;
 }
 
+// ─── Client-side similarity scoring (mirrors detect route logic) ─────────────
+const STOP_WORDS_CLIENT = new Set([
+  'a','an','the','is','are','was','were','be','been','being','have','has','had',
+  'do','does','did','will','would','could','should','may','might','shall','can',
+  'to','of','in','on','at','by','for','with','about','as','into','through',
+  'before','after','above','below','from','up','down','out','off','over','under',
+  'again','then','once','and','but','or','nor','so','yet','both','either','not',
+  'no','than','too','very','just','this','that','these','those','it','its',
+]);
+
+function clientGetContentWords(text: string): string[] {
+  return text.toLowerCase().replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim()
+    .split(/\s+/).filter(w => w.length > 2 && !STOP_WORDS_CLIENT.has(w));
+}
+
+function clientJaccard(s1: string, s2: string): number {
+  const w1 = new Set(clientGetContentWords(s1));
+  const w2 = new Set(clientGetContentWords(s2));
+  if (w1.size === 0 && w2.size === 0) return 100;
+  if (w1.size === 0 || w2.size === 0) return 0;
+  const inter = [...w1].filter(w => w2.has(w)).length;
+  return Math.round((inter / new Set([...w1,...w2]).size) * 100);
+}
+
+function clientNgram(s1: string, s2: string): number {
+  const words1 = clientGetContentWords(s1);
+  const words2 = clientGetContentWords(s2);
+  const ngrams = (ws: string[]) => {
+    const r = new Set<string>();
+    for (let i = 0; i < ws.length - 1; i++) r.add(`${ws[i]} ${ws[i+1]}`);
+    for (let i = 0; i < ws.length - 2; i++) r.add(`${ws[i]} ${ws[i+1]} ${ws[i+2]}`);
+    return r;
+  };
+  const g1 = ngrams(words1); const g2 = ngrams(words2);
+  if (g1.size === 0 || g2.size === 0) return 0;
+  const inter = [...g1].filter(g => g2.has(g)).length;
+  return Math.round((inter / new Set([...g1,...g2]).size) * 100);
+}
+
+function clientCharSim(s1: string, s2: string): number {
+  const a = s1.toLowerCase().trim(); const b = s2.toLowerCase().trim();
+  if (a === b) return 100;
+  const longer = a.length > b.length ? a : b;
+  const shorter = a.length > b.length ? b : a;
+  if (longer.length === 0) return 100;
+  // Simple ratio using shared prefix/suffix as approximation
+  const m = longer.length, n = shorter.length;
+  const dp: number[][] = Array.from({length: m+1}, (_,i) =>
+    Array.from({length: n+1}, (_,j) => i===0?j:j===0?i:0));
+  for (let i=1;i<=m;i++) for (let j=1;j<=n;j++)
+    dp[i][j] = longer[i-1]===shorter[j-1] ? dp[i-1][j-1] : 1+Math.min(dp[i-1][j-1],dp[i-1][j],dp[i][j-1]);
+  return Math.round(((longer.length - dp[m][n]) / longer.length) * 100);
+}
+
+/** Returns composite similarity (0–100) between two questions.
+ *  ≥ 70 = similar enough to reject a regenerated replacement. */
+function clientQuestionSimilarity(
+  q1: { question: string; options?: string[]; correctAnswer?: string },
+  q2: { question: string; options?: string[]; correctAnswer?: string },
+): number {
+  const qJaccard = clientJaccard(q1.question, q2.question);
+  const qNgram   = clientNgram(q1.question, q2.question);
+  const qChar    = clientCharSim(q1.question, q2.question);
+  const aChar    = clientCharSim(q1.correctAnswer||'', q2.correctAnswer||'');
+  const aJacc    = clientJaccard(q1.correctAnswer||'', q2.correctAnswer||'');
+  const answerScore = Math.round(aChar*0.7 + aJacc*0.3);
+  const optScore = clientJaccard((q1.options||[]).join(' '), (q2.options||[]).join(' '));
+  return Math.round(qJaccard*0.30 + qNgram*0.20 + qChar*0.10 + answerScore*0.25 + optScore*0.15);
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function MCQBankContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -103,8 +174,19 @@ function MCQBankContent() {
   const deptFromUrl = searchParams.get("dept");
   const searchFromUrl = searchParams.get("search");
 
+  // ── Performance caches (survive re-renders, cleared on full page reload) ──
+  // Bank detail cache: avoid re-fetching the same bank within a session
+  const bankDetailCache = useRef<Map<string, MCQBank>>(new Map());
+  // Similarity detail cache per bankId
+  const similarityCache = useRef<Map<string, Record<number, number[]>>>(new Map());
+  // Trainer mappings fetched flag — avoid repeated API calls
+  const trainerMappingsFetched = useRef(false);
+
   const [mcqBanks, setMcqBanks] = useState<MCQBank[]>([]);
   const [loading, setLoading] = useState(true);
+  // Raw search input (updated immediately for UI responsiveness)
+  const [searchInputValue, setSearchInputValue] = useState("");
+  // Debounced search term (used for actual filtering — 300ms delay)
   const [searchTerm, setSearchTerm] = useState("");
   const [difficultyFilter, setDifficultyFilter] = useState<string>("All");
   const [selectedMCQBank, setSelectedMCQBank] = useState<MCQBank | null>(null);
@@ -238,6 +320,8 @@ function MCQBankContent() {
   const modalBodyRef = useRef<HTMLDivElement>(null);
   // Modal-level search (search within a SOP's questions)
   const [modalSearch, setModalSearch] = useState("");
+  // Raw input value for modal search (debounced into modalSearch)
+  const [modalSearchInput, setModalSearchInput] = useState("");
   const [modalSearchInputVisible, setModalSearchInputVisible] = useState(false);
 
   // Trainer Assignment State
@@ -247,7 +331,26 @@ function MCQBankContent() {
   const [showTrainerModal, setShowTrainerModal] = useState(false);
   const [showMatrixModal, setShowMatrixModal] = useState(false);
 
+  // Debounce: update the actual filter term 300ms after the user stops typing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchTerm(searchInputValue);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInputValue]);
+
+  // Debounce modal search (within a SOP's questions) — 250ms
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setModalSearch(modalSearchInput);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [modalSearchInput]);
+
   const fetchTrainerMappings = async () => {
+    // Guard: only fetch once per page load
+    if (trainerMappingsFetched.current) return;
+    trainerMappingsFetched.current = true;
     try {
       const response = await fetch("/api/departments/trainers");
       const data = await response.json();
@@ -381,6 +484,16 @@ function MCQBankContent() {
   useCopyProtection();
 
   useEffect(() => {
+    // When restoring a specific bank from URL (refresh), skip the full bank list
+    // load — it takes 2+ minutes for 430 banks. The bank-from-URL effect below
+    // will open the correct modal directly. Fetch the list silently in the
+    // background so the grid/table view is ready if the user closes the modal.
+    if (sopIdFromUrl) {
+      setLoading(false); // Don't show the full-page spinner
+      // Silently pre-load the bank list in background (won't block modal open)
+      fetchMCQBanks();
+      return;
+    }
     fetchMCQBanks();
     if (viewMode === "tree") {
       fetchTreeData();
@@ -388,38 +501,52 @@ function MCQBankContent() {
   }, [currentPage, viewMode]);
 
   // Auto-open bank when sopId is in URL (refresh persistence)
+  // This runs immediately — it does NOT wait for fetchMCQBanks to finish.
   useEffect(() => {
     if (sopIdFromUrl && !selectedMCQBank && isOpeningFromUrl) {
-      console.log('[REFRESH] Opening bank from URL:', sopIdFromUrl, langFromUrl);
       const openBankFromUrl = async () => {
         try {
-          // Fetch bank by sopId and optional language
+          // Fetch the specific bank(s) for this SOP directly by sopId.
+          // We do NOT use summary=true here — we need the full mcqs array.
           const response = await fetch(
-            `/api/mcq-bank?sopId=${encodeURIComponent(sopIdFromUrl)}&limit=100`,
+            `/api/mcq-bank?sopId=${encodeURIComponent(sopIdFromUrl)}&limit=10`,
             { cache: 'no-store' }
           );
           const data = await response.json();
-          console.log('[REFRESH] API response:', data);
 
           if (data.success && data.mcqBanks.length > 0) {
-            let bank = data.mcqBanks[0];
-            console.log('[REFRESH] Found banks:', data.mcqBanks.map((b: any) => ({ sopId: b.sopId, language: b.language })));
-
-            // If langFromUrl is specified, find exact language match
+            // Pick the right language if specified in URL
+            const banks: MCQBank[] = data.mcqBanks;
+            let bank = banks[0];
             if (langFromUrl) {
-              const langMatch = data.mcqBanks.find(
-                (b: MCQBank) => b.language === langFromUrl
-              );
-              if (langMatch) {
-                console.log('[REFRESH] Using language match:', langFromUrl);
-                bank = langMatch;
-              }
+              const langMatch = banks.find((b: MCQBank) => b.language === langFromUrl);
+              if (langMatch) bank = langMatch;
             }
-            console.log('[REFRESH] Opening bank:', bank.sopId, bank.language);
-            await fetchFullBankDetails(bank);
+
+            // Store all returned banks in session cache for instant re-open
+            banks.forEach(b => bankDetailCache.current.set(b._id, b));
+
+            // Open directly: set state without the full fetchFullBankDetails round-trip
+            const LANGUAGE_ORDER: Record<string, number> = { English: 0, Gujarati: 1 };
+            const sorted = [...banks].sort((a, b) => {
+              const la = LANGUAGE_ORDER[a.language || 'English'] ?? 2;
+              const lb = LANGUAGE_ORDER[b.language || 'English'] ?? 2;
+              return la - lb;
+            });
+
+            setSelectedMCQBanks(sorted);
+            setSelectedMCQBank(bank);
+            setRegenLanguage(bank.language || 'English');
+            setViewLanguage(bank.language || 'English');
+            setActiveTab('active');
+            setSimilarityResults(null);
+            setVisibleCount(30);
+
+            // Load similarity details in background (non-blocking)
+            fetchSimilarityDetails(bank._id);
+
             setIsOpeningFromUrl(false);
           } else {
-            console.warn('[REFRESH] No banks found in API response');
             setIsOpeningFromUrl(false);
           }
         } catch (error) {
@@ -516,6 +643,7 @@ function MCQBankContent() {
   // Handle 'search' query parameter
   useEffect(() => {
     if (searchFromUrl) {
+      setSearchInputValue(searchFromUrl);
       setSearchTerm(searchFromUrl);
       setViewMode("grid"); // Force grid view so search results are visible immediately
     }
@@ -550,7 +678,7 @@ function MCQBankContent() {
   ) => {
     if (!sopNode.mcqBanks?.length) return;
     setFilterReviewStatus(filter);
-    setModalSearch("");
+    setModalSearch(""); setModalSearchInput("");
     setModalSearchInputVisible(false);
     setVisibleCount(30);
     setSimilarQuestionDetails({});
@@ -559,6 +687,29 @@ function MCQBankContent() {
 
     if (sopNode.mcqBanks.length === 1) {
       await fetchFullBankDetails(sopNode.mcqBanks[0], filter);
+      return;
+    }
+
+    // Check session cache for all banks
+    const allCached = sopNode.mcqBanks.every(b => bankDetailCache.current.has(b._id));
+    if (allCached) {
+      const cachedBanks = sopNode.mcqBanks.map(b => bankDetailCache.current.get(b._id)!);
+      const LANGUAGE_ORDER: Record<string, number> = { English: 0, Gujarati: 1 };
+      const sorted = [...cachedBanks].sort((a, b) => {
+        const la = LANGUAGE_ORDER[a.language || "English"] ?? 2;
+        const lb = LANGUAGE_ORDER[b.language || "English"] ?? 2;
+        return la - lb;
+      });
+      const first = sorted[0];
+      setSelectedMCQBanks(sorted);
+      setSelectedMCQBank(first);
+      setRegenLanguage(first.language || "English");
+      setViewLanguage(first.language || "English");
+      if (similarityCache.current.has(first._id)) {
+        setSimilarQuestionDetails(similarityCache.current.get(first._id)!);
+      } else {
+        fetchSimilarityDetails(first._id);
+      }
       return;
     }
 
@@ -580,12 +731,14 @@ function MCQBankContent() {
         const lb = LANGUAGE_ORDER[b.language || "English"] ?? 2;
         return la - lb;
       });
+      // Store each bank in session cache
+      sorted.forEach(b => bankDetailCache.current.set(b._id, b));
       const first = sorted[0];
       setSelectedMCQBanks(sorted);
       setSelectedMCQBank(first);
       setRegenLanguage(first.language || "English");
       setViewLanguage(first.language || "English");
-      await fetchSimilarityDetails(first._id);
+      fetchSimilarityDetails(first._id); // non-blocking
     } catch (err) {
       console.error("Error loading SOP banks:", err);
       alert("Error loading questions");
@@ -599,74 +752,86 @@ function MCQBankContent() {
     filter: "all" | "checked" | "pending" | "similar" | "reviewed" = "all",
   ) => {
     setFilterReviewStatus(filter);
-    // Reset modal-level search and visible count when opening a new SOP
-    setModalSearch("");
+    setModalSearch(""); setModalSearchInput("");
     setModalSearchInputVisible(false);
     setVisibleCount(30);
     setSimilarQuestionDetails({});
-    // Always fetch latest from DB when opening modal to ensure persistence
+
+    const applyBankToState = (fullBank: MCQBank) => {
+      setSelectedMCQBank(fullBank);
+      setSelectedMCQBanks([fullBank]);
+      setRegenLanguage(fullBank.language || 'English');
+      setViewLanguage(fullBank.language || 'English');
+      setActiveTab("active");
+      setSimilarityResults(null);
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        params.set('sopId', fullBank.sopId);
+        params.set('lang', fullBank.language || 'English');
+        window.history.replaceState({ ...window.history.state }, '', `${window.location.pathname}?${params.toString()}`);
+      }
+    };
+
     try {
-      // Check if we have FULL question data (not just partial status flags)
-      // Partial data from tree view only has isChecked/isReviewed, not question/options
+      // 1. Check in-memory session cache first (avoids duplicate network call)
+      const cached = bankDetailCache.current.get(bank._id);
       const hasFullData =
-        bank.mcqs &&
-        bank.mcqs.length > 0 &&
-        bank.mcqs[0].question &&
-        bank.mcqs[0].options;
+        bank.mcqs && bank.mcqs.length > 0 && bank.mcqs[0].question && bank.mcqs[0].options;
 
       if (hasFullData) {
-        setSelectedMCQBank(bank);
-        setSelectedMCQBanks([bank]);
-        setRegenLanguage(bank.language || 'English');
-        setViewLanguage(bank.language || 'English');
-        setActiveTab("active"); // Reset to active tab when opening modal
-        setSimilarityResults(null); // Clear previous similarity results
-        // Update URL to preserve selection on refresh
-        if (typeof window !== 'undefined') {
-          const params = new URLSearchParams(window.location.search);
-          params.set('sopId', bank.sopId);
-          params.set('lang', bank.language || 'English');
-          window.history.replaceState({ ...window.history.state }, '', `${window.location.pathname}?${params.toString()}`);
+        // Already have full data passed in — use it directly and update cache
+        bankDetailCache.current.set(bank._id, bank);
+        applyBankToState(bank);
+        // Load similarity details from cache or fetch in background (non-blocking)
+        if (similarityCache.current.has(bank._id)) {
+          setSimilarQuestionDetails(similarityCache.current.get(bank._id)!);
+        } else {
+          fetchSimilarityDetails(bank._id); // fire & forget
         }
         return;
       }
 
+      if (cached) {
+        // Serve from session cache instantly, then silently refresh in background
+        applyBankToState(cached);
+        if (similarityCache.current.has(cached._id)) {
+          setSimilarQuestionDetails(similarityCache.current.get(cached._id)!);
+        } else {
+          fetchSimilarityDetails(cached._id); // fire & forget
+        }
+        // Background refresh to pick up any status changes
+        fetch(`/api/mcq-bank?id=${bank._id}&limit=1&t=${Date.now()}`, {
+          cache: "no-store",
+          headers: { Pragma: "no-cache", "Cache-Control": "no-cache" },
+        }).then(r => r.json()).then(data => {
+          if (data.success && data.mcqBanks.length > 0) {
+            const fresh = data.mcqBanks[0];
+            bankDetailCache.current.set(bank._id, fresh);
+            setSelectedMCQBank(fresh);
+            setMcqBanks(prev => prev.map(b => b._id === bank._id ? fresh : b));
+          }
+        }).catch(() => {});
+        return;
+      }
+
       setLoadingBankDetail(true);
-      // Use the ID filter for pinpoint precision
-      // timestamp to prevent browser caching
       const response = await fetch(
         `/api/mcq-bank?id=${bank._id}&limit=1&t=${Date.now()}`,
         {
           cache: "no-store",
-          headers: {
-            Pragma: "no-cache",
-            "Cache-Control": "no-cache",
-          },
+          headers: { Pragma: "no-cache", "Cache-Control": "no-cache" },
         },
       );
       const data = await response.json();
 
       if (data.success && data.mcqBanks.length > 0) {
         const fullBank = data.mcqBanks[0];
-        setSelectedMCQBank(fullBank);
-        setSelectedMCQBanks([fullBank]);
-        setRegenLanguage(fullBank.language || 'English');
-        setViewLanguage(fullBank.language || 'English');
-        setActiveTab("active"); // Reset to active tab
-        setSimilarityResults(null); // Clear previous similarity results
+        bankDetailCache.current.set(bank._id, fullBank);
+        applyBankToState(fullBank);
 
-        // Update URL to preserve selection on refresh
-        if (typeof window !== 'undefined') {
-          const params = new URLSearchParams(window.location.search);
-          params.set('sopId', fullBank.sopId);
-          params.set('lang', fullBank.language || 'English');
-          window.history.replaceState({ ...window.history.state }, '', `${window.location.pathname}?${params.toString()}`);
-        }
+        // Fetch similarity details (non-blocking)
+        fetchSimilarityDetails(fullBank._id);
 
-        // Fetch similarity details for questions with isSimilar flag
-        await fetchSimilarityDetails(fullBank._id);
-
-        // Update the bank in our local list state
         setMcqBanks((prev) =>
           prev.map((b) => (b._id === bank._id ? fullBank : b)),
         );
@@ -716,7 +881,7 @@ function MCQBankContent() {
         body: JSON.stringify({
           mcqBankId: bank._id,
           sopId: bank.sopId,
-          threshold: 50,
+          threshold: 70,
           scanAllBanks: false,
         }),
       });
@@ -725,15 +890,11 @@ function MCQBankContent() {
 
       if (data.success) {
         const count = data.flaggedCount || 0;
-
-        // Simple alert - just show the count
         if (count === 0) {
           alert(`✅ No similar questions found!`);
         } else {
-          alert(`⚠️ Found ${count} similar question(s)`);
+          alert(`⚠️ Found ${count} similar question(s) (≥70% similarity)`);
         }
-
-        console.log(`📊 Similar questions check: ${count} found`);
       } else {
         alert(`Failed to check similarities: ${data.error}`);
       }
@@ -767,7 +928,7 @@ function MCQBankContent() {
         body: JSON.stringify({
           mcqBankId: bank._id,
           sopId: bank.sopId,
-          threshold: 50,
+          threshold: 70,
           scanAllBanks: false,
         }),
       });
@@ -813,13 +974,10 @@ function MCQBankContent() {
       // Use the selected bank from state (already loaded in memory)
       const allMcqs = bank.mcqs || [];
 
-      // Collect all unique indices that need regeneration
-      // Include BOTH the primary question AND all similar questions
+      // Collect only the SIMILAR (duplicate) question indices — NOT the primary
+      // The primary is the one we keep; only the duplicates need replacing
       const indicesToRegenerate = new Set<number>();
       for (const similarity of similarQuestions) {
-        // Add the primary question that has similar matches
-        indicesToRegenerate.add(similarity.primaryQuestion.questionIndex);
-        // Add all the questions that are similar to it
         similarity.similarQuestions.forEach((sq: any) => {
           indicesToRegenerate.add(sq.questionIndex);
         });
@@ -838,42 +996,87 @@ function MCQBankContent() {
           const oldQuestion = allMcqs[simIdx];
           if (!oldQuestion) continue;
 
-          console.log(`[${processCount}/${totalSimilar}] Regenerating Q${simIdx + 1}...`);
+          const MAX_REGEN_ATTEMPTS = 3;
+          let accepted = false;
 
-          // Use the proven generate-replacement endpoint
-          const genResponse = await fetch("/api/mcq-bank/generate-replacement", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              mcqBankId: bank._id,
-              sopId: bank.sopId,
-              questionIndex: simIdx,
-            }),
-          });
-
-          const genData = await genResponse.json();
-
-          if (genData.success) {
-            replaced++;
-            details.push({
-              questionIndex: simIdx,
-              oldQuestion: oldQuestion.question?.substring(0, 80) || 'Old Q',
-              newQuestion: 'Regenerated',
-              status: 'replaced',
+          for (let attempt = 1; attempt <= MAX_REGEN_ATTEMPTS; attempt++) {
+            // Step A: dry-run — generate but don't save yet
+            const dryRunResponse = await fetch("/api/mcq-bank/generate-replacement", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                mcqBankId: bank._id,
+                sopId: bank.sopId,
+                questionIndex: simIdx,
+                dryRun: true,
+              }),
             });
-            console.log(`✅ Q${simIdx + 1} regenerated`);
-          } else {
-            failed++;
-            details.push({
-              questionIndex: simIdx,
-              oldQuestion: oldQuestion.question?.substring(0, 80) || 'Old Q',
-              newQuestion: 'Failed',
-              status: 'failed',
+
+            const dryRunData = await dryRunResponse.json();
+
+            if (!dryRunData.success || !dryRunData.newQuestion) {
+              // Generation failed entirely — no point retrying
+              failed++;
+              details.push({
+                questionIndex: simIdx,
+                oldQuestion: oldQuestion.question?.substring(0, 80) || 'Old Q',
+                newQuestion: 'Failed',
+                status: 'failed',
+              });
+              break;
+            }
+
+            const candidate = dryRunData.newQuestion;
+
+            // Step B: compare candidate against the ORIGINAL question in-memory
+            const similarity = clientQuestionSimilarity(
+              { question: oldQuestion.question, options: oldQuestion.options, correctAnswer: oldQuestion.correctAnswer },
+              { question: candidate.question, options: candidate.options, correctAnswer: candidate.correctAnswer },
+            );
+
+            if (similarity >= 70 && attempt < MAX_REGEN_ATTEMPTS) {
+              // Too similar — try again without saving
+              await new Promise(r => setTimeout(r, 300));
+              continue;
+            }
+
+            // Step C: candidate is different enough — save the exact validated candidate
+            const saveResponse = await fetch("/api/mcq-bank/generate-replacement", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                mcqBankId: bank._id,
+                sopId: bank.sopId,
+                questionIndex: simIdx,
+                dryRun: false,
+                acceptedQuestion: candidate,
+              }),
             });
-            console.log(`❌ Q${simIdx + 1}: ${genData.error}`);
+
+            const saveData = await saveResponse.json();
+            if (saveData.success) {
+              accepted = true;
+              replaced++;
+              details.push({
+                questionIndex: simIdx,
+                oldQuestion: oldQuestion.question?.substring(0, 80) || 'Old Q',
+                newQuestion: 'Regenerated',
+                status: 'replaced',
+              });
+            } else {
+              failed++;
+              details.push({
+                questionIndex: simIdx,
+                oldQuestion: oldQuestion.question?.substring(0, 80) || 'Old Q',
+                newQuestion: 'Failed',
+                status: 'failed',
+              });
+            }
+            break;
           }
 
-          // Update progress
+          // Note: if accepted=false and no entry exists, the for-loop already pushed a failed entry
+
           setSmartRegenProgress(prev => prev ? {
             ...prev,
             totalReplaced: replaced,
@@ -881,7 +1084,6 @@ function MCQBankContent() {
             details,
           } : null);
 
-          // Small delay to avoid rate limiting
           await new Promise(r => setTimeout(r, 300));
 
         } catch (error) {
@@ -898,26 +1100,36 @@ function MCQBankContent() {
         phase: 'complete',
       } : null);
 
-      // Refresh the bank
-      if (selectedMCQBank) {
-        await fetchFullBankDetails(bank, 'all');
-      }
+      // Invalidate stale session caches so the refresh fetches fresh data from DB
+      bankDetailCache.current.delete(bank._id);
+      similarityCache.current.delete(bank._id);
 
-      // Re-check similarities to see if they're resolved
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Re-check similarities to confirm they're resolved (server truth)
+      await new Promise(resolve => setTimeout(resolve, 500));
       const verifyResponse = await fetch("/api/similar-questions/detect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mcqBankId: bank._id,
           sopId: bank.sopId,
-          threshold: 50,
+          threshold: 70,
           scanAllBanks: false,
         }),
       });
 
       const verifyData = await verifyResponse.json();
       const remaining = verifyData.flaggedCount || 0;
+
+      // Refresh the bank from DB (cache was cleared above so this fetches fresh)
+      if (selectedMCQBank) {
+        await fetchFullBankDetails(bank, 'all');
+      }
+
+      // Clear similarity UI state since we just re-ran detection
+      setSimilarityResults(null);
+      setSimilarQuestionDetails({});
+      // Re-load the fresh similarity details (cache was cleared, will fetch from DB)
+      await fetchSimilarityDetails(bank._id);
 
       alert(
         (`✅ Smart Regeneration Complete!\n\n` +
@@ -958,12 +1170,37 @@ function MCQBankContent() {
 
     setCheckingSimilarity(true);
     try {
-      // Queue the job (returns immediately)
+      // Step 1: Detect similarities first (on the client, so we don't redo it inside the job)
+      const detectResponse = await fetch('/api/similar-questions/detect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mcqBankId: bank._id,
+          sopId: bank.sopId,
+          threshold: 70,
+          scanAllBanks: false,
+        }),
+      });
+      const detectData = await detectResponse.json();
+      if (!detectData.success) {
+        alert(`Failed to detect similarities: ${detectData.error}`);
+        setCheckingSimilarity(false);
+        return;
+      }
+      const similarities = detectData.similarities || [];
+      if (similarities.length === 0) {
+        alert('No similar questions found. Nothing to resolve.');
+        setCheckingSimilarity(false);
+        return;
+      }
+
+      // Step 2: Queue the job, passing pre-detected similarities so the job skips re-detection
       const response = await fetch(`/api/mcq-bank/auto-resolve-similar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mcqBankId: bank._id,
+          similarities,
         }),
       });
 
@@ -1012,14 +1249,19 @@ function MCQBankContent() {
                 `Your MCQ bank has been updated with fresh questions!`
               );
 
-              // Refresh the bank to show updated questions
+              // Invalidate stale caches before refresh
+              bankDetailCache.current.delete(bank._id);
+              similarityCache.current.delete(bank._id);
+
+              // Refresh the bank from DB (fetches fresh data now caches are cleared)
               if (selectedMCQBank) {
                 await fetchFullBankDetails(bank, 'all');
               }
 
-              // Clear similarity results
+              // Clear similarity results and reload fresh similarity details
               setSimilarityResults(null);
               setSimilarQuestionDetails({});
+              await fetchSimilarityDetails(bank._id);
             } else if (job.status === 'failed') {
               isComplete = true;
               alert(`❌ Auto-Resolve Failed!\n\n${job.error}`);
@@ -1043,21 +1285,24 @@ function MCQBankContent() {
 
   const fetchSimilarityDetails = async (bankId: string) => {
     try {
-      // Fetch all similarity records (we'll filter client-side since API doesn't support mcqBankId filter)
-      const response = await fetch(`/api/similar-questions`);
+      // Return from cache immediately if available
+      if (similarityCache.current.has(bankId)) {
+        setSimilarQuestionDetails(similarityCache.current.get(bankId)!);
+        return;
+      }
+
+      // Fetch only records for this specific bank using the mcqBankId filter
+      const response = await fetch(`/api/similar-questions?mcqBankId=${encodeURIComponent(bankId)}`);
       const data = await response.json();
 
       if (data.success && data.similarQuestions) {
-        // Build a map of question index -> similar question indices
-        // Only include records where the primary question is from this bank
         const detailsMap: Record<number, number[]> = {};
 
         data.similarQuestions.forEach((record: any) => {
-          // Check if this record's primary question belongs to the current bank
           if (record.primaryQuestion.mcqBankId === bankId) {
             const primaryIndex = record.primaryQuestion.questionIndex;
             const similarIndices = record.similarQuestions
-              .filter((sq: any) => sq.mcqBankId === bankId) // Only show similar questions from same bank
+              .filter((sq: any) => sq.mcqBankId === bankId)
               .map((sq: any) => sq.questionIndex);
 
             if (similarIndices.length > 0) {
@@ -1066,6 +1311,8 @@ function MCQBankContent() {
           }
         });
 
+        // Store in session cache and update state
+        similarityCache.current.set(bankId, detailsMap);
         setSimilarQuestionDetails(detailsMap);
       }
     } catch (error) {
@@ -1096,7 +1343,9 @@ function MCQBankContent() {
 
       if (data.success) {
         alert(`Question deleted successfully and moved to Recycled section.`);
-        // Refresh the bank
+        // Invalidate cache so next open fetches fresh data
+        bankDetailCache.current.delete(bankId);
+        similarityCache.current.delete(bankId);
         if (selectedMCQBank) {
           await fetchFullBankDetails(
             { ...selectedMCQBank, _id: bankId },
@@ -1200,74 +1449,53 @@ function MCQBankContent() {
     }
   };
 
-  // Efficient search and filter function
-  const filteredAndSortedMCQBanks = (() => {
-    // First, filter by search term (case-insensitive)
+  // Memoized filter + sort — only recomputes when inputs actually change
+  const filteredAndSortedMCQBanks = useMemo(() => {
     const searchLower = searchTerm.toLowerCase().trim();
     let filtered = mcqBanks || [];
 
-    // Apply search filter
     if (searchLower) {
       filtered = filtered.filter((bank) => {
-        const nameMatch = (bank.sopName || "")
-          .toLowerCase()
-          .includes(searchLower);
-        const identifierMatch = (bank.sopIdentifier || "")
-          .toLowerCase()
-          .includes(searchLower);
+        const nameMatch = (bank.sopName || "").toLowerCase().includes(searchLower);
+        const identifierMatch = (bank.sopIdentifier || "").toLowerCase().includes(searchLower);
         const idMatch = (bank.sopId || "").toLowerCase().includes(searchLower);
         return nameMatch || identifierMatch || idMatch;
       });
     }
 
-    // Apply difficulty filter
     if (difficultyFilter !== "All") {
       filtered = filtered.filter((bank) => {
         if (!bank.difficultyDistribution) return false;
-        const diffLower =
-          difficultyFilter.toLowerCase() as keyof typeof bank.difficultyDistribution;
+        const diffLower = difficultyFilter.toLowerCase() as keyof typeof bank.difficultyDistribution;
         return (bank.difficultyDistribution[diffLower] || 0) > 0;
       });
     }
 
-    // Helper for natural sorting (deals with numbers in strings correctly)
-    const naturalCompare = (a: string, b: string) => {
-      return (a || "").localeCompare(b || "", undefined, {
-        numeric: true,
-        sensitivity: "base",
-      });
-    };
+    const naturalCompare = (a: string, b: string) =>
+      (a || "").localeCompare(b || "", undefined, { numeric: true, sensitivity: "base" });
 
-    // Then sort the filtered results
-    const sorted = [...filtered].sort((a, b) => {
+    return [...filtered].sort((a, b) => {
       let comparison = 0;
-
       switch (sortBy) {
         case "identifier":
           comparison = naturalCompare(a.sopIdentifier, b.sopIdentifier);
           break;
-        case "name":
-          // Clean the names of identifier prefixes before comparing for a true "Name" sort
+        case "name": {
           const cleanA = cleanSOPName(a.sopName, a.sopIdentifier);
           const cleanB = cleanSOPName(b.sopName, b.sopIdentifier);
-          comparison = cleanA.localeCompare(cleanB, undefined, {
-            sensitivity: "base",
-          });
+          comparison = cleanA.localeCompare(cleanB, undefined, { sensitivity: "base" });
           break;
+        }
         case "questions":
           comparison = (a.totalQuestions || 0) - (b.totalQuestions || 0);
           break;
         case "date":
-          comparison =
-            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+          comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
           break;
       }
-
       return sortOrder === "asc" ? comparison : -comparison;
     });
-
-    return sorted;
-  })();
+  }, [mcqBanks, searchTerm, difficultyFilter, sortBy, sortOrder]);
 
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty) {
@@ -1764,8 +1992,8 @@ function MCQBankContent() {
               <input
                 type="text"
                 placeholder="Search by SOP name, identifier, or ID..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                value={searchInputValue}
+                onChange={(e) => setSearchInputValue(e.target.value)}
                 className="w-full pl-8 pr-3 py-1.5 text-xs bg-white/10 border border-white/20 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-transparent transition-all"
               />
             </div>
@@ -1867,19 +2095,33 @@ function MCQBankContent() {
 
         {/* Tree View */}
         {isOpeningFromUrl ? (
-          <div className="text-center py-16">
-            <Loader2 className="h-12 w-12 text-purple-400 animate-spin mx-auto mb-4" />
-            <p className="text-gray-400 text-xl">
-              Opening MCQ Bank...
-            </p>
+          /* Skeleton: opening a bank from URL */
+          <div className="space-y-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="bg-white/5 rounded-xl p-4 border border-white/10 animate-pulse">
+                <div className="h-4 w-1/3 bg-white/10 rounded mb-3" />
+                <div className="h-3 w-2/3 bg-white/5 rounded" />
+              </div>
+            ))}
           </div>
         ) : viewMode === "tree" && !sopIdFromUrl ? (
           loadingTree ? (
-            <div className="text-center py-16">
-              <Loader2 className="h-12 w-12 text-purple-400 animate-spin mx-auto mb-4" />
-              <p className="text-gray-400 text-xl">
-                Loading folder structure...
-              </p>
+            /* Skeleton: department folder cards */
+            <div className="space-y-3">
+              {[1, 2, 3, 4, 5, 6].map(i => (
+                <div key={i} className="bg-white/5 rounded-xl p-4 border border-white/10 animate-pulse">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="h-8 w-8 rounded-lg bg-white/10" />
+                    <div className="h-4 w-1/4 bg-white/10 rounded" />
+                    <div className="ml-auto h-3 w-16 bg-white/5 rounded" />
+                  </div>
+                  <div className="flex gap-3">
+                    <div className="h-3 w-20 bg-white/5 rounded" />
+                    <div className="h-3 w-16 bg-white/5 rounded" />
+                    <div className="h-3 w-14 bg-white/5 rounded" />
+                  </div>
+                </div>
+              ))}
             </div>
           ) : treeData ? (
             <MCQTreeView
@@ -1932,7 +2174,7 @@ function MCQBankContent() {
                 </p>
                 {searchTerm && (
                   <button
-                    onClick={() => setSearchTerm("")}
+                    onClick={() => { setSearchInputValue(""); setSearchTerm(""); }}
                     className="mt-4 px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
                   >
                     Clear Search
@@ -2145,6 +2387,30 @@ function MCQBankContent() {
           </div>
         )}
 
+        {/* Bank detail loading: skeleton overlay while fetching (shown when no selectedMCQBank yet) */}
+        {loadingBankDetail && !selectedMCQBank && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#0f0d1e]">
+            <div className="w-full h-full flex flex-col p-6 gap-4 animate-pulse">
+              <div className="h-14 w-full bg-white/5 rounded-xl" />
+              <div className="h-8 w-2/3 bg-white/5 rounded-lg" />
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 flex-1 overflow-hidden">
+                {[...Array(8)].map((_, i) => (
+                  <div key={i} className="bg-white/5 rounded-2xl p-4 border border-white/10">
+                    <div className="h-4 w-3/4 bg-white/10 rounded mb-3" />
+                    <div className="h-3 w-full bg-white/5 rounded mb-2" />
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="h-7 bg-white/5 rounded-lg" />
+                      <div className="h-7 bg-white/5 rounded-lg" />
+                      <div className="h-7 bg-white/5 rounded-lg" />
+                      <div className="h-7 bg-white/5 rounded-lg" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* MCQ Bank Detail Modal - Redesigned */}
         {selectedMCQBank &&
           (() => {
@@ -2298,7 +2564,7 @@ function MCQBankContent() {
                           <button
                             onClick={() => {
                               setModalSearchInputVisible((v) => !v);
-                              if (modalSearchInputVisible) setModalSearch("");
+                              if (modalSearchInputVisible) setModalSearch(""); setModalSearchInput("");
                             }}
                             className={`p-2 rounded-xl transition-all ${modalSearchInputVisible || modalSearch ? "bg-indigo-500/20 text-indigo-400 border border-indigo-500/30" : "text-gray-400 hover:text-white hover:bg-white/5 border border-transparent"}`}
                           >
@@ -2524,9 +2790,9 @@ function MCQBankContent() {
                             autoFocus
                             type="text"
                             placeholder="Search pharmaceutical concepts, references, or codes..."
-                            value={modalSearch}
+                            value={modalSearchInput}
                             onChange={(e) => {
-                              setModalSearch(e.target.value);
+                              setModalSearchInput(e.target.value);
                               setVisibleCount(30);
                             }}
                             className="w-full pl-11 pr-12 py-3 bg-indigo-950/20 border border-indigo-500/30 rounded-2xl text-sm text-gray-100 placeholder-indigo-300/30 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 hover:border-indigo-500/50 transition-all shadow-inner"

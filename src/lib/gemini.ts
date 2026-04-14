@@ -22,7 +22,6 @@ let DEFAULT_MODEL = MODEL_CANDIDATES[0];
 let currentModelIndex = 0;
 
 const createGeminiModel = (modelName: string) => {
-  console.log(`🤖 Initializing Gemini model: ${modelName} (PAID TIER - Best Quality)`);
   return genAI.getGenerativeModel({
     model: modelName,
     generationConfig: {
@@ -313,7 +312,6 @@ ${safeExistingQuestions.map(q => `- ${q}`).join('\n')}
   // Determine target language
   const targetLanguage = request.language || 'English';
 
-  console.log(`📡 Calling Gemini API for batch ${batchIndex + 1} (Attempt ${retryCount + 1}/${MAX_RETRIES + 1})...`);
   const prompt = `
 You are an expert pharmaceutical compliance and training specialist. Your task is to generate high-quality Multiple Choice Questions (MCQs) from the SOP provided below.
 
@@ -387,9 +385,7 @@ Output ONLY the JSON object with "mcqs" array. No explanation, no markdown, no c
 
     while (apiCallRetries > 0) {
       try {
-        console.log(`📡 Calling Gemini API for batch ${batchIndex + 1} (Attempt ${retryCount + 1}/${MAX_RETRIES + 1}, API Call Retry ${4 - apiCallRetries}/3)...`);
         result = await geminiModel.generateContent(prompt);
-        console.log(`✅ API call successful for batch ${batchIndex + 1}`);
         break; // Success, exit retry loop
       } catch (apiError: any) {
         const errorMessage = apiError.message || '';
@@ -447,8 +443,6 @@ Output ONLY the JSON object with "mcqs" array. No explanation, no markdown, no c
       throw new Error(`Connection error: AI returned empty response.`);
     }
 
-    console.log(`📝 Raw response length for batch ${batchIndex + 1}: ${rawText.length} characters`);
-
     const jsonText = cleanAndExtractJSON(rawText);
 
     if (!jsonText || jsonText.trim().length === 0) {
@@ -475,9 +469,6 @@ Output ONLY the JSON object with "mcqs" array. No explanation, no markdown, no c
       console.warn(`⚠️ Batch ${batchIndex + 1}: Received empty mcqs array`);
       throw new Error(`Batch ${batchIndex + 1}: Generated 0 questions - retrying`);
     }
-
-    console.log(`✅ Batch ${batchIndex + 1}: Successfully parsed ${parsed.mcqs.length} questions`);
-
 
     return parsed.mcqs.map((mcq, idx) => {
       let options: string[] = mcq.options || [];
@@ -625,9 +616,6 @@ export async function generateMCQsFromSOP(
   const NUM_BATCHES = Math.ceil(NEEDED / BATCH_SIZE);
   const PARALLEL_BATCHES = 1;  // Always sequential to respect rate limits
 
-  console.log(`🚀 Starting generation for: ${request.sopName}. Progress: ${currentCount}/${TOTAL_TARGET}`);
-  console.log(`📊 Need ${NEEDED} questions. Using batch size: ${BATCH_SIZE}`);
-  console.log(`🔢 Will attempt ${NUM_BATCHES} batch(es)`);
 
   let allMCQs: GeneratedMCQ[] = [];
   let currentExisting = [...(request.existingQuestions || [])];
@@ -638,7 +626,6 @@ export async function generateMCQsFromSOP(
     const remainingNeeded = NEEDED - allMCQs.length;
     const batchSize = Math.min(BATCH_SIZE, remainingNeeded);
 
-    console.log(`🔨 Processing batch ${processedBatchesCount + 1}/${NUM_BATCHES} (need ${remainingNeeded} more questions, already have ${allMCQs.length})`);
 
     const batch = await generateSingleBatch(
       { ...request, existingQuestions: currentExisting },
@@ -648,19 +635,13 @@ export async function generateMCQsFromSOP(
     );
 
     if (batch && batch.length > 0) {
-      console.log(`📥 Batch ${processedBatchesCount + 1} generated ${batch.length} questions`);
-
       const uniqueBatch = batch.filter(mcq => {
         const qClean = mcq.question.replace(/^⭐\s*/, '').trim().toLowerCase();
         const isDuplicate = currentExisting.some(ex => ex.replace(/^⭐\s*/, '').trim().toLowerCase() === qClean);
-        if (isDuplicate) {
-          console.log(`⚠️ Skipping duplicate: ${mcq.question.substring(0, 50)}...`);
-        }
         return !isDuplicate;
       });
 
       if (uniqueBatch.length > 0) {
-        console.log(`✅ Added ${uniqueBatch.length} unique questions from batch ${processedBatchesCount + 1}`);
         allMCQs = [...allMCQs, ...uniqueBatch];
         currentExisting = [...currentExisting, ...uniqueBatch.map(m => m.question)];
 
@@ -692,7 +673,6 @@ export async function generateMCQsFromSOP(
     if (allMCQs.length < NEEDED && processedBatchesCount < MAX_BATCH_ATTEMPTS) {
       // 2-3s gap between batches for paid tier (no rate-limit restrictions)
       const gapSeconds = 2 + Math.random() * 1; // 2-3s with jitter
-      console.log(`⏳ Waiting ${Math.round(gapSeconds)}s before next batch...`);
       await new Promise(resolve => setTimeout(resolve, gapSeconds * 1000));
     }
   }
@@ -707,10 +687,6 @@ export async function generateMCQsFromSOP(
       allMCQsLength: allMCQs.length,
       currentExistingLength: currentExisting.length
     });
-  } else if (allMCQs.length < NEEDED) {
-    console.warn(`⚠️ Only generated ${allMCQs.length}/${NEEDED} needed questions after ${MAX_BATCH_ATTEMPTS} attempts`);
-  } else {
-    console.log(`✅ Successfully generated all ${allMCQs.length} needed questions!`);
   }
 
   const distribution = {

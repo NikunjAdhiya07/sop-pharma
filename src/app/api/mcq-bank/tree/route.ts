@@ -80,13 +80,13 @@ export async function GET(request: NextRequest) {
       console.log(`🔒 Filtered tree to ${treeArray.length} department(s) for user "${username}"`);
     }
 
-    return NextResponse.json({
+    const responseData = {
       success: true,
       tree: treeArray,
       unorganized: tree.unorganized,
       stats: {
         totalDepartments: treeArray.length,
-        totalSOPs: sopsWithMcqs,          // Only SOPs that actually have MCQs
+        totalSOPs: sopsWithMcqs,
         totalMCQBanks: mcqBanks.length,
         totalQuestions: mcqBanks.reduce((sum: number, bank: any) => {
           const mcqsArr = (bank as any).mcqs;
@@ -97,6 +97,15 @@ export async function GET(request: NextRequest) {
         allowedDepartments,
         isRestricted,
       }
+    };
+
+    // Allow the browser to cache the tree response for 2 minutes (stale-while-revalidate)
+    // The client-side 30-min localStorage cache is the primary cache; this just reduces
+    // repeat-tab load times for the same session.
+    return NextResponse.json(responseData, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=120',
+      },
     });
 
   } catch (error) {

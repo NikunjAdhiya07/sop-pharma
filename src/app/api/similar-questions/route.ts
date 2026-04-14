@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
     const sopId = searchParams.get('sopId');
     const department = searchParams.get('department');
     const id = searchParams.get('id'); // Get specific similar question by ID
+    const mcqBankId = searchParams.get('mcqBankId'); // Filter to single bank (performance)
 
     const query: any = {};
 
@@ -46,37 +47,47 @@ export async function GET(request: NextRequest) {
       query.department = department;
     }
 
+    // When filtering by a specific bank, query only records where the primary
+    // question belongs to that bank — avoids loading the entire collection
+    if (mcqBankId) {
+      query['primaryQuestion.mcqBankId'] = mcqBankId;
+    }
+
     const similarQuestions = await SimilarQuestion.find(query)
       .sort({ flaggedAt: -1 })
       .lean();
 
-    // Get statistics
-    const stats = {
+    // Only compute global stats when not filtering by bank (expensive count queries)
+    const stats = mcqBankId ? null : {
       total: await SimilarQuestion.countDocuments(),
       pending: await SimilarQuestion.countDocuments({ reviewStatus: 'pending' }),
       reviewed: await SimilarQuestion.countDocuments({ reviewStatus: 'reviewed' }),
     };
 
-    // Group by SOP for folder view
-    const groupedBySOP: any = {};
-    similarQuestions.forEach((sq: any) => {
-      const key = sq.sopIdentifier;
-      if (!groupedBySOP[key]) {
-        groupedBySOP[key] = {
-          sopId: sq.sopId,
-          sopName: sq.sopName,
-          sopIdentifier: sq.sopIdentifier,
-          department: sq.department,
-          questions: [],
-        };
-      }
-      groupedBySOP[key].questions.push(sq);
-    });
+    // Group by SOP for folder view (skip when bank-scoped request)
+    let groupedBySOP: any[] = [];
+    if (!mcqBankId) {
+      const grouped: any = {};
+      similarQuestions.forEach((sq: any) => {
+        const key = sq.sopIdentifier;
+        if (!grouped[key]) {
+          grouped[key] = {
+            sopId: sq.sopId,
+            sopName: sq.sopName,
+            sopIdentifier: sq.sopIdentifier,
+            department: sq.department,
+            questions: [],
+          };
+        }
+        grouped[key].questions.push(sq);
+      });
+      groupedBySOP = Object.values(grouped);
+    }
 
     return NextResponse.json({
       success: true,
       similarQuestions,
-      groupedBySOP: Object.values(groupedBySOP),
+      groupedBySOP,
       stats,
     });
   } catch (error: any) {

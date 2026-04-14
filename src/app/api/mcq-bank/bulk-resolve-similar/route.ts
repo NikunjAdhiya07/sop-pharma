@@ -24,21 +24,6 @@ interface ClusterResult {
   eligibleScores: Array<{ questionIndex: number; score: number; question: string }>;
 }
 
-interface BulkResolveResponse {
-  success: boolean;
-  dryRun: boolean;
-  summary: {
-    found: number;
-    eligible: number;
-    replaced: number;
-    kept: number;
-    failed: number;
-    eliminatedCount: number;
-  };
-  clusters: ClusterResult[];
-  log: string[];
-  error?: string;
-}
 
 /**
  * Score a single MCQ within a cluster context
@@ -47,7 +32,7 @@ interface BulkResolveResponse {
 function scoreClusterQuestion(
   mcq: IMCQ,
   allBankMcqs: IMCQ[],
-  clusterMcqs: IMCQ[]
+  _clusterMcqs: IMCQ[]
 ): number {
   let score = 0;
 
@@ -110,7 +95,6 @@ export async function POST(request: NextRequest) {
   let jobId: string | null = null;
 
   try {
-    console.log(`\n🚀🚀🚀 BULK-RESOLVE-SIMILAR ENDPOINT CALLED 🚀🚀🚀`);
 
     await dbConnect();
 
@@ -120,15 +104,13 @@ export async function POST(request: NextRequest) {
       jobId: bodyJobId,
       mode = 'balanced',
       dryRun = false,
-      threshold = 50,  // Match "Check Similar" detection threshold
+      threshold = 70,
+      similarities: preDetectedSimilarities,
     } = body;
 
     jobId = bodyJobId;
 
-    console.log(`📥 Received request:`, { mcqBankId, jobId, mode, dryRun, threshold });
-
     if (!mcqBankId) {
-      console.error(`❌ No mcqBankId provided`);
       return NextResponse.json(
         { success: false, error: 'mcqBankId is required' },
         { status: 400 }
@@ -173,17 +155,11 @@ export async function POST(request: NextRequest) {
 
       // Update job status to running
       if (jobId) {
-        console.log(`📝 Updating job ${jobId} to running status with logs`);
-        const updated = await AutoResolveJob.findByIdAndUpdate(
-          jobId,
-          {
-            status: 'running',
-            logs: log,
-            startedAt: new Date(),
-          },
-          { new: true }
-        );
-        console.log(`✓ Job status updated: ${updated?.status}`);
+        await AutoResolveJob.findByIdAndUpdate(jobId, {
+          status: 'running',
+          logs: log,
+          startedAt: new Date(),
+        });
       }
 
       // Find SOP with stale-sopId fallback
@@ -212,33 +188,27 @@ export async function POST(request: NextRequest) {
 
       log.push(`✓ Using SOP: ${sop.name}`);
 
-      // --- STEP 1: Detection ---
-      log.push(`Running similarity detection...`);
+      // --- STEP 1: Detection (skip if pre-detected similarities were passed) ---
+      let similarQuestions: any[];
 
-      // Call detect endpoint to find similarities
-      const detectUrl = new URL('/api/similar-questions/detect', process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
-      const detectResponse = await fetch(detectUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mcqBankId,
-          threshold,
-          similarityMethod: 'combined_text',
-        }),
-      });
-
-      if (!detectResponse.ok) {
-        throw new Error(`Detection endpoint failed: ${detectResponse.statusText}`);
+      if (preDetectedSimilarities && preDetectedSimilarities.length > 0) {
+        similarQuestions = preDetectedSimilarities;
+        log.push(`✓ Using ${similarQuestions.length} pre-detected similarity clusters`);
+      } else {
+        log.push(`Running similarity detection...`);
+        const detectUrl = new URL('/api/similar-questions/detect', process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
+        const detectResponse = await fetch(detectUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mcqBankId, threshold, similarityMethod: 'combined_text' }),
+        });
+        if (!detectResponse.ok) {
+          throw new Error(`Detection endpoint failed: ${detectResponse.statusText}`);
+        }
+        const detectData = await detectResponse.json();
+        similarQuestions = detectData.similarities || [];
+        log.push(`✓ Detection complete: ${similarQuestions.length} clusters found`);
       }
-
-      const detectData = await detectResponse.json();
-      log.push(`✓ Detection complete: ${detectData.flaggedCount} clusters found`);
-
-      // Use the fresh detection results directly - don't rely on old database records
-      // Convert detection results to SimilarQuestion-like structure for processing
-      const similarQuestions = detectData.similarities || [];
-
-      log.push(`✓ Using ${similarQuestions.length} fresh similarity clusters from detection`);
 
       // --- STEP 2: Score Each Cluster ---
       log.push(`Scoring cluster candidates...`);
@@ -258,7 +228,7 @@ export async function POST(request: NextRequest) {
         // Build candidate list: primary + all similar
         const candidates = [
           { mcq: primaryMcq, index: primaryIdx, score: 0, isFromCluster: 'primary' },
-          ...similarQuestion.similarQuestions.map((sq: any, idx: number) => ({
+          ...similarQuestion.similarQuestions.map((sq: any) => ({
             mcq: sq.question,
             index: sq.questionIndex,
             score: 0,
@@ -552,26 +522,19 @@ export async function POST(request: NextRequest) {
 
       // Update job status to completed
       if (jobId) {
-        console.log(`📝 Updating job ${jobId} to completed status`);
-        const summary = {
-          found: clusters.length,
-          eligible: clusters.filter(c => c.questionsToReplace > 0).length,
-          replaced: replacedCount,
-          kept: clusters.filter(c => c.replacedQuestions && c.replacedQuestions.length > 0).length,
-          failed: failedCount,
-          eliminatedCount,
-        };
-        const updated = await AutoResolveJob.findByIdAndUpdate(
-          jobId,
-          {
-            status: 'completed',
-            logs: log,
-            summary: summary,
-            completedAt: new Date(),
+        await AutoResolveJob.findByIdAndUpdate(jobId, {
+          status: 'completed',
+          logs: log,
+          summary: {
+            found: clusters.length,
+            eligible: clusters.filter(c => c.questionsToReplace > 0).length,
+            replaced: replacedCount,
+            kept: clusters.filter(c => c.replacedQuestions && c.replacedQuestions.length > 0).length,
+            failed: failedCount,
+            eliminatedCount,
           },
-          { new: true }
-        );
-        console.log(`✓ Job completed with status: ${updated?.status}, summary:`, summary);
+          completedAt: new Date(),
+        });
       }
 
       return NextResponse.json({
@@ -596,23 +559,12 @@ export async function POST(request: NextRequest) {
 
     // Update job status to failed
     if (jobId) {
-      console.log(`❌ Updating job ${jobId} to failed status: ${error.message}`);
-      const updated = await AutoResolveJob.findByIdAndUpdate(
-        jobId,
-        {
-          status: 'failed',
-          error: error.message || 'Unknown error during bulk resolution',
-          logs: log,
-          completedAt: new Date(),
-        },
-        { new: true }
-      ).catch(err => {
-        console.error('Failed to update job status:', err);
-        return null;
-      });
-      if (updated) {
-        console.log(`✓ Job marked as failed, status: ${updated.status}`);
-      }
+      await AutoResolveJob.findByIdAndUpdate(jobId, {
+        status: 'failed',
+        error: error.message || 'Unknown error during bulk resolution',
+        logs: log,
+        completedAt: new Date(),
+      }).catch(err => console.error('[bulk-resolve] Failed to update job status:', err));
     }
 
     return NextResponse.json(
