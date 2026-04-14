@@ -1313,10 +1313,12 @@ function MCQBankContent() {
         const detailsMap: Record<number, number[]> = {};
 
         data.similarQuestions.forEach((record: any) => {
-          if (record.primaryQuestion.mcqBankId === bankId) {
+          // toString() handles both ObjectId objects and plain strings
+          const primaryBankId = String(record.primaryQuestion?.mcqBankId ?? '');
+          if (primaryBankId === bankId) {
             const primaryIndex = record.primaryQuestion.questionIndex;
             const similarIndices = record.similarQuestions
-              .filter((sq: any) => sq.mcqBankId === bankId)
+              .filter((sq: any) => String(sq.mcqBankId ?? '') === bankId)
               .map((sq: any) => sq.questionIndex);
 
             if (similarIndices.length > 0) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import SimilarQuestion from '@/models/SimilarQuestion';
 import MCQBank from '@/models/MCQBank';
+import mongoose from 'mongoose';
 
 /**
  * GET /api/similar-questions
@@ -48,9 +49,14 @@ export async function GET(request: NextRequest) {
     }
 
     // When filtering by a specific bank, query only records where the primary
-    // question belongs to that bank — avoids loading the entire collection
+    // question belongs to that bank — avoids loading the entire collection.
+    // Must convert to ObjectId to match how MongoDB stores it.
     if (mcqBankId) {
-      query['primaryQuestion.mcqBankId'] = mcqBankId;
+      try {
+        query['primaryQuestion.mcqBankId'] = new mongoose.Types.ObjectId(mcqBankId);
+      } catch {
+        query['primaryQuestion.mcqBankId'] = mcqBankId; // fallback to string if invalid
+      }
     }
 
     const similarQuestions = await SimilarQuestion.find(query)
