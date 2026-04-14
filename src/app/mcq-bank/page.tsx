@@ -21,6 +21,7 @@ import {
   Trash2,
   FolderOpen,
   Upload,
+  Home,
   ArrowLeft,
   Grid,
   List,
@@ -49,7 +50,6 @@ import {
   Save,
   RotateCcw,
 } from "lucide-react";
-import PageHeader from "@/components/PageHeader";
 import MCQTreeView from "@/components/MCQTreeView";
 import TrainerUploadModal from "@/components/TrainerUploadModal";
 import TrainingMatrixUploadModal from "@/components/TrainingMatrixUploadModal";
@@ -1952,22 +1952,8 @@ function MCQBankContent() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-2 md:p-4">
       <div className="max-w-7xl mx-auto">
-        {/* Navigation - only show if not viewing from SOP Library */}
-        {!sopIdFromUrl && <PageHeader />}
-
         {/* Header */}
         <div className="mb-4">
-          {/* Back button when viewing from SOP Library */}
-          {sopIdFromUrl && selectedMCQBank && (
-            <button
-              onClick={() => router.back()}
-              className="flex items-center gap-2 text-gray-300 hover:text-white mb-2 transition-colors text-sm"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back to SOP Library
-            </button>
-          )}
-
           <div className="flex items-center justify-between mb-3">
             <div className="flex-1 text-left">
               <h1 className="text-2xl font-bold text-white mb-1 bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-600">
@@ -2018,38 +2004,53 @@ function MCQBankContent() {
                 )}
               </div>
             </div>
-            {!sopIdFromUrl && (
-              <div className="flex flex-wrap items-center justify-end gap-1.5 text-xs">
-                <button
-                  onClick={() => fetchTreeData(true)}
-                  disabled={loadingTree}
-                  className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold rounded-md hover:from-green-700 hover:to-emerald-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                  title="Refresh MCQ Bank data and clear cache"
-                >
-                  <RefreshCw
-                    className={`h-3.5 w-3.5 ${loadingTree ? "animate-spin" : ""}`}
-                  />
-                  {loadingTree ? "Refreshing..." : "Refresh"}
-                </button>
-                <button
-                  onClick={() => router.push("/similar-questions")}
-                  className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-orange-600 to-red-600 text-white font-semibold rounded-md hover:from-orange-700 hover:to-red-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap"
-                  title="Review similar/duplicate questions"
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                  Similar Questions
-                </button>
-
-                <button
-                  onClick={() => router.push("/sop-upload")}
-                  className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-md hover:from-purple-700 hover:to-pink-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap"
-                >
-                  <Upload className="h-3.5 w-3.5" />
-                  Upload SOP
-                </button>
-
-              </div>
-            )}
+            <div className="flex flex-wrap items-center justify-end gap-1.5 text-xs">
+              {/* Back + Home navigation — always visible */}
+              <button
+                onClick={() => router.back()}
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-md transition-all duration-200 border border-white/20 hover:border-white/30 whitespace-nowrap"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Back
+              </button>
+              <button
+                onClick={() => router.push('/dashboard')}
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold rounded-md transition-all duration-200 shadow-sm whitespace-nowrap"
+              >
+                <Home className="h-3.5 w-3.5" />
+                Home
+              </button>
+              {!sopIdFromUrl && (
+                <>
+                  <button
+                    onClick={() => fetchTreeData(true)}
+                    disabled={loadingTree}
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold rounded-md hover:from-green-700 hover:to-emerald-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                    title="Refresh MCQ Bank data and clear cache"
+                  >
+                    <RefreshCw
+                      className={`h-3.5 w-3.5 ${loadingTree ? "animate-spin" : ""}`}
+                    />
+                    {loadingTree ? "Refreshing..." : "Refresh"}
+                  </button>
+                  <button
+                    onClick={() => router.push("/similar-questions")}
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-orange-600 to-red-600 text-white font-semibold rounded-md hover:from-orange-700 hover:to-red-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap"
+                    title="Review similar/duplicate questions"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    Similar Questions
+                  </button>
+                  <button
+                    onClick={() => router.push("/sop-upload")}
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-md hover:from-purple-700 hover:to-pink-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap"
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    Upload SOP
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -2059,7 +2060,7 @@ function MCQBankContent() {
         />
 
         {/* Show loading state if opening from URL */}
-        {sopIdFromUrl && !selectedMCQBank && (
+        {sopIdFromUrl && !selectedMCQBank && isOpeningFromUrl && (
           <div className="flex items-center justify-center py-20">
             <div className="text-center">
               <Loader2 className="h-12 w-12 text-purple-400 animate-spin mx-auto mb-4" />
@@ -2069,7 +2070,7 @@ function MCQBankContent() {
         )}
 
         {/* Search, Filter, and Sort - only show if not loading from URL */}
-        {(!sopIdFromUrl || selectedMCQBank) && (
+        {(!sopIdFromUrl || selectedMCQBank || !isOpeningFromUrl) && (
         <div className="bg-white/10 backdrop-blur-lg rounded-lg p-3 shadow-md border border-white/20 mb-4">
           <div className="flex flex-col gap-2">
             {/* Search Bar */}
