@@ -1,0 +1,128 @@
+"use client";
+
+/**
+ * MCQSkeleton.tsx — Pulse skeleton loaders for the MCQ Bank page.
+ * Used while tree/SOP/question data is loading to create a smooth perceived-
+ * performance experience instead of a blank screen or spinning spinner.
+ */
+
+/* ── Shared pulse animation class ─────────────────────────────────────────── */
+const pulse = "animate-pulse bg-white/5 rounded";
+
+/* ──────────────────────────────────────────────────────────────────────────── */
+/** Skeleton for a single department card (4-column grid on xl) */
+export function DeptCardSkeleton() {
+  return (
+    <div className="rounded-xl border border-white/5 bg-gradient-to-br from-white/[0.02] to-transparent p-4 space-y-3">
+      {/* Header row */}
+      <div className="flex items-center gap-3">
+        <div className={`${pulse} h-9 w-9 rounded-lg`} />
+        <div className="flex-1 space-y-1.5">
+          <div className={`${pulse} h-3 w-28`} />
+          <div className={`${pulse} h-2 w-16`} />
+        </div>
+      </div>
+      {/* Stats row */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className={`${pulse} h-12 rounded-lg`} />
+        <div className={`${pulse} h-12 rounded-lg`} />
+      </div>
+      {/* Capsules */}
+      <div className="flex gap-2">
+        <div className={`${pulse} h-6 flex-1 rounded-full`} />
+        <div className={`${pulse} h-6 flex-1 rounded-full`} />
+      </div>
+    </div>
+  );
+}
+
+/** Full department card grid skeleton (n cards) */
+export function DeptGridSkeleton({ count = 8 }: { count?: number }) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      {Array.from({ length: count }).map((_, i) => (
+        <DeptCardSkeleton key={i} />
+      ))}
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────── */
+/** Skeleton for a single row in the dept modal SOP table */
+export function SOPTableRowSkeleton() {
+  return (
+    <tr className="border-b border-white/5">
+      <td className="p-3">
+        <div className="flex items-center gap-2">
+          <div className={`${pulse} h-7 w-7 rounded-lg shrink-0`} />
+          <div className={`${pulse} h-3 w-24`} />
+        </div>
+      </td>
+      <td className="p-3"><div className={`${pulse} h-3 w-48`} /></td>
+      <td className="p-3"><div className={`${pulse} h-3 w-10`} /></td>
+      <td className="p-3"><div className={`${pulse} h-3 w-10`} /></td>
+      <td className="p-3"><div className={`${pulse} h-3 w-10`} /></td>
+      <td className="p-3"><div className={`${pulse} h-3 w-10`} /></td>
+      <td className="p-3"><div className={`${pulse} h-3 w-6`} /></td>
+    </tr>
+  );
+}
+
+/** Multiple SOP table row skeletons */
+export function SOPTableSkeleton({ rows = 10 }: { rows?: number }) {
+  return (
+    <>
+      {Array.from({ length: rows }).map((_, i) => (
+        <SOPTableRowSkeleton key={i} />
+      ))}
+    </>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────── */
+/** Skeleton for a single MCQ question card in the question modal */
+export function MCQCardSkeleton() {
+  return (
+    <div className="bg-[#131722] rounded-2xl border border-white/5 p-6 space-y-5">
+      {/* Top: identifier + difficulty */}
+      <div className="flex items-center gap-2">
+        <div className={`${pulse} h-5 w-20 rounded-lg`} />
+        <div className={`${pulse} h-5 w-14 rounded-lg`} />
+      </div>
+      {/* Question text */}
+      <div className="space-y-2">
+        <div className={`${pulse} h-4 w-full`} />
+        <div className={`${pulse} h-4 w-5/6`} />
+        <div className={`${pulse} h-4 w-3/4`} />
+      </div>
+      {/* Options */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {[0, 1, 2, 3].map(i => (
+          <div key={i} className={`${pulse} h-12 rounded-2xl`} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Stacked MCQ card skeletons for the question list */
+export function MCQListSkeleton({ count = 5 }: { count?: number }) {
+  return (
+    <div className="space-y-4">
+      {Array.from({ length: count }).map((_, i) => (
+        <MCQCardSkeleton key={i} />
+      ))}
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────── */
+/** Small inline spinner badge (used inside table cells while a SOP loads) */
+export function InlineSpinner({ label = "Loading…" }: { label?: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[10px] text-gray-500 font-medium animate-pulse">
+      <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-bounce" />
+      {label}
+    </span>
+  );
+}

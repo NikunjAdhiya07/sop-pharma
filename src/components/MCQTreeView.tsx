@@ -297,6 +297,9 @@ export default function MCQTreeView({
   const [generatingMore, setGeneratingMore] = useState<Record<string, boolean>>({});
   const [generateMoreResults, setGenerateMoreResults] = useState<Record<string, { success: boolean; message: string }>>({});
 
+  // Approval filter for department modal (set by clicking capsules on dept cards)
+  const [approvalFilter, setApprovalFilter] = useState<'all' | 'approved' | 'pending'>('all');
+
   // Delete SOP state
   const [deleteModal, setDeleteModal] = useState<{ sopId: string; sopCode: string; sopName: string } | null>(null);
   const [deletePassword, setDeletePassword] = useState('');
@@ -526,9 +529,9 @@ export default function MCQTreeView({
   useEffect(() => {
     setDeptFilterMode("sops");
     setDeptSearchTerm("");
-    setDeptSearchTerm("");
     setDeptQuestions([]);
     setSimilarGroups([]);
+    setApprovalFilter('all');
   }, [fullScreenDept?.name]);
 
   // Efficient search filter function
@@ -876,6 +879,19 @@ export default function MCQTreeView({
             trainerMappings[dept.name.toLowerCase()] ||
             trainerMappings[dept.name];
 
+          // Approved = SOP where checked + reviewed + similar covers all questions
+          const allDeptSOPs = dept.subcategories?.flatMap((sub) => sub.sops ?? []) ?? [];
+          const approvedSOPs = allDeptSOPs.filter((sop) => {
+            const total = sop.totalQuestions ?? 0;
+            if (total === 0) return false;
+            const covered =
+              (sop.checkedCount ?? 0) +
+              (sop.reviewedCount ?? 0) +
+              (sop.similarCount ?? 0);
+            return covered >= total;
+          }).length;
+          const pendingSOPs = totalSOPs - approvedSOPs;
+
           return (
             <div
               key={dept.name}
@@ -945,17 +961,49 @@ export default function MCQTreeView({
                   </div>
                 </div>
 
-                {/* Status Breakdown Bar */}
+                {/* SOP Approval Status Capsules — clickable filters */}
+                <div className="flex items-center gap-2 w-full mt-0.5">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setApprovalFilter('approved');
+                      setFullScreenDept(dept);
+                    }}
+                    className="flex items-center gap-1.5 flex-1 justify-center bg-emerald-500/10 border border-emerald-500/25 rounded-full px-3 py-1 hover:bg-emerald-500/20 hover:border-emerald-500/50 transition-all cursor-pointer"
+                    title={`Filter: ${approvedSOPs} Approved SOP${approvedSOPs !== 1 ? 's' : ''}`}
+                  >
+                    <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />
+                    <span className="text-[11px] font-black text-emerald-400 leading-none">{approvedSOPs}</span>
+                    <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wide leading-none">Approved</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setApprovalFilter('pending');
+                      setFullScreenDept(dept);
+                    }}
+                    className="flex items-center gap-1.5 flex-1 justify-center bg-rose-500/10 border border-rose-500/25 rounded-full px-3 py-1 hover:bg-rose-500/20 hover:border-rose-500/50 transition-all cursor-pointer"
+                    title={`Filter: ${pendingSOPs} Pending SOP${pendingSOPs !== 1 ? 's' : ''}`}
+                  >
+                    <AlertTriangle className="h-3 w-3 text-rose-400 shrink-0" />
+                    <span className="text-[11px] font-black text-rose-400 leading-none">{pendingSOPs}</span>
+                    <span className="text-[9px] font-bold text-rose-600 uppercase tracking-wide leading-none">Pending</span>
+                  </button>
+                </div>
+
+                {/* Question-level Status Breakdown Bar */}
                 {(dept.checkedCount || 0) > 0 || (dept.similarCount || 0) > 0 || (dept.reviewedCount || 0) > 0 ? (
                   <div className="flex items-center gap-1.5 w-full bg-black/10 rounded-lg p-2 mt-px overflow-hidden">
                     {(dept.checkedCount || 0) > 0 && (
-                      <div className="flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20" title="Total Approved">
+                      <div className="flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20" title="Total Approved Questions">
                         <CheckCircle2 className="h-2.5 w-2.5 text-emerald-400" />
                         <span className="text-[10px] font-bold text-emerald-400 leading-none">{dept.checkedCount}</span>
                       </div>
                     )}
                     {(dept.similarCount || 0) > 0 && (
-                      <div className="flex items-center gap-1 bg-orange-500/10 px-2 py-0.5 rounded-md border border-orange-500/20 animate-pulse" title="Total Similar">
+                      <div className="flex items-center gap-1 bg-orange-500/10 px-2 py-0.5 rounded-md border border-orange-500/20 animate-pulse" title="Total Similar Questions">
                         <AlertTriangle className="h-2.5 w-2.5 text-orange-400" />
                         <span className="text-[10px] font-bold text-orange-400 leading-none">{dept.similarCount}</span>
                       </div>
@@ -1324,6 +1372,27 @@ export default function MCQTreeView({
                         </button>
                       )}
                     </div>
+
+                    {/* Active Approval Filter Badge */}
+                    {approvalFilter !== 'all' && (
+                      <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-widest shrink-0 ${
+                        approvalFilter === 'approved'
+                          ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                          : 'bg-rose-500/15 border-rose-500/40 text-rose-300'
+                      }`}>
+                        {approvalFilter === 'approved'
+                          ? <CheckCircle2 className="h-3 w-3 shrink-0" />
+                          : <AlertTriangle className="h-3 w-3 shrink-0" />}
+                        <span>{approvalFilter === 'approved' ? 'Approved' : 'Pending'} Filter</span>
+                        <button
+                          onClick={() => setApprovalFilter('all')}
+                          className="ml-1 opacity-70 hover:opacity-100 transition-opacity"
+                          title="Clear filter"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    )}
 
                     {/* View Strategy Toggle */}
                     {deptFilterMode === "sops" ? (
@@ -2157,13 +2226,23 @@ export default function MCQTreeView({
                     <div className="w-full bg-[#131722] rounded-2xl border border-white/5 shadow-xl overflow-hidden mt-4">
                       {/* TABLE VIEW */}
                       {(() => {
+                        const isSopApproved = (sop: SOPNode) => {
+                          const total = sop.totalQuestions ?? 0;
+                          if (total === 0) return false;
+                          return (
+                            (sop.checkedCount ?? 0) + (sop.reviewedCount ?? 0) + (sop.similarCount ?? 0)
+                          ) >= total;
+                        };
                         const allSOPs = fullScreenDept.subcategories.flatMap((sub) => sub.sops);
                         const filteredSOPs = allSOPs.filter((s) => {
                           const st = deptSearchTerm.toLowerCase().trim();
-                          return (
+                          const matchesSearch =
                             s.sopName.toLowerCase().includes(st) ||
-                            s.sopCode.toLowerCase().includes(st)
-                          );
+                            s.sopCode.toLowerCase().includes(st);
+                          if (!matchesSearch) return false;
+                          if (approvalFilter === 'approved') return isSopApproved(s);
+                          if (approvalFilter === 'pending') return !isSopApproved(s);
+                          return true;
                         });
 
                         const handleTableSort = (col: "code" | "name" | "questions" | "checked" | "reviewed" | "similar") => {
