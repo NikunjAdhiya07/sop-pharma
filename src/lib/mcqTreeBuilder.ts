@@ -317,12 +317,22 @@ export function buildMCQTreeStructure(
     const sopFileUrlGujarati = gujaratiSop?.fileUrl || undefined;
 
     const totalQuestions = sopMCQBanks.reduce(
-      (sum, bank) => sum + (bank.mcqs?.length ?? bank.totalQuestions ?? 0),
+      (sum, bank) => sum + (bank.mcqs?.length ?? (bank as any).totalQuestions ?? 0),
       0
     );
-    const checkedCount = sopMCQBanks.reduce((sum, bank) => sum + (bank.mcqs?.filter(q => q.isChecked).length || 0), 0);
-    const reviewedCount = sopMCQBanks.reduce((sum, bank) => sum + (bank.mcqs?.filter(q => q.isReviewed).length || 0), 0);
-    const similarCount = sopMCQBanks.reduce((sum, bank) => sum + (bank.mcqs?.filter(q => q.isSimilar).length || 0), 0);
+    // Use pre-computed counts from aggregation when mcqs array is not present (tree API path)
+    const checkedCount = sopMCQBanks.reduce((sum, bank) => {
+      if ((bank as any).checkedCount !== undefined) return sum + ((bank as any).checkedCount || 0);
+      return sum + (bank.mcqs?.filter(q => q.isChecked).length || 0);
+    }, 0);
+    const reviewedCount = sopMCQBanks.reduce((sum, bank) => {
+      if ((bank as any).reviewedCount !== undefined) return sum + ((bank as any).reviewedCount || 0);
+      return sum + (bank.mcqs?.filter(q => q.isReviewed).length || 0);
+    }, 0);
+    const similarCount = sopMCQBanks.reduce((sum, bank) => {
+      if ((bank as any).similarCount !== undefined) return sum + ((bank as any).similarCount || 0);
+      return sum + (bank.mcqs?.filter(q => q.isSimilar).length || 0);
+    }, 0);
 
     const sopNode: SOPNode = {
       sopId,
@@ -397,6 +407,7 @@ export function buildMCQTreeStructure(
     if (!sopExists) {
       // This MCQ bank has no SOP - add to unorganized
       const bankQuestionCount = bank.mcqs?.length ?? bank.totalQuestions ?? 0;
+      const bankAny = bank as any;
       const sopNode: SOPNode = {
         sopId,
         sopCode: bank.sopIdentifier,
@@ -405,9 +416,9 @@ export function buildMCQTreeStructure(
         sopFileType: 'pdf',
         mcqBanks: [bank],
         totalQuestions: bankQuestionCount,
-        checkedCount: bank.mcqs?.filter(q => q.isChecked).length || 0,
-        reviewedCount: bank.mcqs?.filter(q => q.isReviewed).length || 0,
-        similarCount: bank.mcqs?.filter(q => q.isSimilar).length || 0,
+        checkedCount: bankAny.checkedCount !== undefined ? bankAny.checkedCount : (bank.mcqs?.filter(q => q.isChecked).length || 0),
+        reviewedCount: bankAny.reviewedCount !== undefined ? bankAny.reviewedCount : (bank.mcqs?.filter(q => q.isReviewed).length || 0),
+        similarCount: bankAny.similarCount !== undefined ? bankAny.similarCount : (bank.mcqs?.filter(q => q.isSimilar).length || 0),
       };
 
       tree.unorganized.sops.push(sopNode);

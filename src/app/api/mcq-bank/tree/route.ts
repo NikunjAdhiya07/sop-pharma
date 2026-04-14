@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
-import MCQBank from '@/models/MCQBank';
 import User from '@/models/User';
 import { buildMCQTreeStructure, getTreeAsArray } from '@/lib/mcqTreeBuilder';
 
@@ -16,7 +15,6 @@ export async function GET(request: NextRequest) {
     let allowedDepartments: string[] = [];
     let isAdmin = false;
 
-    // Look up the user's allowed departments from DB using the username from localStorage
     if (username) {
       const user: any = await User.findOne({ username: username.toLowerCase() })
         .select('allowedDepartments role')
@@ -33,50 +31,62 @@ export async function GET(request: NextRequest) {
       console.log('📂 No username provided — showing all departments');
     }
 
-    // Fetch all SOPs
-    const sops = await SOP.find({})
-      .select('_id name identifier department fileUrl fileType')
-      .lean();
-
-    // Fetch all MCQ Banks with status fields — use native driver to preserve subdocument fields reliably
     const dbConnection = mongoose.connection.db;
     if (!dbConnection) throw new Error('Database connection lost');
-    const mcqBankCollection = dbConnection.collection('mcqbanks');
-    
-    const mcqBanks = await mcqBankCollection.find({}, {
-      projection: {
-        _id: 1,
-        sopId: 1,
-        sopName: 1,
-        sopIdentifier: 1,
-        department: 1,
-        totalQuestions: 1,
-        'mcqs.isChecked': 1,
-        'mcqs.isReviewed': 1,
-        'mcqs.isSimilar': 1
-      }
-    }).toArray();
 
-    console.log(`📊 Building tree from ${sops.length} SOPs and ${mcqBanks.length} MCQ banks`);
+    // Run SOP fetch and MCQ aggregation in parallel
+    const [sops, mcqBanks] = await Promise.all([
+      SOP.find({})
+        .select('_id name identifier department fileUrl fileType language')
+        .lean(),
 
-    // Build the tree structure
+      // Aggregate counts server-side — sends ~50 bytes per bank instead of ~5KB of subdocuments
+      dbConnection.collection('mcqbanks').aggregate([
+        {
+          $project: {
+            _id: 1,
+            sopId: 1,
+            sopName: 1,
+            sopIdentifier: 1,
+            department: 1,
+            folderDepartment: 1,
+            folderSubcategory: 1,
+            language: 1,
+            totalQuestions: { $ifNull: ['$totalQuestions', { $size: '$mcqs' }] },
+            checkedCount: {
+              $size: {
+                $filter: { input: '$mcqs', as: 'q', cond: { $eq: ['$$q.isChecked', true] } }
+              }
+            },
+            reviewedCount: {
+              $size: {
+                $filter: { input: '$mcqs', as: 'q', cond: { $eq: ['$$q.isReviewed', true] } }
+              }
+            },
+            similarCount: {
+              $size: {
+                $filter: { input: '$mcqs', as: 'q', cond: { $eq: ['$$q.isSimilar', true] } }
+              }
+            },
+          }
+        }
+      ]).toArray(),
+    ]);
+
+    console.log(`📊 Building tree from ${sops.length} SOPs and ${mcqBanks.length} MCQ banks (aggregated counts)`);
+
     const tree = buildMCQTreeStructure(sops as any, mcqBanks as any);
     let treeArray = getTreeAsArray(tree);
 
-    // Count SOPs actually shown (those with MCQs)
     const sopsWithMcqs = treeArray.reduce(
       (sum, dept) => sum + dept.subcategories.reduce(
         (s: number, sub: any) => s + sub.sops.length, 0
       ), 0
     ) + tree.unorganized.totalSOPs;
-    console.log(`🔎 Filtered to ${sopsWithMcqs} SOPs with MCQs (excluded ${sops.length - sopsWithMcqs} SOPs without MCQs)`);
 
-    // Apply department filter — skip for admin/qa-head (they see everything)
     const isRestricted = !isAdmin && allowedDepartments.length > 0 && allowedDepartments.length < 7;
     if (isRestricted) {
-      treeArray = treeArray.filter(dept =>
-        allowedDepartments.includes(dept.name)
-      );
+      treeArray = treeArray.filter(dept => allowedDepartments.includes(dept.name));
       console.log(`🔒 Filtered tree to ${treeArray.length} department(s) for user "${username}"`);
     }
 
@@ -88,10 +98,7 @@ export async function GET(request: NextRequest) {
         totalDepartments: treeArray.length,
         totalSOPs: sopsWithMcqs,
         totalMCQBanks: mcqBanks.length,
-        totalQuestions: mcqBanks.reduce((sum: number, bank: any) => {
-          const mcqsArr = (bank as any).mcqs;
-          return sum + (Array.isArray(mcqsArr) ? mcqsArr.length : (bank.totalQuestions || 0));
-        }, 0),
+        totalQuestions: mcqBanks.reduce((sum: number, bank: any) => sum + (bank.totalQuestions || 0), 0),
       },
       userAccess: {
         allowedDepartments,
@@ -99,9 +106,6 @@ export async function GET(request: NextRequest) {
       }
     };
 
-    // Allow the browser to cache the tree response for 2 minutes (stale-while-revalidate)
-    // The client-side 30-min localStorage cache is the primary cache; this just reduces
-    // repeat-tab load times for the same session.
     return NextResponse.json(responseData, {
       headers: {
         'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=120',
