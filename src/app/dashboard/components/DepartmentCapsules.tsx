@@ -1137,33 +1137,48 @@ function DepartmentCapsuleCard({
               : `${stat.docxFiles} DOCX slots in ${label} · green = filled, red = missing`
           }
         />
-        {/* DOCX Language Sub-rows (EN and GUJ side-by-side) — always show both */}
-        <div className="mt-0.5">
-          <CompactLanguagePairRow
-            langDataMap={new Map(
-              ["EN", "GJ"].map((lang) => [
-                lang,
-                {
-                  found: stat.langDocx.get(lang)?.found ?? 0,
-                  missing: stat.langDocx.get(lang)?.missing ?? 0,
-                  filter: (lang === "EN" ? "ENG" : "GUJ") as "ENG" | "GUJ",
-                },
-              ])
-            )}
-            onAvailableClick={(langFilter) => {
-              applyCapsuleAvailMiss(deptForFilter, "docx", "available", langFilter);
-            }}
-            onMissingClick={(langFilter) => {
-              applyCapsuleAvailMiss(deptForFilter, "docx", "missing", langFilter);
-            }}
-            filterSnapshot={filterSnapshot}
-            deptScope={deptForFilter}
-            metric="docx"
-          />
-        </div>
-
-        {/* PDF Section — with minimal spacing */}
-        <div className="h-0.5" />
+        {sortLangCodes([...stat.langDocx.keys()]).map((lang) => {
+          const ld = stat.langDocx.get(lang)!;
+          const langFilter = lang === "EN" ? "ENG" : lang === "GJ" ? "GUJ" : lang.toUpperCase();
+          const docxAvailActive =
+            filterSnapshot.filterDept === deptForFilter &&
+            filterSnapshot.filterFileType === "DOCX" &&
+            filterSnapshot.filterLanguage === langFilter &&
+            !filterSnapshot.filterDualLang &&
+            filterSnapshot.filterExpiry === "all" &&
+            filterSnapshot.filterMedia === "all" &&
+            filterSnapshot.filterVersionStatus === "all";
+          const docxMissingActive =
+            filterSnapshot.filterDept === deptForFilter &&
+            filterSnapshot.filterFileType === "NO_DOCX" &&
+            filterSnapshot.filterLanguage === langFilter &&
+            !filterSnapshot.filterDualLang &&
+            filterSnapshot.filterExpiry === "all" &&
+            filterSnapshot.filterMedia === "all" &&
+            filterSnapshot.filterVersionStatus === "all";
+          return (
+            <CapsuleMetricAvailMissing
+              key={`docx-lang-${lang}`}
+              label={<span className="pl-3 text-gray-500 text-[9px]">[{lang}]</span>}
+              totalExpected={ld.found + ld.missing}
+              available={ld.found}
+              missingCount={ld.missing}
+              onFilterClick={() => {
+                applyCapsuleAvailMiss(deptForFilter, "docx", "available", langFilter as "ENG" | "GUJ");
+              }}
+              onAvailableClick={() => {
+                applyCapsuleAvailMiss(deptForFilter, "docx", "available", langFilter as "ENG" | "GUJ");
+              }}
+              onMissingClick={() => {
+                applyCapsuleAvailMiss(deptForFilter, "docx", "missing", langFilter as "ENG" | "GUJ");
+              }}
+              highlightAvailable={docxAvailActive}
+              highlightMissing={docxMissingActive}
+              filterRowActive={docxAvailActive || docxMissingActive}
+              titleSummary={`${lang} DOCX: ${ld.found} found, ${ld.missing} missing`}
+            />
+          );
+        })}
         <CapsuleMetricAvailMissing
           label="PDF"
           totalExpected={stat.expectedPdf}
