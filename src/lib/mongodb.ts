@@ -29,9 +29,12 @@ async function connectDB(): Promise<typeof mongoose> {
   if (!cached.promise) {
     const opts = {
       bufferCommands: false,
-      serverSelectionTimeoutMS: 120000, // 2 minutes
-      socketTimeoutMS: 300000, // 5 minutes
-      connectTimeoutMS: 120000, // 2 minutes
+      serverSelectionTimeoutMS: 10000, // 10s — fail fast, retry handles the rest
+      socketTimeoutMS: 60000,          // 1 min for slow queries
+      connectTimeoutMS: 10000,         // 10s TCP connect
+      maxPoolSize: 10,                 // Reuse connections across serverless invocations
+      minPoolSize: 1,
+      heartbeatFrequencyMS: 10000,     // Keep Atlas connection alive on Vercel
     };
 
     cached.promise = (async () => {
@@ -68,9 +71,9 @@ async function connectDB(): Promise<typeof mongoose> {
             throw error;
           }
           
-          // Wait before retrying (exponential backoff)
+          // Wait before retrying (short fixed delay — serverless has tight time budgets)
           if (attempt < maxRetries) {
-            const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+            const waitTime = 1000; // 1 second between retries
             console.log(`⏳ Waiting ${waitTime}ms before retry...`);
             await new Promise(resolve => setTimeout(resolve, waitTime));
           }
