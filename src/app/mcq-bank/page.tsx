@@ -690,8 +690,11 @@ function MCQBankContent() {
       return;
     }
 
+    // Status-dependent filters bypass cache (need fresh isSimilar/isChecked flags from DB)
+    const needsFreshData = filter === 'similar' || filter === 'checked' || filter === 'reviewed';
+
     // Check session cache for all banks
-    const allCached = sopNode.mcqBanks.every(b => bankDetailCache.current.has(b._id));
+    const allCached = !needsFreshData && sopNode.mcqBanks.every(b => bankDetailCache.current.has(b._id));
     if (allCached) {
       const cachedBanks = sopNode.mcqBanks.map(b => bankDetailCache.current.get(b._id)!);
       const LANGUAGE_ORDER: Record<string, number> = { English: 0, Gujarati: 1 };
@@ -738,6 +741,8 @@ function MCQBankContent() {
       setSelectedMCQBank(first);
       setRegenLanguage(first.language || "English");
       setViewLanguage(first.language || "English");
+      // Clear similarity cache so fresh data is fetched (important for 'similar' filter)
+      if (needsFreshData) similarityCache.current.delete(first._id);
       fetchSimilarityDetails(first._id); // non-blocking
     } catch (err) {
       console.error("Error loading SOP banks:", err);
@@ -773,12 +778,16 @@ function MCQBankContent() {
     };
 
     try {
+      // Status-dependent filters (similar, checked, reviewed) MUST fetch fresh from DB —
+      // the session cache may have stale isSimilar/isChecked/isReviewed flags.
+      const needsFreshData = filter === 'similar' || filter === 'checked' || filter === 'reviewed';
+
       // 1. Check in-memory session cache first (avoids duplicate network call)
       const cached = bankDetailCache.current.get(bank._id);
       const hasFullData =
         bank.mcqs && bank.mcqs.length > 0 && bank.mcqs[0].question && bank.mcqs[0].options;
 
-      if (hasFullData) {
+      if (hasFullData && !needsFreshData) {
         // Already have full data passed in — use it directly and update cache
         bankDetailCache.current.set(bank._id, bank);
         applyBankToState(bank);
@@ -791,7 +800,7 @@ function MCQBankContent() {
         return;
       }
 
-      if (cached) {
+      if (cached && !needsFreshData) {
         // Serve from session cache instantly, then silently refresh in background
         applyBankToState(cached);
         if (similarityCache.current.has(cached._id)) {
@@ -812,6 +821,11 @@ function MCQBankContent() {
           }
         }).catch(() => {});
         return;
+      }
+
+      // For status-dependent filters, also clear the similarity cache so we get fresh data
+      if (needsFreshData) {
+        similarityCache.current.delete(bank._id);
       }
 
       setLoadingBankDetail(true);
