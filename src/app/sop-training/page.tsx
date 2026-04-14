@@ -9,6 +9,7 @@ import {
   PlayCircle, CheckCircle2, AlertCircle, BookOpen, X, ChevronRight,
   Award, BookOpenCheck, BarChart2, RotateCcw, Trophy, Shield, CalendarClock
 } from 'lucide-react';
+import Link from 'next/link';
 import TrainingMatrixUploadModal from '@/components/TrainingMatrixUploadModal';
 import MyResultsTab from '@/components/MyResultsTab';
 import RolesTab from '@/components/RolesTab';
@@ -627,12 +628,12 @@ function DashboardTab({
                                       {sops.map(sop => {
                                         const sopData = sopNamesMap[sop] || { id: sop, name: "Unknown SOP" };
                                         return (
-                                          <a href={`/mcq-bank?search=${sopData.id}`} key={sop}
+                                          <Link href={`/mcq-bank?search=${sopData.id}`} key={sop}
                                             className="group flex flex-col p-2.5 bg-black/40 hover:bg-indigo-600/10 border border-white/5 hover:border-indigo-500/30 rounded-xl transition-all"
                                           >
                                             <span className="text-indigo-400 group-hover:text-indigo-300 font-mono font-black text-[10px] tracking-widest">{sopData.id}</span>
                                             <span className="text-slate-400 group-hover:text-slate-300 text-[10px] truncate mt-0.5" title={sopData.name}>{sopData.name}</span>
-                                          </a>
+                                          </Link>
                                         );
                                       })}
                                     </div>
@@ -717,12 +718,12 @@ function DashboardTab({
                             {row.sopCodes.slice(0, 4).map(sop => {
                               const sopData = sopNamesMap[sop] || { id: sop, name: "Unknown SOP" };
                               return (
-                                <a href={`/mcq-bank?search=${sopData.id}`} key={sop}
+                                <Link href={`/mcq-bank?search=${sopData.id}`} key={sop}
                                   className="group flex flex-col px-2.5 py-1.5 bg-black/40 hover:bg-indigo-600/10 border border-white/5 hover:border-indigo-500/30 rounded-lg transition-all"
                                 >
                                   <span className="text-indigo-400 group-hover:text-indigo-300 font-mono font-black text-[10px] tracking-widest">{sopData.id}</span>
                                   <span className="text-slate-400 group-hover:text-slate-300 text-[10px] truncate max-w-[250px]" title={sopData.name}>{sopData.name}</span>
-                                </a>
+                                </Link>
                               );
                             })}
                             {row.sopCodes.length > 4 && (
@@ -750,13 +751,13 @@ function DashboardTab({
                                 {row.sopCodes.map((sop, si) => {
                                   const sopData = sopNamesMap[sop] || { id: sop, name: "Unknown SOP" };
                                   return (
-                                    <a href={`/mcq-bank?search=${sopData.id}`} key={sop}
+                                    <Link href={`/mcq-bank?search=${sopData.id}`} key={sop}
                                       className="group relative flex flex-col p-3 pl-8 bg-black/40 hover:bg-indigo-600/10 border border-white/5 hover:border-indigo-500/30 rounded-xl transition-all"
                                     >
                                       <span className="absolute left-3 top-3 text-[10px] text-slate-600 font-bold group-hover:text-indigo-400">{si + 1}.</span>
                                       <span className="text-indigo-400 group-hover:text-indigo-300 font-mono font-black text-[11px] tracking-widest">{sopData.id}</span>
                                       <span className="text-slate-400 group-hover:text-slate-300 text-xs truncate mt-1" title={sopData.name}>{sopData.name}</span>
-                                    </a>
+                                    </Link>
                                   );
                                 })}
                               </div>
@@ -834,10 +835,10 @@ function DeptCard({ dept, employees = [], sopNamesMap }: { dept: DeptBreakdown, 
                     {sops.map(sop => {
                       const sopData = sopNamesMap[sop] || { id: sop, name: "Unknown SOP" };
                       return (
-                        <a href={`/mcq-bank?search=${sopData.id}`} key={sop} className="flex flex-col px-2 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded text-indigo-400 hover:text-indigo-200 hover:bg-indigo-500/30 transition-colors group">
+                        <Link href={`/mcq-bank?search=${sopData.id}`} key={sop} className="flex flex-col px-2 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded text-indigo-400 hover:text-indigo-200 hover:bg-indigo-500/30 transition-colors group">
                           <span className="font-mono font-black text-[10px] group-hover:text-indigo-300">{sopData.id}</span>
                           <span className="text-[10px] text-slate-500 truncate max-w-[200px] group-hover:text-indigo-400/80 mt-0.5">{sopData.name}</span>
-                        </a>
+                        </Link>
                       );
                     })}
                   </div>
@@ -932,12 +933,12 @@ function MatrixTab({
                       {row.sopCodes.slice(0, 5).map(sop => {
                         const sopData = sopNamesMap[sop] || { id: sop, name: "Unknown SOP" };
                         return (
-                          <a href={`/mcq-bank?search=${sopData.id}`} key={sop}
+                          <Link href={`/mcq-bank?search=${sopData.id}`} key={sop}
                             className="group flex flex-col px-2.5 py-1.5 bg-black/40 hover:bg-indigo-600/10 border border-white/5 hover:border-indigo-500/30 rounded-lg transition-all"
                           >
                             <span className="text-indigo-400 group-hover:text-indigo-300 font-mono font-black text-[10px] tracking-widest">{sopData.id}</span>
                             <span className="text-slate-400 group-hover:text-slate-300 text-[10px] truncate max-w-[300px]" title={sopData.name}>{sopData.name}</span>
-                          </a>
+                          </Link>
                         );
                       })}
                       {row.sopCodes.length > 5 && (
@@ -1078,12 +1079,12 @@ function ProfilesTab({
                           {bm.sopCodes.map(sop => {
                             const sopData = sopNamesMap[sop] || { id: sop, name: "Unknown SOP" };
                             return (
-                              <a href={`/mcq-bank?search=${sopData.id}`} key={sop}
+                              <Link href={`/mcq-bank?search=${sopData.id}`} key={sop}
                                 className="group flex flex-col p-3 bg-black/40 hover:bg-indigo-600/10 border border-white/5 hover:border-indigo-500/30 rounded-xl transition-all"
                               >
                                 <span className="text-indigo-400 group-hover:text-indigo-300 font-mono font-black text-[11px] tracking-widest">{sopData.id}</span>
                                 <span className="text-slate-400 group-hover:text-slate-300 text-xs truncate mt-1" title={sopData.name}>{sopData.name}</span>
-                              </a>
+                              </Link>
                             );
                           })}
                         </div>

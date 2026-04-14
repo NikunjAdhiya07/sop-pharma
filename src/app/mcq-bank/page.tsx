@@ -253,6 +253,9 @@ function MCQBankContent() {
 
   // Refresh persistence state
   const [isOpeningFromUrl, setIsOpeningFromUrl] = useState(!!sopIdFromUrl);
+  // Track if page was originally opened via external link (sopId in URL on mount)
+  // Used to decide whether closing the modal should go back or stay on this page
+  const wasOpenedFromExternalLink = useRef(!!sopIdFromUrl);
 
   // Store similar question details for inline display
   const [similarQuestionDetails, setSimilarQuestionDetails] = useState<
@@ -2029,7 +2032,7 @@ function MCQBankContent() {
                   {loadingTree ? "Refreshing..." : "Refresh"}
                 </button>
                 <button
-                  onClick={() => (window.location.href = "/similar-questions")}
+                  onClick={() => router.push("/similar-questions")}
                   className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-orange-600 to-red-600 text-white font-semibold rounded-md hover:from-orange-700 hover:to-red-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap"
                   title="Review similar/duplicate questions"
                 >
@@ -2038,7 +2041,7 @@ function MCQBankContent() {
                 </button>
 
                 <button
-                  onClick={() => (window.location.href = "/sop-upload")}
+                  onClick={() => router.push("/sop-upload")}
                   className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-md hover:from-purple-700 hover:to-pink-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap"
                 >
                   <Upload className="h-3.5 w-3.5" />
@@ -2548,6 +2551,10 @@ function MCQBankContent() {
                       <div className="flex items-center gap-4 min-w-0">
                         <button
                           onClick={() => {
+                            if (wasOpenedFromExternalLink.current) {
+                              router.back();
+                              return;
+                            }
                             setSelectedMCQBank(null);
                             setSelectedMCQBanks(null);
                             setViewLanguage('English');
@@ -2829,6 +2836,10 @@ function MCQBankContent() {
                           </button>
                           <button
                             onClick={() => {
+                              if (wasOpenedFromExternalLink.current) {
+                                router.back();
+                                return;
+                              }
                               setSelectedMCQBank(null);
                               setSelectedMCQBanks(null);
                               // Clear URL parameters when closing
