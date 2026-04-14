@@ -56,6 +56,10 @@ import TrainingMatrixUploadModal from "@/components/TrainingMatrixUploadModal";
 import { useCopyProtection, CopyProtected } from "@/lib/copyProtection";
 import { formatSOPDisplayName, cleanSOPName } from "@/lib/sopLibraryHelper";
 import { normalizeDepartmentName } from "@/lib/mcqTreeBuilder";
+import { DeptGridSkeleton, MCQListSkeleton } from "@/components/MCQSkeleton";
+import { cacheBankToIDB, getBankFromIDB, cacheTreeToIDB, getTreeFromIDB } from "@/lib/mcqIDB";
+import { saveSession, loadSession, createDebouncedSave } from "@/lib/mcqBankSession";
+import { prefetchAdjacentSOPs, backgroundRefreshTree } from "@/lib/mcqPrefetch";
 
 interface MCQ {
   aiIcon: string;
@@ -181,6 +185,8 @@ function MCQBankContent() {
   const similarityCache = useRef<Map<string, Record<number, number[]>>>(new Map());
   // Trainer mappings fetched flag — avoid repeated API calls
   const trainerMappingsFetched = useRef(false);
+  // Debounced session saver — writes position state to localStorage max once per 500ms
+  const debouncedSaveSession = useRef(createDebouncedSave(500));
 
   const [mcqBanks, setMcqBanks] = useState<MCQBank[]>([]);
   const [loading, setLoading] = useState(true);
@@ -569,12 +575,27 @@ function MCQBankContent() {
       const currentUser = storedUser ? JSON.parse(storedUser) : null;
       const username = currentUser?.username || "";
 
-      // Per-user cache key so restricted users don't see each other's cached data
+      // ── Tier 1: IndexedDB (fastest, survives refresh, ~50ms) ─────────────
+      if (!forceRefresh) {
+        const idbCached = await getTreeFromIDB<any>(username);
+        if (idbCached) {
+          setTreeData(idbCached);
+          console.log("⚡ Tree from IndexedDB — instant");
+          setLoadingTree(false);
+          // Tier 2 (background): silently refresh so next open is fresh
+          backgroundRefreshTree(username, (fresh: any) => {
+            setTreeData(fresh);
+            cacheTreeToIDB(username, fresh).catch(() => {});
+          }, 4000);
+          return;
+        }
+      }
+
+      // ── Tier 2: localStorage (fast, ~5ms parse) ───────────────────────────
       const CACHE_KEY = `mcq-tree-cache-v4-${username || "guest"}`;
       const CACHE_TIMESTAMP_KEY = `mcq-tree-cache-timestamp-v4-${username || "guest"}`;
       const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
 
-      // Check cache first (unless force refresh)
       if (!forceRefresh) {
         const cachedData = localStorage.getItem(CACHE_KEY);
         const cacheTimestamp = localStorage.getItem(CACHE_TIMESTAMP_KEY);
@@ -584,18 +605,21 @@ function MCQBankContent() {
           if (age < CACHE_DURATION) {
             const parsed = JSON.parse(cachedData);
             setTreeData(parsed);
-            console.log(
-              "📦 Using cached tree data (age:",
-              Math.floor(age / 1000),
-              "seconds)",
-            );
+            console.log("📦 Tree from localStorage (age:", Math.floor(age / 1000), "s)");
             setLoadingTree(false);
+            // Promote to IDB for next time
+            cacheTreeToIDB(username, parsed).catch(() => {});
+            // Background refresh
+            backgroundRefreshTree(username, (fresh: any) => {
+              setTreeData(fresh);
+              cacheTreeToIDB(username, fresh).catch(() => {});
+            }, 4000);
             return;
           }
         }
       }
 
-      // Fetch fresh data — pass username so API can apply department restrictions
+      // ── Tier 3: Network fetch ─────────────────────────────────────────────
       const treeUrl = username
         ? `/api/mcq-bank/tree?username=${encodeURIComponent(username)}`
         : "/api/mcq-bank/tree";
@@ -605,20 +629,18 @@ function MCQBankContent() {
       if (data.success) {
         setTreeData(data);
 
-        // Cache the data
+        // Write to both caches
+        cacheTreeToIDB(username, data).catch(() => {});
         try {
           localStorage.setItem(CACHE_KEY, JSON.stringify(data));
           localStorage.setItem(CACHE_TIMESTAMP_KEY, Date.now().toString());
         } catch (e) {
-          console.warn("⚠️ Failed to cache tree data to localStorage (QuotaExceededError). Page will load from live API.", e);
+          console.warn("⚠️ localStorage quota exceeded — using IDB only", e);
         }
 
-        console.log("📊 Tree data loaded and cached:", data.stats);
+        console.log("📊 Tree fetched from network and cached:", data.stats);
         if (data.userAccess?.isRestricted) {
-          console.log(
-            "🔒 Department access restricted to:",
-            data.userAccess.allowedDepartments,
-          );
+          console.log("🔒 Restricted to:", data.userAccess.allowedDepartments);
         }
       }
     } catch (error) {
@@ -734,13 +756,25 @@ function MCQBankContent() {
         const lb = LANGUAGE_ORDER[b.language || "English"] ?? 2;
         return la - lb;
       });
-      // Store each bank in session cache
-      sorted.forEach(b => bankDetailCache.current.set(b._id, b));
+      // Store each bank in session cache AND IndexedDB
+      sorted.forEach(b => {
+        bankDetailCache.current.set(b._id, b);
+        cacheBankToIDB(b._id, b).catch(() => {});
+      });
       const first = sorted[0];
       setSelectedMCQBanks(sorted);
       setSelectedMCQBank(first);
       setRegenLanguage(first.language || "English");
       setViewLanguage(first.language || "English");
+      // Save position
+      debouncedSaveSession.current({
+        bankId: first._id,
+        sopId: first.sopId,
+        sopCode: first.sopIdentifier,
+        sopName: first.sopName,
+        language: first.language || 'English',
+        filter,
+      });
       // Clear similarity cache so fresh data is fetched (important for 'similar' filter)
       if (needsFreshData) similarityCache.current.delete(first._id);
       fetchSimilarityDetails(first._id); // non-blocking
@@ -769,6 +803,15 @@ function MCQBankContent() {
       setViewLanguage(fullBank.language || 'English');
       setActiveTab("active");
       setSimilarityResults(null);
+      // Save position to session
+      debouncedSaveSession.current({
+        bankId: fullBank._id,
+        sopId: fullBank.sopId,
+        sopCode: fullBank.sopIdentifier,
+        sopName: fullBank.sopName,
+        language: fullBank.language || 'English',
+        filter,
+      });
       if (typeof window !== 'undefined') {
         const params = new URLSearchParams(window.location.search);
         params.set('sopId', fullBank.sopId);
@@ -778,44 +821,43 @@ function MCQBankContent() {
     };
 
     try {
-      // Status-dependent filters (similar, checked, reviewed) MUST fetch fresh from DB —
-      // the session cache may have stale isSimilar/isChecked/isReviewed flags.
       const needsFreshData = filter === 'similar' || filter === 'checked' || filter === 'reviewed';
 
-      // 1. Check in-memory session cache first (avoids duplicate network call)
-      const cached = bankDetailCache.current.get(bank._id);
+      // 1. Full data already passed in memory
       const hasFullData =
         bank.mcqs && bank.mcqs.length > 0 && bank.mcqs[0].question && bank.mcqs[0].options;
 
       if (hasFullData && !needsFreshData) {
-        // Already have full data passed in — use it directly and update cache
         bankDetailCache.current.set(bank._id, bank);
         applyBankToState(bank);
-        // Load similarity details from cache or fetch in background (non-blocking)
         if (similarityCache.current.has(bank._id)) {
           setSimilarQuestionDetails(similarityCache.current.get(bank._id)!);
         } else {
-          fetchSimilarityDetails(bank._id); // fire & forget
+          fetchSimilarityDetails(bank._id);
         }
+        // Write to IDB for next refresh
+        cacheBankToIDB(bank._id, bank).catch(() => {});
         return;
       }
 
+      // 2. In-memory session cache
+      const cached = bankDetailCache.current.get(bank._id);
       if (cached && !needsFreshData) {
-        // Serve from session cache instantly, then silently refresh in background
         applyBankToState(cached);
         if (similarityCache.current.has(cached._id)) {
           setSimilarQuestionDetails(similarityCache.current.get(cached._id)!);
         } else {
-          fetchSimilarityDetails(cached._id); // fire & forget
+          fetchSimilarityDetails(cached._id);
         }
-        // Background refresh to pick up any status changes
+        // Background refresh
         fetch(`/api/mcq-bank?id=${bank._id}&limit=1&t=${Date.now()}`, {
           cache: "no-store",
           headers: { Pragma: "no-cache", "Cache-Control": "no-cache" },
-        }).then(r => r.json()).then(data => {
-          if (data.success && data.mcqBanks.length > 0) {
-            const fresh = data.mcqBanks[0];
+        }).then(r => r.json()).then(d => {
+          if (d.success && d.mcqBanks.length > 0) {
+            const fresh = d.mcqBanks[0];
             bankDetailCache.current.set(bank._id, fresh);
+            cacheBankToIDB(bank._id, fresh).catch(() => {});
             setSelectedMCQBank(fresh);
             setMcqBanks(prev => prev.map(b => b._id === bank._id ? fresh : b));
           }
@@ -823,7 +865,36 @@ function MCQBankContent() {
         return;
       }
 
-      // For status-dependent filters, also clear the similarity cache so we get fresh data
+      // 3. IndexedDB (persists across refresh)
+      if (!needsFreshData) {
+        const idbCached = await getBankFromIDB<MCQBank>(bank._id);
+        if (idbCached) {
+          console.log(`⚡ Bank ${bank._id} from IndexedDB`);
+          bankDetailCache.current.set(bank._id, idbCached);
+          applyBankToState(idbCached);
+          if (similarityCache.current.has(idbCached._id)) {
+            setSimilarQuestionDetails(similarityCache.current.get(idbCached._id)!);
+          } else {
+            fetchSimilarityDetails(idbCached._id);
+          }
+          // Background refresh
+          fetch(`/api/mcq-bank?id=${bank._id}&limit=1&t=${Date.now()}`, {
+            cache: "no-store",
+            headers: { Pragma: "no-cache", "Cache-Control": "no-cache" },
+          }).then(r => r.json()).then(d => {
+            if (d.success && d.mcqBanks.length > 0) {
+              const fresh = d.mcqBanks[0];
+              bankDetailCache.current.set(bank._id, fresh);
+              cacheBankToIDB(bank._id, fresh).catch(() => {});
+              setSelectedMCQBank(fresh);
+              setMcqBanks(prev => prev.map(b => b._id === bank._id ? fresh : b));
+            }
+          }).catch(() => {});
+          return;
+        }
+      }
+
+      // 4. Network fetch (first time or forced refresh)
       if (needsFreshData) {
         similarityCache.current.delete(bank._id);
       }
@@ -831,24 +902,18 @@ function MCQBankContent() {
       setLoadingBankDetail(true);
       const response = await fetch(
         `/api/mcq-bank?id=${bank._id}&limit=1&t=${Date.now()}`,
-        {
-          cache: "no-store",
-          headers: { Pragma: "no-cache", "Cache-Control": "no-cache" },
-        },
+        { cache: "no-store", headers: { Pragma: "no-cache", "Cache-Control": "no-cache" } },
       );
       const data = await response.json();
 
       if (data.success && data.mcqBanks.length > 0) {
         const fullBank = data.mcqBanks[0];
         bankDetailCache.current.set(bank._id, fullBank);
+        // Write to IDB for future refresh restores
+        cacheBankToIDB(bank._id, fullBank).catch(() => {});
         applyBankToState(fullBank);
-
-        // Fetch similarity details (non-blocking)
         fetchSimilarityDetails(fullBank._id);
-
-        setMcqBanks((prev) =>
-          prev.map((b) => (b._id === bank._id ? fullBank : b)),
-        );
+        setMcqBanks((prev) => prev.map((b) => (b._id === bank._id ? fullBank : b)));
       } else {
         alert("Failed to load questions for this bank");
       }
@@ -1873,8 +1938,10 @@ function MCQBankContent() {
   // tree component stays mounted and fullScreenDept state is preserved.
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <Loader2 className="h-12 w-12 text-purple-400 animate-spin" />
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4">
+        <div className="max-w-7xl mx-auto pt-8">
+          <DeptGridSkeleton count={8} />
+        </div>
       </div>
     );
   }
@@ -2123,22 +2190,7 @@ function MCQBankContent() {
         ) : viewMode === "tree" && !sopIdFromUrl ? (
           loadingTree ? (
             /* Skeleton: department folder cards */
-            <div className="space-y-3">
-              {[1, 2, 3, 4, 5, 6].map(i => (
-                <div key={i} className="bg-white/5 rounded-xl p-4 border border-white/10 animate-pulse">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="h-8 w-8 rounded-lg bg-white/10" />
-                    <div className="h-4 w-1/4 bg-white/10 rounded" />
-                    <div className="ml-auto h-3 w-16 bg-white/5 rounded" />
-                  </div>
-                  <div className="flex gap-3">
-                    <div className="h-3 w-20 bg-white/5 rounded" />
-                    <div className="h-3 w-16 bg-white/5 rounded" />
-                    <div className="h-3 w-14 bg-white/5 rounded" />
-                  </div>
-                </div>
-              ))}
-            </div>
+            <DeptGridSkeleton count={8} />
           ) : treeData ? (
             <MCQTreeView
               key="mcq-tree-view-stable"
@@ -3482,8 +3534,9 @@ function MCQBankContent() {
               }
             }
 
-            const hasSimilar = relatedIndices.length > 0;
-            const similarIndices = relatedIndices;
+            // Only show similarity comparison if the question actually has isSimilar flag set in DB
+            const hasSimilar = relatedIndices.length > 0 && !!selectedMCQ.mcq.isSimilar;
+            const similarIndices = hasSimilar ? relatedIndices : [];
             const allMcqs = selectedMCQBank?.mcqs || [];
 
             // Render a compact question card for side-by-side comparison
