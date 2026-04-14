@@ -1744,7 +1744,18 @@ function MCQBankContent() {
           onClose={() => setShowMatrixModal(false)}
         />
 
-        {/* Search, Filter, and Sort */}
+        {/* Show loading state if opening from URL */}
+        {sopIdFromUrl && !selectedMCQBank && (
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <Loader2 className="h-12 w-12 text-purple-400 animate-spin mx-auto mb-4" />
+              <p className="text-gray-300">Loading MCQ Bank...</p>
+            </div>
+          </div>
+        )}
+
+        {/* Search, Filter, and Sort - only show if not loading from URL */}
+        {(!sopIdFromUrl || selectedMCQBank) && (
         <div className="bg-white/10 backdrop-blur-lg rounded-lg p-3 shadow-md border border-white/20 mb-4">
           <div className="flex flex-col gap-2">
             {/* Search Bar */}
@@ -1824,6 +1835,7 @@ function MCQBankContent() {
             </div>
           </div>
         </div>
+        )}
 
         {/* View Mode Toggle */}
         {!sopIdFromUrl && (
