@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
 
-const OBSOLETE_FIXED_PASSWORD = 'indiana@132';
+const OBSOLETE_FIXED_PASSWORD = 'indiana123';
 
 // Extract family prefix: "QAGE01-10" → "QAGE01"
 function familyPrefix(identifier: string): string | null {
