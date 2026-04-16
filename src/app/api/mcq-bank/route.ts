@@ -139,7 +139,7 @@ export async function GET(request: NextRequest) {
           department: 1,
           folderDepartment: 1,
           folderSubcategory: 1,
-          totalQuestions: 1,
+          totalQuestions: { $size: { $ifNull: ['$mcqs', []] } },
           difficultyDistribution: 1,
           language: 1,
           createdAt: 1,

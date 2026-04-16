@@ -24,7 +24,6 @@ import {
   Home,
   ArrowLeft,
   Grid,
-  List,
   ArrowUpDown,
   SortAsc,
   SortDesc,
@@ -44,11 +43,15 @@ import {
   UserPlus,
   Files,
   TrendingUp,
-  Table,
   Clock,
   Edit2,
   Save,
   RotateCcw,
+  Lock,
+  LockOpen,
+  EyeOff,
+  Sparkles,
+  ScanSearch,
 } from "lucide-react";
 import MCQTreeView from "@/components/MCQTreeView";
 import TrainerUploadModal from "@/components/TrainerUploadModal";
@@ -189,7 +192,7 @@ function MCQBankContent() {
   const debouncedSaveSession = useRef(createDebouncedSave(500));
 
   const [mcqBanks, setMcqBanks] = useState<MCQBank[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   // Raw search input (updated immediately for UI responsiveness)
   const [searchInputValue, setSearchInputValue] = useState("");
   // Debounced search term (used for actual filtering — 300ms delay)
@@ -293,12 +296,47 @@ function MCQBankContent() {
     loadExpansionState("mcq-tree-expanded-sops"),
   );
 
-  // Lifted fullScreenDept — survives re-renders caused by loading/state changes
-  // This is the key to correct "Back" navigation from MCQ modal → department view
-  const [fullScreenDept, setFullScreenDept] = useState<any>(null);
+  // Lifted fullScreenDept — survives re-renders caused by loading/state changes.
+  // Seeded synchronously from localStorage tree + session so the dept opens on
+  // the first frame without waiting for IDB or network.
+  const [fullScreenDept, setFullScreenDept] = useState<any>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      // Need both the tree cache and the saved dept name to pre-seed
+      const storedUser = localStorage.getItem('user');
+      const username = storedUser ? JSON.parse(storedUser)?.username || '' : '';
+      const CACHE_KEY = `mcq-tree-cache-v4-${username || 'guest'}`;
+      const CACHE_TS_KEY = `mcq-tree-cache-timestamp-v4-${username || 'guest'}`;
+      const raw = localStorage.getItem(CACHE_KEY);
+      const ts  = localStorage.getItem(CACHE_TS_KEY);
+      if (!raw || !ts || Date.now() - parseInt(ts) >= 30 * 60 * 1000) return null;
+
+      const tree = JSON.parse(raw);
+      // URL param takes priority over saved session
+      const params = new URLSearchParams(window.location.search);
+      const deptName = params.get('dept') || loadSession()?.deptName;
+      if (!deptName || !tree?.tree) return null;
+
+      return tree.tree.find((d: any) => d.name === deptName) ?? null;
+    } catch { return null; }
+  });
 
   // Separate loading state for bank-detail fetches so we don't unmount the tree
   const [loadingBankDetail, setLoadingBankDetail] = useState(false);
+
+  // Track whether component has fully mounted (skip clearing session on first render)
+  const hasMountedRef = useRef(false);
+  useEffect(() => { hasMountedRef.current = true; }, []);
+
+  // Persist active department to session so refresh restores it even if URL loses ?dept=
+  useEffect(() => {
+    if (fullScreenDept?.name) {
+      saveSession({ deptName: fullScreenDept.name });
+    } else if (fullScreenDept === null && hasMountedRef.current) {
+      // User explicitly closed the dept — clear saved dept so refresh lands on tree root
+      saveSession({ deptName: undefined });
+    }
+  }, [fullScreenDept]);
 
   // Save expansion state whenever it changes
   useEffect(() => {
@@ -312,9 +350,38 @@ function MCQBankContent() {
   useEffect(() => {
     saveExpansionState("mcq-tree-expanded-sops", expandedSOPs);
   }, [expandedSOPs, saveExpansionState]);
-  const [viewMode, setViewMode] = useState<"grid" | "tree">("tree");
-  const [treeData, setTreeData] = useState<any>(null);
-  const [loadingTree, setLoadingTree] = useState(false);
+  const viewMode = "tree";
+
+  // ── Instant tree seed from localStorage (synchronous, runs before first paint) ──
+  // If there's a valid cache in localStorage we use it immediately so the tree
+  // renders on the first frame and the spinner is never shown on refresh.
+  const [treeData, setTreeData] = useState<any>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const storedUser = localStorage.getItem('user');
+      const username = storedUser ? JSON.parse(storedUser)?.username || '' : '';
+      const CACHE_KEY = `mcq-tree-cache-v4-${username || 'guest'}`;
+      const CACHE_TS_KEY = `mcq-tree-cache-timestamp-v4-${username || 'guest'}`;
+      const raw = localStorage.getItem(CACHE_KEY);
+      const ts  = localStorage.getItem(CACHE_TS_KEY);
+      if (raw && ts && Date.now() - parseInt(ts) < 30 * 60 * 1000) {
+        return JSON.parse(raw);
+      }
+    } catch { /* non-fatal */ }
+    return null;
+  });
+
+  // Start as false when we already seeded from localStorage (no spinner needed)
+  const [loadingTree, setLoadingTree] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      const storedUser = localStorage.getItem('user');
+      const username = storedUser ? JSON.parse(storedUser)?.username || '' : '';
+      const CACHE_TS_KEY = `mcq-tree-cache-timestamp-v4-${username || 'guest'}`;
+      const ts = localStorage.getItem(CACHE_TS_KEY);
+      return !(ts && Date.now() - parseInt(ts) < 30 * 60 * 1000);
+    } catch { return true; }
+  });
 
   // Sort state
   const [sortBy, setSortBy] = useState<
@@ -489,8 +556,32 @@ function MCQBankContent() {
     }
   }, [selectedMCQBank]);
 
+  // Dev-mode bypass for copy/inspect protection (password protected)
+  const [devModeUnlocked, setDevModeUnlocked] = useState(false);
+  const [showDevModal, setShowDevModal] = useState(false);
+  const [devPassword, setDevPassword] = useState("");
+  const [devPasswordError, setDevPasswordError] = useState("");
+  const [showDevPassword, setShowDevPassword] = useState(false);
+
+  const handleDevUnlock = () => {
+    if (devPassword === "1234567") {
+      setDevModeUnlocked(true);
+      setShowDevModal(false);
+      setDevPassword("");
+      setDevPasswordError("");
+    } else {
+      setDevPasswordError("Incorrect password.");
+    }
+  };
+
+  const handleDevLock = () => {
+    setDevModeUnlocked(false);
+    setDevPassword("");
+    setDevPasswordError("");
+  };
+
   // Apply copy protection to prevent copying/downloading questions
-  useCopyProtection();
+  useCopyProtection(!devModeUnlocked);
 
   useEffect(() => {
     // When restoring a specific bank from URL (refresh), skip the full bank list
@@ -578,6 +669,24 @@ function MCQBankContent() {
       const currentUser = storedUser ? JSON.parse(storedUser) : null;
       const username = currentUser?.username || "";
 
+      // ── Fast path: already seeded synchronously from localStorage on mount ─
+      // Don't re-read caches — just kick off a quiet background refresh so the
+      // next page load gets fresh data. Skip slow IDB + localStorage reads.
+      if (!forceRefresh && treeData) {
+        setLoadingTree(false);
+        backgroundRefreshTree(username, (fresh: any) => {
+          setTreeData(fresh);
+          cacheTreeToIDB(username, fresh).catch(() => {});
+          try {
+            const CACHE_KEY = `mcq-tree-cache-v4-${username || 'guest'}`;
+            const CACHE_TS_KEY = `mcq-tree-cache-timestamp-v4-${username || 'guest'}`;
+            localStorage.setItem(CACHE_KEY, JSON.stringify(fresh));
+            localStorage.setItem(CACHE_TS_KEY, Date.now().toString());
+          } catch { /* quota — non-fatal */ }
+        }, 3000);
+        return;
+      }
+
       // ── Tier 1: IndexedDB (fastest, survives refresh, ~50ms) ─────────────
       if (!forceRefresh) {
         const idbCached = await getTreeFromIDB<any>(username);
@@ -653,24 +762,26 @@ function MCQBankContent() {
     }
   };
 
-  // Auto-open department when dept is in URL
+  // Auto-open department on refresh.
+  // Runs whenever treeData arrives (IDB, localStorage, or network).
+  // Priority: ?dept= URL param → saved session deptName → nothing.
   useEffect(() => {
-    if (deptFromUrl && treeData?.tree) {
-      const matchingDept = treeData.tree.find(
-        (d: any) => d.name === deptFromUrl,
-      );
-      if (matchingDept) {
-        setFullScreenDept(matchingDept);
-      }
+    if (!treeData?.tree || fullScreenDept) return; // already open, nothing to do
+
+    const targetDept = deptFromUrl || loadSession()?.deptName;
+    if (!targetDept) return;
+
+    const matchingDept = treeData.tree.find((d: any) => d.name === targetDept);
+    if (matchingDept) {
+      setFullScreenDept(matchingDept);
     }
-  }, [deptFromUrl, treeData]);
+  }, [deptFromUrl, treeData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Handle 'search' query parameter
   useEffect(() => {
     if (searchFromUrl) {
       setSearchInputValue(searchFromUrl);
       setSearchTerm(searchFromUrl);
-      setViewMode("grid"); // Force grid view so search results are visible immediately
     }
   }, [searchFromUrl]);
 
@@ -1001,192 +1112,227 @@ function MCQBankContent() {
       details: [],
     });
 
+    let grandTotalReplaced = 0;
+    let grandTotalFailed = 0;
+    let passNumber = 0;
+    const MAX_PASSES = 10; // Safety cap to prevent infinite loop if AI keeps generating similar questions
+
     try {
-      // PHASE 1: Detect similar questions
-      console.log('🔍 Phase 1: Detecting similar questions...');
-      const detectResponse = await fetch("/api/similar-questions/detect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mcqBankId: bank._id,
-          sopId: bank.sopId,
-          threshold: 70,
-          scanAllBanks: false,
-        }),
-      });
+      while (passNumber < MAX_PASSES) {
+        passNumber++;
+        console.log(`🔍 Pass ${passNumber}: Detecting similar questions...`);
 
-      const detectData = await detectResponse.json();
-
-      if (!detectData.success || !detectData.similarities) {
-        alert("Failed to detect similar questions");
-        setSmartRegenProgress(null);
-        setCheckingSimilarity(false);
-        return;
-      }
-
-      const similarQuestions = detectData.similarities;
-      const totalSimilar = detectData.flaggedCount || 0;
-
-      if (totalSimilar === 0) {
-        alert("✅ No similar questions found!");
-        setSmartRegenProgress(null);
-        setCheckingSimilarity(false);
-        return;
-      }
-
-      console.log(`✅ Phase 1 Complete: Found ${totalSimilar} similar questions`);
-
-      // Update progress
-      setSmartRegenProgress(prev => prev ? {
-        ...prev,
-        phase: 'regenerating',
-        totalFound: totalSimilar,
-      } : null);
-
-      // PHASE 2: Regenerate similar questions one by one
-      let replaced = 0;
-      let failed = 0;
-      const details: Array<{
-        questionIndex: number;
-        oldQuestion: string;
-        newQuestion: string;
-        status: 'replaced' | 'failed' | 'skipped';
-      }> = [];
-
-      // Use the selected bank from state (already loaded in memory)
-      const allMcqs = bank.mcqs || [];
-
-      // Collect only the SIMILAR (duplicate) question indices — NOT the primary
-      // The primary is the one we keep; only the duplicates need replacing
-      const indicesToRegenerate = new Set<number>();
-      for (const similarity of similarQuestions) {
-        similarity.similarQuestions.forEach((sq: any) => {
-          indicesToRegenerate.add(sq.questionIndex);
-        });
-      }
-
-      // Regenerate each one
-      let processCount = 0;
-      for (const simIdx of Array.from(indicesToRegenerate).sort((a, b) => a - b)) {
-        processCount++;
+        // Reset to detecting phase for each pass
         setSmartRegenProgress(prev => prev ? {
           ...prev,
-          currentQuestion: simIdx + 1,
+          phase: 'detecting',
         } : null);
 
+        // PHASE 1: Detect similar questions
+        const detectResponse = await fetch("/api/similar-questions/detect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mcqBankId: bank._id,
+            sopId: bank.sopId,
+            threshold: 70,
+            scanAllBanks: false,
+          }),
+        });
+
+        const detectData = await detectResponse.json();
+
+        if (!detectData.success || !detectData.similarities) {
+          alert("Failed to detect similar questions");
+          setSmartRegenProgress(null);
+          setCheckingSimilarity(false);
+          return;
+        }
+
+        const similarQuestions = detectData.similarities;
+        const totalSimilar = detectData.flaggedCount || 0;
+
+        if (totalSimilar === 0) {
+          // No more similar questions — we're done
+          console.log(`✅ Pass ${passNumber}: Zero similar questions remaining. Process complete!`);
+          break;
+        }
+
+        console.log(`✅ Pass ${passNumber}: Found ${totalSimilar} similar questions — regenerating...`);
+
+        // Update progress
+        setSmartRegenProgress(prev => prev ? {
+          ...prev,
+          phase: 'regenerating',
+          totalFound: totalSimilar,
+        } : null);
+
+        // PHASE 2: Regenerate similar questions one by one
+        let replaced = 0;
+        let failed = 0;
+        const details: Array<{
+          questionIndex: number;
+          oldQuestion: string;
+          newQuestion: string;
+          status: 'replaced' | 'failed' | 'skipped';
+        }> = [];
+
+        // Fetch the latest MCQs directly from API so we always have fresh data
+        // (can't rely on React state which updates asynchronously)
+        let allMcqs: MCQ[] = bank.mcqs || [];
         try {
-          const oldQuestion = allMcqs[simIdx];
-          if (!oldQuestion) continue;
+          const freshBankResponse = await fetch(`/api/mcq-bank?id=${bank._id}&limit=1&t=${Date.now()}`, {
+            cache: 'no-store',
+            headers: { Pragma: 'no-cache', 'Cache-Control': 'no-cache' },
+          });
+          const freshBankData = await freshBankResponse.json();
+          if (freshBankData.success && freshBankData.mcqBanks?.length > 0) {
+            allMcqs = freshBankData.mcqBanks[0].mcqs || allMcqs;
+          }
+        } catch {
+          // Fall back to whatever MCQs we have in memory
+        }
 
-          const MAX_REGEN_ATTEMPTS = 3;
-          let accepted = false;
+        // Collect only the SIMILAR (duplicate) question indices — NOT the primary
+        const indicesToRegenerate = new Set<number>();
+        for (const similarity of similarQuestions) {
+          similarity.similarQuestions.forEach((sq: any) => {
+            indicesToRegenerate.add(sq.questionIndex);
+          });
+        }
 
-          for (let attempt = 1; attempt <= MAX_REGEN_ATTEMPTS; attempt++) {
-            // Step A: dry-run — generate but don't save yet
-            const dryRunResponse = await fetch("/api/mcq-bank/generate-replacement", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                mcqBankId: bank._id,
-                sopId: bank.sopId,
-                questionIndex: simIdx,
-                dryRun: true,
-              }),
-            });
+        // Regenerate each one
+        for (const simIdx of Array.from(indicesToRegenerate).sort((a, b) => a - b)) {
+          setSmartRegenProgress(prev => prev ? {
+            ...prev,
+            currentQuestion: simIdx + 1,
+          } : null);
 
-            const dryRunData = await dryRunResponse.json();
+          try {
+            const oldQuestion = allMcqs[simIdx];
+            if (!oldQuestion) continue;
 
-            if (!dryRunData.success || !dryRunData.newQuestion) {
-              // Generation failed entirely — no point retrying
-              failed++;
-              details.push({
-                questionIndex: simIdx,
-                oldQuestion: oldQuestion.question?.substring(0, 80) || 'Old Q',
-                newQuestion: 'Failed',
-                status: 'failed',
+            const MAX_REGEN_ATTEMPTS = 3;
+            let accepted = false;
+
+            for (let attempt = 1; attempt <= MAX_REGEN_ATTEMPTS; attempt++) {
+              // Step A: dry-run — generate but don't save yet
+              const dryRunResponse = await fetch("/api/mcq-bank/generate-replacement", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  mcqBankId: bank._id,
+                  sopId: bank.sopId,
+                  questionIndex: simIdx,
+                  dryRun: true,
+                }),
               });
+
+              const dryRunData = await dryRunResponse.json();
+
+              if (!dryRunData.success || !dryRunData.newQuestion) {
+                failed++;
+                details.push({
+                  questionIndex: simIdx,
+                  oldQuestion: oldQuestion.question?.substring(0, 80) || 'Old Q',
+                  newQuestion: 'Failed',
+                  status: 'failed',
+                });
+                break;
+              }
+
+              const candidate = dryRunData.newQuestion;
+
+              // Step B: compare candidate against the ORIGINAL question in-memory
+              const similarity = clientQuestionSimilarity(
+                { question: oldQuestion.question, options: oldQuestion.options, correctAnswer: oldQuestion.correctAnswer },
+                { question: candidate.question, options: candidate.options, correctAnswer: candidate.correctAnswer },
+              );
+
+              if (similarity >= 70 && attempt < MAX_REGEN_ATTEMPTS) {
+                await new Promise(r => setTimeout(r, 300));
+                continue;
+              }
+
+              // Step C: candidate is different enough — save the exact validated candidate
+              const saveResponse = await fetch("/api/mcq-bank/generate-replacement", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  mcqBankId: bank._id,
+                  sopId: bank.sopId,
+                  questionIndex: simIdx,
+                  dryRun: false,
+                  acceptedQuestion: candidate,
+                }),
+              });
+
+              const saveData = await saveResponse.json();
+              if (saveData.success) {
+                accepted = true;
+                replaced++;
+                details.push({
+                  questionIndex: simIdx,
+                  oldQuestion: oldQuestion.question?.substring(0, 80) || 'Old Q',
+                  newQuestion: 'Regenerated',
+                  status: 'replaced',
+                });
+              } else {
+                failed++;
+                details.push({
+                  questionIndex: simIdx,
+                  oldQuestion: oldQuestion.question?.substring(0, 80) || 'Old Q',
+                  newQuestion: 'Failed',
+                  status: 'failed',
+                });
+              }
               break;
             }
 
-            const candidate = dryRunData.newQuestion;
+            setSmartRegenProgress(prev => prev ? {
+              ...prev,
+              totalReplaced: grandTotalReplaced + replaced,
+              totalFailed: grandTotalFailed + failed,
+              details,
+            } : null);
 
-            // Step B: compare candidate against the ORIGINAL question in-memory
-            const similarity = clientQuestionSimilarity(
-              { question: oldQuestion.question, options: oldQuestion.options, correctAnswer: oldQuestion.correctAnswer },
-              { question: candidate.question, options: candidate.options, correctAnswer: candidate.correctAnswer },
-            );
+            await new Promise(r => setTimeout(r, 300));
 
-            if (similarity >= 70 && attempt < MAX_REGEN_ATTEMPTS) {
-              // Too similar — try again without saving
-              await new Promise(r => setTimeout(r, 300));
-              continue;
-            }
-
-            // Step C: candidate is different enough — save the exact validated candidate
-            const saveResponse = await fetch("/api/mcq-bank/generate-replacement", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                mcqBankId: bank._id,
-                sopId: bank.sopId,
-                questionIndex: simIdx,
-                dryRun: false,
-                acceptedQuestion: candidate,
-              }),
-            });
-
-            const saveData = await saveResponse.json();
-            if (saveData.success) {
-              accepted = true;
-              replaced++;
-              details.push({
-                questionIndex: simIdx,
-                oldQuestion: oldQuestion.question?.substring(0, 80) || 'Old Q',
-                newQuestion: 'Regenerated',
-                status: 'replaced',
-              });
-            } else {
-              failed++;
-              details.push({
-                questionIndex: simIdx,
-                oldQuestion: oldQuestion.question?.substring(0, 80) || 'Old Q',
-                newQuestion: 'Failed',
-                status: 'failed',
-              });
-            }
-            break;
+          } catch (error) {
+            console.error(`Error regenerating Q${simIdx + 1}:`, error);
+            failed++;
           }
-
-          // Note: if accepted=false and no entry exists, the for-loop already pushed a failed entry
-
-          setSmartRegenProgress(prev => prev ? {
-            ...prev,
-            totalReplaced: replaced,
-            totalFailed: failed,
-            details,
-          } : null);
-
-          await new Promise(r => setTimeout(r, 300));
-
-        } catch (error) {
-          console.error(`Error regenerating Q${simIdx + 1}:`, error);
-          failed++;
         }
+
+        grandTotalReplaced += replaced;
+        grandTotalFailed += failed;
+
+        // If this pass replaced nothing (all failed), stop to avoid infinite loop
+        if (replaced === 0) {
+          console.warn(`⚠️ Pass ${passNumber}: No questions were successfully replaced. Stopping to avoid infinite loop.`);
+          break;
+        }
+
+        // Invalidate caches before the next detection pass
+        bankDetailCache.current.delete(bank._id);
+        similarityCache.current.delete(bank._id);
+
+        // Brief pause before next pass
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
 
-      // PHASE 3: Show completion and verify
-      console.log('🎉 Phase 2 Complete: Regeneration finished');
+      // FINAL: Mark complete and refresh UI
+      console.log('🎉 Smart Regeneration complete!');
 
       setSmartRegenProgress(prev => prev ? {
         ...prev,
         phase: 'complete',
       } : null);
 
-      // Invalidate stale session caches so the refresh fetches fresh data from DB
+      // Invalidate caches and do a final verification
       bankDetailCache.current.delete(bank._id);
       similarityCache.current.delete(bank._id);
 
-      // Re-check similarities to confirm they're resolved (server truth)
       await new Promise(resolve => setTimeout(resolve, 500));
       const verifyResponse = await fetch("/api/similar-questions/detect", {
         method: "POST",
@@ -1202,26 +1348,25 @@ function MCQBankContent() {
       const verifyData = await verifyResponse.json();
       const remaining = verifyData.flaggedCount || 0;
 
-      // Refresh the bank from DB (cache was cleared above so this fetches fresh)
+      // Refresh the bank from DB
       if (selectedMCQBank) {
         await fetchFullBankDetails(bank, 'all');
       }
 
-      // Clear similarity UI state since we just re-ran detection
+      // Clear similarity UI state and reload fresh
       setSimilarityResults(null);
       setSimilarQuestionDetails({});
-      // Re-load the fresh similarity details (cache was cleared, will fetch from DB)
       await fetchSimilarityDetails(bank._id);
 
       alert(
         (`✅ Smart Regeneration Complete!\n\n` +
-        `Total Similar Questions Found: ${totalSimilar}\n` +
-        `Questions Regenerated: ${replaced}\n` +
-        `Failed Regenerations: ${failed}\n` +
+        `Total Passes Run: ${passNumber}\n` +
+        `Total Questions Regenerated: ${grandTotalReplaced}\n` +
+        `Total Failed Regenerations: ${grandTotalFailed}\n` +
         `Remaining Similar Questions: ${remaining}\n\n`) +
         (remaining === 0
           ? "🎉 Excellent! All similar questions have been resolved!"
-          : `Note: ${remaining} questions still need attention.`)
+          : `⚠️ ${remaining} questions could not be resolved after ${passNumber} passes. They may need manual review.`)
       );
 
       setSmartRegenProgress(null);
@@ -1951,7 +2096,7 @@ function MCQBankContent() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-2 md:p-4">
-      <div className="max-w-7xl mx-auto">
+      <div className="w-full">
         {/* Header */}
         <div className="mb-4">
           <div className="flex items-center justify-between mb-3">
@@ -2020,6 +2165,26 @@ function MCQBankContent() {
                 <Home className="h-3.5 w-3.5" />
                 Home
               </button>
+              {/* Dev-mode toggle: unlock/lock copy+inspect protection */}
+              {devModeUnlocked ? (
+                <button
+                  onClick={handleDevLock}
+                  title="Re-enable copy & inspect protection"
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white font-semibold rounded-md transition-all duration-200 shadow-sm whitespace-nowrap"
+                >
+                  <LockOpen className="h-3.5 w-3.5" />
+                  Dev Mode ON
+                </button>
+              ) : (
+                <button
+                  onClick={() => { setShowDevModal(true); setDevPassword(""); setDevPasswordError(""); }}
+                  title="Unlock copy & inspect restrictions (dev only)"
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-md transition-all duration-200 border border-white/20 hover:border-white/30 whitespace-nowrap"
+                >
+                  <Lock className="h-3.5 w-3.5" />
+                  Dev Mode
+                </button>
+              )}
               {!sopIdFromUrl && (
                 <>
                   <button
@@ -2152,33 +2317,6 @@ function MCQBankContent() {
         </div>
         )}
 
-        {/* View Mode Toggle */}
-        {!sopIdFromUrl && (
-          <div className="flex justify-end mb-4">
-            <div className="bg-white/10 backdrop-blur-lg rounded-lg p-1 border border-white/20 inline-flex">
-              <button
-                onClick={() => setViewMode("grid")}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all ${viewMode === "grid"
-                  ? "bg-purple-600 text-white"
-                  : "text-gray-300 hover:text-white"
-                  }`}
-              >
-                <Table className="h-4 w-4" />
-                Table View
-              </button>
-              <button
-                onClick={() => setViewMode("tree")}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all ${viewMode === "tree"
-                  ? "bg-purple-600 text-white"
-                  : "text-gray-300 hover:text-white"
-                  }`}
-              >
-                <List className="h-4 w-4" />
-                Folder View
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Tree View */}
         {isOpeningFromUrl ? (
@@ -2191,7 +2329,7 @@ function MCQBankContent() {
               </div>
             ))}
           </div>
-        ) : viewMode === "tree" && !sopIdFromUrl ? (
+        ) : !sopIdFromUrl ? (
           loadingTree ? (
             /* Skeleton: department folder cards */
             <DeptGridSkeleton count={8} />
@@ -2233,9 +2371,10 @@ function MCQBankContent() {
               <p className="text-gray-400 text-xl">No tree data available</p>
             </div>
           )
-        ) : (
+        ) : null}
+        {false && (
           <>
-            {/* MCQ Banks Grid */}
+            {/* MCQ Banks Grid - hidden */}
             {filteredAndSortedMCQBanks.length === 0 ? (
               <div className="text-center py-16">
                 <BookOpen className="h-16 w-16 text-gray-500 mx-auto mb-4" />
@@ -2387,77 +2526,6 @@ function MCQBankContent() {
           </>
         )}
 
-        {/* Pagination and Summary */}
-        {filteredAndSortedMCQBanks.length > 0 && (
-          <div className="mt-8 bg-white/10 backdrop-blur-lg rounded-2xl p-6 shadow-2xl border border-white/20">
-            <div className="flex items-center justify-between">
-              <div className="text-gray-300">
-                Showing{" "}
-                <span className="text-white font-semibold">
-                  {filteredAndSortedMCQBanks.length}
-                </span>{" "}
-                of{" "}
-                <span className="text-white font-semibold">{totalBanks}</span>{" "}
-                MCQ Bank(s)
-                {searchTerm && (
-                  <span className="ml-2 text-purple-300">(filtered)</span>
-                )}
-              </div>
-
-              {totalPages > 1 && (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() =>
-                      setCurrentPage((prev) => Math.max(1, prev - 1))
-                    }
-                    disabled={currentPage === 1}
-                    className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                  >
-                    Previous
-                  </button>
-
-                  <div className="flex items-center gap-2">
-                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                      let pageNum;
-                      if (totalPages <= 5) {
-                        pageNum = i + 1;
-                      } else if (currentPage <= 3) {
-                        pageNum = i + 1;
-                      } else if (currentPage >= totalPages - 2) {
-                        pageNum = totalPages - 4 + i;
-                      } else {
-                        pageNum = currentPage - 2 + i;
-                      }
-
-                      return (
-                        <button
-                          key={pageNum}
-                          onClick={() => setCurrentPage(pageNum)}
-                          className={`w-10 h-10 rounded-lg font-semibold transition-all ${currentPage === pageNum
-                            ? "bg-purple-600 text-white"
-                            : "bg-white/10 text-gray-300 hover:bg-white/20"
-                            }`}
-                        >
-                          {pageNum}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <button
-                    onClick={() =>
-                      setCurrentPage((prev) => Math.min(totalPages, prev + 1))
-                    }
-                    disabled={currentPage === totalPages}
-                    className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                  >
-                    Next
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
 
         {/* Bank detail loading: skeleton overlay while fetching (shown when no selectedMCQBank yet) */}
         {loadingBankDetail && !selectedMCQBank && (
@@ -2604,7 +2672,7 @@ function MCQBankContent() {
                               )}
                           </div>
                           <div className="flex items-center gap-3">
-                            <h2 className="text-xl font-bold text-gray-100 truncate flex-shrink-0 max-w-[200px] lg:max-w-md">
+                            <h2 className="text-xl font-bold text-gray-100 flex-shrink-0">
                               {cleanSOPName(
                                 selectedMCQBank.sopName,
                                 selectedMCQBank.sopIdentifier,
@@ -2618,19 +2686,9 @@ function MCQBankContent() {
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
-                          <div className="flex -space-x-1.5">
-                            {[1, 2, 3].map((i) => (
-                              <div
-                                key={i}
-                                className="w-5 h-5 rounded-full border-2 border-slate-700 bg-gradient-to-br from-indigo-500 to-purple-500 text-[8px] flex items-center justify-center text-white font-bold"
-                              >
-                                {i}
-                              </div>
-                            ))}
-                          </div>
-                          <span className="text-[11px] text-gray-400 ml-1 font-medium">
-                            {filtered.length} Indexed MCQs
+                        <div className="hidden md:flex items-center justify-center px-2 py-1 rounded-lg bg-indigo-500/20 border border-indigo-500/30 min-w-[2.5rem]" title="Total Indexed MCQs">
+                          <span className="text-[11px] text-indigo-300 font-bold">
+                            {filtered.length}
                           </span>
                         </div>
 
@@ -2656,7 +2714,7 @@ function MCQBankContent() {
                             {checkingSimilarity ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
-                              <RefreshCw className="h-4 w-4" />
+                              <ScanSearch className="h-4 w-4" />
                             )}
                             <span className="hidden sm:inline">
                               {checkingSimilarity
@@ -2675,7 +2733,7 @@ function MCQBankContent() {
                             {checkingSimilarity ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
-                              <RefreshCw className="h-4 w-4" />
+                              <Sparkles className="h-4 w-4" />
                             )}
                             <span className="hidden sm:inline">
                               {checkingSimilarity
@@ -2896,9 +2954,9 @@ function MCQBankContent() {
                               setActiveTab("active");
                               setVisibleCount(30);
                             }}
-                            className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === "active" ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/20" : "text-gray-500 hover:text-gray-300 hover:bg-white/5"}`}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === "active" ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/20" : "text-gray-500 hover:text-gray-300 hover:bg-white/5"}`}
                           >
-                            <Grid className="h-4 w-4" />
+                            <Grid className="h-3 w-3" />
                             Active ({banksToShow.length > 1 ? banksToShow.reduce((s, b) => s + (b.mcqs?.length ?? 0), 0) : (selectedMCQBank.mcqs?.length ?? 0)})
                           </button>
                           <button
@@ -2907,9 +2965,9 @@ function MCQBankContent() {
                               if (selectedMCQBank?.sopId)
                                 fetchRecycledQuestions(selectedMCQBank.sopId);
                             }}
-                            className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === "recycled" ? "bg-gradient-to-r from-rose-600 to-orange-600 text-white shadow-lg shadow-rose-500/20" : "text-gray-500 hover:text-gray-300 hover:bg-white/5"}`}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === "recycled" ? "bg-gradient-to-r from-rose-600 to-orange-600 text-white shadow-lg shadow-rose-500/20" : "text-gray-500 hover:text-gray-300 hover:bg-white/5"}`}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-3 w-3" />
                             Recycled{" "}
                             {recycledQuestions.length > 0
                               ? `(${recycledQuestions.length})`
@@ -2989,7 +3047,7 @@ function MCQBankContent() {
                   {/* ── RICH INTERFACE BODY ── */}
                   <div
                     ref={modalBodyRef}
-                    className="flex-1 overflow-y-auto custom-scrollbar bg-[#0f0d1e] relative w-full px-6"
+                    className="flex-1 overflow-y-auto custom-scrollbar bg-[#0f0d1e] relative w-full px-0"
                     onScroll={(e) => {
                       const el = e.currentTarget;
                       if (
@@ -3002,7 +3060,7 @@ function MCQBankContent() {
                       }
                     }}
                   >
-                    <div className="px-6 py-6 border-x border-white/5">
+                    <div className="border-x border-white/5">
                       {activeTab === "active" ? (
                         banksToShow.length > 1 ? (
                           /* Multiple banks: English section first, then Gujarati */
@@ -3023,61 +3081,66 @@ function MCQBankContent() {
                                 {filteredBank.length === 0 ? (
                                   <p className="text-gray-500 text-sm py-4">No questions match filters.</p>
                                 ) : (
-                                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 p-4">
+                                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 p-4">
                                     {filteredBank.slice(0, visibleCount).map((mcq, visibleIdx) => {
                                       const originalIndex = bankMcqs.indexOf(mcq);
                                       const isUpdating = updatingStatus === `${bank._id}-${originalIndex}`;
                                       return (
                                         <div
                                           key={`${bank._id}-${originalIndex}`}
-                                          className="group relative bg-[#1a1535] rounded-2xl border border-indigo-500/10 hover:border-indigo-500/25 transition-all duration-300 shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 overflow-hidden min-w-0"
+                                          className="group relative bg-[#1a1535] rounded-2xl border border-indigo-500/10 hover:border-indigo-500/25 transition-all duration-300 shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 overflow-hidden min-w-0 flex flex-col"
                                           onClick={() => {
                                             setSelectedMCQBank(bank);
                                             setSelectedMCQ({ mcq, index: originalIndex });
                                           }}
                                         >
                                           <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-                                          <div className="relative flex flex-col sm:flex-row items-stretch min-h-[100px]">
-                                            <div className="flex sm:flex-col items-center justify-between sm:justify-start w-full sm:w-12 p-3 gap-2 bg-white/[0.02] border-b sm:border-b-0 sm:border-r border-white/5">
-                                              <div className="flex flex-col items-center gap-1">
-                                                <span className="text-[8px] font-bold text-gray-500 uppercase tracking-widest font-mono">Index</span>
-                                                <div className="w-7 h-7 flex items-center justify-center bg-[#1a1625] border border-white/10 rounded-lg text-[10px] font-mono font-bold text-indigo-300 shadow-inner group-hover:border-indigo-500/30 transition-colors">
+                                          <div className="relative flex flex-row items-stretch flex-1">
+                                            <div className="flex flex-col items-center justify-start w-14 p-3 gap-2 bg-white/[0.02] border-r border-white/5 shrink-0">
+                                              <div className="flex flex-col items-center gap-1 pt-1">
+                                                <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest font-mono">Index</span>
+                                                <div className="w-9 h-9 flex items-center justify-center bg-[#1a1625] border border-white/10 rounded-lg text-sm font-mono font-bold text-indigo-300 shadow-inner group-hover:border-indigo-500/30 transition-colors">
                                                   {originalIndex + 1}
                                                 </div>
                                               </div>
-                                              <div className="h-px w-6 bg-white/5 hidden sm:block" />
-                                              <div className="flex flex-col items-center gap-1">
-                                                <span className="text-sm leading-none group-hover:scale-110 transition-transform duration-300 transform-gpu">{mcq.aiIcon}</span>
-                                              </div>
                                             </div>
-                                            <div className="flex-1 flex flex-col p-3 min-w-0">
-                                              <div className="flex items-center justify-between mb-2">
+                                            <div className="flex-1 flex flex-col px-4 pt-3 pb-4 min-w-0">
+                                              <div className="flex items-center justify-between mb-1.5">
                                                 <div className="flex items-center gap-2 flex-wrap">
-                                                  <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-wider border ${mcq.difficulty === "Easy" ? "bg-indigo-500/20 text-indigo-400 border-indigo-500/30" : mcq.difficulty === "Medium" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-rose-500/10 text-rose-400 border-rose-500/20"}`}>
-                                                    {mcq.difficulty}
+                                                  <span className={`w-6 h-6 flex items-center justify-center rounded text-[11px] font-black border ${mcq.difficulty === "Easy" ? "bg-indigo-500/20 text-indigo-400 border-indigo-500/30" : mcq.difficulty === "Medium" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-rose-500/10 text-rose-400 border-rose-500/20"}`} title={mcq.difficulty}>
+                                                    {mcq.difficulty === "Easy" ? "E" : mcq.difficulty === "Medium" ? "M" : "H"}
                                                   </span>
                                                   {bank.language === "Gujarati" && (
-                                                    <span className="px-2 py-0.5 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 text-[9px] font-bold uppercase tracking-wider">GUJ</span>
+                                                    <span className="px-2 py-0.5 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 text-xs font-bold uppercase tracking-wider">GUJ</span>
                                                   )}
                                                 </div>
-                                                <div className="flex items-center gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
-                                                  {mcq.isSimilar && <div className="p-1 rounded-md bg-amber-500/10 text-amber-500 border border-amber-500/20" title="Flagged as Similar"><Copy className="h-3 w-3" /></div>}
-                                                  {mcq.isChecked && <div className="p-1 rounded-md bg-purple-500/20 text-purple-400 border border-purple-500/30" title="Approved Status"><CheckCircle2 className="h-3 w-3" /></div>}
-                                                  {mcq.isReviewed && <div className="p-1 rounded-md bg-blue-500/10 text-blue-500 border border-blue-500/20" title="Review Completed"><Star className="h-3 w-3 fill-current" /></div>}
+                                                <div className="flex items-center gap-1.5">
+                                                  {mcq.isSimilar && <div className="p-1 rounded-md bg-amber-500/10 text-amber-500 border border-amber-500/20" title="Flagged as Similar"><Copy className="h-3.5 w-3.5" /></div>}
+                                                  {mcq.isChecked && <div className="p-1 rounded-md bg-purple-500/20 text-purple-400 border border-purple-500/30" title="Approved Status"><CheckCircle2 className="h-3.5 w-3.5" /></div>}
+                                                  {mcq.isReviewed && <div className="p-1 rounded-md bg-blue-500/10 text-blue-500 border border-blue-500/20" title="Review Completed"><CheckCircle2 className="h-3.5 w-3.5" /></div>}
                                                 </div>
                                               </div>
-                                              <div className="mb-2 min-w-0">
-                                                <div className="flex items-start gap-2 min-w-0">
-                                                  <span className="text-indigo-400 text-xs font-bold mt-0.5 select-none shrink-0">Q.</span>
-                                                  <h3 className={`text-sm font-semibold leading-snug tracking-tight text-gray-100 flex-1 min-w-0 break-words ${bank.language === "Gujarati" ? "font-gujarati text-base" : ""}`}>
+                                              <div className="mb-2.5 min-w-0">
+                                                <div className="flex items-start gap-1.5 min-w-0">
+                                                  <span className="text-indigo-400 text-[15px] font-black mt-px select-none shrink-0">Q.</span>
+                                                  <h3 className={`text-[15px] font-bold leading-snug tracking-tight text-gray-100 flex-1 min-w-0 break-words ${bank.language === "Gujarati" ? "font-gujarati text-base" : ""}`}>
                                                     {searchLower ? highlight(mcq.question) : mcq.question}
                                                   </h3>
                                                 </div>
                                               </div>
-                                              <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 mt-auto">
-                                                {(mcq.options || []).slice(0, 2).map((opt: string, oi: number) => (
-                                                  <div key={oi} className="text-[10px] text-gray-400 truncate border border-white/5 rounded-lg px-2 py-1">{opt}</div>
-                                                ))}
+                                              <div className="flex-1 grid grid-cols-2 gap-2 content-stretch">
+                                                {(mcq.options || []).slice(0, 4).map((opt: string, oi: number) => {
+                                                  const isCorrect = opt === mcq.correctAnswer;
+                                                  return (
+                                                    <div key={oi} className={`flex items-center gap-2 px-3 py-3 rounded-lg border text-[13px] font-medium ${isCorrect ? "bg-emerald-500/10 border-emerald-500/25 text-emerald-300" : "bg-white/[0.03] border-white/5 text-gray-400"}`}>
+                                                      <span className={`w-5 h-5 flex-shrink-0 flex items-center justify-center rounded text-[10px] font-bold ${isCorrect ? "bg-emerald-500/20 text-emerald-300" : "bg-white/5 text-gray-600"}`}>
+                                                        {String.fromCharCode(65 + oi)}
+                                                      </span>
+                                                      <span className={`flex-1 break-words min-w-0 leading-snug ${bank.language === "Gujarati" ? "font-gujarati" : ""}`}>{opt}</span>
+                                                      {isCorrect && <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400" />}
+                                                    </div>
+                                                  );
+                                                })}
                                               </div>
                                             </div>
                                           </div>
@@ -3113,7 +3176,7 @@ function MCQBankContent() {
                               )}
                             </div>
                           ) : (
-                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 p-4">
+                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 p-4">
                               {filtered
                                 .slice(0, visibleCount)
                                 .map((mcq, visibleIdx) => {
@@ -3124,7 +3187,7 @@ function MCQBankContent() {
                                   return (
                                     <div
                                       key={originalIndex}
-                                      className="group relative bg-[#1a1535] rounded-2xl border border-indigo-500/10 hover:border-indigo-500/25 transition-all duration-300 shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 overflow-hidden min-w-0"
+                                      className="group relative bg-[#1a1535] rounded-xl border border-indigo-500/10 hover:border-indigo-500/30 transition-all duration-300 shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 overflow-hidden min-w-0 flex flex-col"
                                       onClick={() =>
                                         setSelectedMCQ({
                                           mcq,
@@ -3136,135 +3199,93 @@ function MCQBankContent() {
                                       <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
 
                                       {/* Card Content Wrapper */}
-                                      <div className="relative flex flex-col sm:flex-row items-stretch min-h-[100px]">
+                                      <div className="relative flex flex-row items-stretch flex-1">
                                         {/* Sidebar: Navigation Meta */}
-                                        <div className="flex sm:flex-col items-center justify-between sm:justify-start w-full sm:w-12 p-3 gap-2 bg-white/[0.02] border-b sm:border-b-0 sm:border-r border-white/5">
-                                          <div className="flex flex-col items-center gap-1">
-                                            <span className="text-[8px] font-bold text-gray-500 uppercase tracking-widest font-mono">
-                                              Index
+                                        <div className="flex flex-col items-center justify-start w-14 p-3 gap-2 bg-white/[0.02] border-r border-white/5 shrink-0">
+                                          <div className="flex flex-col items-center gap-1 pt-1">
+                                            <span className="text-[9px] font-bold text-gray-600 uppercase tracking-widest font-mono">
+                                              #
                                             </span>
-                                            <div className="w-7 h-7 flex items-center justify-center bg-[#1a1625] border border-white/10 rounded-lg text-[10px] font-mono font-bold text-indigo-300 shadow-inner group-hover:border-indigo-500/30 transition-colors">
+                                            <div className="w-9 h-9 flex items-center justify-center bg-[#1a1625] border border-white/10 rounded-md text-sm font-mono font-bold text-indigo-300 shadow-inner group-hover:border-indigo-500/30 transition-colors">
                                               {originalIndex + 1}
                                             </div>
-                                          </div>
-
-                                          <div className="h-px w-6 bg-white/5 hidden sm:block" />
-
-                                          <div className="flex flex-col items-center gap-1">
-                                            <span className="text-sm leading-none group-hover:scale-110 transition-transform duration-300 transform-gpu">
-                                              {mcq.aiIcon}
-                                            </span>
                                           </div>
                                         </div>
 
                                         {/* Main Interaction Area */}
-                                        <div className="flex-1 flex flex-col p-3 min-w-0">
+                                        <div className="flex-1 flex flex-col px-4 pt-3 pb-4 min-w-0">
                                           {/* Top Meta Area */}
-                                          <div className="flex items-center justify-between mb-2">
+                                          <div className="flex items-center justify-between mb-1.5">
                                             <div className="flex items-center gap-2 flex-wrap">
                                               <span
-                                                className={`px-1.5 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-wider border ${mcq.difficulty === "Easy"
+                                                className={`w-6 h-6 flex items-center justify-center rounded text-[11px] font-black border ${mcq.difficulty === "Easy"
                                                   ? "bg-indigo-500/20 text-indigo-400 border-indigo-500/30"
-                                                  : mcq.difficulty ===
-                                                    "Medium"
+                                                  : mcq.difficulty === "Medium"
                                                     ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
                                                     : "bg-rose-500/10 text-rose-400 border-rose-500/20"
                                                   }`}
+                                                title={mcq.difficulty}
                                               >
-                                                {mcq.difficulty}
+                                                {mcq.difficulty === "Easy" ? "E" : mcq.difficulty === "Medium" ? "M" : "H"}
                                               </span>
-                                              {selectedMCQBank.language ===
-                                                "Gujarati" && (
-                                                  <span className="px-2 py-0.5 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 text-[9px] font-bold uppercase tracking-wider">
-                                                    GUJ
-                                                  </span>
-                                                )}
+                                              {selectedMCQBank.language === "Gujarati" && (
+                                                <span className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 text-xs font-bold uppercase tracking-wider">
+                                                  GUJ
+                                                </span>
+                                              )}
                                             </div>
 
-                                            <div className="flex items-center gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
-                                              <div className="flex items-center gap-1">
-                                                {mcq.isSimilar && (
-                                                  <div
-                                                    className="p-1 rounded-md bg-amber-500/10 text-amber-500 border border-amber-500/20"
-                                                    title="Flagged as Similar"
-                                                  >
-                                                    <Copy className="h-3 w-3" />
-                                                  </div>
-                                                )}
-                                                {mcq.isChecked && (
-                                                  <div
-                                                    className="p-1 rounded-md bg-purple-500/20 text-purple-400 border border-purple-500/30"
-                                                    title="Approved Status"
-                                                  >
-                                                    <CheckCircle2 className="h-3 w-3" />
-                                                  </div>
-                                                )}
-                                                {mcq.isReviewed && (
-                                                  <div
-                                                    className="p-1 rounded-md bg-blue-500/10 text-blue-500 border border-blue-500/20"
-                                                    title="Review Completed"
-                                                  >
-                                                    <Star className="h-3 w-3 fill-current" />
-                                                  </div>
-                                                )}
-                                              </div>
+                                            <div className="flex items-center gap-1.5">
+                                              {mcq.isSimilar && (
+                                                <div className="p-1 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20" title="Flagged as Similar">
+                                                  <Copy className="h-3.5 w-3.5" />
+                                                </div>
+                                              )}
+                                              {mcq.isChecked && (
+                                                <div className="p-1 rounded bg-purple-500/20 text-purple-400 border border-purple-500/30" title="Approved Status">
+                                                  <CheckCircle2 className="h-3.5 w-3.5" />
+                                                </div>
+                                              )}
+                                              {mcq.isReviewed && (
+                                                <div className="p-1 rounded bg-blue-500/10 text-blue-500 border border-blue-500/20" title="Review Completed">
+                                                  <CheckCircle2 className="h-3.5 w-3.5" />
+                                                </div>
+                                              )}
                                             </div>
                                           </div>
 
                                           {/* Question Text */}
-                                          <div className="mb-2 min-w-0">
-                                            <div className="flex items-start gap-2 min-w-0">
-                                              <span className="text-indigo-400 text-xs font-bold mt-0.5 select-none shrink-0">
-                                                Q.
-                                              </span>
-                                              <h3
-                                                className={`text-sm font-semibold leading-snug tracking-tight text-gray-100 flex-1 min-w-0 break-words ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati text-base" : ""}`}
-                                              >
-                                                {searchLower
-                                                  ? highlight(mcq.question)
-                                                  : mcq.question}
-                                              </h3>
+                                          <div className="mb-2.5 min-w-0">
+                                            <div className="flex items-start gap-1.5 min-w-0">
+                                              <span className="text-indigo-400 text-[15px] font-black mt-px select-none shrink-0">Q.</span>
+                                              <p className={`text-[15px] font-bold leading-snug text-gray-100 flex-1 min-w-0 break-words line-clamp-3 ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati text-base" : ""}`}>
+                                                {searchLower ? highlight(mcq.question) : mcq.question}
+                                              </p>
                                             </div>
                                           </div>
 
-                                          {/* Options Preview (Subtle grid) */}
-                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 mt-auto">
-                                            {(mcq.options || [])
-                                              .slice(0, 4)
-                                              .map((opt, oi) => {
-                                                const isCorrect =
-                                                  opt === mcq.correctAnswer;
-                                                return (
-                                                  <div
-                                                    key={oi}
-                                                    className={`flex items-start gap-2 p-1.5 rounded-lg transition-all border ${isCorrect
-                                                      ? "bg-purple-500/10 border-purple-500/20 text-purple-200"
-                                                      : "bg-[#1a1625]/50 border-white/5 text-gray-400 group-hover:bg-[#1a1625] group-hover:border-white/10"
-                                                      }`}
-                                                  >
-                                                    <span
-                                                      className={`w-4 h-4 flex-shrink-0 flex items-center justify-center rounded-md text-[8px] font-bold border ${isCorrect
-                                                        ? "bg-purple-500/20 border-purple-500/30 text-purple-300"
-                                                        : "bg-white/5 border-white/5 text-gray-500"
-                                                        }`}
-                                                    >
-                                                      {String.fromCharCode(
-                                                        65 + oi,
-                                                      )}
-                                                    </span>
-                                                    <span
-                                                      className={`text-[10px] flex-1 min-w-0 break-words ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati text-xs" : ""}`}
-                                                    >
-                                                      {searchLower
-                                                        ? highlight(opt)
-                                                        : opt}
-                                                    </span>
-                                                    {isCorrect && (
-                                                      <CheckCircle2 className="h-3 w-3 ml-auto text-purple-500" />
-                                                    )}
-                                                  </div>
-                                                );
-                                              })}
+                                          {/* Options Preview */}
+                                          <div className="flex-1 grid grid-cols-2 gap-2 content-stretch">
+                                            {(mcq.options || []).slice(0, 4).map((opt, oi) => {
+                                              const isCorrect = opt === mcq.correctAnswer;
+                                              return (
+                                                <div
+                                                  key={oi}
+                                                  className={`flex items-center gap-2 px-3 py-3 rounded-lg border text-[13px] font-medium ${isCorrect
+                                                    ? "bg-emerald-500/10 border-emerald-500/25 text-emerald-300"
+                                                    : "bg-white/[0.03] border-white/5 text-gray-400"
+                                                    }`}
+                                                >
+                                                  <span className={`w-5 h-5 flex-shrink-0 flex items-center justify-center rounded text-[10px] font-bold ${isCorrect ? "bg-emerald-500/20 text-emerald-300" : "bg-white/5 text-gray-600"}`}>
+                                                    {String.fromCharCode(65 + oi)}
+                                                  </span>
+                                                  <span className={`flex-1 break-words min-w-0 leading-snug ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati" : ""}`}>
+                                                    {searchLower ? highlight(opt) : opt}
+                                                  </span>
+                                                  {isCorrect && <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400" />}
+                                                </div>
+                                              );
+                                            })}
                                           </div>
 
                                           {/* Similarity indicators / warnings */}
@@ -3309,9 +3330,9 @@ function MCQBankContent() {
                                             )}
                                         </div>
 
-                                        {/* Action Toolbar on Hover */}
+                                        {/* Action Toolbar - Always Visible */}
                                         <div
-                                          className="flex flex-col items-center justify-center gap-2 w-full sm:w-12 p-2 bg-indigo-600/5 sm:border-l border-t sm:border-t-0 border-white/5 opacity-0 group-hover:opacity-100 transition-all duration-300 transform sm:translate-x-full group-hover:translate-x-0 group-hover:bg-indigo-600/10"
+                                          className="flex flex-col items-center justify-center gap-1.5 w-full sm:w-11 p-2 bg-indigo-600/5 sm:border-l border-t sm:border-t-0 border-white/5"
                                           onClick={(e) => e.stopPropagation()}
                                         >
                                           {/* Similar */}
@@ -3319,59 +3340,36 @@ function MCQBankContent() {
                                             disabled={isUpdating}
                                             onClick={(e) => {
                                               e.stopPropagation();
-                                              toggleSimilar(
-                                                selectedMCQBank,
-                                                originalIndex,
-                                                mcq,
-                                              );
+                                              toggleSimilar(selectedMCQBank, originalIndex, mcq);
                                             }}
-                                            className={`p-2 rounded-xl transition-all ${mcq.isSimilar ? "bg-amber-500 text-white shadow-lg shadow-amber-500/30" : "bg-white/5 text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/20 border border-transparent"}`}
+                                            className={`p-2 rounded-lg transition-all ${mcq.isSimilar ? "bg-amber-500 text-white shadow-lg shadow-amber-500/30" : "bg-white/5 text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/20 border border-transparent"}`}
+                                            title="Toggle Similar"
                                           >
-                                            {isUpdating ? (
-                                              <Loader2 className="h-4 w-4 animate-spin" />
-                                            ) : (
-                                              <Copy className="h-4 w-4" />
-                                            )}
+                                            {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
                                           </button>
                                           {/* Check/Approve */}
                                           <button
                                             disabled={isUpdating}
                                             onClick={(e) => {
                                               e.stopPropagation();
-                                              toggleChecked(
-                                                selectedMCQBank._id,
-                                                originalIndex,
-                                                !!mcq.isChecked,
-                                              );
+                                              toggleChecked(selectedMCQBank._id, originalIndex, !!mcq.isChecked);
                                             }}
-                                            className={`p-2 rounded-xl transition-all ${mcq.isChecked ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/30" : "bg-white/5 text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-500/20 border border-transparent"}`}
+                                            className={`p-2 rounded-lg transition-all ${mcq.isChecked ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/30" : "bg-white/5 text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-500/20 border border-transparent"}`}
+                                            title="Approve"
                                           >
-                                            {isUpdating ? (
-                                              <Loader2 className="h-4 w-4 animate-spin" />
-                                            ) : (
-                                              <CheckCircle2 className="h-4 w-4" />
-                                            )}
+                                            {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
                                           </button>
-                                          {/* Star/Review */}
+                                          {/* Review */}
                                           <button
                                             disabled={isUpdating}
                                             onClick={(e) => {
                                               e.stopPropagation();
-                                              toggleReview(
-                                                selectedMCQBank,
-                                                originalIndex,
-                                                mcq,
-                                              );
+                                              toggleReview(selectedMCQBank, originalIndex, mcq);
                                             }}
-                                            className={`p-2 rounded-xl transition-all ${mcq.isReviewed ? "bg-blue-500 text-white shadow-lg shadow-blue-500/30" : "bg-white/5 text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 hover:border-blue-500/20 border border-transparent"}`}
+                                            className={`p-2 rounded-lg transition-all ${mcq.isReviewed ? "bg-blue-500 text-white shadow-lg shadow-blue-500/30" : "bg-white/5 text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 hover:border-blue-500/20 border border-transparent"}`}
+                                            title="Mark Reviewed"
                                           >
-                                            {isUpdating ? (
-                                              <Loader2 className="h-4 w-4 animate-spin" />
-                                            ) : (
-                                              <Star
-                                                className={`h-4 w-4 ${mcq.isReviewed ? "fill-current" : ""}`}
-                                              />
-                                            )}
+                                            {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
                                           </button>
                                         </div>
                                       </div>
@@ -3846,9 +3844,8 @@ function MCQBankContent() {
                         {/* Edit Mode Toggle Bar */}
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                            <span className="text-4xl">{selectedMCQ.mcq.aiIcon}</span>
-                            <span className={`px-3 py-1 rounded-xl text-[10px] font-bold uppercase tracking-widest border ${getDifficultyColor(selectedMCQ.mcq.difficulty)}`}>
-                              {selectedMCQ.mcq.difficultyStars} {selectedMCQ.mcq.difficulty}
+                            <span className={`w-8 h-8 flex items-center justify-center rounded-xl text-sm font-black border ${getDifficultyColor(selectedMCQ.mcq.difficulty)}`} title={selectedMCQ.mcq.difficulty}>
+                              {selectedMCQ.mcq.difficulty === "Easy" ? "E" : selectedMCQ.mcq.difficulty === "Medium" ? "M" : "H"}
                             </span>
                           </div>
                           {!editMode ? (
@@ -4231,6 +4228,57 @@ function MCQBankContent() {
         onClose={() => setShowTrainerModal(false)}
         onSuccess={() => fetchTrainerMappings()}
       />
+
+      {/* Dev Mode Password Modal */}
+      {showDevModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-white/20 rounded-xl shadow-2xl w-full max-w-sm p-6 flex flex-col gap-4">
+            <div className="flex items-center gap-2 mb-1">
+              <Lock className="h-5 w-5 text-yellow-400" />
+              <h2 className="text-white font-bold text-lg">Dev Mode Unlock</h2>
+            </div>
+            <p className="text-gray-400 text-sm">
+              Enter the password to disable copy &amp; inspect protection for this session.
+            </p>
+            <div className="relative">
+              <input
+                type={showDevPassword ? "text" : "password"}
+                value={devPassword}
+                onChange={(e) => { setDevPassword(e.target.value); setDevPasswordError(""); }}
+                onKeyDown={(e) => { if (e.key === "Enter") handleDevUnlock(); if (e.key === "Escape") { setShowDevModal(false); } }}
+                placeholder="Enter password"
+                autoFocus
+                className="w-full bg-white/10 border border-white/20 text-white rounded-md px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500/50 placeholder-gray-500"
+              />
+              <button
+                type="button"
+                onClick={() => setShowDevPassword((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                tabIndex={-1}
+              >
+                {showDevPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            {devPasswordError && (
+              <p className="text-red-400 text-xs -mt-2">{devPasswordError}</p>
+            )}
+            <div className="flex gap-2 mt-1">
+              <button
+                onClick={handleDevUnlock}
+                className="flex-1 px-4 py-2 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white font-semibold rounded-md text-sm transition-all"
+              >
+                Unlock
+              </button>
+              <button
+                onClick={() => { setShowDevModal(false); setDevPassword(""); setDevPasswordError(""); }}
+                className="flex-1 px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-md text-sm transition-all border border-white/20"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -35,13 +35,18 @@ export async function GET(request: NextRequest) {
     if (!dbConnection) throw new Error('Database connection lost');
 
     // Run SOP fetch and MCQ aggregation in parallel
+    // Exclude obsolete SOPs so superseded versions never appear in the active tree
     const [sops, mcqBanks] = await Promise.all([
-      SOP.find({})
+      SOP.find({ $or: [{ isObsolete: { $ne: true } }, { isObsolete: { $exists: false } }] })
         .select('_id name identifier department fileUrl fileType language')
         .lean(),
 
       // Aggregate counts server-side — sends ~50 bytes per bank instead of ~5KB of subdocuments
       dbConnection.collection('mcqbanks').aggregate([
+        {
+          // Exclude MCQ banks that belong to obsolete (superseded) SOP versions
+          $match: { $or: [{ isObsolete: { $ne: true } }, { isObsolete: { $exists: false } }] },
+        },
         {
           $project: {
             _id: 1,
@@ -52,7 +57,7 @@ export async function GET(request: NextRequest) {
             folderDepartment: 1,
             folderSubcategory: 1,
             language: 1,
-            totalQuestions: { $ifNull: ['$totalQuestions', { $size: '$mcqs' }] },
+            totalQuestions: { $size: { $ifNull: ['$mcqs', []] } },
             checkedCount: {
               $size: {
                 $filter: { input: '$mcqs', as: 'q', cond: { $eq: ['$$q.isChecked', true] } }

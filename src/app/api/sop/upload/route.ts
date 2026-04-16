@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
+import MCQBank from '@/models/MCQBank';
+import ArchivedMCQBank from '@/models/ArchivedMCQBank';
 import { parseDocument, validateDocumentContent } from '@/lib/documentParser';
 import { resolveSopLanguageForUpload } from '@/lib/detectSopLanguage';
 import crypto from 'crypto';
+import mongoose from 'mongoose';
 import User from '@/models/User';
 import { Notification } from '@/models/Notification';
 import { uploadToBunny, generateSOPDocumentPath } from '@/lib/bunnyStorage';
@@ -190,9 +193,45 @@ export async function POST(request: NextRequest) {
     const extractedDates = extractDatesFromContent(parsed.content);
     console.log('✅ Dates extracted:', extractedDates);
 
+    // --- OVERWRITE: Archive old MCQ bank before replacing the SOP ---
+    if (overwrite) {
+      try {
+        const db = mongoose.connection.db;
+        if (db) {
+          const collection = db.collection('mcqbanks');
+          // Find all MCQ banks for this identifier + language (could be multiple)
+          const oldBanks = await collection.find({ sopIdentifier, language }).toArray();
+          for (const oldBank of oldBanks) {
+            await ArchivedMCQBank.create({
+              archivedSOPId: oldBank.sopId || oldBank._id,
+              originalSOPId: oldBank.sopId || oldBank._id,
+              sopName: oldBank.sopName || sopName,
+              sopIdentifier: oldBank.sopIdentifier || sopIdentifier,
+              sopVersion: oldBank.version || '1.0',
+              department: oldBank.department || department,
+              folderDepartment: oldBank.folderDepartment,
+              folderSubcategory: oldBank.folderSubcategory,
+              mcqs: oldBank.mcqs || [],
+              generatedAt: oldBank.generatedAt || oldBank.createdAt || new Date(),
+              totalQuestions: oldBank.totalQuestions || oldBank.mcqs?.length || 0,
+              difficultyDistribution: oldBank.difficultyDistribution || { easy: 0, medium: 0, hard: 0 },
+              aiModel: oldBank.aiModel,
+              language: oldBank.language || language,
+              archivedAt: new Date(),
+            });
+            await collection.deleteOne({ _id: oldBank._id });
+            console.log(`📦 [OVERWRITE] Archived old MCQ bank: ${sopIdentifier} (${language})`);
+          }
+        }
+      } catch (archiveErr) {
+        console.error('[OVERWRITE] Failed to archive old MCQ bank:', archiveErr);
+        // Don't block the upload — log and continue
+      }
+    }
+
     // Create or Update SOP record
     console.log(`💾 ${overwrite ? 'Updating' : 'Creating'} SOP record in database...`);
-    
+
     let sop;
     if (overwrite) {
       // Find and update existing SOP by identifier AND language so Gujarati never overwrites English
@@ -272,6 +311,7 @@ export async function POST(request: NextRequest) {
     console.log('✅ SOP saved with ID:', sop._id);
 
     // AUTOMATIC VERSION SHIFT: Detect and record older revisions as version artifacts
+    // AND automatically mark all older revisions + their MCQ banks as obsolete
     try {
       const { normalizeSopIdentifierKey, sopFamilyKeyFromIdentifier, parseRevisionFromSopIdentifier } =
         await import('@/lib/sopIdentifierNormalize');
@@ -282,60 +322,109 @@ export async function POST(request: NextRequest) {
       const familyKey = sopFamilyKeyFromIdentifier(sopIdentifier.toUpperCase());
 
       if (currentRevision != null && familyKey) {
-        // Find all older revisions of the same SOP family in SOP collection
-        // Regex pattern: match same family letters + different revision number
-        const familyPattern = new RegExp(`^${familyKey.split(':')[0]}\\d+-\\d+$`, 'i');
-        const olderSops = await SOP.find({
+        // Match all revisions of the same SOP document family (e.g. QAGE28-*)
+        const familyLetterDoc = familyKey.split(':')[0]; // e.g. "QAGE28" from "QAGE:28"
+        const familyPattern = new RegExp(`^${familyLetterDoc}\\d*-\\d+$`, 'i');
+
+        const relatedSops = await SOP.find({
           identifier: familyPattern,
-          language: language,
-          _id: { $ne: sop._id }, // Exclude the newly saved SOP itself
+          _id: { $ne: sop._id }, // Exclude the newly uploaded SOP itself
         }).lean();
 
-        for (const older of olderSops) {
-          const olderRev = parseRevisionFromSopIdentifier(String(older.identifier || '').toUpperCase());
-          if (olderRev == null || olderRev >= currentRevision) continue; // Only record truly older revisions
+        const obsoleteNow = new Date();
+        const obsoleteReason = `Superseded by ${sopIdentifier}`;
 
-          const ext = (older.fileType || 'docx').toLowerCase();
-          const versionNum = olderRev; // Use the SOP revision number as the version
+        for (const related of relatedSops) {
+          const relatedRev = parseRevisionFromSopIdentifier(String(related.identifier || '').toUpperCase());
+          if (relatedRev == null) continue;
 
-          // Check if this version entry already exists to avoid duplicates
-          const existing = await SOPVersionArtifacts.findOne({
-            identifier: normalizedId,
-            language: language,
-            'entries.version': versionNum,
-          });
+          const isOlderRevision = relatedRev < currentRevision;
 
-          if (!existing) {
-            // Add as a new version artifact entry
-            await SOPVersionArtifacts.findOneAndUpdate(
-              { identifier: normalizedId, language: language },
+          if (isOlderRevision) {
+            // Mark SOP as obsolete (regardless of language — older revision is obsolete for all languages)
+            await SOP.findByIdAndUpdate(related._id, {
+              isObsolete: true,
+              obsoleteAt: obsoleteNow,
+              obsoleteReason,
+            });
+
+            // Mark all MCQ banks for this SOP identifier + language as obsolete
+            await MCQBank.updateMany(
+              { sopIdentifier: related.identifier },
               {
-                $push: {
-                  entries: {
-                    version: versionNum,
-                    docxPath: ext === 'docx' ? older.fileUrl : undefined,
-                    pdfPath: ext === 'pdf' ? older.fileUrl : undefined,
-                  }
-                }
-              },
-              { upsert: true, setDefaultsOnInsert: true }
+                $set: {
+                  isObsolete: true,
+                  obsoleteAt: obsoleteNow,
+                  obsoleteReason,
+                },
+              }
             );
 
             console.log(
-              `[VERSION_SHIFT] Recorded older revision ${olderRev} of ${sopIdentifier} (${language}) ` +
-              `as version artifact V${versionNum}`
+              `[VERSION_SHIFT] Auto-obsoleted ${related.identifier} (rev ${relatedRev}) ` +
+              `— superseded by ${sopIdentifier} (rev ${currentRevision})`
             );
+
+            // Record as version artifact for history
+            const ext = (related.fileType || 'docx').toLowerCase();
+            const existing = await SOPVersionArtifacts.findOne({
+              identifier: normalizedId,
+              language: related.language || language,
+              'entries.version': relatedRev,
+            });
+
+            if (!existing) {
+              await SOPVersionArtifacts.findOneAndUpdate(
+                { identifier: normalizedId, language: related.language || language },
+                {
+                  $push: {
+                    entries: {
+                      version: relatedRev,
+                      docxPath: ext === 'docx' ? related.fileUrl : undefined,
+                      pdfPath: ext === 'pdf' ? related.fileUrl : undefined,
+                    }
+                  }
+                },
+                { upsert: true, setDefaultsOnInsert: true }
+              );
+            }
           }
         }
       }
     } catch (versionShiftErr) {
-      console.error('[VERSION_SHIFT] Error recording prior versions:', versionShiftErr);
-      // Don't fail the upload if version shift fails - log and continue
+      console.error('[VERSION_SHIFT] Error in auto-obsolete / version shift:', versionShiftErr);
+      // Don't fail the upload — log and continue
+    }
+
+    // --- OVERWRITE: Auto-generate new MCQs for the updated SOP (fire and forget) ---
+    if (overwrite && sop) {
+      const sopIdStr = sop._id.toString();
+      const baseUrl =
+        process.env.NEXTAUTH_URL?.replace(/\/$/, '') ||
+        process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
+        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
+
+      fetch(`${baseUrl}/api/sop/generate-mcqs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sopId: sopIdStr,
+          sopIdentifier,
+          language,
+          targetCount: 100,
+        }),
+      }).catch((err) =>
+        console.error('[OVERWRITE] Auto MCQ generation trigger failed:', err)
+      );
+
+      console.log(`🤖 [OVERWRITE] Triggered MCQ generation for ${sopIdentifier} (${language})`);
     }
 
     const response = {
       success: true,
-      message: 'SOP uploaded successfully',
+      message: overwrite
+        ? 'SOP updated successfully! Old MCQs archived. New MCQs are being generated in the background.'
+        : 'SOP uploaded successfully',
       sop: {
         id: sop._id,
         name: sop.name,
@@ -344,6 +433,7 @@ export async function POST(request: NextRequest) {
         wordCount: sop.metadata?.wordCount,
         language: sop.language,
       },
+      mcqGenerating: overwrite ? true : undefined,
     };
 
     console.log('🎉 Upload successful!', response);

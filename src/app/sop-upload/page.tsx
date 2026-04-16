@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Upload, FileText, AlertCircle, CheckCircle2, Loader2, Library, FolderOpen, Archive, X, Trash2, Eye, Download, RotateCcw } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
@@ -125,6 +125,35 @@ export default function SOPUploadPage() {
   const [duplicateSOP, setDuplicateSOP] = useState<{ type: string, existingSOP: any } | null>(null);
   const [generatedSopId, setGeneratedSopId] = useState<string | null>(null);
 
+  // MCQ generation progress
+  const [genStep, setGenStep] = useState<'idle' | 'connecting' | 'reading' | 'generating' | 'saving' | 'done' | 'error'>('idle');
+  const [genCount, setGenCount] = useState(0); // live question count from DB poll
+  const genPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopGenPoll = () => {
+    if (genPollRef.current) { clearInterval(genPollRef.current); genPollRef.current = null; }
+  };
+
+  // Poll the MCQ bank count while generating so the bar moves in real time
+  const startGenPoll = (sopId: string) => {
+    stopGenPoll();
+    genPollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/sop/generate-mcqs?sopId=${sopId}`, { cache: 'no-store' });
+        if (res.ok) {
+          const d = await res.json();
+          const count = d.mcqBank?.mcqs?.length ?? d.mcqBank?.totalQuestions ?? 0;
+          if (count > 0) {
+            setGenCount(count);
+            setGenStep('generating');
+          }
+        }
+      } catch { /* ignore poll errors */ }
+    }, 2500);
+  };
+
+  useEffect(() => () => stopGenPoll(), []);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
@@ -209,8 +238,12 @@ export default function SOPUploadPage() {
       setDuplicateSOP(null);
 
       setUploadedSOP(data.sop);
-      setSuccess('SOP uploaded successfully! You can now generate MCQs.');
-      
+      if (data.mcqGenerating) {
+        setSuccess('SOP updated! Old MCQs have been archived. New MCQs are being generated in the background — check the MCQ Bank in a minute.');
+      } else {
+        setSuccess('SOP uploaded successfully! You can now generate MCQs.');
+      }
+
       // Reset form
       setFile(null);
       setSopName('');
@@ -246,32 +279,52 @@ export default function SOPUploadPage() {
     setGenerating(true);
     setError('');
     setSuccess('');
+    setGenCount(0);
+    setGenStep('connecting');
 
     try {
+      // Step 1 — brief pause so "Connecting" renders visibly
+      await new Promise(r => setTimeout(r, 400));
+      setGenStep('reading');
+
+      // Step 2 — start polling the DB for live question count
+      startGenPoll(uploadedSOP.id);
+      await new Promise(r => setTimeout(r, 600));
+      setGenStep('generating');
+
+      // Step 3 — fire the actual generation (blocks until AI finishes)
       const response = await fetch('/api/sop/generate-mcqs', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          sopId: uploadedSOP.id,
-          targetCount: 100
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sopId: uploadedSOP.id, targetCount: 100 }),
       });
+
+      stopGenPoll();
 
       const data = await response.json();
 
       if (!response.ok) {
+        setGenStep('error');
         throw new Error(data.error || data.details || 'MCQ generation failed');
       }
 
-      // API returns { success, total, mcqBank } — use total or mcqs.length
+      // Step 4 — saving
+      setGenStep('saving');
       const questionCount = data.total ?? data.mcqBank?.mcqs?.length ?? data.mcqBank?.totalQuestions ?? 0;
+      setGenCount(questionCount);
+      await new Promise(r => setTimeout(r, 500));
+
+      // Step 5 — done
+      setGenStep('done');
       setGeneratedSopId(uploadedSOP.id);
       setSuccess(`✅ MCQ Bank generated! ${questionCount} questions created for "${uploadedSOP.name}".`);
+      await new Promise(r => setTimeout(r, 1200));
       setUploadedSOP(null);
-      
+      setGenStep('idle');
+
     } catch (err) {
+      stopGenPoll();
+      setGenStep('error');
       const msg = err instanceof Error ? err.message : 'MCQ generation failed';
       setError(`❌ ${msg}`);
     } finally {
@@ -535,20 +588,121 @@ export default function SOPUploadPage() {
               </div>
             </div>
 
-            <button
-              onClick={handleGenerateMCQs}
-              disabled={generating}
-              className="w-full py-4 px-6 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-bold rounded-xl hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] shadow-lg"
-            >
-              {generating ? (
-                <span className="flex items-center justify-center">
-                  <Loader2 className="animate-spin mr-2 h-5 w-5" />
-                  Generating MCQ Bank (100 Questions)... This may take 2–5 min
-                </span>
-              ) : (
-                '⚡ Generate 100 MCQs'
-              )}
-            </button>
+            {/* ── Generate button / progress panel ── */}
+            {genStep === 'idle' || !generating ? (
+              <button
+                onClick={handleGenerateMCQs}
+                disabled={generating}
+                className="w-full py-4 px-6 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-bold rounded-xl hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] shadow-lg"
+              >
+                ⚡ Generate 100 MCQs
+              </button>
+            ) : (
+              <div className="rounded-xl border border-white/10 bg-black/30 p-5 space-y-4">
+
+                {/* Step indicators */}
+                {(() => {
+                  const steps: { key: typeof genStep; label: string; detail: string }[] = [
+                    { key: 'connecting', label: 'Connecting',   detail: 'Reaching AI service' },
+                    { key: 'reading',    label: 'Reading SOP',  detail: 'Parsing document content' },
+                    { key: 'generating', label: 'Generating',   detail: `${genCount} / 100 questions so far` },
+                    { key: 'saving',     label: 'Saving',       detail: 'Writing MCQ bank to database' },
+                    { key: 'done',       label: 'Done',         detail: `${genCount} questions ready` },
+                  ];
+                  const order = ['connecting','reading','generating','saving','done'];
+                  const currentIdx = order.indexOf(genStep);
+
+                  return (
+                    <div className="space-y-2">
+                      {steps.map((s, i) => {
+                        const isPast    = i < currentIdx;
+                        const isCurrent = i === currentIdx;
+                        const isFuture  = i > currentIdx;
+                        const isErr     = genStep === 'error' && i === currentIdx;
+
+                        return (
+                          <div key={s.key} className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-all duration-300 ${
+                            isCurrent && !isErr ? 'bg-green-500/10 border border-green-500/20' :
+                            isPast              ? 'opacity-60' :
+                            isFuture            ? 'opacity-25' : ''
+                          }`}>
+                            {/* icon */}
+                            <div className="shrink-0 w-5 h-5 flex items-center justify-center">
+                              {isPast ? (
+                                <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                              ) : isCurrent && !isErr ? (
+                                <Loader2 className="h-4 w-4 text-green-400 animate-spin" />
+                              ) : isErr ? (
+                                <AlertCircle className="h-4 w-4 text-red-400" />
+                              ) : (
+                                <div className="h-3 w-3 rounded-full border-2 border-white/20" />
+                              )}
+                            </div>
+                            {/* label */}
+                            <div className="flex-1 min-w-0">
+                              <span className={`text-xs font-bold uppercase tracking-widest ${
+                                isCurrent ? 'text-white' : isPast ? 'text-emerald-400' : 'text-gray-500'
+                              }`}>{s.label}</span>
+                              {isCurrent && (
+                                <p className="text-[10px] text-gray-400 mt-0.5">{s.detail}</p>
+                              )}
+                            </div>
+                            {/* step number badge */}
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                              isCurrent ? 'bg-green-500/10 border-green-500/20 text-green-400' :
+                              isPast    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
+                              'border-white/10 text-gray-600'
+                            }`}>{i + 1}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
+                {/* Progress bar */}
+                <div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                      {genStep === 'generating' ? `${genCount} of 100 questions` :
+                       genStep === 'done'       ? `${genCount} questions complete` :
+                       genStep === 'saving'     ? 'Saving to database…' :
+                       genStep === 'error'      ? 'Generation failed' :
+                       'Starting…'}
+                    </span>
+                    <span className="text-[10px] font-black text-green-400">
+                      {genStep === 'done' ? '100%' :
+                       genStep === 'saving' ? '95%' :
+                       genStep === 'generating' ? `${Math.min(Math.round((genCount / 100) * 90), 90)}%` :
+                       genStep === 'reading' ? '5%' :
+                       genStep === 'connecting' ? '2%' : '0%'}
+                    </span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-white/5 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-700 ${
+                        genStep === 'error' ? 'bg-red-500' :
+                        genStep === 'done'  ? 'bg-emerald-500' :
+                        'bg-gradient-to-r from-green-500 to-emerald-400'
+                      }`}
+                      style={{
+                        width:
+                          genStep === 'done'       ? '100%' :
+                          genStep === 'saving'     ? '95%' :
+                          genStep === 'generating' ? `${Math.max(10, Math.min(Math.round((genCount / 100) * 90), 90))}%` :
+                          genStep === 'reading'    ? '5%' :
+                          genStep === 'connecting' ? '2%' :
+                          genStep === 'error'      ? '100%' : '0%'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-gray-500 text-center">
+                  AI is reading the SOP and writing questions — this takes 2–5 minutes. Do not close this tab.
+                </p>
+              </div>
+            )}
           </div>
         )}
 

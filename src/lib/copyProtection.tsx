@@ -6,8 +6,13 @@
 
 import { useEffect } from 'react';
 
-export function useCopyProtection() {
+/**
+ * Apply copy/inspect protection. Pass enabled=false to disable all restrictions.
+ */
+export function useCopyProtection(enabled: boolean = true) {
   useEffect(() => {
+    if (!enabled) return;
+
     // Disable right-click
     const handleContextMenu = (e: MouseEvent) => {
       e.preventDefault();
@@ -18,7 +23,7 @@ export function useCopyProtection() {
     // Keyboard blocking for Copy/Cut/Save/Print
     const handleKeyDown = (e: KeyboardEvent) => {
       // Copy, Cut, Paste, Select All, Save, Print
-      if ((e.ctrlKey || e.metaKey) && 
+      if ((e.ctrlKey || e.metaKey) &&
           ['c', 'C', 'x', 'X', 'v', 'V', 'a', 'A', 's', 'S', 'p', 'P'].includes(e.key)) {
         e.preventDefault();
         e.stopPropagation();
@@ -26,7 +31,7 @@ export function useCopyProtection() {
       }
 
       // Developer Tools
-      if (e.key === 'F12' || 
+      if (e.key === 'F12' ||
           ((e.ctrlKey || e.metaKey) && e.shiftKey && ['i', 'I', 'j', 'J', 'c', 'C'].includes(e.key)) ||
           ((e.ctrlKey || e.metaKey) && ['u', 'U'].includes(e.key))) {
         e.preventDefault();
@@ -78,7 +83,7 @@ export function useCopyProtection() {
     // Prevent text selection via CSS
     const originalUserSelect = document.body.style.userSelect;
     const originalWebkitUserSelect = document.body.style.webkitUserSelect;
-    
+
     document.body.style.userSelect = 'none';
     document.body.style.webkitUserSelect = 'none';
     (document.body.style as any).mozUserSelect = 'none';
@@ -93,11 +98,13 @@ export function useCopyProtection() {
       document.removeEventListener('paste', handlePaste, true);
       document.removeEventListener('dragstart', handleDragStart, true);
       document.removeEventListener('selectstart', handleSelectStart, true);
-      
+
       document.body.style.userSelect = originalUserSelect;
       document.body.style.webkitUserSelect = originalWebkitUserSelect;
+      (document.body.style as any).mozUserSelect = '';
+      (document.body.style as any).msUserSelect = '';
     };
-  }, []);
+  }, [enabled]);
 }
 
 /**

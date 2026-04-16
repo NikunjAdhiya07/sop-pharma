@@ -39,6 +39,9 @@ export interface IMCQBank extends Document {
   };
   aiModel?: string;
   language?: 'English' | 'Gujarati';
+  isObsolete?: boolean;
+  obsoleteAt?: Date;
+  obsoleteReason?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -177,6 +180,9 @@ const MCQBankSchema = new Schema<IMCQBank>({
     enum: ['English', 'Gujarati'],
     default: 'English',
   },
+  isObsolete: { type: Boolean, default: false },
+  obsoleteAt: { type: Date },
+  obsoleteReason: { type: String },
 }, {
   timestamps: true,
 });

@@ -119,6 +119,7 @@ export async function GET(request: NextRequest) {
         status: job.status,
         progress: job.progress,
         summary: job.summary,
+        logs: job.logs,
         error: job.error,
         createdAt: job.createdAt,
         completedAt: job.completedAt,

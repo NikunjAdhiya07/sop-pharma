@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       if (!bankToSave) {
         return NextResponse.json({ success: false, error: 'MCQ bank not found' }, { status: 404 });
       }
-      bankToSave.mcqs.splice(questionIndex, 1, acceptedQuestion);
+      bankToSave.mcqs.splice(questionIndex, 1, { ...acceptedQuestion, isSimilar: false });
       await bankToSave.save();
       return NextResponse.json({
         success: true,
@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    freshBank.mcqs.splice(questionIndex, 1, newQuestion);
+    freshBank.mcqs.splice(questionIndex, 1, { ...newQuestion, isSimilar: false });
 
     let saveAttempts = 0;
     const MAX_SAVE_ATTEMPTS = 3;
@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
         console.log(`🔄 Refreshing and retrying save...`);
         const retryBank = await MCQBank.findById(mcqBankId);
         if (retryBank) {
-          retryBank.mcqs.splice(questionIndex, 1, newQuestion);
+          retryBank.mcqs.splice(questionIndex, 1, { ...newQuestion, isSimilar: false });
           Object.assign(freshBank, retryBank.toObject());
         } else {
           saveError = new Error('MCQ bank no longer exists');

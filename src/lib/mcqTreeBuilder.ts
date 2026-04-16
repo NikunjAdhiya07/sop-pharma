@@ -317,7 +317,7 @@ export function buildMCQTreeStructure(
     const sopFileUrlGujarati = gujaratiSop?.fileUrl || undefined;
 
     const totalQuestions = sopMCQBanks.reduce(
-      (sum, bank) => sum + (bank.mcqs?.length ?? (bank as any).totalQuestions ?? 0),
+      (sum, bank) => sum + ((bank as any).totalQuestions ?? bank.mcqs?.length ?? 0),
       0
     );
     // Use pre-computed counts from aggregation when mcqs array is not present (tree API path)

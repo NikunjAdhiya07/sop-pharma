@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   ChevronRight,
   ChevronDown,
@@ -32,6 +32,9 @@ import {
   Trash2,
   Plus,
   RotateCcw,
+  Zap,
+  XCircle,
+  RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
 import { normalizeDepartmentName } from "@/lib/mcqTreeBuilder";
@@ -361,6 +364,199 @@ export default function MCQTreeView({
       setRestoringSOPs(prev => ({ ...prev, [sopIdentifier]: false }));
     }
   };
+
+  // Bulk Dept Regeneration state
+  const [bulkRegenJob, setBulkRegenJob] = useState<{
+    jobId: string;
+    department: string;
+    status: string;
+    cancelled: boolean;
+    progress: {
+      banksTotal: number;
+      banksProcessed: number;
+      banksSucceeded: number;
+      banksFailed: number;
+      banksSkipped: number;
+      totalQuestionsReplaced: number;
+      totalQuestionsFailed: number;
+    };
+    bankResults: Array<{
+      bankId: string;
+      sopIdentifier: string;
+      sopName: string;
+      language: string;
+      status: string;
+      questionsReplaced: number;
+      questionsFailed: number;
+      remainingSimilar: number;
+      autoResolveJobId?: string;
+      logs: string[];
+      replacements: Array<{
+        similarityScore: number;
+        oldQuestion: string;
+        oldAnswer: string;
+        oldOptions: string[];
+        newQuestion: string;
+        newAnswer: string;
+        newOptions: string[];
+      }>;
+      error?: string;
+    }>;
+    error?: string;
+  } | null>(null);
+  const [bulkRegenLoading, setBulkRegenLoading] = useState(false);
+  const [bulkRegenCancelling, setBulkRegenCancelling] = useState(false);
+  const [bulkRegenError, setBulkRegenError] = useState('');
+  const [showBulkRegenModal, setShowBulkRegenModal] = useState(false);
+  const [expandedBulkLogBanks, setExpandedBulkLogBanks] = useState<Set<string>>(new Set());
+  const [bulkRegenDetailBank, setBulkRegenDetailBank] = useState<{
+    bankId: string; sopIdentifier: string; sopName: string; language: string;
+    status: string; questionsReplaced: number; questionsFailed: number;
+    remainingSimilar: number; logs: string[];
+    replacements: Array<{
+      similarityScore: number;
+      oldQuestion: string; oldAnswer: string; oldOptions: string[];
+      newQuestion: string; newAnswer: string; newOptions: string[];
+    }>;
+    error?: string;
+  } | null>(null);
+  const bulkRegenPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Drag state for bulk regen modal
+  const [bulkRegenDragging, setBulkRegenDragging] = useState(false);
+  const [bulkRegenModalPos, setBulkRegenModalPos] = useState({ x: 0, y: 0 });
+  const [bulkRegenDragStart, setBulkRegenDragStart] = useState({ x: 0, y: 0 });
+
+  const BULK_REGEN_STORAGE_KEY = 'mcq_bulk_regen_results';
+
+  // Persist a completed/failed/cancelled job to localStorage so results survive refresh
+  const persistBulkRegenJob = (job: NonNullable<typeof bulkRegenJob>) => {
+    try {
+      const done = ['completed', 'failed', 'cancelled'].includes(job.status);
+      if (!done) return;
+      const stored: Record<string, unknown> = JSON.parse(localStorage.getItem(BULK_REGEN_STORAGE_KEY) || '{}');
+      stored[job.department] = job;
+      localStorage.setItem(BULK_REGEN_STORAGE_KEY, JSON.stringify(stored));
+    } catch {
+      // localStorage unavailable — silently skip
+    }
+  };
+
+  // Remove a department's saved result (called when a new run starts)
+  const clearPersistedBulkRegenJob = (department: string) => {
+    try {
+      const stored: Record<string, unknown> = JSON.parse(localStorage.getItem(BULK_REGEN_STORAGE_KEY) || '{}');
+      delete stored[department];
+      localStorage.setItem(BULK_REGEN_STORAGE_KEY, JSON.stringify(stored));
+    } catch {
+      // ignore
+    }
+  };
+
+  // Restore the last completed job for a department from localStorage
+  const getPersistedBulkRegenJob = (department: string) => {
+    try {
+      const stored: Record<string, any> = JSON.parse(localStorage.getItem(BULK_REGEN_STORAGE_KEY) || '{}');
+      return stored[department] ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  const stopBulkRegenPolling = () => {
+    if (bulkRegenPollRef.current) {
+      clearInterval(bulkRegenPollRef.current);
+      bulkRegenPollRef.current = null;
+    }
+  };
+
+  const startBulkRegenPolling = (jobId: string) => {
+    stopBulkRegenPolling();
+    bulkRegenPollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/mcq-bank/bulk-department-regenerate?jobId=${jobId}`, { cache: 'no-store' });
+        const data = await res.json();
+        if (data.success && data.job) {
+          const updatedJob = { ...data.job, jobId: data.job.id || jobId };
+          setBulkRegenJob(updatedJob);
+          const done = ['completed', 'failed', 'cancelled'].includes(data.job.status);
+          if (done) {
+            stopBulkRegenPolling();
+            persistBulkRegenJob(updatedJob);
+          }
+        }
+      } catch (err) {
+        console.error('[bulk-regen] Polling error:', err);
+      }
+    }, 3000);
+  };
+
+  const handleStartBulkRegen = async (department: string) => {
+    setBulkRegenLoading(true);
+    setBulkRegenError('');
+    setExpandedBulkLogBanks(new Set());
+    clearPersistedBulkRegenJob(department);
+    try {
+      const res = await fetch('/api/mcq-bank/bulk-department-regenerate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ department }),
+      });
+      const data = await res.json();
+
+      // 409 = a job is already running — resume polling it instead of showing an error
+      if (res.status === 409 && data.jobId) {
+        const statusRes = await fetch(`/api/mcq-bank/bulk-department-regenerate?jobId=${data.jobId}`, { cache: 'no-store' });
+        const statusData = await statusRes.json();
+        if (statusData.success && statusData.job) {
+          setBulkRegenJob({ ...statusData.job, jobId: statusData.job.id || data.jobId });
+        }
+        setShowBulkRegenModal(true);
+        startBulkRegenPolling(data.jobId);
+        return;
+      }
+
+      if (!res.ok || !data.success) {
+        setBulkRegenError(data.error || 'Failed to start bulk regeneration');
+        return;
+      }
+      // Fetch initial job state
+      const statusRes = await fetch(`/api/mcq-bank/bulk-department-regenerate?jobId=${data.jobId}`, { cache: 'no-store' });
+      const statusData = await statusRes.json();
+      if (statusData.success && statusData.job) {
+        setBulkRegenJob({ ...statusData.job, jobId: statusData.job.id || data.jobId });
+      }
+      setShowBulkRegenModal(true);
+      startBulkRegenPolling(data.jobId);
+    } catch (err: any) {
+      setBulkRegenError(err.message || 'Network error');
+    } finally {
+      setBulkRegenLoading(false);
+    }
+  };
+
+  const handleCancelBulkRegen = async () => {
+    if (!bulkRegenJob || bulkRegenCancelling) return;
+    setBulkRegenCancelling(true);
+    try {
+      await fetch(`/api/mcq-bank/bulk-department-regenerate?jobId=${bulkRegenJob.jobId}`, {
+        method: 'DELETE',
+      });
+      stopBulkRegenPolling();
+      const cancelled = { ...bulkRegenJob, status: 'cancelled', cancelled: true };
+      setBulkRegenJob(cancelled);
+      persistBulkRegenJob(cancelled);
+    } catch (err) {
+      console.error('[bulk-regen] Cancel error:', err);
+    } finally {
+      setBulkRegenCancelling(false);
+    }
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => stopBulkRegenPolling();
+  }, []);
 
   // Fetch archived SOPs on mount
   useEffect(() => {
@@ -774,6 +970,46 @@ export default function MCQTreeView({
     }
   }, [fullScreenDept]);
 
+  // Drag handlers for bulk regen modal
+  const handleBulkRegenMouseDown = (e: React.MouseEvent) => {
+    setBulkRegenDragging(true);
+    setBulkRegenDragStart({
+      x: e.clientX - bulkRegenModalPos.x,
+      y: e.clientY - bulkRegenModalPos.y,
+    });
+  };
+
+  const handleBulkRegenMouseMove = (e: MouseEvent) => {
+    if (bulkRegenDragging) {
+      setBulkRegenModalPos({
+        x: e.clientX - bulkRegenDragStart.x,
+        y: e.clientY - bulkRegenDragStart.y,
+      });
+    }
+  };
+
+  const handleBulkRegenMouseUp = () => {
+    setBulkRegenDragging(false);
+  };
+
+  useEffect(() => {
+    if (bulkRegenDragging) {
+      window.addEventListener('mousemove', handleBulkRegenMouseMove);
+      window.addEventListener('mouseup', handleBulkRegenMouseUp);
+      return () => {
+        window.removeEventListener('mousemove', handleBulkRegenMouseMove);
+        window.removeEventListener('mouseup', handleBulkRegenMouseUp);
+      };
+    }
+  }, [bulkRegenDragging, bulkRegenDragStart]);
+
+  // Reset bulk regen modal position when opening
+  useEffect(() => {
+    if (showBulkRegenModal) {
+      setBulkRegenModalPos({ x: 0, y: 0 });
+    }
+  }, [showBulkRegenModal]);
+
   // Filter tree based on search
   const filteredTree = tree.filter(matchesDepartment).map((dept) => ({
     ...dept,
@@ -963,34 +1199,38 @@ export default function MCQTreeView({
 
                 {/* SOP Approval Status Capsules — clickable filters */}
                 <div className="flex items-center gap-2 w-full mt-0.5">
-                  <button
-                    type="button"
+                  <div
+                    role="button"
+                    tabIndex={0}
                     onClick={(e) => {
                       e.stopPropagation();
                       setApprovalFilter('approved');
                       setFullScreenDept(dept);
                     }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); setApprovalFilter('approved'); setFullScreenDept(dept); } }}
                     className="flex items-center gap-1.5 flex-1 justify-center bg-emerald-500/10 border border-emerald-500/25 rounded-full px-3 py-1 hover:bg-emerald-500/20 hover:border-emerald-500/50 transition-all cursor-pointer"
                     title={`Filter: ${approvedSOPs} Approved SOP${approvedSOPs !== 1 ? 's' : ''}`}
                   >
                     <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />
                     <span className="text-[11px] font-black text-emerald-400 leading-none">{approvedSOPs}</span>
                     <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wide leading-none">Approved</span>
-                  </button>
-                  <button
-                    type="button"
+                  </div>
+                  <div
+                    role="button"
+                    tabIndex={0}
                     onClick={(e) => {
                       e.stopPropagation();
                       setApprovalFilter('pending');
                       setFullScreenDept(dept);
                     }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); setApprovalFilter('pending'); setFullScreenDept(dept); } }}
                     className="flex items-center gap-1.5 flex-1 justify-center bg-rose-500/10 border border-rose-500/25 rounded-full px-3 py-1 hover:bg-rose-500/20 hover:border-rose-500/50 transition-all cursor-pointer"
                     title={`Filter: ${pendingSOPs} Pending SOP${pendingSOPs !== 1 ? 's' : ''}`}
                   >
                     <AlertTriangle className="h-3 w-3 text-rose-400 shrink-0" />
                     <span className="text-[11px] font-black text-rose-400 leading-none">{pendingSOPs}</span>
                     <span className="text-[9px] font-bold text-rose-600 uppercase tracking-wide leading-none">Pending</span>
-                  </button>
+                  </div>
                 </div>
 
                 {/* Question-level Status Breakdown Bar */}
@@ -1306,6 +1546,64 @@ export default function MCQTreeView({
                       </div>
 
                       <div className="flex items-center gap-2 -mt-4">
+                        {/* Bulk Smart Regenerate button — always visible, processes ALL banks */}
+                        {(() => {
+                          const totalBanks = fullScreenDept.subcategories.reduce(
+                            (acc, sub) => acc + sub.sops.reduce((s, sop) => s + (sop.mcqBanks?.length || 0), 0),
+                            0
+                          );
+                          const isJobActive = bulkRegenJob?.department === fullScreenDept.name &&
+                            ['pending', 'running'].includes(bulkRegenJob?.status || '');
+                          const isJobDone = (
+                            bulkRegenJob?.department === fullScreenDept.name &&
+                            ['completed', 'failed', 'cancelled'].includes(bulkRegenJob?.status || '')
+                          ) || (
+                            !bulkRegenJob && !!getPersistedBulkRegenJob(fullScreenDept.name)
+                          );
+
+                          return (
+                            <button
+                              onClick={() => {
+                                if (isJobActive) {
+                                  setShowBulkRegenModal(true);
+                                } else if (isJobDone) {
+                                  // Restore from localStorage if in-memory state was lost
+                                  if (!bulkRegenJob) {
+                                    const saved = getPersistedBulkRegenJob(fullScreenDept.name);
+                                    if (saved) setBulkRegenJob(saved);
+                                  }
+                                  setShowBulkRegenModal(true);
+                                } else {
+                                  handleStartBulkRegen(fullScreenDept.name);
+                                  setShowBulkRegenModal(true);
+                                }
+                              }}
+                              disabled={bulkRegenLoading}
+                              className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all font-bold text-[9px] uppercase tracking-widest backdrop-blur-xl shadow-lg group ${
+                                isJobActive
+                                  ? 'bg-orange-500/20 border-orange-500/40 text-orange-300 cursor-pointer'
+                                  : isJobDone
+                                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'
+                                  : 'bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 border-orange-500/20 hover:border-orange-500/40'
+                              }`}
+                              title="Auto-detect & resolve similar questions across all SOPs in this department"
+                            >
+                              {bulkRegenLoading ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : isJobActive ? (
+                                <RefreshCw className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Zap className="h-3 w-3 group-hover:scale-125 transition-transform" />
+                              )}
+                              {isJobActive
+                                ? `Running (${bulkRegenJob?.progress.banksProcessed}/${bulkRegenJob?.progress.banksTotal})`
+                                : isJobDone
+                                ? 'View Results'
+                                : `Bulk Smart Regen`}
+                            </button>
+                          );
+                        })()}
+
                         <Link href="/mcq-review">
                           <button className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg border border-white/10 transition-all font-bold text-[9px] uppercase tracking-widest backdrop-blur-xl shadow-lg group">
                             <Star className="h-3 w-3 fill-amber-400 text-amber-400 group-hover:scale-125 transition-transform" />
@@ -2659,6 +2957,419 @@ export default function MCQTreeView({
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Bulk Regen SOP Detail Modal ─────────────────────────────────── */}
+      {bulkRegenDetailBank && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setBulkRegenDetailBank(null)} />
+
+          <div className="relative w-full max-w-3xl max-h-[90vh] flex flex-col bg-[#0D1117] rounded-[20px] border border-white/10 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+
+            {/* Header */}
+            <div className="px-6 py-5 border-b border-white/5 bg-gradient-to-r from-[#0D1117] to-indigo-950/20 shrink-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-xl border ${
+                    bulkRegenDetailBank.status === 'completed'
+                      ? 'bg-emerald-500/10 border-emerald-500/20'
+                      : 'bg-rose-500/10 border-rose-500/20'
+                  }`}>
+                    {bulkRegenDetailBank.status === 'completed'
+                      ? <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                      : <XCircle className="h-5 w-5 text-rose-400" />}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-black text-white">{bulkRegenDetailBank.sopIdentifier}</h3>
+                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${
+                        bulkRegenDetailBank.language === 'Gujarati'
+                          ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
+                          : 'bg-blue-500/10 border-blue-500/20 text-blue-400'
+                      }`}>{bulkRegenDetailBank.language === 'Gujarati' ? 'GU' : 'EN'}</span>
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-0.5">{bulkRegenDetailBank.sopName}</p>
+                  </div>
+                </div>
+                <button onClick={() => setBulkRegenDetailBank(null)} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
+                  <X className="h-4 w-4 text-gray-400" />
+                </button>
+              </div>
+
+              {/* Stats row */}
+              <div className="flex items-center gap-3 mt-4 flex-wrap">
+                {bulkRegenDetailBank.questionsReplaced > 0 && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+                    <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                    <span className="text-[10px] font-black text-emerald-400">{bulkRegenDetailBank.questionsReplaced} similar replaced</span>
+                  </div>
+                )}
+                {bulkRegenDetailBank.questionsReplaced === 0 && bulkRegenDetailBank.status === 'completed' && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg">
+                    <CheckCircle2 className="h-3 w-3 text-gray-400" />
+                    <span className="text-[10px] font-bold text-gray-400">No similar questions found — bank is clean</span>
+                  </div>
+                )}
+                {bulkRegenDetailBank.questionsFailed > 0 && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 border border-rose-500/20 rounded-lg">
+                    <AlertTriangle className="h-3 w-3 text-rose-400" />
+                    <span className="text-[10px] font-black text-rose-400">{bulkRegenDetailBank.questionsFailed} generation failed</span>
+                  </div>
+                )}
+                {bulkRegenDetailBank.remainingSimilar === 0 && bulkRegenDetailBank.questionsReplaced > 0 && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 border border-indigo-500/20 rounded-lg">
+                    <Zap className="h-3 w-3 text-indigo-400" />
+                    <span className="text-[10px] font-black text-indigo-400">Verified unique</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Uniqueness guarantee note */}
+              {bulkRegenDetailBank.questionsReplaced > 0 && (
+                <div className="mt-3 px-3 py-2 bg-indigo-500/5 border border-indigo-500/15 rounded-xl">
+                  <p className="text-[9px] text-indigo-300 leading-relaxed">
+                    <span className="font-black">Uniqueness Guarantee:</span> Each replacement question was generated with the full list of existing questions provided to the AI as context to avoid. After replacement, the bank was re-scanned to confirm zero similar pairs remain. The replaced questions have been archived.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Body — replacements list */}
+            <div className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
+
+              {bulkRegenDetailBank.replacements?.length > 0 ? (
+                <>
+                  <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">
+                    Replacement Details — {bulkRegenDetailBank.replacements.length} question{bulkRegenDetailBank.replacements.length !== 1 ? 's' : ''} replaced
+                  </p>
+
+                  {bulkRegenDetailBank.replacements.map((rec, ri) => (
+                    <div key={ri} className="rounded-xl border border-white/8 overflow-hidden">
+                      {/* Replacement number + similarity score */}
+                      <div className="flex items-center gap-3 px-4 py-2 bg-white/[0.03] border-b border-white/5">
+                        <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Replacement #{ri + 1}</span>
+                        <span className="text-[8px] font-bold px-2 py-0.5 rounded-full bg-orange-500/10 border border-orange-500/20 text-orange-400">
+                          {rec.similarityScore}% similar to kept question
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-white/5">
+                        {/* OLD QUESTION */}
+                        <div className="p-4 bg-rose-500/[0.03]">
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+                            <span className="text-[8px] font-black text-rose-400 uppercase tracking-widest">Similar Question (Removed)</span>
+                          </div>
+                          <p className="text-[11px] text-gray-200 leading-relaxed font-medium mb-3">{rec.oldQuestion}</p>
+                          <div className="space-y-1.5 mb-3">
+                            {rec.oldOptions.map((opt, oi) => (
+                              <div key={oi} className={`flex items-start gap-2 text-[10px] px-2 py-1 rounded-lg ${
+                                opt === rec.oldAnswer
+                                  ? 'bg-rose-500/10 border border-rose-500/20 text-rose-300'
+                                  : 'text-gray-500'
+                              }`}>
+                                <span className="shrink-0 font-black">{String.fromCharCode(65 + oi)}.</span>
+                                <span>{opt}{opt === rec.oldAnswer && <span className="ml-1 text-[8px] font-black text-rose-400">✓ answer</span>}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* NEW QUESTION */}
+                        <div className="p-4 bg-emerald-500/[0.03]">
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                            <span className="text-[8px] font-black text-emerald-400 uppercase tracking-widest">New Unique Question (Added)</span>
+                          </div>
+                          <p className="text-[11px] text-gray-200 leading-relaxed font-medium mb-3">{rec.newQuestion}</p>
+                          <div className="space-y-1.5 mb-3">
+                            {rec.newOptions.map((opt, oi) => (
+                              <div key={oi} className={`flex items-start gap-2 text-[10px] px-2 py-1 rounded-lg ${
+                                opt === rec.newAnswer
+                                  ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300'
+                                  : 'text-gray-500'
+                              }`}>
+                                <span className="shrink-0 font-black">{String.fromCharCode(65 + oi)}.</span>
+                                <span>{opt}{opt === rec.newAnswer && <span className="ml-1 text-[8px] font-black text-emerald-400">✓ answer</span>}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                /* No replacements — show the logs instead */
+                <div className="space-y-1">
+                  <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-2">Processing Log</p>
+                  {(bulkRegenDetailBank.logs || []).map((line, li) => {
+                    const isNew = line.includes('↑') || line.includes('New question');
+                    const isError = line.includes('❌');
+                    const isWarn = line.includes('⚠');
+                    const isSimilar = line.includes('~') || line.toLowerCase().includes('similar') || line.toLowerCase().includes('cluster');
+                    const isOk = line.includes('✓') || line.includes('VERIFIED');
+                    return (
+                      <div key={li} className={`flex items-start gap-2 text-[9px] font-mono leading-relaxed ${
+                        isNew ? 'text-emerald-300' : isError ? 'text-rose-400' : isWarn ? 'text-amber-400' :
+                        isSimilar ? 'text-orange-300' : isOk ? 'text-emerald-400' : 'text-gray-500'
+                      }`}>
+                        <span className="shrink-0 w-3">{isNew?'↑':isError?'✗':isWarn?'!':isSimilar?'~':isOk?'✓':'·'}</span>
+                        <span className="break-all">{line}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-3 border-t border-white/5 bg-black/20 shrink-0 flex items-center justify-between">
+              <p className="text-[9px] text-gray-600">
+                {bulkRegenDetailBank.replacements?.length > 0
+                  ? `${bulkRegenDetailBank.replacements?.length ?? 0} replacement${(bulkRegenDetailBank.replacements?.length ?? 0) !== 1 ? 's' : ''} · all questions are now unique`
+                  : 'No replacements made for this bank'}
+              </p>
+              <button
+                onClick={() => setBulkRegenDetailBank(null)}
+                className="px-4 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[9px] font-black uppercase tracking-widest border border-white/10 transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Regen Error Toast */}
+      {bulkRegenError && (
+        <div className="fixed bottom-6 right-6 z-[9999] flex items-center gap-3 px-5 py-4 bg-rose-900/90 border border-rose-500/40 rounded-2xl shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-bottom-4 duration-300 max-w-sm">
+          <XCircle className="h-5 w-5 text-rose-400 shrink-0" />
+          <p className="text-rose-200 text-xs font-bold">{bulkRegenError}</p>
+          <button onClick={() => setBulkRegenError('')} className="ml-auto text-rose-400 hover:text-white transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Bulk Smart Regeneration Progress Modal */}
+      {showBulkRegenModal && bulkRegenJob && (
+        <div className="fixed inset-0 z-[9998] flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="absolute inset-0 bg-black/70" onClick={() => {
+            // Only allow closing if job is done
+            if (['completed', 'failed', 'cancelled'].includes(bulkRegenJob.status)) {
+              setShowBulkRegenModal(false);
+            }
+          }} />
+
+          <div
+            className="relative w-full max-w-2xl bg-[#0D1117] rounded-[24px] border border-white/10 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300"
+            style={{ transform: `translate(${bulkRegenModalPos.x}px, ${bulkRegenModalPos.y}px)` }}
+          >
+            {/* Header */}
+            <div
+              className="px-6 py-5 bg-gradient-to-r from-orange-900/30 via-amber-900/20 to-[#0D1117] border-b border-white/5 cursor-grab active:cursor-grabbing select-none"
+              onMouseDown={handleBulkRegenMouseDown}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-orange-500/10 border border-orange-500/20">
+                    <Zap className="h-5 w-5 text-orange-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-white">Bulk Smart Regeneration</h3>
+                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-0.5">
+                      {bulkRegenJob.department}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {['pending', 'running'].includes(bulkRegenJob.status) && (
+                    <button
+                      onClick={handleCancelBulkRegen}
+                      disabled={bulkRegenCancelling}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 hover:border-rose-500/40 text-rose-400 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all disabled:opacity-50 disabled:cursor-wait"
+                    >
+                      {bulkRegenCancelling
+                        ? <Loader2 className="h-3 w-3 animate-spin" />
+                        : <XCircle className="h-3 w-3" />}
+                      {bulkRegenCancelling ? 'Cancelling...' : 'Cancel'}
+                    </button>
+                  )}
+                  {['completed', 'failed', 'cancelled'].includes(bulkRegenJob.status) && (
+                    <button
+                      onClick={() => setShowBulkRegenModal(false)}
+                      className="p-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-all"
+                    >
+                      <X className="h-4 w-4 text-white/70 hover:text-white" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Overall Progress Bar */}
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                    {bulkRegenJob.progress.banksProcessed} / {bulkRegenJob.progress.banksTotal} banks
+                  </span>
+                  <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${
+                    bulkRegenJob.status === 'completed' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
+                    bulkRegenJob.status === 'failed' ? 'bg-rose-500/10 border-rose-500/20 text-rose-400' :
+                    bulkRegenJob.status === 'cancelled' ? 'bg-gray-500/10 border-gray-500/20 text-gray-400' :
+                    bulkRegenJob.status === 'running' ? 'bg-orange-500/10 border-orange-500/20 text-orange-400' :
+                    'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
+                  }`}>
+                    {bulkRegenJob.status === 'running' ? 'Processing...' : bulkRegenJob.status}
+                  </span>
+                </div>
+                <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${
+                      bulkRegenJob.status === 'completed' ? 'bg-emerald-500' :
+                      bulkRegenJob.status === 'cancelled' ? 'bg-gray-500' :
+                      bulkRegenJob.status === 'failed' ? 'bg-rose-500' :
+                      'bg-gradient-to-r from-orange-500 to-amber-400'
+                    }`}
+                    style={{
+                      width: bulkRegenJob.progress.banksTotal > 0
+                        ? `${Math.round((bulkRegenJob.progress.banksProcessed / bulkRegenJob.progress.banksTotal) * 100)}%`
+                        : '0%'
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Summary Pills */}
+              <div className="flex items-center gap-3 mt-3 flex-wrap">
+                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-lg" title="Similar questions detected and replaced with fresh AI-generated questions">
+                  <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                  <span className="text-[10px] font-black text-emerald-400">{bulkRegenJob.progress.totalQuestionsReplaced} similar replaced</span>
+                </div>
+                {bulkRegenJob.progress.totalQuestionsFailed > 0 && (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-rose-500/10 border border-rose-500/20 rounded-lg" title="Questions where AI generation failed — originals kept unchanged">
+                    <AlertTriangle className="h-3 w-3 text-rose-400" />
+                    <span className="text-[10px] font-black text-rose-400">{bulkRegenJob.progress.totalQuestionsFailed} generation failed</span>
+                  </div>
+                )}
+                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white/5 border border-white/10 rounded-lg" title="Banks fully processed (including clean banks with no similar questions)">
+                  <span className="text-[10px] font-bold text-gray-400">{bulkRegenJob.progress.banksSucceeded} banks processed</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Per-Bank List */}
+            <div className="overflow-y-auto max-h-[55vh] px-6 py-4 space-y-2">
+              {bulkRegenJob.bankResults.map((bank, idx) => {
+                const hasLogs = bank.logs && bank.logs.length > 0;
+                const isExpanded = expandedBulkLogBanks.has(bank.bankId);
+                const isDone = bank.status === 'completed' || bank.status === 'failed';
+
+                return (
+                  <div
+                    key={bank.bankId}
+                    className={`rounded-xl overflow-hidden border transition-all ${
+                      bank.status === 'running' ? 'border-orange-500/20' :
+                      bank.status === 'completed' ? 'border-emerald-500/20' :
+                      bank.status === 'failed' ? 'border-rose-500/20' : 'border-white/5'
+                    } ${isDone ? 'cursor-pointer hover:border-white/20 hover:bg-white/[0.02]' : ''}`}
+                    onClick={() => { if (isDone) setBulkRegenDetailBank(bank as any); }}
+                  >
+                    <div className={`flex items-center gap-3 p-3 transition-all ${
+                      bank.status === 'running' ? 'bg-orange-500/5' :
+                      bank.status === 'completed' ? 'bg-emerald-500/5' :
+                      bank.status === 'failed' ? 'bg-rose-500/5' :
+                      bank.status === 'skipped' ? 'opacity-50' : ''
+                    }`}>
+                      {/* Status Icon */}
+                      <div className="shrink-0">
+                        {bank.status === 'running' && <RefreshCw className="h-4 w-4 text-orange-400 animate-spin" />}
+                        {bank.status === 'completed' && <CheckCircle2 className="h-4 w-4 text-emerald-400" />}
+                        {bank.status === 'failed' && <XCircle className="h-4 w-4 text-rose-400" />}
+                        {bank.status === 'skipped' && <AlertCircle className="h-4 w-4 text-gray-500" />}
+                        {bank.status === 'pending' && <div className="h-4 w-4 rounded-full border-2 border-white/20 border-dashed" />}
+                      </div>
+
+                      {/* Bank Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black text-white uppercase tracking-wider">{bank.sopIdentifier}</span>
+                          <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${
+                            bank.language === 'Gujarati'
+                              ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
+                              : 'bg-blue-500/10 border-blue-500/20 text-blue-400'
+                          }`}>{bank.language === 'Gujarati' ? 'GU' : 'EN'}</span>
+                        </div>
+                        <p className="text-[9px] text-gray-500 truncate mt-0.5">{bank.sopName}</p>
+                        {bank.error && <p className="text-[9px] text-rose-400 mt-0.5 truncate">{bank.error}</p>}
+                      </div>
+
+                      {/* Stats + click hint */}
+                      <div className="shrink-0 flex items-center gap-2">
+                        {bank.status === 'completed' && (
+                          <>
+                            {bank.questionsReplaced > 0 ? (
+                              <span className="text-[9px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md">
+                                {bank.questionsReplaced} replaced
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-bold text-gray-500 bg-white/5 border border-white/10 px-2 py-0.5 rounded-md">clean</span>
+                            )}
+                            {bank.questionsFailed > 0 && (
+                              <span className="text-[9px] font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-md">
+                                {bank.questionsFailed} failed
+                              </span>
+                            )}
+                          </>
+                        )}
+                        {bank.status === 'pending' && <span className="text-[9px] text-gray-600 font-bold">queued</span>}
+                        {bank.status === 'running' && <span className="text-[9px] text-orange-300 font-bold animate-pulse">Processing</span>}
+                        {isDone && <ChevronRight className="h-3.5 w-3.5 text-gray-600 shrink-0" />}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Footer */}
+            {['completed', 'failed', 'cancelled'].includes(bulkRegenJob.status) && (
+              <div className="px-6 py-4 border-t border-white/5 bg-black/20">
+                <div className="flex items-center justify-between gap-4">
+                  <p className="text-[10px] text-gray-500 flex-1">
+                    {bulkRegenJob.status === 'completed'
+                      ? `Done! Auto-detected and replaced ${bulkRegenJob.progress.totalQuestionsReplaced} similar questions across ${bulkRegenJob.progress.banksSucceeded} banks.`
+                      : bulkRegenJob.status === 'cancelled'
+                      ? `Cancelled after processing ${bulkRegenJob.progress.banksProcessed} banks. Progress has been saved.`
+                      : `Completed with errors. ${bulkRegenJob.progress.banksSucceeded} banks resolved, ${bulkRegenJob.progress.banksFailed} failed.`}
+                  </p>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => {
+                        setShowBulkRegenModal(false);
+                        handleStartBulkRegen(bulkRegenJob.department);
+                        setShowBulkRegenModal(true);
+                      }}
+                      disabled={bulkRegenLoading}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 rounded-lg text-[9px] font-black uppercase tracking-widest border border-orange-500/20 hover:border-orange-500/40 transition-all disabled:opacity-50 disabled:cursor-wait"
+                    >
+                      {bulkRegenLoading
+                        ? <Loader2 className="h-3 w-3 animate-spin" />
+                        : <RefreshCw className="h-3 w-3" />}
+                      Rerun
+                    </button>
+                    <button
+                      onClick={() => setShowBulkRegenModal(false)}
+                      className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[9px] font-black uppercase tracking-widest border border-white/10 transition-all"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
