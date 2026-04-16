@@ -143,33 +143,33 @@ async function triggerAutoResolveInBackground(
   jobId: string,
   similarities?: any[]
 ): Promise<void> {
-  try {
-    const baseUrl =
-      process.env.NEXTAUTH_URL?.replace(/\/$/, '') ||
-      process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
-      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
+  const baseUrl =
+    process.env.NEXTAUTH_URL?.replace(/\/$/, '') ||
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
 
-    const endpoint = `${baseUrl}/api/mcq-bank/bulk-resolve-similar`;
+  const endpoint = `${baseUrl}/api/mcq-bank/bulk-resolve-similar`;
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        mcqBankId,
-        jobId,
-        threshold: 70,
-        dryRun: false,
-        similarities,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => '(no body)');
-      console.error(`[auto-resolve] bulk-resolve failed: ${response.status} - ${errorText}`);
+  // Do NOT await — the worker runs for up to 5 minutes. Awaiting would block
+  // this 30-second route until timeout and leave the job stuck in "pending".
+  fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      mcqBankId,
+      jobId,
+      threshold: 70,
+      dryRun: false,
+      similarities,
+    }),
+  }).then(async (res) => {
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => '(no body)');
+      console.error(`[auto-resolve] bulk-resolve failed: ${res.status} - ${errorText}`);
     }
-  } catch (error) {
-    console.error(`[auto-resolve] background trigger failed:`, error);
-  }
+  }).catch((err) => {
+    console.error(`[auto-resolve] background trigger failed:`, err);
+  });
 }
 
 export const maxDuration = 30; // Keep timeout short since we return immediately

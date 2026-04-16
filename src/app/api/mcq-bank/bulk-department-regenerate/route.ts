@@ -7,6 +7,7 @@ import {
   getDepartmentForSubcategory,
   normalizeDepartmentName,
 } from '@/lib/mcqTreeBuilder';
+import { runBulkDeptJob } from '@/lib/bulkDeptWorkerLogic';
 
 /**
  * POST /api/mcq-bank/bulk-department-regenerate
@@ -118,9 +119,13 @@ export async function POST(request: NextRequest) {
       bankResults,
     });
 
-    // Trigger background worker (fire and forget)
-    triggerBulkDeptWorker(job._id.toString()).catch((err) =>
-      console.error('[bulk-dept-regen] Worker trigger failed:', err)
+    const jobId = job._id.toString();
+
+    // Run the worker directly in this process (no network hop).
+    // We do NOT await — return the jobId immediately so the client can start polling.
+    // The worker updates the BulkDeptJob document in MongoDB as it progresses.
+    runBulkDeptJob(jobId).catch((err) =>
+      console.error('[bulk-dept-regen] Worker error:', err)
     );
 
     return NextResponse.json({
@@ -236,27 +241,4 @@ export async function DELETE(request: NextRequest) {
   }
 }
 
-/**
- * Trigger the background worker via internal fetch (fire and forget)
- */
-async function triggerBulkDeptWorker(jobId: string): Promise<void> {
-  const baseUrl =
-    process.env.NEXTAUTH_URL?.replace(/\/$/, '') ||
-    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
-
-  const endpoint = `${baseUrl}/api/mcq-bank/bulk-department-worker`;
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jobId }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => '(no body)');
-    console.error(`[bulk-dept-regen] Worker trigger failed: ${response.status} - ${errorText}`);
-  }
-}
-
-export const maxDuration = 30;
+export const maxDuration = 300;

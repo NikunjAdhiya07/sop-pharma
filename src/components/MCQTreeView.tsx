@@ -35,6 +35,7 @@ import {
   Zap,
   XCircle,
   RefreshCw,
+  Copy,
 } from "lucide-react";
 import Link from "next/link";
 import { normalizeDepartmentName } from "@/lib/mcqTreeBuilder";
@@ -295,6 +296,21 @@ export default function MCQTreeView({
   // Archived / Removed SOPs state
   const [archivedSOPs, setArchivedSOPs] = useState<any[]>([]);
   const [showArchivedSection, setShowArchivedSection] = useState(false);
+
+  // Per-department MCQ stats from /api/mcq-bank/dept-stats (includes total SOP count from SOP model)
+  const [deptStats, setDeptStats] = useState<Record<string, {
+    totalSOPs: number;
+    sopWithMCQs: number;
+    sopWithoutMCQs: number;
+    approvedSOPs: number;
+    pendingSOPs: number;
+    similarSOPs: number;
+    totalQuestions: number;
+    checkedCount: number;
+    reviewedCount: number;
+    similarCount: number;
+  }>>({});
+  const [deptStatsLoading, setDeptStatsLoading] = useState(true);
 
   // Generate More state
   const [generatingMore, setGeneratingMore] = useState<Record<string, boolean>>({});
@@ -572,6 +588,30 @@ export default function MCQTreeView({
       }
     };
     fetchArchived();
+  }, []);
+
+  // Fetch per-department MCQ stats (includes total SOP count from SOP model)
+  useEffect(() => {
+    const fetchDeptStats = async () => {
+      setDeptStatsLoading(true);
+      try {
+        const res = await fetch('/api/mcq-bank/dept-stats');
+        const data = await res.json();
+        if (data.success && data.departments) {
+          const map: typeof deptStats = {};
+          for (const ds of data.departments) {
+            map[ds.department] = ds;
+          }
+          setDeptStats(map);
+        }
+      } catch (err) {
+        console.error('Failed to fetch dept stats:', err);
+      } finally {
+        setDeptStatsLoading(false);
+      }
+    };
+    fetchDeptStats();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // fullScreenDept is now lifted to parent — no local state needed
@@ -1096,7 +1136,215 @@ export default function MCQTreeView({
           </div>
         )}
 
-      {/* Department capsules: use full tree for accurate, unfiltered totals */}
+      {/* ══════════════════════════════════════════════════════════════════
+           DASHBOARD STATS STRIP — horizontal scroll, one card per dept
+           + "Total" card pinned at left
+          ══════════════════════════════════════════════════════════════════ */}
+      {(() => {
+        // Build per-dept data rows (blend API stats + tree counts)
+        const DEPT_ORDER = ['QA','QC','Microbiology','Production','Store','Engineering and Maintenance','Personnel'];
+
+        // Rows: one per dept from the tree, ordered by DEPT_ORDER
+        const orderedDepts = [
+          ...DEPT_ORDER.map(n => tree.find(d => d.name === n)).filter(Boolean),
+          ...tree.filter(d => !DEPT_ORDER.includes(d.name)),
+        ] as typeof tree;
+
+        // Compute overall totals
+        const overall = (() => {
+          const base = { totalSOPs:0, sopWithMCQs:0, sopWithoutMCQs:0, approvedSOPs:0, pendingSOPs:0, similarSOPs:0, totalQuestions:0, checkedCount:0, reviewedCount:0, similarCount:0 };
+          for (const dept of orderedDepts) {
+            const ds = deptStats[dept.name];
+            const treeQ = dept.totalQuestions ?? 0;
+            const allSOPs = dept.subcategories?.flatMap(s => s.sops ?? []) ?? [];
+            const treeAppr = allSOPs.filter(s => (s.totalQuestions ?? 0) > 0 && (s.checkedCount ?? 0) >= (s.totalQuestions ?? 0)).length;
+            const treeSim  = allSOPs.filter(s => (s.similarCount ?? 0) > 0).length;
+            const treeMCQs = dept.totalSOPs ?? allSOPs.length;
+            const treePend = Math.max(0, treeMCQs - treeAppr - treeSim);
+            base.totalSOPs      += ds?.totalSOPs      ?? treeMCQs;
+            base.sopWithMCQs    += ds?.sopWithMCQs    ?? treeMCQs;
+            base.sopWithoutMCQs += ds?.sopWithoutMCQs ?? 0;
+            base.approvedSOPs   += ds ? ds.approvedSOPs : treeAppr;
+            base.pendingSOPs    += ds ? ds.pendingSOPs  : treePend;
+            base.similarSOPs    += ds ? ds.similarSOPs  : treeSim;
+            base.totalQuestions += ds?.totalQuestions ?? treeQ;
+            base.checkedCount   += ds?.checkedCount   ?? (dept.checkedCount ?? 0);
+            base.reviewedCount  += ds?.reviewedCount  ?? (dept.reviewedCount ?? 0);
+            base.similarCount   += ds?.similarCount   ?? (dept.similarCount ?? 0);
+          }
+          return base;
+        })();
+
+        const overallCoverage = overall.totalSOPs > 0 ? Math.round((overall.sopWithMCQs / overall.totalSOPs) * 100) : 0;
+
+        // Row label config — same order for every card
+        const ROWS: Array<{ key: string; label: string; color: string; bgOn: string; bgOff: string }> = [
+          { key: 'totalSOPs',      label: 'Total SOPs',    color: 'text-white',       bgOn: 'bg-white/5',            bgOff: 'bg-white/5' },
+          { key: 'sopWithMCQs',    label: 'MCQs Created',  color: 'text-purple-300',  bgOn: 'bg-purple-500/10',      bgOff: 'bg-purple-500/10' },
+          { key: 'approvedSOPs',   label: 'Approved',      color: 'text-emerald-400', bgOn: 'bg-emerald-500/15',     bgOff: 'bg-emerald-500/5' },
+          { key: 'pendingSOPs',    label: 'Pending',       color: 'text-amber-400',   bgOn: 'bg-amber-500/15',       bgOff: 'bg-amber-500/5' },
+          { key: 'similarSOPs',    label: 'Similar',       color: 'text-rose-400',    bgOn: 'bg-rose-500/15',        bgOff: 'bg-rose-500/5' },
+          { key: 'sopWithoutMCQs', label: 'Remaining',     color: 'text-slate-300',   bgOn: 'bg-slate-500/10',       bgOff: 'bg-slate-500/5' },
+          { key: 'totalQuestions', label: 'Questions',     color: 'text-blue-300',    bgOn: 'bg-blue-500/10',        bgOff: 'bg-blue-500/5' },
+          { key: 'checkedCount',   label: 'Checked Qs',    color: 'text-emerald-300', bgOn: 'bg-emerald-500/10',     bgOff: 'bg-emerald-500/5' },
+          { key: 'reviewedCount',  label: 'Reviewed Qs',   color: 'text-sky-300',     bgOn: 'bg-sky-500/10',         bgOff: 'bg-sky-500/5' },
+          { key: 'similarCount',   label: 'Similar Qs',    color: 'text-rose-300',    bgOn: 'bg-rose-500/10',        bgOff: 'bg-rose-500/5' },
+        ];
+
+        const getVal = (dept: typeof tree[0], key: string): number => {
+          const ds = deptStats[dept.name];
+          const allSOPs = dept.subcategories?.flatMap(s => s.sops ?? []) ?? [];
+          const treeMCQs = dept.totalSOPs ?? allSOPs.length;
+          const treeAppr = allSOPs.filter(s => (s.totalQuestions ?? 0) > 0 && (s.checkedCount ?? 0) >= (s.totalQuestions ?? 0)).length;
+          const treeSim  = allSOPs.filter(s => (s.similarCount ?? 0) > 0).length;
+          const treePend = Math.max(0, treeMCQs - treeAppr - treeSim);
+          const map: Record<string, number> = {
+            totalSOPs:      ds?.totalSOPs      ?? treeMCQs,
+            sopWithMCQs:    ds?.sopWithMCQs    ?? treeMCQs,
+            sopWithoutMCQs: ds?.sopWithoutMCQs ?? 0,
+            approvedSOPs:   ds ? ds.approvedSOPs : treeAppr,
+            pendingSOPs:    ds ? ds.pendingSOPs  : treePend,
+            similarSOPs:    ds ? ds.similarSOPs  : treeSim,
+            totalQuestions: ds?.totalQuestions ?? (dept.totalQuestions ?? 0),
+            checkedCount:   ds?.checkedCount   ?? (dept.checkedCount ?? 0),
+            reviewedCount:  ds?.reviewedCount  ?? (dept.reviewedCount ?? 0),
+            similarCount:   ds?.similarCount   ?? (dept.similarCount ?? 0),
+          };
+          return map[key] ?? 0;
+        };
+
+        const getOverallVal = (key: string): number => (overall as any)[key] ?? 0;
+
+        return (
+          <div className="mb-4">
+            {/* Scrollable table-like strip */}
+            <div className="overflow-x-auto pb-1">
+              <div className="flex gap-0 min-w-max">
+
+                {/* ── Row-label column (sticky left) ── */}
+                <div className="flex flex-col sticky left-0 z-10 bg-[#0f0e1a] rounded-l-xl border border-white/10 border-r-0 overflow-hidden">
+                  {/* Header cell */}
+                  <div className="flex items-center gap-1.5 px-3 py-2 bg-white/5 border-b border-white/10 h-[44px]">
+                    <BookOpen className="h-3.5 w-3.5 text-purple-400 shrink-0" />
+                    <span className="text-[9px] font-black text-white uppercase tracking-widest whitespace-nowrap">MCQ Status</span>
+                  </div>
+                  {ROWS.map((row, i) => (
+                    <div
+                      key={row.key}
+                      className={`flex items-center px-3 h-[30px] border-b border-white/5 ${i % 2 === 0 ? 'bg-white/[0.02]' : 'bg-transparent'}`}
+                    >
+                      <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">{row.label}</span>
+                    </div>
+                  ))}
+                  {/* Coverage row */}
+                  <div className="flex items-center px-3 h-[30px] bg-white/[0.02]">
+                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Coverage</span>
+                  </div>
+                  {/* Open button row */}
+                  <div className="flex items-center px-3 h-[32px]" />
+                </div>
+
+                {/* ── Total column ── */}
+                <div className="flex flex-col border border-white/10 border-r-0 overflow-hidden bg-white/[0.03]">
+                  {/* Header */}
+                  <div className="flex flex-col items-center justify-center px-4 py-1.5 bg-purple-900/30 border-b border-white/10 h-[44px] min-w-[90px]">
+                    <span className="text-[10px] font-black text-purple-300 uppercase tracking-widest">Total</span>
+                    <span className="text-[8px] text-purple-500 font-bold">{orderedDepts.length} depts</span>
+                  </div>
+                  {ROWS.map((row, i) => {
+                    const val = getOverallVal(row.key);
+                    return (
+                      <div key={row.key} className={`flex items-center justify-center h-[30px] border-b border-white/5 px-3 ${i % 2 === 0 ? 'bg-white/[0.02]' : 'bg-transparent'}`}>
+                        <span className={`text-[13px] font-black leading-none ${row.color}`}>{val}</span>
+                      </div>
+                    );
+                  })}
+                  {/* Coverage bar */}
+                  <div className="flex items-center justify-center h-[30px] bg-white/[0.02] px-3">
+                    <div className="flex items-center gap-1.5 w-full">
+                      <div className="flex-1 h-1 bg-black/30 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${overallCoverage === 100 ? 'bg-emerald-500' : overallCoverage >= 60 ? 'bg-blue-500' : 'bg-amber-500'}`} style={{ width: `${overallCoverage}%` }} />
+                      </div>
+                      <span className={`text-[9px] font-black whitespace-nowrap ${overallCoverage === 100 ? 'text-emerald-400' : overallCoverage >= 60 ? 'text-blue-400' : 'text-amber-400'}`}>{overallCoverage}%</span>
+                    </div>
+                  </div>
+                  {/* Open button placeholder */}
+                  <div className="flex items-center justify-center h-[32px]" />
+                </div>
+
+                {/* ── One column per department ── */}
+                {orderedDepts.map((dept, colIdx) => {
+                  const theme = getDeptTheme(dept.name);
+                  const ds = deptStats[dept.name];
+                  const totalDeptSOPs = ds?.totalSOPs ?? (dept.totalSOPs ?? 0);
+                  const mcqsCreated   = ds?.sopWithMCQs ?? (dept.totalSOPs ?? 0);
+                  const coverage = totalDeptSOPs > 0 ? Math.round((mcqsCreated / totalDeptSOPs) * 100) : 0;
+                  const isLast = colIdx === orderedDepts.length - 1;
+
+                  return (
+                    <div
+                      key={dept.name}
+                      className={`flex flex-col border border-white/10 ${isLast ? 'rounded-r-xl' : 'border-r-0'} overflow-hidden`}
+                    >
+                      {/* Header */}
+                      <div className={`flex flex-col items-center justify-center px-3 py-1.5 bg-gradient-to-b ${theme.gradient} border-b border-white/10 h-[44px] min-w-[100px] cursor-pointer hover:brightness-125 transition-all`}
+                        onClick={() => setFullScreenDept(dept)}
+                        title={`Open ${dept.name} department`}
+                      >
+                        <span className={`text-[10px] font-black uppercase tracking-wider whitespace-nowrap ${theme.text}`}>{dept.name}</span>
+                        <span className="text-[8px] text-gray-500 font-bold">{dept.subcategories?.length ?? 0} subcats</span>
+                      </div>
+
+                      {/* Data rows */}
+                      {ROWS.map((row, i) => {
+                        const val = getVal(dept, row.key);
+                        const isGreenRow = row.key === 'approvedSOPs' || row.key === 'checkedCount' || row.key === 'reviewedCount';
+                        const isRedRow   = row.key === 'similarSOPs' || row.key === 'similarCount' || row.key === 'pendingSOPs';
+                        const hasAlert   = isRedRow && val > 0;
+                        const hasGood    = isGreenRow && val > 0;
+                        return (
+                          <div
+                            key={row.key}
+                            className={`flex items-center justify-center h-[30px] border-b border-white/5 px-3 ${
+                              hasAlert ? row.bgOn : hasGood ? row.bgOn : i % 2 === 0 ? 'bg-white/[0.02]' : 'bg-transparent'
+                            }`}
+                          >
+                            <span className={`text-[13px] font-black leading-none ${
+                              hasAlert ? row.color : hasGood ? row.color : val === 0 ? 'text-gray-600' : row.color
+                            }`}>{val}</span>
+                          </div>
+                        );
+                      })}
+
+                      {/* Coverage mini-bar */}
+                      <div className="flex items-center justify-center h-[30px] bg-white/[0.02] px-2.5">
+                        <div className="flex items-center gap-1 w-full">
+                          <div className="flex-1 h-1 bg-black/30 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full ${coverage === 100 ? 'bg-emerald-500' : coverage >= 60 ? 'bg-blue-500' : 'bg-amber-500'}`} style={{ width: `${coverage}%` }} />
+                          </div>
+                          <span className={`text-[8px] font-black whitespace-nowrap ${coverage === 100 ? 'text-emerald-400' : coverage >= 60 ? 'text-blue-400' : 'text-amber-400'}`}>{coverage}%</span>
+                        </div>
+                      </div>
+
+                      {/* Open button */}
+                      <div className="flex items-center justify-center h-[32px] px-2">
+                        <button
+                          onClick={() => setFullScreenDept(dept)}
+                          className={`w-full text-[8px] font-black uppercase tracking-widest rounded px-2 py-1 transition-all ${theme.button ?? 'bg-white/10 hover:bg-white/20'} text-white`}
+                        >
+                          Open
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Department folder grid (unchanged — shown below the stats strip) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {tree.map((dept) => {
           const theme = getDeptTheme(dept.name);
@@ -1115,141 +1363,149 @@ export default function MCQTreeView({
             trainerMappings[dept.name.toLowerCase()] ||
             trainerMappings[dept.name];
 
-          // Approved = SOP where checked + reviewed + similar covers all questions
-          const allDeptSOPs = dept.subcategories?.flatMap((sub) => sub.sops ?? []) ?? [];
-          const approvedSOPs = allDeptSOPs.filter((sop) => {
-            const total = sop.totalQuestions ?? 0;
-            if (total === 0) return false;
-            const covered =
-              (sop.checkedCount ?? 0) +
-              (sop.reviewedCount ?? 0) +
-              (sop.similarCount ?? 0);
-            return covered >= total;
-          }).length;
-          const pendingSOPs = totalSOPs - approvedSOPs;
+          const ds = deptStats[dept.name];
+          const realTotalSOPs  = ds?.totalSOPs     ?? totalSOPs;
+          const sopWithMCQs    = ds?.sopWithMCQs   ?? totalSOPs;
+          const sopWithoutMCQs = ds?.sopWithoutMCQs ?? 0;
+          const allDeptSOPs    = dept.subcategories?.flatMap((sub) => sub.sops ?? []) ?? [];
+          const treeApproved   = allDeptSOPs.filter((sop) => (sop.totalQuestions ?? 0) > 0 && (sop.checkedCount ?? 0) >= (sop.totalQuestions ?? 0)).length;
+          const treeSimilar    = allDeptSOPs.filter((sop) => (sop.similarCount ?? 0) > 0).length;
+          const approvedSOPs   = ds ? ds.approvedSOPs : treeApproved;
+          const pendingSOPs    = ds ? ds.pendingSOPs  : Math.max(0, sopWithMCQs - treeApproved - treeSimilar);
+          const similarSOPs    = ds ? ds.similarSOPs  : treeSimilar;
+          const mcqCoverage    = realTotalSOPs > 0 ? Math.round((sopWithMCQs / realTotalSOPs) * 100) : 0;
 
           return (
             <div
               key={dept.name}
-              className={`rounded-xl border border-white/5 ${theme.borderHover} bg-gradient-to-br ${theme.subcatBg} transition-all duration-300 transform hover:scale-[1.03] shadow-lg hover:shadow-xl overflow-hidden cursor-pointer group`}
+              className={`rounded-xl border border-white/5 ${theme.borderHover} bg-gradient-to-br ${theme.subcatBg} transition-all duration-300 transform hover:scale-[1.01] shadow-lg hover:shadow-xl overflow-hidden cursor-pointer group`}
             >
               <button
                 onClick={() => setFullScreenDept(dept)}
-                className="w-full px-4 py-4 flex flex-col gap-3 bg-transparent transition-all text-left"
+                className="w-full px-4 pt-4 pb-3 flex flex-col gap-0 bg-transparent transition-all text-left"
               >
-                <div className="flex items-center justify-between w-full">
+                {/* Header */}
+                <div className="flex items-center justify-between w-full mb-3">
                   <div className="flex items-center gap-3">
-                    <div
-                      className={`p-2 rounded-lg bg-white/5 border border-white/10 ${theme.text}`}
-                    >
+                    <div className={`p-2 rounded-lg bg-white/5 border border-white/10 ${theme.text}`}>
                       <Folder className="h-5 w-5" />
                     </div>
                     <div>
-                      <h3
-                        className={`text-base font-bold text-white ${theme.textHover} transition-colors`}
-                      >
-                        {dept.name}
-                      </h3>
+                      <h3 className={`text-base font-bold text-white ${theme.textHover} transition-colors`}>{dept.name}</h3>
                       <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                        <p className="text-[10px] text-gray-400">
-                          {subcategoryCount} Subcategor
-                          {subcategoryCount !== 1 ? "ies" : "y"}
-                        </p>
+                        <p className="text-[10px] text-gray-400">{subcategoryCount} Subcategor{subcategoryCount !== 1 ? "ies" : "y"}</p>
                         {trainerName && (
                           <div className="flex items-center gap-1.5">
                             <span className="h-1 w-1 rounded-full bg-gray-600" />
-                            <div
-                              className={`px-1.5 py-0.5 rounded border ${theme.badge} text-[8px] font-black uppercase tracking-wider`}
-                            >
-                              <span className="opacity-60 mr-1">Trainer:</span>
-                              {trainerName}
+                            <div className={`px-1.5 py-0.5 rounded border ${theme.badge} text-[8px] font-black uppercase tracking-wider`}>
+                              <span className="opacity-60 mr-1">Trainer:</span>{trainerName}
                             </div>
                           </div>
                         )}
                       </div>
                     </div>
                   </div>
-                  <div
-                    className={`h-6 w-6 rounded-full flex items-center justify-center border border-white/10 ${theme.text} flex-shrink-0`}
-                  >
+                  <div className={`h-6 w-6 rounded-full flex items-center justify-center border border-white/10 ${theme.text} flex-shrink-0`}>
                     <ChevronRight className="h-3 w-3" />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 w-full mt-1">
-                  <div className="bg-black/20 rounded-lg p-2 text-left">
-                    <p className="text-gray-400 text-[9px] uppercase tracking-wider font-medium mb-0.5">
-                      TOTAL SOPS
-                    </p>
-                    <span className="text-lg font-bold text-white leading-none">
-                      {totalSOPs}
-                    </span>
+                {/* Top stats */}
+                <div className="grid grid-cols-3 gap-1.5 w-full mb-3">
+                  <div className="bg-black/25 rounded-lg p-2 text-left">
+                    <p className="text-gray-500 text-[8px] uppercase tracking-wider font-bold mb-0.5">Total SOPs</p>
+                    <span className="text-base font-black text-white leading-none">{realTotalSOPs}</span>
                   </div>
-                  <div className="bg-black/20 rounded-lg p-2 text-left">
-                    <p className="text-gray-400 text-[9px] uppercase tracking-wider font-medium mb-0.5">
-                      QUESTIONS
-                    </p>
-                    <span
-                      className={`text-lg font-bold leading-none ${theme.text}`}
-                    >
-                      {totalQuestions}
-                    </span>
+                  <div className="bg-black/25 rounded-lg p-2 text-left">
+                    <p className="text-gray-500 text-[8px] uppercase tracking-wider font-bold mb-0.5">MCQs Created</p>
+                    <span className={`text-base font-black leading-none ${theme.text}`}>{sopWithMCQs}</span>
+                  </div>
+                  <div className="bg-black/25 rounded-lg p-2 text-left">
+                    <p className="text-gray-500 text-[8px] uppercase tracking-wider font-bold mb-0.5">Questions</p>
+                    <span className={`text-base font-black leading-none ${theme.text}`}>{totalQuestions}</span>
                   </div>
                 </div>
 
-                {/* SOP Approval Status Capsules — clickable filters */}
-                <div className="flex items-center gap-2 w-full mt-0.5">
+                {/* Coverage bar */}
+                <div className="w-full mb-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[8px] font-bold text-gray-500 uppercase tracking-wider">MCQ Coverage</span>
+                    <span className={`text-[9px] font-black ${mcqCoverage === 100 ? 'text-emerald-400' : mcqCoverage >= 50 ? theme.text : 'text-amber-400'}`}>{mcqCoverage}%</span>
+                  </div>
+                  <div className="w-full h-1.5 bg-black/30 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all duration-700 ${mcqCoverage === 100 ? 'bg-emerald-500' : mcqCoverage >= 50 ? 'bg-blue-500' : 'bg-amber-500'}`} style={{ width: `${mcqCoverage}%` }} />
+                  </div>
+                </div>
+
+                {/* Status capsules */}
+                <div className="grid grid-cols-2 gap-1.5 w-full mb-2">
                   <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setApprovalFilter('approved');
-                      setFullScreenDept(dept);
-                    }}
+                    role="button" tabIndex={0}
+                    onClick={(e) => { e.stopPropagation(); setApprovalFilter('approved'); setFullScreenDept(dept); }}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); setApprovalFilter('approved'); setFullScreenDept(dept); } }}
-                    className="flex items-center gap-1.5 flex-1 justify-center bg-emerald-500/10 border border-emerald-500/25 rounded-full px-3 py-1 hover:bg-emerald-500/20 hover:border-emerald-500/50 transition-all cursor-pointer"
-                    title={`Filter: ${approvedSOPs} Approved SOP${approvedSOPs !== 1 ? 's' : ''}`}
+                    className="flex items-center gap-1.5 justify-between bg-emerald-500/10 border border-emerald-500/25 rounded-lg px-2.5 py-1.5 hover:bg-emerald-500/20 hover:border-emerald-500/50 transition-all cursor-pointer"
                   >
-                    <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />
-                    <span className="text-[11px] font-black text-emerald-400 leading-none">{approvedSOPs}</span>
-                    <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wide leading-none">Approved</span>
+                    <div className="flex items-center gap-1">
+                      <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />
+                      <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wide">Approved</span>
+                    </div>
+                    <span className="text-sm font-black text-emerald-400 leading-none">{approvedSOPs}</span>
                   </div>
                   <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setApprovalFilter('pending');
-                      setFullScreenDept(dept);
-                    }}
+                    role="button" tabIndex={0}
+                    onClick={(e) => { e.stopPropagation(); setApprovalFilter('pending'); setFullScreenDept(dept); }}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); setApprovalFilter('pending'); setFullScreenDept(dept); } }}
-                    className="flex items-center gap-1.5 flex-1 justify-center bg-rose-500/10 border border-rose-500/25 rounded-full px-3 py-1 hover:bg-rose-500/20 hover:border-rose-500/50 transition-all cursor-pointer"
-                    title={`Filter: ${pendingSOPs} Pending SOP${pendingSOPs !== 1 ? 's' : ''}`}
+                    className="flex items-center gap-1.5 justify-between bg-amber-500/10 border border-amber-500/25 rounded-lg px-2.5 py-1.5 hover:bg-amber-500/20 hover:border-amber-500/50 transition-all cursor-pointer"
                   >
-                    <AlertTriangle className="h-3 w-3 text-rose-400 shrink-0" />
-                    <span className="text-[11px] font-black text-rose-400 leading-none">{pendingSOPs}</span>
-                    <span className="text-[9px] font-bold text-rose-600 uppercase tracking-wide leading-none">Pending</span>
+                    <div className="flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3 text-amber-400 shrink-0" />
+                      <span className="text-[9px] font-bold text-amber-600 uppercase tracking-wide">Pending</span>
+                    </div>
+                    <span className="text-sm font-black text-amber-400 leading-none">{pendingSOPs}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 justify-between bg-rose-500/10 border border-rose-500/25 rounded-lg px-2.5 py-1.5">
+                    <div className="flex items-center gap-1">
+                      <Copy className="h-3 w-3 text-rose-400 shrink-0" />
+                      <span className="text-[9px] font-bold text-rose-600 uppercase tracking-wide">Similar</span>
+                    </div>
+                    <span className={`text-sm font-black leading-none ${similarSOPs > 0 ? 'text-rose-400' : 'text-rose-700'}`}>{similarSOPs}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 justify-between bg-slate-500/10 border border-slate-500/25 rounded-lg px-2.5 py-1.5">
+                    <div className="flex items-center gap-1">
+                      <FileText className="h-3 w-3 text-slate-400 shrink-0" />
+                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Remaining</span>
+                    </div>
+                    <span className={`text-sm font-black leading-none ${sopWithoutMCQs > 0 ? 'text-slate-300' : 'text-slate-600'}`}>{sopWithoutMCQs}</span>
                   </div>
                 </div>
 
-                {/* Question-level Status Breakdown Bar */}
-                {(dept.checkedCount || 0) > 0 || (dept.similarCount || 0) > 0 || (dept.reviewedCount || 0) > 0 ? (
-                  <div className="flex items-center gap-1.5 w-full bg-black/10 rounded-lg p-2 mt-px overflow-hidden">
+                {/* Question breakdown */}
+                {((dept.checkedCount || 0) > 0 || (dept.similarCount || 0) > 0) && (
+                  <div className="flex items-center gap-1.5 w-full bg-black/15 rounded-lg px-2 py-1.5 overflow-hidden flex-wrap">
+                    <span className="text-[8px] font-bold text-gray-600 uppercase tracking-wider mr-0.5">Qs:</span>
                     {(dept.checkedCount || 0) > 0 && (
-                      <div className="flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20" title="Total Approved Questions">
+                      <div className="flex items-center gap-1 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
                         <CheckCircle2 className="h-2.5 w-2.5 text-emerald-400" />
-                        <span className="text-[10px] font-bold text-emerald-400 leading-none">{dept.checkedCount}</span>
+                        <span className="text-[9px] font-bold text-emerald-400 leading-none">{dept.checkedCount}</span>
+                        <span className="text-[8px] text-emerald-700 leading-none">chkd</span>
+                      </div>
+                    )}
+                    {(dept.reviewedCount || 0) > 0 && (
+                      <div className="flex items-center gap-1 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20">
+                        <Eye className="h-2.5 w-2.5 text-blue-400" />
+                        <span className="text-[9px] font-bold text-blue-400 leading-none">{dept.reviewedCount}</span>
+                        <span className="text-[8px] text-blue-700 leading-none">rvwd</span>
                       </div>
                     )}
                     {(dept.similarCount || 0) > 0 && (
-                      <div className="flex items-center gap-1 bg-orange-500/10 px-2 py-0.5 rounded-md border border-orange-500/20 animate-pulse" title="Total Similar Questions">
-                        <AlertTriangle className="h-2.5 w-2.5 text-orange-400" />
-                        <span className="text-[10px] font-bold text-orange-400 leading-none">{dept.similarCount}</span>
+                      <div className="flex items-center gap-1 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20 animate-pulse">
+                        <AlertTriangle className="h-2.5 w-2.5 text-rose-400" />
+                        <span className="text-[9px] font-bold text-rose-400 leading-none">{dept.similarCount}</span>
+                        <span className="text-[8px] text-rose-700 leading-none">sim</span>
                       </div>
                     )}
                   </div>
-                ) : null}
+                )}
               </button>
             </div>
           );
