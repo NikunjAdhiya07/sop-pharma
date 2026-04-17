@@ -271,6 +271,8 @@ interface MCQTreeViewProps {
   fullScreenDept: DepartmentNode | null;
   setFullScreenDept: (dept: DepartmentNode | null) => void;
   trainerMappings?: Record<string, string>;
+  // Increment this from the parent to force a dept-stats refresh
+  refreshDeptStatsKey?: number;
 }
 
 export default function MCQTreeView({
@@ -288,6 +290,7 @@ export default function MCQTreeView({
   fullScreenDept,
   setFullScreenDept,
   trainerMappings = {},
+  refreshDeptStatsKey = 0,
 }: MCQTreeViewProps) {
   const [isCinemaMode, setIsCinemaMode] = useState(false);
   // Expansion state is now managed by parent
@@ -479,6 +482,27 @@ export default function MCQTreeView({
     }
   };
 
+  // Fetch per-department MCQ stats (includes total SOP count from SOP model)
+  const fetchDeptStats = useCallback(async () => {
+    setDeptStatsLoading(true);
+    try {
+      const res = await fetch('/api/mcq-bank/dept-stats');
+      const data = await res.json();
+      if (data.success && data.departments) {
+        const map: typeof deptStats = {};
+        for (const ds of data.departments) {
+          map[ds.department] = ds;
+        }
+        setDeptStats(map);
+      }
+    } catch (err) {
+      console.error('Failed to fetch dept stats:', err);
+    } finally {
+      setDeptStatsLoading(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const stopBulkRegenPolling = () => {
     if (bulkRegenPollRef.current) {
       clearInterval(bulkRegenPollRef.current);
@@ -499,6 +523,7 @@ export default function MCQTreeView({
           if (done) {
             stopBulkRegenPolling();
             persistBulkRegenJob(updatedJob);
+            fetchDeptStats();
           }
         }
       } catch (err) {
@@ -590,29 +615,9 @@ export default function MCQTreeView({
     fetchArchived();
   }, []);
 
-  // Fetch per-department MCQ stats (includes total SOP count from SOP model)
   useEffect(() => {
-    const fetchDeptStats = async () => {
-      setDeptStatsLoading(true);
-      try {
-        const res = await fetch('/api/mcq-bank/dept-stats');
-        const data = await res.json();
-        if (data.success && data.departments) {
-          const map: typeof deptStats = {};
-          for (const ds of data.departments) {
-            map[ds.department] = ds;
-          }
-          setDeptStats(map);
-        }
-      } catch (err) {
-        console.error('Failed to fetch dept stats:', err);
-      } finally {
-        setDeptStatsLoading(false);
-      }
-    };
     fetchDeptStats();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchDeptStats, refreshDeptStatsKey]);
 
   // fullScreenDept is now lifted to parent — no local state needed
 
@@ -1137,205 +1142,183 @@ export default function MCQTreeView({
         )}
 
       {/* ══════════════════════════════════════════════════════════════════
-           DASHBOARD STATS STRIP — horizontal scroll, one card per dept
-           + "Total" card pinned at left
+           MCQ STATUS CARDS — horizontal scroll, one card per dept
           ══════════════════════════════════════════════════════════════════ */}
       {(() => {
-        // Build per-dept data rows (blend API stats + tree counts)
         const DEPT_ORDER = ['QA','QC','Microbiology','Production','Store','Engineering and Maintenance','Personnel'];
 
-        // Rows: one per dept from the tree, ordered by DEPT_ORDER
         const orderedDepts = [
           ...DEPT_ORDER.map(n => tree.find(d => d.name === n)).filter(Boolean),
           ...tree.filter(d => !DEPT_ORDER.includes(d.name)),
         ] as typeof tree;
 
-        // Compute overall totals
+        // Overall totals from API only
         const overall = (() => {
           const base = { totalSOPs:0, sopWithMCQs:0, sopWithoutMCQs:0, approvedSOPs:0, pendingSOPs:0, similarSOPs:0, totalQuestions:0, checkedCount:0, reviewedCount:0, similarCount:0 };
-          for (const dept of orderedDepts) {
-            const ds = deptStats[dept.name];
-            const treeQ = dept.totalQuestions ?? 0;
-            const allSOPs = dept.subcategories?.flatMap(s => s.sops ?? []) ?? [];
-            const treeAppr = allSOPs.filter(s => (s.totalQuestions ?? 0) > 0 && (s.checkedCount ?? 0) >= (s.totalQuestions ?? 0)).length;
-            const treeSim  = allSOPs.filter(s => (s.similarCount ?? 0) > 0).length;
-            const treeMCQs = dept.totalSOPs ?? allSOPs.length;
-            const treePend = Math.max(0, treeMCQs - treeAppr - treeSim);
-            base.totalSOPs      += ds?.totalSOPs      ?? treeMCQs;
-            base.sopWithMCQs    += ds?.sopWithMCQs    ?? treeMCQs;
-            base.sopWithoutMCQs += ds?.sopWithoutMCQs ?? 0;
-            base.approvedSOPs   += ds ? ds.approvedSOPs : treeAppr;
-            base.pendingSOPs    += ds ? ds.pendingSOPs  : treePend;
-            base.similarSOPs    += ds ? ds.similarSOPs  : treeSim;
-            base.totalQuestions += ds?.totalQuestions ?? treeQ;
-            base.checkedCount   += ds?.checkedCount   ?? (dept.checkedCount ?? 0);
-            base.reviewedCount  += ds?.reviewedCount  ?? (dept.reviewedCount ?? 0);
-            base.similarCount   += ds?.similarCount   ?? (dept.similarCount ?? 0);
+          for (const ds of Object.values(deptStats)) {
+            base.totalSOPs      += ds.totalSOPs      ?? 0;
+            base.sopWithMCQs    += ds.sopWithMCQs    ?? 0;
+            base.sopWithoutMCQs += ds.sopWithoutMCQs ?? 0;
+            base.approvedSOPs   += ds.approvedSOPs   ?? 0;
+            base.pendingSOPs    += ds.pendingSOPs    ?? 0;
+            base.similarSOPs    += ds.similarSOPs    ?? 0;
+            base.totalQuestions += ds.totalQuestions ?? 0;
+            base.checkedCount   += ds.checkedCount   ?? 0;
+            base.reviewedCount  += ds.reviewedCount  ?? 0;
+            base.similarCount   += ds.similarCount   ?? 0;
           }
           return base;
         })();
-
         const overallCoverage = overall.totalSOPs > 0 ? Math.round((overall.sopWithMCQs / overall.totalSOPs) * 100) : 0;
 
-        // Row label config — same order for every card
-        const ROWS: Array<{ key: string; label: string; color: string; bgOn: string; bgOff: string }> = [
-          { key: 'totalSOPs',      label: 'Total SOPs',    color: 'text-white',       bgOn: 'bg-white/5',            bgOff: 'bg-white/5' },
-          { key: 'sopWithMCQs',    label: 'MCQs Created',  color: 'text-purple-300',  bgOn: 'bg-purple-500/10',      bgOff: 'bg-purple-500/10' },
-          { key: 'approvedSOPs',   label: 'Approved',      color: 'text-emerald-400', bgOn: 'bg-emerald-500/15',     bgOff: 'bg-emerald-500/5' },
-          { key: 'pendingSOPs',    label: 'Pending',       color: 'text-amber-400',   bgOn: 'bg-amber-500/15',       bgOff: 'bg-amber-500/5' },
-          { key: 'similarSOPs',    label: 'Similar',       color: 'text-rose-400',    bgOn: 'bg-rose-500/15',        bgOff: 'bg-rose-500/5' },
-          { key: 'sopWithoutMCQs', label: 'Remaining',     color: 'text-slate-300',   bgOn: 'bg-slate-500/10',       bgOff: 'bg-slate-500/5' },
-          { key: 'totalQuestions', label: 'Questions',     color: 'text-blue-300',    bgOn: 'bg-blue-500/10',        bgOff: 'bg-blue-500/5' },
-          { key: 'checkedCount',   label: 'Checked Qs',    color: 'text-emerald-300', bgOn: 'bg-emerald-500/10',     bgOff: 'bg-emerald-500/5' },
-          { key: 'reviewedCount',  label: 'Reviewed Qs',   color: 'text-sky-300',     bgOn: 'bg-sky-500/10',         bgOff: 'bg-sky-500/5' },
-          { key: 'similarCount',   label: 'Similar Qs',    color: 'text-rose-300',    bgOn: 'bg-rose-500/10',        bgOff: 'bg-rose-500/5' },
-        ];
+        // Row: label left, value right — white bg style
+        const R = ({ label, value, vc = 'text-gray-900', dim = false }: {
+          label: string; value: number; vc?: string; dim?: boolean;
+        }) => (
+          <div className="flex items-center justify-between px-3 py-[4px] border-b border-gray-100 last:border-0">
+            <span className="text-[11px] text-gray-500 font-medium leading-none">{label}</span>
+            <span className={`text-[13px] font-black tabular-nums leading-none ${dim || value === 0 ? 'text-gray-300' : vc}`}>{value}</span>
+          </div>
+        );
 
-        const getVal = (dept: typeof tree[0], key: string): number => {
-          const ds = deptStats[dept.name];
-          const allSOPs = dept.subcategories?.flatMap(s => s.sops ?? []) ?? [];
-          const treeMCQs = dept.totalSOPs ?? allSOPs.length;
-          const treeAppr = allSOPs.filter(s => (s.totalQuestions ?? 0) > 0 && (s.checkedCount ?? 0) >= (s.totalQuestions ?? 0)).length;
-          const treeSim  = allSOPs.filter(s => (s.similarCount ?? 0) > 0).length;
-          const treePend = Math.max(0, treeMCQs - treeAppr - treeSim);
-          const map: Record<string, number> = {
-            totalSOPs:      ds?.totalSOPs      ?? treeMCQs,
-            sopWithMCQs:    ds?.sopWithMCQs    ?? treeMCQs,
-            sopWithoutMCQs: ds?.sopWithoutMCQs ?? 0,
-            approvedSOPs:   ds ? ds.approvedSOPs : treeAppr,
-            pendingSOPs:    ds ? ds.pendingSOPs  : treePend,
-            similarSOPs:    ds ? ds.similarSOPs  : treeSim,
-            totalQuestions: ds?.totalQuestions ?? (dept.totalQuestions ?? 0),
-            checkedCount:   ds?.checkedCount   ?? (dept.checkedCount ?? 0),
-            reviewedCount:  ds?.reviewedCount  ?? (dept.reviewedCount ?? 0),
-            similarCount:   ds?.similarCount   ?? (dept.similarCount ?? 0),
-          };
-          return map[key] ?? 0;
-        };
+        // Section divider with label
+        const Divider = ({ label }: { label: string }) => (
+          <div className="px-3 py-[3px] bg-gray-50 border-y border-gray-200">
+            <span className="text-[8px] font-black uppercase tracking-widest text-gray-400">{label}</span>
+          </div>
+        );
 
-        const getOverallVal = (key: string): number => (overall as any)[key] ?? 0;
+        const CoverageBar = ({ pct }: { pct: number }) => (
+          <div className="px-3 pt-2 pb-1">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[8px] font-bold text-gray-400 uppercase tracking-wider">Coverage</span>
+              <span className={`text-[9px] font-black ${pct >= 100 ? 'text-emerald-500' : pct >= 60 ? 'text-blue-500' : 'text-amber-500'}`}>{pct}%</span>
+            </div>
+            <div className="w-full h-[3px] bg-gray-100 rounded-full overflow-hidden">
+              <div className={`h-full rounded-full ${pct >= 100 ? 'bg-emerald-500' : pct >= 60 ? 'bg-blue-500' : 'bg-amber-500'}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+            </div>
+          </div>
+        );
+
+        const Card = ({
+          title, subtitle, accentClass, borderClass, headerBg, icon,
+          totalSOPs, sopWithMCQs, approvedSOPs, pendingSOPs, similarSOPs, sopWithoutMCQs,
+          totalQuestions, checkedCount, reviewedCount, similarCount,
+          coverage, themeText, onOpen,
+        }: {
+          title: string; subtitle: string; accentClass: string; borderClass: string; headerBg: string;
+          icon: React.ReactNode; totalSOPs: number; sopWithMCQs: number; approvedSOPs: number;
+          pendingSOPs: number; similarSOPs: number; sopWithoutMCQs: number;
+          totalQuestions: number; checkedCount: number; reviewedCount: number; similarCount: number;
+          coverage: number; themeText: string; onOpen?: () => void;
+        }) => (
+          <div className={`flex flex-col rounded-xl border ${borderClass} bg-white overflow-hidden w-[170px] shrink-0`}>
+            {/* Header */}
+            <div className={`flex items-center gap-2 px-3 py-2 ${headerBg} border-b ${borderClass}`}>
+              <span className={`${accentClass} shrink-0`}>{icon}</span>
+              <div className="flex-1 min-w-0">
+                <p className={`text-[11px] font-black uppercase tracking-wider ${accentClass} truncate`}>{title}</p>
+                <p className="text-[8px] text-gray-500 font-medium">{subtitle}</p>
+              </div>
+            </div>
+            {/* SOP counts */}
+            <div className="py-1">
+              <R label="SOPs"         value={sopWithMCQs}  vc="text-gray-900" />
+              <R label="Approved"     value={approvedSOPs} vc="text-emerald-600" />
+              <R label="Pending"      value={pendingSOPs}  vc="text-red-600" />
+              <R label="Similar"      value={similarSOPs}  vc="text-gray-900" />
+            </div>
+            {/* Question counts */}
+            <Divider label="Questions" />
+            <div className="py-1">
+              <R label="Total"    value={totalQuestions} vc="text-gray-900" />
+              <R label="Checked"  value={checkedCount}   vc="text-gray-900" />
+              <R label="Reviewed" value={reviewedCount}  vc="text-gray-900" />
+              <R label="Similar"  value={similarCount}   vc="text-gray-900" />
+            </div>
+            {/* Coverage + open button */}
+            <CoverageBar pct={coverage} />
+            {onOpen && (
+              <div className="px-2 pb-2">
+                <button
+                  onClick={onOpen}
+                  className={`w-full text-[8px] font-black uppercase tracking-widest rounded py-1 transition-all ${headerBg} ${accentClass} border ${borderClass} hover:brightness-125`}
+                >
+                  Open
+                </button>
+              </div>
+            )}
+          </div>
+        );
 
         return (
           <div className="mb-4">
-            {/* Scrollable table-like strip */}
+            <div className="flex items-center gap-2 mb-2">
+              <BookOpen className="h-3.5 w-3.5 text-purple-400" />
+              <span className="text-[10px] font-black text-white uppercase tracking-widest">MCQ Status</span>
+              {deptStatsLoading && <span className="text-[9px] text-gray-500">Loading…</span>}
+            </div>
+
             <div className="overflow-x-auto pb-1">
-              <div className="flex gap-0 min-w-max">
+              <div className="flex gap-2 min-w-max">
 
-                {/* ── Row-label column (sticky left) ── */}
-                <div className="flex flex-col sticky left-0 z-10 bg-[#0f0e1a] rounded-l-xl border border-white/10 border-r-0 overflow-hidden">
-                  {/* Header cell */}
-                  <div className="flex items-center gap-1.5 px-3 py-2 bg-white/5 border-b border-white/10 h-[44px]">
-                    <BookOpen className="h-3.5 w-3.5 text-purple-400 shrink-0" />
-                    <span className="text-[9px] font-black text-white uppercase tracking-widest whitespace-nowrap">MCQ Status</span>
-                  </div>
-                  {ROWS.map((row, i) => (
-                    <div
-                      key={row.key}
-                      className={`flex items-center px-3 h-[30px] border-b border-white/5 ${i % 2 === 0 ? 'bg-white/[0.02]' : 'bg-transparent'}`}
-                    >
-                      <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">{row.label}</span>
-                    </div>
-                  ))}
-                  {/* Coverage row */}
-                  <div className="flex items-center px-3 h-[30px] bg-white/[0.02]">
-                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Coverage</span>
-                  </div>
-                  {/* Open button row */}
-                  <div className="flex items-center px-3 h-[32px]" />
-                </div>
+                {/* Total card */}
+                <Card
+                  title="Total"
+                  subtitle={`${orderedDepts.length} departments`}
+                  accentClass="text-purple-600"
+                  borderClass="border-purple-200"
+                  headerBg="bg-purple-50"
+                  icon={<FileText className="h-3.5 w-3.5" />}
+                  totalSOPs={overall.totalSOPs}
+                  sopWithMCQs={overall.sopWithMCQs}
+                  approvedSOPs={overall.approvedSOPs}
+                  pendingSOPs={overall.pendingSOPs}
+                  similarSOPs={overall.similarSOPs}
+                  sopWithoutMCQs={overall.sopWithoutMCQs}
+                  totalQuestions={overall.totalQuestions}
+                  checkedCount={overall.checkedCount}
+                  reviewedCount={overall.reviewedCount}
+                  similarCount={overall.similarCount}
+                  coverage={overallCoverage}
+                  themeText="text-purple-600"
+                />
 
-                {/* ── Total column ── */}
-                <div className="flex flex-col border border-white/10 border-r-0 overflow-hidden bg-white/[0.03]">
-                  {/* Header */}
-                  <div className="flex flex-col items-center justify-center px-4 py-1.5 bg-purple-900/30 border-b border-white/10 h-[44px] min-w-[90px]">
-                    <span className="text-[10px] font-black text-purple-300 uppercase tracking-widest">Total</span>
-                    <span className="text-[8px] text-purple-500 font-bold">{orderedDepts.length} depts</span>
-                  </div>
-                  {ROWS.map((row, i) => {
-                    const val = getOverallVal(row.key);
-                    return (
-                      <div key={row.key} className={`flex items-center justify-center h-[30px] border-b border-white/5 px-3 ${i % 2 === 0 ? 'bg-white/[0.02]' : 'bg-transparent'}`}>
-                        <span className={`text-[13px] font-black leading-none ${row.color}`}>{val}</span>
-                      </div>
-                    );
-                  })}
-                  {/* Coverage bar */}
-                  <div className="flex items-center justify-center h-[30px] bg-white/[0.02] px-3">
-                    <div className="flex items-center gap-1.5 w-full">
-                      <div className="flex-1 h-1 bg-black/30 rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full ${overallCoverage === 100 ? 'bg-emerald-500' : overallCoverage >= 60 ? 'bg-blue-500' : 'bg-amber-500'}`} style={{ width: `${overallCoverage}%` }} />
-                      </div>
-                      <span className={`text-[9px] font-black whitespace-nowrap ${overallCoverage === 100 ? 'text-emerald-400' : overallCoverage >= 60 ? 'text-blue-400' : 'text-amber-400'}`}>{overallCoverage}%</span>
-                    </div>
-                  </div>
-                  {/* Open button placeholder */}
-                  <div className="flex items-center justify-center h-[32px]" />
-                </div>
-
-                {/* ── One column per department ── */}
-                {orderedDepts.map((dept, colIdx) => {
+                {/* Per-dept cards */}
+                {orderedDepts.map((dept) => {
                   const theme = getDeptTheme(dept.name);
                   const ds = deptStats[dept.name];
-                  const totalDeptSOPs = ds?.totalSOPs ?? (dept.totalSOPs ?? 0);
-                  const mcqsCreated   = ds?.sopWithMCQs ?? (dept.totalSOPs ?? 0);
-                  const coverage = totalDeptSOPs > 0 ? Math.round((mcqsCreated / totalDeptSOPs) * 100) : 0;
-                  const isLast = colIdx === orderedDepts.length - 1;
+                  const pct = (ds?.totalSOPs ?? 0) > 0
+                    ? Math.round(((ds?.sopWithMCQs ?? 0) / (ds?.totalSOPs ?? 1)) * 100) : 0;
+
+                  // Map theme.text to a light mode border/header colour
+                  const borderClass = 'border-gray-200';
+                  const headerBg = 'bg-gray-50';
+                  const textColor = theme.text ? theme.text.replace('400', '600') : 'text-gray-800';
 
                   return (
-                    <div
+                    <Card
                       key={dept.name}
-                      className={`flex flex-col border border-white/10 ${isLast ? 'rounded-r-xl' : 'border-r-0'} overflow-hidden`}
-                    >
-                      {/* Header */}
-                      <div className={`flex flex-col items-center justify-center px-3 py-1.5 bg-gradient-to-b ${theme.gradient} border-b border-white/10 h-[44px] min-w-[100px] cursor-pointer hover:brightness-125 transition-all`}
-                        onClick={() => setFullScreenDept(dept)}
-                        title={`Open ${dept.name} department`}
-                      >
-                        <span className={`text-[10px] font-black uppercase tracking-wider whitespace-nowrap ${theme.text}`}>{dept.name}</span>
-                        <span className="text-[8px] text-gray-500 font-bold">{dept.subcategories?.length ?? 0} subcats</span>
-                      </div>
-
-                      {/* Data rows */}
-                      {ROWS.map((row, i) => {
-                        const val = getVal(dept, row.key);
-                        const isGreenRow = row.key === 'approvedSOPs' || row.key === 'checkedCount' || row.key === 'reviewedCount';
-                        const isRedRow   = row.key === 'similarSOPs' || row.key === 'similarCount' || row.key === 'pendingSOPs';
-                        const hasAlert   = isRedRow && val > 0;
-                        const hasGood    = isGreenRow && val > 0;
-                        return (
-                          <div
-                            key={row.key}
-                            className={`flex items-center justify-center h-[30px] border-b border-white/5 px-3 ${
-                              hasAlert ? row.bgOn : hasGood ? row.bgOn : i % 2 === 0 ? 'bg-white/[0.02]' : 'bg-transparent'
-                            }`}
-                          >
-                            <span className={`text-[13px] font-black leading-none ${
-                              hasAlert ? row.color : hasGood ? row.color : val === 0 ? 'text-gray-600' : row.color
-                            }`}>{val}</span>
-                          </div>
-                        );
-                      })}
-
-                      {/* Coverage mini-bar */}
-                      <div className="flex items-center justify-center h-[30px] bg-white/[0.02] px-2.5">
-                        <div className="flex items-center gap-1 w-full">
-                          <div className="flex-1 h-1 bg-black/30 rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full ${coverage === 100 ? 'bg-emerald-500' : coverage >= 60 ? 'bg-blue-500' : 'bg-amber-500'}`} style={{ width: `${coverage}%` }} />
-                          </div>
-                          <span className={`text-[8px] font-black whitespace-nowrap ${coverage === 100 ? 'text-emerald-400' : coverage >= 60 ? 'text-blue-400' : 'text-amber-400'}`}>{coverage}%</span>
-                        </div>
-                      </div>
-
-                      {/* Open button */}
-                      <div className="flex items-center justify-center h-[32px] px-2">
-                        <button
-                          onClick={() => setFullScreenDept(dept)}
-                          className={`w-full text-[8px] font-black uppercase tracking-widest rounded px-2 py-1 transition-all ${theme.button ?? 'bg-white/10 hover:bg-white/20'} text-white`}
-                        >
-                          Open
-                        </button>
-                      </div>
-                    </div>
+                      title={dept.name}
+                      subtitle={`${dept.subcategories?.length ?? 0} subcategories`}
+                      accentClass={textColor}
+                      borderClass={borderClass}
+                      headerBg={headerBg}
+                      icon={<FileText className="h-3.5 w-3.5" />}
+                      totalSOPs={ds?.totalSOPs      ?? 0}
+                      sopWithMCQs={ds?.sopWithMCQs   ?? 0}
+                      approvedSOPs={ds?.approvedSOPs  ?? 0}
+                      pendingSOPs={ds?.pendingSOPs    ?? 0}
+                      similarSOPs={ds?.similarSOPs    ?? 0}
+                      sopWithoutMCQs={ds?.sopWithoutMCQs ?? 0}
+                      totalQuestions={ds?.totalQuestions ?? 0}
+                      checkedCount={ds?.checkedCount   ?? 0}
+                      reviewedCount={ds?.reviewedCount  ?? 0}
+                      similarCount={ds?.similarCount   ?? 0}
+                      coverage={pct}
+                      themeText={theme.text}
+                      onOpen={() => setFullScreenDept(dept)}
+                    />
                   );
                 })}
               </div>

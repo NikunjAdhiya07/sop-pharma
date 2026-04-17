@@ -289,6 +289,7 @@ function MCQBankContent() {
   const [expandedDepts, setExpandedDepts] = useState<Set<string>>(() =>
     loadExpansionState("mcq-tree-expanded-depts"),
   );
+  const [refreshDeptStatsKey] = useState(0);
   const [expandedSubcats, setExpandedSubcats] = useState<Set<string>>(() =>
     loadExpansionState("mcq-tree-expanded-subcats"),
   );
@@ -371,17 +372,10 @@ function MCQBankContent() {
     return null;
   });
 
-  // Start as false when we already seeded from localStorage (no spinner needed)
-  const [loadingTree, setLoadingTree] = useState(() => {
-    if (typeof window === 'undefined') return true;
-    try {
-      const storedUser = localStorage.getItem('user');
-      const username = storedUser ? JSON.parse(storedUser)?.username || '' : '';
-      const CACHE_TS_KEY = `mcq-tree-cache-timestamp-v4-${username || 'guest'}`;
-      const ts = localStorage.getItem(CACHE_TS_KEY);
-      return !(ts && Date.now() - parseInt(ts) < 30 * 60 * 1000);
-    } catch { return true; }
-  });
+  // Always start as true on both server and client — useEffect will clear it
+  // after seeding from localStorage. A lazy initializer that reads localStorage
+  // causes a server(true) vs client(false) mismatch → hydration error.
+  const [loadingTree, setLoadingTree] = useState(true);
 
   // Sort state
   const [sortBy, setSortBy] = useState<
@@ -2348,6 +2342,7 @@ function MCQBankContent() {
               fullScreenDept={fullScreenDept}
               setFullScreenDept={setFullScreenDept}
               trainerMappings={trainerMappings}
+              refreshDeptStatsKey={refreshDeptStatsKey}
               onViewMCQs={(sopNode, filterStatus = "all") => {
                 if (sopNode.mcqBanks && sopNode.mcqBanks.length > 0) {
                   openSOPNodeWithAllBanks(sopNode, filterStatus);

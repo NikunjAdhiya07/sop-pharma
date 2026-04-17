@@ -201,7 +201,10 @@ export default function CompactDataHeader({
   onDepartmentsClick,
   inline = false,
 }: CompactDataHeaderProps) {
-  const totalSOPs = stats?.totalSOPs ?? 0;
+  // Use primaryRegistryRowCount from the sops API — it's the deduplicated count of actual
+  // registry rows (SOP collection + folder uploads). The stats API counts distinct SOPLibrary
+  // identifiers which misses folder-upload SOPs and can be stale.
+  const totalSOPs = metadata?.primaryRegistryRowCount ?? stats?.totalSOPs ?? 0;
   const expiredSOPs = alertSummary?.expired ?? 0;
   const nearExpiry = (alertSummary?.high ?? 0) + (alertSummary?.medium ?? 0);
   const activeSOPs = Math.max(0, totalSOPs - expiredSOPs);

@@ -54,7 +54,7 @@ import {
   expectedDocxSlotsForRow,
   expectedPdfSlotsForRow,
 } from "@/lib/registryRowDocCounts";
-import { filterPrimaryRegistryRows } from "@/lib/registryPrimaryRows";
+import { filterPrimaryRegistryRows, isStandardRegistrySopNumber } from "@/lib/registryPrimaryRows";
 import {
   classifySopVersionCapsule,
   type SopVersionFilterSegment,
@@ -563,7 +563,12 @@ export default function DashboardPageClient() {
 
   // The perfect sorting & filtering logic
   const filteredAndSortedData = useMemo(() => {
-    let result = [...filterPrimaryRegistryRows(effectiveData)];
+    // Include artifact-only rows (SOPs uploaded via Version Fetch that have no SOP
+    // collection record) so the table count matches the capsule counts.
+    // Junk identifiers (SOP-timestamp, FILLED-…) are still excluded by isStandardRegistrySopNumber.
+    let result = [...effectiveData].filter(
+      (row: any) => isStandardRegistrySopNumber(row)
+    );
 
     if (search) {
       const s = search.toLowerCase();
@@ -1508,7 +1513,7 @@ export default function DashboardPageClient() {
       <section className="border-b border-gray-200 bg-gray-100 px-2 py-1 sm:px-3">
         <div className="min-w-0 max-w-[1920px] mx-auto">
           <DepartmentCapsules
-            data={primaryRegistryData}
+            data={data}
             showTotalCapsule
             applyCapsuleFilter={applyCapsuleFilter}
             applyCapsuleAvailMiss={applyCapsuleAvailMiss}

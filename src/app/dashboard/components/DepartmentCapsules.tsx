@@ -8,7 +8,7 @@ import {
   expectedPdfSlotsForRow,
   scanRowLanguageFileSlots,
 } from "@/lib/registryRowDocCounts";
-import { isArtifactOnlyRegistryRow, isStandardRegistrySopNumber } from "@/lib/registryPrimaryRows";
+import { isStandardRegistrySopNumber } from "@/lib/registryPrimaryRows";
 import { CAPSULE_DEPARTMENTS } from "@/lib/capsuleDepartments";
 import {
   classifySopVersionCapsule,
@@ -276,7 +276,6 @@ export function computeCapsuleGrandTotalStat(data: any[]): DeptCapsuleStats {
   const dayMs = 1000 * 60 * 60 * 24;
   const s = emptyCapsuleAcc();
   for (const row of data || []) {
-    if (isArtifactOnlyRegistryRow(row)) continue;
     if (!isStandardRegistrySopNumber(row)) continue;
     foldRegistryRowIntoCapsuleAcc(s, row, today, dayMs);
   }
@@ -348,11 +347,33 @@ function computeDepartmentStats(data: any[]): DeptCapsuleStats[] {
     return raw;
   };
 
-  data.forEach((row: any) => {
-    if (isArtifactOnlyRegistryRow(row)) return;
+  /** Infer department from sopNo prefix when the stored department is unknown. */
+  const PREFIX_TO_DEPT: Record<string, string> = {
+    QAGE: 'QA', ANNE: 'QA',
+    QCGE: 'QC', QAIC: 'QC', QAIO: 'QC',
+    QAMI: 'Microbiology', QCMI: 'Microbiology',
+    PRAA: 'Production', PRCL: 'Production', PRED: 'Production',
+    PREO: 'Production', PREP: 'Production', PRGE: 'Production',
+    PRMA: 'Production', PRPA: 'Production',
+    BSGE: 'Store', STCL: 'Store', STGE: 'Store',
+    STOP: 'Store', STPA: 'Store', STRM: 'Store',
+    MAGE: 'Engineering and Maintenance', PREG: 'Engineering and Maintenance',
+    PEGE: 'Personnel',
+  };
 
+  const deptFromSopNo = (sopNo: string): string => {
+    const code = (sopNo || '').toUpperCase().trim().match(/^([A-Z]{2,6})\d/)?.[1] ?? '';
+    return PREFIX_TO_DEPT[code] ?? '';
+  };
+
+  data.forEach((row: any) => {
     const rawDept = row.department || "";
-    const dept = normalizeDept(rawDept);
+    let dept = normalizeDept(rawDept);
+    // If the stored department isn't a known capsule department, try to infer
+    // from the SOP number prefix (handles SOPs tagged as "Other" in the DB)
+    if (!dept || !(order as readonly string[]).includes(dept)) {
+      dept = deptFromSopNo(row.sopNo || '');
+    }
     if (!dept || !(order as readonly string[]).includes(dept)) return;
 
     const s = byDept.get(dept)!;

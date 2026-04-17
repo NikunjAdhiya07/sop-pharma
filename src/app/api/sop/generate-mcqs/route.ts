@@ -55,6 +55,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Short-circuit: if a bank already has enough questions, return it immediately
+    // without re-running the AI (avoids spurious failures when re-clicking the button)
+    const effectiveLang = language || sop.language || 'English';
+    const existingBank = await MCQBank.findOne({ sopId: sop._id, language: effectiveLang })
+      || await MCQBank.findOne({ sopId: sop._id });
+    if (existingBank && existingBank.mcqs.length >= (targetCount || 100)) {
+      console.log(`✅ generate-mcqs: Bank already has ${existingBank.mcqs.length} questions for ${sop.identifier}. Returning existing bank.`);
+      return NextResponse.json({
+        success: true,
+        message: 'MCQ bank already exists',
+        total: existingBank.mcqs.length,
+        mcqBank: existingBank,
+      }, { status: 200 });
+    }
+
     // Check if it's already in the queue or being processed
     // If it's already there, we'll just wait for it to complete
     if (mcqQueue.isProcessing(sopId)) {
@@ -77,7 +92,6 @@ export async function POST(request: NextRequest) {
     await mcqQueue.waitForTask(sopId);
 
     // Fetch the final state of the bank (prefer language match, fall back to any)
-    const effectiveLang = language || sop.language || 'English';
     const finalBank = await MCQBank.findOne({ sopId: sop._id, language: effectiveLang })
       || await MCQBank.findOne({ sopId: sop._id });
 

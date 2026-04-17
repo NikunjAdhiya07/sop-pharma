@@ -329,6 +329,27 @@ export async function resolveBank(bankId: string, log: string[]): Promise<{
   const finalClusters = detectSimilarities(bank.mcqs, SIMILARITY_THRESHOLD);
   const remaining = finalClusters.length;
 
+  // Build a set of indices that are still similar after all passes
+  const stillSimilarIndices = new Set<number>();
+  for (const c of finalClusters) {
+    stillSimilarIndices.add(c.primaryIndex);
+    for (const idx of c.similarIndices) stillSimilarIndices.add(idx);
+  }
+
+  // Explicitly sync isSimilar flags to DB using positional $set so the capsule
+  // counts reflect reality immediately — Mongoose dirty-tracking on array elements
+  // is unreliable and leaves stale isSimilar:true values in the DB.
+  const similarFlagUpdates: Record<string, boolean> = {};
+  for (let i = 0; i < bank.mcqs.length; i++) {
+    similarFlagUpdates[`mcqs.${i}.isSimilar`] = stillSimilarIndices.has(i);
+  }
+  try {
+    await MCQBank.updateOne({ _id: bank._id }, { $set: similarFlagUpdates });
+    log.push(`✓ isSimilar flags synced to DB (${stillSimilarIndices.size} remaining similar)`);
+  } catch (syncErr: any) {
+    log.push(`⚠ Could not sync isSimilar flags: ${syncErr.message}`);
+  }
+
   if (remaining === 0) {
     log.push(`✓ VERIFIED: All questions unique`);
   } else {
@@ -437,6 +458,20 @@ export async function runBulkDeptJob(jobId: string): Promise<void> {
 
       const finalCheck = await BulkDeptJob.findById(jobId, { status:1 }).lean() as any;
       if (finalCheck?.status !== 'cancelled') {
+        // After all banks processed, bulk-clear ALL isSimilar:true flags for every
+        // bank in this job. resolveBank() re-detects within each bank and only keeps
+        // genuinely remaining clusters — but cross-bank flags set by the detect route
+        // are never cleared by Mongoose saves. One updateMany with arrayFilters fixes all.
+        const bankObjectIds = job.bankIds.map((id: string) => {
+          try { return new (require('mongoose').Types.ObjectId)(id); } catch { return null; }
+        }).filter(Boolean);
+        if (bankObjectIds.length > 0) {
+          await MCQBank.updateMany(
+            { _id: { $in: bankObjectIds }, 'mcqs.isSimilar': true },
+            { $set: { 'mcqs.$[elem].isSimilar': false } },
+            { arrayFilters: [{ 'elem.isSimilar': true }] }
+          ).catch((e: any) => console.error('[bulk-worker] isSimilar clear error:', e));
+        }
         await BulkDeptJob.findByIdAndUpdate(jobId, { status: 'completed', completedAt: new Date() });
         console.log(`[bulk-worker] Job ${jobId} completed — ${banksProcessed} banks processed`);
       }
