@@ -322,9 +322,20 @@ export async function POST(request: NextRequest) {
       const familyKey = sopFamilyKeyFromIdentifier(sopIdentifier.toUpperCase());
 
       if (currentRevision != null && familyKey) {
-        // Match all revisions of the same SOP document family (e.g. QAGE28-*)
-        const familyLetterDoc = familyKey.split(':')[0]; // e.g. "QAGE28" from "QAGE:28"
-        const familyPattern = new RegExp(`^${familyLetterDoc}\\d*-\\d+$`, 'i');
+        // familyKey format: "LETTERS:docNumber" e.g. "QAGE:28" for QAGE28-01
+        // Build an exact family doc string: letters + docNumber (e.g. "QAGE28")
+        const familyParts = familyKey.split(':'); // ["QAGE", "28"]
+        const familyLetters = familyParts[0];     // "QAGE"
+        const familyDocNum  = familyParts[1];     // "28"
+        // Match ONLY this exact document number with different revisions (e.g. QAGE28-00, QAGE28-01)
+        // Uses zero-padded variants too (QAGE028, QAGE28) but NOT QAGE29, QAGE27, etc.
+        const escapedLetters = familyLetters.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const docNumInt = parseInt(familyDocNum || '0', 10);
+        // Match both zero-padded (QAGE028) and non-padded (QAGE28) variants of the doc number
+        const familyPattern = new RegExp(
+          `^${escapedLetters}0*${docNumInt}-\\d+$`,
+          'i'
+        );
 
         const relatedSops = await SOP.find({
           identifier: familyPattern,

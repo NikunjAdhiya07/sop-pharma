@@ -1259,12 +1259,9 @@ function mergeKeysOnlyInArtifacts(docs: any[], registryNormKeys: Set<string>): s
   for (const va of docs) {
     const mk = normalizeSopIdentifierKey(String(va.identifier || '').trim().toUpperCase());
     if (!mk || registryNormKeys.has(mk)) continue;
-    const entries = va.entries || [];
-    const hasFile = entries.some(
-      (e: any) =>
-        (e.docxPath && String(e.docxPath).trim()) || (e.pdfPath && String(e.pdfPath).trim()),
-    );
-    if (hasFile) keys.add(mk);
+    // Include all artifact-only SOPs regardless of whether files have been uploaded yet.
+    // SOPs in the version artifacts collection represent known SOPs even if files are pending upload.
+    keys.add(mk);
   }
   return [...keys];
 }
@@ -2350,19 +2347,20 @@ export async function GET(request: NextRequest) {
       const vaGjSplit = splitMainVersusSuperseded(vaGjFull);
       const vaEn = vaEnSplit.main;
       const vaGj = vaGjSplit.main;
-      if (
+      // Allow artifact-only SOPs with no uploaded files — they are known SOPs that need tracking.
+      // They appear as "missing files" rows in the registry. Only skip if the artifact record
+      // itself has no identity (i.e. the identifier lookup also returned nothing from the DB).
+      const hasNoArtifacts =
         vaEn.length === 0 &&
         vaGj.length === 0 &&
         vaEnSplit.superseded.length === 0 &&
-        vaGjSplit.superseded.length === 0
-      )
-        continue;
+        vaGjSplit.superseded.length === 0;
+      const matchingArtifactDocs = versionArtifactsByIdentifier.get(mk) || [];
+      if (hasNoArtifacts && matchingArtifactDocs.length === 0) continue;
 
       let deptRaw = 'General';
       let updatedMs = 0;
-      // Optimized: Use pre-indexed Map to find matching artifact docs
-      const matchingArtifactsForMk = versionArtifactsByIdentifier.get(mk) || [];
-      for (const va of matchingArtifactsForMk) {
+      for (const va of matchingArtifactDocs) {
         const t = new Date(va.updatedAt || 0).getTime();
         if (t >= updatedMs) {
           updatedMs = t;
