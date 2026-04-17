@@ -3,75 +3,90 @@ import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
 import SOPVersionArtifacts from '@/models/SOPVersionArtifacts';
 import { normalizeSopIdentifierKey, sopFamilyKeyFromIdentifier } from '@/lib/sopIdentifierNormalize';
+import { getDepartmentForSubcategory, extractSubcategoryFromIdentifier } from '@/lib/mcqTreeBuilder';
+import { isArtifactOnlyRegistryRow, isStandardRegistrySopNumber } from '@/lib/registryPrimaryRows';
 
-function isStandardSopNumber(sopNo: string): boolean {
-  return sopFamilyKeyFromIdentifier(sopNo) !== null;
-}
-
-// Family key = letters + doc number, no revision (PRGE11-3 and PRGE11-5 → same family PRGE:11)
-function familyKey(key: string): string {
-  const m = key.match(/^([A-Z]{2,6})(\d+)-/);
-  if (!m) return key;
-  return `${m[1]}:${parseInt(m[2], 10)}`;
-}
-
-const PREFIX_TO_DEPT: Record<string, string> = {
-  PRAA: 'Production', PRCL: 'Production', PRED: 'Production',
-  PREO: 'Production', PREP: 'Production', PRGE: 'Production',
-  PRMA: 'Production', PRPA: 'Production',
-};
-function isProduction(key: string): boolean {
-  const code = key.toUpperCase().match(/^([A-Z]{2,6})\d/)?.[1] ?? '';
-  return PREFIX_TO_DEPT[code] === 'Production';
+function normalizeDeptForDisplay(d: string): string {
+  if (!d) return 'Other';
+  const lower = d.toLowerCase();
+  if (lower.includes('micro')) return 'Microbiology';
+  if (lower.includes('engineer')) return 'Engineering and Maintenance';
+  if (lower.includes('person') || lower.includes('hr')) return 'Personnel';
+  if (lower.includes('store')) return 'Store';
+  if (lower.includes('prod')) return 'Production';
+  if (lower === 'qa' || lower.includes('quality assurance')) return 'QA';
+  if (lower === 'qc' || lower.includes('quality control')) return 'QC';
+  return d;
 }
 
 export async function GET() {
   await connectDB();
 
+  // Simulate exactly what the dashboard sops API returns for each row
+  // Primary rows: SOP collection merged
   const allSOPs = await SOP.find({ isObsolete: { $ne: true } })
-    .select('identifier').lean() as any[];
+    .select('identifier language createdAt department').lean() as any[];
 
-  // All SOP family keys in the SOP collection
-  const sopFamilies = new Set<string>();
-  const sopNormalizedKeys = new Set<string>();
+  // Dedup per lang then merge (same as dashboard)
+  const byKey = new Map<string, any>();
   for (const sop of allSOPs) {
-    const key = normalizeSopIdentifierKey((sop.identifier || '').trim().toUpperCase());
-    if (isStandardSopNumber(key)) {
-      sopNormalizedKeys.add(key);
-      sopFamilies.add(familyKey(key));
-    }
+    const idNorm = normalizeSopIdentifierKey((sop.identifier || '').trim().toUpperCase());
+    const lang = sop.language || 'English';
+    const key = `${idNorm}::${lang}`;
+    if (!byKey.has(key)) byKey.set(key, { ...sop, _idNorm: idNorm });
+  }
+  const mergedMap = new Map<string, any>();
+  for (const sop of byKey.values()) {
+    const mk = sop._idNorm;
+    if (!mergedMap.has(mk)) mergedMap.set(mk, sop);
   }
 
-  // All artifact identifiers for Production
-  const artifacts = await SOPVersionArtifacts.find({}).select('identifier').lean() as any[];
-  const artifactProduction = new Map<string, string[]>(); // family → [keys]
+  // Build primary rows (non-artifact, standard SOP number)
+  const primaryRows: any[] = [];
+  for (const [mk, sop] of mergedMap) {
+    if (!isStandardRegistrySopNumber({ sopNo: mk })) continue;
+    const code = extractSubcategoryFromIdentifier(mk);
+    const dept = normalizeDeptForDisplay(getDepartmentForSubcategory(code));
+    primaryRows.push({ sopNo: mk, department: dept, registryRowKind: 'primary' });
+  }
+
+  // Build primary family keys
+  const primaryFamilies = new Set<string>();
+  for (const row of primaryRows) {
+    const fk = sopFamilyKeyFromIdentifier(row.sopNo);
+    if (fk) primaryFamilies.add(fk);
+  }
+
+  // Artifact-only rows (truly missing from SOP collection)
+  const artifacts = await SOPVersionArtifacts.find({}).select('identifier department').lean() as any[];
+  const artifactRows: any[] = [];
+  const seenArtifactFamilies = new Set<string>();
   for (const va of artifacts) {
-    const key = normalizeSopIdentifierKey((va.identifier || '').trim().toUpperCase());
-    if (!isStandardSopNumber(key) || !isProduction(key)) continue;
-    const fk = familyKey(key);
-    if (!artifactProduction.has(fk)) artifactProduction.set(fk, []);
-    artifactProduction.get(fk)!.push(key);
+    const mk = normalizeSopIdentifierKey((va.identifier || '').trim().toUpperCase());
+    if (!isStandardRegistrySopNumber({ sopNo: mk })) continue;
+    const fk = sopFamilyKeyFromIdentifier(mk);
+    if (!fk) continue;
+    // Skip if primary row exists for this family
+    if (primaryFamilies.has(fk)) continue;
+    // Skip if we already counted this family from artifacts
+    if (seenArtifactFamilies.has(fk)) continue;
+    seenArtifactFamilies.add(fk);
+    const code = extractSubcategoryFromIdentifier(mk);
+    const dept = normalizeDeptForDisplay(getDepartmentForSubcategory(code));
+    artifactRows.push({ sopNo: mk, department: dept, registryRowKind: 'artifactsOnly' });
   }
 
-  // Families in artifacts but NO version at all in SOP collection → truly missing SOPs
-  const trulyMissing: string[] = [];
-  const olderVersionOnly: string[] = [];
+  const allRows = [...primaryRows, ...artifactRows];
 
-  for (const [fk, keys] of artifactProduction) {
-    if (!sopFamilies.has(fk)) {
-      trulyMissing.push(...[...new Set(keys)].sort());
-    } else {
-      // family exists in SOP collection but these specific revisions don't
-      const notInSop = keys.filter(k => !sopNormalizedKeys.has(k));
-      if (notInSop.length > 0) olderVersionOnly.push(...[...new Set(notInSop)].sort());
-    }
+  const byDept: Record<string, number> = {};
+  for (const row of allRows) {
+    byDept[row.department] = (byDept[row.department] || 0) + 1;
   }
 
   return NextResponse.json({
-    productionInSOP: [...sopNormalizedKeys].filter(isProduction).length,
-    trulyMissingFromSOP: trulyMissing.sort(), // These SOPs don't exist in SOP collection at all
-    trulyMissingCount: trulyMissing.length,
-    olderVersionOnlyCount: olderVersionOnly.length, // These are just old revisions, SOP collection has newer
-    note: 'trulyMissing = artifact families with zero match in SOP collection (not even a different revision)',
+    primaryCount: primaryRows.length,
+    artifactOnlyCount: artifactRows.length,
+    totalExpected: allRows.length,
+    byDept,
   });
 }

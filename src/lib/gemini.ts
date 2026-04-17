@@ -312,71 +312,69 @@ ${safeExistingQuestions.map(q => `- ${q}`).join('\n')}
   // Determine target language
   const targetLanguage = request.language || 'English';
 
-  const prompt = `
-You are an expert pharmaceutical compliance and training specialist. Your task is to generate high-quality Multiple Choice Questions (MCQs) from the SOP provided below.
+  // Rotate question angle per batch so successive batches never repeat the same style
+  const ANGLE_ROTATION = [
+    'Focus on: DEFINITIONS and KEY TERMS from the SOP. Ask "what is", "what does X mean", "which term describes".',
+    'Focus on: STEP-BY-STEP PROCEDURES. Ask about sequence, order of steps, "what is done first/next/last".',
+    'Focus on: COMPLIANCE REQUIREMENTS and REGULATIONS. Ask about limits, thresholds, mandatory actions, regulatory basis.',
+    'Focus on: SCENARIO-BASED questions. Describe a situation and ask what should be done, what went wrong, or what is correct.',
+    'Focus on: RESPONSIBILITIES and ROLES. Ask who is responsible, who approves, who performs each action.',
+    'Focus on: SAFETY and QUALITY CONTROL. Ask about critical control points, failure modes, corrective actions.',
+    'Focus on: DOCUMENTATION and RECORDS. Ask about what must be recorded, how long records are kept, who signs.',
+    'Focus on: EQUIPMENT and MATERIALS. Ask about specifications, usage conditions, cleaning requirements.',
+  ];
+  const angleHint = ANGLE_ROTATION[batchIndex % ANGLE_ROTATION.length];
 
-TASK: Generate EXACTLY ${batchCount} unique, well-crafted MCQs from this pharmaceutical SOP.
-QUALITY STANDARD: Create professional, pharmaceutical-industry-grade questions that test practical knowledge and compliance understanding.
+  const prompt = `
+You are an expert pharmaceutical compliance and training specialist. Generate high-quality MCQs from the SOP below.
+
+TASK: Generate EXACTLY ${batchCount} unique MCQs.
+BATCH FOCUS: ${angleHint}
+This batch must cover DIFFERENT concepts than any forbidden questions listed below.
 
 📄 SOP DETAILS:
 - Name: ${request.sopName}
 - Identifier: ${request.sopIdentifier}
 - Language: ${targetLanguage}
-- SOP Content:
+- Content:
 ${request.sopContent}
 
 ${forbiddenSection}
 
-✅ CRITICAL REQUIREMENTS:
-1. Language: ${targetLanguage === 'Gujarati' ? 'GUJARATI (ગુજરાતી) ONLY - Every part must be in Gujarati script' : 'English'}
-2. Generate EXACTLY ${batchCount} questions - no more, no less
-3. Each question must start with ⭐
-4. Each question must have exactly 4 options
-5. Each option must be a realistic, plausible answer choice (avoid obviously wrong options)
-6. correctAnswer must be one of the actual option texts (not a letter)
-7. Explanations: concise, 1-2 sentences with SOP reference where applicable
-8. NO questions about section numbers or document structure - focus on content, procedures, and concepts
-9. Every question must be unique - no concept repetition or similar wording
-10. Vary question types: definitions, procedures, scenarios, compliance requirements
-11. Test practical application, not just memorization
-12. Return VALID JSON only - no markdown, no code blocks, no extra text
+✅ STRICT REQUIREMENTS:
+1. Language: ${targetLanguage === 'Gujarati' ? 'GUJARATI (ગુજરાતી) ONLY — every word, every option, every explanation must be in Gujarati script' : 'English only'}
+2. Generate EXACTLY ${batchCount} questions
+3. Each question starts with ⭐
+4. Exactly 4 options per question — all must be realistic and plausible (no obviously wrong options)
+5. correctAnswer must be the EXACT text of one of the options
+6. NO questions about document numbers, section numbers, or page references
+7. NO repeating concepts from forbidden questions — test completely new aspects
+8. Mix difficulty: roughly 1/3 Easy, 1/3 Medium, 1/3 Hard
+9. Return ONLY valid JSON — no markdown, no code blocks, no explanation text
 
-🎯 QUALITY CHECKLIST:
-- Are options realistic and plausible? (avoid "obviously wrong" answers)
-- Does the question test actual SOP knowledge? (not trivia)
-- Is the difficulty level appropriate? (not too hard/easy)
-- Are distractors (wrong answers) logically related to the topic?
-- Does the question have a single clear correct answer?
-
-📋 JSON SCHEMA - FOLLOW EXACTLY:
+📋 EXACT JSON FORMAT:
 {
   "mcqs": [
     {
       "aiIcon": "🔬",
-      "question": "⭐ What is the main purpose of...",
+      "question": "⭐ [question text]",
       "difficulty": "Easy",
       "difficultyStars": "⭐",
-      "options": ["Option A full text", "Option B full text", "Option C full text", "Option D full text"],
-      "correctAnswer": "Option A full text",
-      "explanation": "Brief explanation with SOP reference.",
-      "sopReference": "Main procedure section",
+      "options": ["Full option A", "Full option B", "Full option C", "Full option D"],
+      "correctAnswer": "Full option A",
+      "explanation": "One sentence explanation referencing the SOP.",
+      "sopReference": "Relevant section name",
       "optionVariants": [
-        {"text": "Option A full text", "isCorrect": true},
-        {"text": "Option B full text", "isCorrect": false},
-        {"text": "Option C full text", "isCorrect": false},
-        {"text": "Option D full text", "isCorrect": false}
+        {"text": "Full option A", "isCorrect": true},
+        {"text": "Full option B", "isCorrect": false},
+        {"text": "Full option C", "isCorrect": false},
+        {"text": "Full option D", "isCorrect": false}
       ]
     }
   ]
 }
 
-DIFFICULTY GUIDE:
-- Easy (⭐): Basic definitions, procedures
-- Medium (⭐⭐): Application, scenarios, procedures
-- Hard (⭐⭐⭐): Complex scenarios, calculations, edge cases
-
-NOW GENERATE THE JSON:
-Output ONLY the JSON object with "mcqs" array. No explanation, no markdown, no code blocks.`;
+OUTPUT ONLY THE JSON OBJECT. Nothing else.`;
 
   try {
     let result;
@@ -576,9 +574,15 @@ Output ONLY the JSON object with "mcqs" array. No explanation, no markdown, no c
         if (nextLockout > globalOverloadUntil) {
           globalOverloadUntil = nextLockout;
         }
-        // Cap at 75s — 300s was too punishing for free-tier transient overloads
         delay = (20000 * Math.pow(2, retryCount)) + (Math.random() * 10000);
         delay = Math.min(delay, 75000);
+      } else if (error.message.includes('No available models')) {
+        // All fallback models exhausted — reset to first model and wait longer
+        currentModelIndex = 0;
+        DEFAULT_MODEL = MODEL_CANDIDATES[0];
+        geminiModel = createGeminiModel(DEFAULT_MODEL);
+        console.warn(`🔄 All models exhausted. Resetting to ${DEFAULT_MODEL} and waiting 30s...`);
+        delay = 30000;
       } else {
         delay = Math.min(2000 * Math.pow(2, retryCount), 15000);
       }
@@ -588,6 +592,14 @@ Output ONLY the JSON object with "mcqs" array. No explanation, no markdown, no c
       return generateSingleBatch(request, batchCount, batchIndex, totalBatches, retryCount + 1);
     }
 
+    // Final fallback: try with a smaller batch (1 question) to get at least something
+    if (batchCount > 1) {
+      console.warn(`⚠️ Batch of ${batchCount} failed after ${MAX_RETRIES + 1} attempts. Trying with batch size 1...`);
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      return generateSingleBatch(request, 1, batchIndex, totalBatches, 0);
+    }
+
+    console.error(`❌ Batch ${batchIndex + 1} completely failed. Returning empty.`);
     return [];
   }
 
@@ -678,15 +690,20 @@ export async function generateMCQsFromSOP(
   }
 
   if (allMCQs.length === 0) {
-    console.error(`❌ CRITICAL: Failed to generate ANY questions after ${MAX_BATCH_ATTEMPTS} batch attempts`);
-    console.error(`📊 Stats:`, {
-      needed: NEEDED,
-      batchSize: BATCH_SIZE,
-      numBatches: NUM_BATCHES,
-      processedBatches: processedBatchesCount,
-      allMCQsLength: allMCQs.length,
-      currentExistingLength: currentExisting.length
-    });
+    console.error(`❌ CRITICAL: Failed to generate ANY questions after ${MAX_BATCH_ATTEMPTS} batch attempts. Making one final attempt with minimum batch size...`);
+    // Reset model to first and do one last desperate attempt with batch size 1
+    currentModelIndex = 0;
+    DEFAULT_MODEL = MODEL_CANDIDATES[0];
+    geminiModel = createGeminiModel(DEFAULT_MODEL);
+    await new Promise(resolve => setTimeout(resolve, 10000));
+    const lastResort = await generateSingleBatch(request, 1, 0, 1, 0);
+    if (lastResort.length > 0) {
+      allMCQs = lastResort;
+      console.log(`✅ Last resort generation got ${lastResort.length} question(s).`);
+      if (request.onBatchComplete) {
+        await request.onBatchComplete(lastResort).catch(() => {});
+      }
+    }
   }
 
   const distribution = {

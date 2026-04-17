@@ -55,12 +55,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Auto-adjust target count based on content length to avoid AI failures on short SOPs.
+    // ~5 words per question is a safe lower bound for pharmaceutical SOPs.
+    const wordCount = sop.content.trim().split(/\s+/).length;
+    const requestedCount = targetCount || 100;
+    const maxReasonableCount = Math.max(20, Math.min(requestedCount, Math.floor(wordCount / 5)));
+    const adjustedTargetCount = maxReasonableCount;
+    if (adjustedTargetCount < requestedCount) {
+      console.warn(`⚠️ SOP ${sop.identifier} has only ${wordCount} words. Reducing target from ${requestedCount} to ${adjustedTargetCount} MCQs.`);
+    }
+
     // Short-circuit: if a bank already has enough questions, return it immediately
     // without re-running the AI (avoids spurious failures when re-clicking the button)
     const effectiveLang = language || sop.language || 'English';
     const existingBank = await MCQBank.findOne({ sopId: sop._id, language: effectiveLang })
       || await MCQBank.findOne({ sopId: sop._id });
-    if (existingBank && existingBank.mcqs.length >= (targetCount || 100)) {
+    if (existingBank && existingBank.mcqs.length >= adjustedTargetCount) {
       console.log(`✅ generate-mcqs: Bank already has ${existingBank.mcqs.length} questions for ${sop.identifier}. Returning existing bank.`);
       return NextResponse.json({
         success: true,
@@ -78,7 +88,7 @@ export async function POST(request: NextRequest) {
       // Add to queue with HIGH priority
       mcqQueue.addTask({
         sopId: sopId,
-        targetCount: targetCount || 100,
+        targetCount: adjustedTargetCount,
         mcqBankId: mcqBankId,
         priority: 10, // High priority for user-initiated clicks
         language: language,
