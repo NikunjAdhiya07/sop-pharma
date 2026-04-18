@@ -2179,7 +2179,7 @@ function MCQBankContent() {
                   Dev Mode
                 </button>
               )}
-              {!sopIdFromUrl && (
+              {(!selectedMCQBank && !isOpeningFromUrl) && (
                 <>
                   <button
                     onClick={() => fetchTreeData(true)}
@@ -2323,7 +2323,7 @@ function MCQBankContent() {
               </div>
             ))}
           </div>
-        ) : !sopIdFromUrl ? (
+        ) : !selectedMCQBank ? (
           loadingTree ? (
             /* Skeleton: department folder cards */
             <DeptGridSkeleton count={8} />
@@ -3952,7 +3952,7 @@ function MCQBankContent() {
                             {editMode ? 'Edit Options & Select Correct Answer' : 'Proposed Options'}
                           </h4>
                           <div className="space-y-2.5">
-                            {(editMode && editDraft ? editDraft.options : selectedMCQ.mcq.options).map((option, index) => {
+                            {((editMode && editDraft ? editDraft.options : selectedMCQ.mcq.options) || []).map((option, index) => {
                               const label = String.fromCharCode(65 + index);
                               const isCorrect = editMode && editDraft
                                 ? editDraft.correctAnswer === option || editDraft.correctAnswer === label

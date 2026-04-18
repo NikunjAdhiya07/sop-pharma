@@ -446,7 +446,7 @@ function CapsuleMetric({
           ? "border border-purple-400 bg-purple-100/90"
           : "border border-transparent"
       }`}>
-      <span className="min-w-0 shrink text-gray-600">{label}</span>
+      <span className="min-w-0 shrink text-gray-600 whitespace-nowrap overflow-hidden text-ellipsis">{label}</span>
       <span
         className={`font-bold tabular-nums shrink-0 leading-tight ${valueClass ?? "text-gray-900"}`}>
         {value}
@@ -1128,7 +1128,7 @@ function DepartmentCapsuleCard({
           </div>
           <div className="flex-1 min-w-0">
             <CapsuleMetric
-              label="No Date"
+              label="No Dt"
               value={stat.missingExpiry}
               valueClass={stat.missingExpiry > 0 ? "text-slate-700" : "text-gray-700"}
               onClick={() => apply("nodate")}

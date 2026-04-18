@@ -1215,10 +1215,10 @@ export default function MCQTreeView({
           <div className={`flex flex-col rounded-xl border ${borderClass} bg-white overflow-hidden w-[170px] shrink-0`}>
             {/* Header */}
             <div className={`flex items-center gap-2 px-3 py-2 ${headerBg} border-b ${borderClass}`}>
-              <span className={`${accentClass} shrink-0`}>{icon}</span>
+              <span className="text-gray-500 shrink-0">{icon}</span>
               <div className="flex-1 min-w-0">
-                <p className={`text-[11px] font-black uppercase tracking-wider ${accentClass} truncate`}>{title}</p>
-                <p className="text-[8px] text-gray-500 font-medium">{subtitle}</p>
+                <p className="text-[11px] font-bold tracking-wide truncate leading-tight text-gray-800" title={typeof title === 'string' ? title : undefined}>{title || '—'}</p>
+                <p className="text-[8px] text-gray-500 font-medium leading-tight">{subtitle}</p>
               </div>
             </div>
             {/* SOP counts */}
@@ -1394,13 +1394,9 @@ export default function MCQTreeView({
                 </div>
 
                 {/* Top stats */}
-                <div className="grid grid-cols-3 gap-1.5 w-full mb-3">
+                <div className="grid grid-cols-2 gap-1.5 w-full mb-3">
                   <div className="bg-black/25 rounded-lg p-2 text-left">
-                    <p className="text-gray-500 text-[8px] uppercase tracking-wider font-bold mb-0.5">Total SOPs</p>
-                    <span className="text-base font-black text-white leading-none">{realTotalSOPs}</span>
-                  </div>
-                  <div className="bg-black/25 rounded-lg p-2 text-left">
-                    <p className="text-gray-500 text-[8px] uppercase tracking-wider font-bold mb-0.5">MCQs Created</p>
+                    <p className="text-gray-500 text-[8px] uppercase tracking-wider font-bold mb-0.5">SOP</p>
                     <span className={`text-base font-black leading-none ${theme.text}`}>{sopWithMCQs}</span>
                   </div>
                   <div className="bg-black/25 rounded-lg p-2 text-left">
