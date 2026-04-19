@@ -312,6 +312,8 @@ export default function MCQTreeView({
     checkedCount: number;
     reviewedCount: number;
     similarCount: number;
+    sopEng: number;
+    sopGuj: number;
   }>>({});
   const [deptStatsLoading, setDeptStatsLoading] = useState(true);
 
@@ -486,7 +488,7 @@ export default function MCQTreeView({
   const fetchDeptStats = useCallback(async () => {
     setDeptStatsLoading(true);
     try {
-      const res = await fetch('/api/mcq-bank/dept-stats');
+      const res = await fetch('/api/mcq-bank/dept-stats', { cache: 'no-store' });
       const data = await res.json();
       if (data.success && data.departments) {
         const map: typeof deptStats = {};
@@ -1154,7 +1156,7 @@ export default function MCQTreeView({
 
         // Overall totals from API only
         const overall = (() => {
-          const base = { totalSOPs:0, sopWithMCQs:0, sopWithoutMCQs:0, approvedSOPs:0, pendingSOPs:0, similarSOPs:0, totalQuestions:0, checkedCount:0, reviewedCount:0, similarCount:0 };
+          const base = { totalSOPs:0, sopWithMCQs:0, sopWithoutMCQs:0, approvedSOPs:0, pendingSOPs:0, similarSOPs:0, totalQuestions:0, checkedCount:0, reviewedCount:0, similarCount:0, sopEng:0, sopGuj:0 };
           for (const ds of Object.values(deptStats)) {
             base.totalSOPs      += ds.totalSOPs      ?? 0;
             base.sopWithMCQs    += ds.sopWithMCQs    ?? 0;
@@ -1166,6 +1168,8 @@ export default function MCQTreeView({
             base.checkedCount   += ds.checkedCount   ?? 0;
             base.reviewedCount  += ds.reviewedCount  ?? 0;
             base.similarCount   += ds.similarCount   ?? 0;
+            base.sopEng         += (ds as any).sopEng ?? 0;
+            base.sopGuj         += (ds as any).sopGuj ?? 0;
           }
           return base;
         })();
@@ -1204,13 +1208,13 @@ export default function MCQTreeView({
           title, subtitle, accentClass, borderClass, headerBg, icon,
           totalSOPs, sopWithMCQs, approvedSOPs, pendingSOPs, similarSOPs, sopWithoutMCQs,
           totalQuestions, checkedCount, reviewedCount, similarCount,
-          coverage, themeText, onOpen,
+          coverage, themeText, sopEng, sopGuj, onOpen,
         }: {
           title: string; subtitle: string; accentClass: string; borderClass: string; headerBg: string;
           icon: React.ReactNode; totalSOPs: number; sopWithMCQs: number; approvedSOPs: number;
           pendingSOPs: number; similarSOPs: number; sopWithoutMCQs: number;
           totalQuestions: number; checkedCount: number; reviewedCount: number; similarCount: number;
-          coverage: number; themeText: string; onOpen?: () => void;
+          coverage: number; themeText: string; sopEng: number; sopGuj: number; onOpen?: () => void;
         }) => (
           <div className={`flex flex-col rounded-xl border ${borderClass} bg-white overflow-hidden w-[170px] shrink-0`}>
             {/* Header */}
@@ -1224,6 +1228,8 @@ export default function MCQTreeView({
             {/* SOP counts */}
             <div className="py-1">
               <R label="SOPs"         value={sopWithMCQs}  vc="text-gray-900" />
+              <R label="SOP Eng"      value={sopEng}       vc="text-blue-600" />
+              <R label="SOP Guj"      value={sopGuj}       vc="text-orange-500" />
               <R label="Approved"     value={approvedSOPs} vc="text-emerald-600" />
               <R label="Pending"      value={pendingSOPs}  vc="text-red-600" />
               <R label="Similar"      value={similarSOPs}  vc="text-gray-900" />
@@ -1282,6 +1288,8 @@ export default function MCQTreeView({
                   similarCount={overall.similarCount}
                   coverage={overallCoverage}
                   themeText="text-purple-600"
+                  sopEng={overall.sopEng}
+                  sopGuj={overall.sopGuj}
                 />
 
                 {/* Per-dept cards */}
@@ -1317,6 +1325,8 @@ export default function MCQTreeView({
                       similarCount={ds?.similarCount   ?? 0}
                       coverage={pct}
                       themeText={theme.text}
+                      sopEng={ds?.sopEng ?? 0}
+                      sopGuj={ds?.sopGuj ?? 0}
                       onOpen={() => setFullScreenDept(dept)}
                     />
                   );
@@ -1350,6 +1360,8 @@ export default function MCQTreeView({
           const realTotalSOPs  = ds?.totalSOPs     ?? totalSOPs;
           const sopWithMCQs    = ds?.sopWithMCQs   ?? totalSOPs;
           const sopWithoutMCQs = ds?.sopWithoutMCQs ?? 0;
+          const sopEng         = ds?.sopEng ?? 0;
+          const sopGuj         = ds?.sopGuj ?? 0;
           const allDeptSOPs    = dept.subcategories?.flatMap((sub) => sub.sops ?? []) ?? [];
           const treeApproved   = allDeptSOPs.filter((sop) => (sop.totalQuestions ?? 0) > 0 && (sop.checkedCount ?? 0) >= (sop.totalQuestions ?? 0)).length;
           const treeSimilar    = allDeptSOPs.filter((sop) => (sop.similarCount ?? 0) > 0).length;

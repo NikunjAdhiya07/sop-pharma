@@ -50,7 +50,7 @@ export async function GET() {
     const allSOPs = await SOP.find({
       $or: [{ isObsolete: { $ne: true } }, { isObsolete: { $exists: false } }],
     })
-      .select('_id identifier department')
+      .select('_id identifier department language')
       .lean() as any[];
 
     // ── 2. Aggregate MCQ bank stats per bank (without loading mcqs array) ──
@@ -99,10 +99,15 @@ export async function GET() {
       ])
       .toArray() as any[];
 
-    // ── 3. Build sopId → identifier map for banks that lack sopIdentifier ──
+    // ── 3. Build sopId → identifier + language map ──────────────────────────
     const sopIdentifierMap = new Map<string, string>();
+    const sopLanguageMap = new Map<string, string>(); // sopId → 'English' | 'Gujarati'
     for (const sop of allSOPs) {
-      if (sop._id && sop.identifier) sopIdentifierMap.set(sop._id.toString(), sop.identifier);
+      if (sop._id) {
+        const id = sop._id.toString();
+        if (sop.identifier) sopIdentifierMap.set(id, sop.identifier);
+        sopLanguageMap.set(id, sop.language === 'Gujarati' ? 'Gujarati' : 'English');
+      }
     }
 
     // ── 4. Merge English + Gujarati banks per sopId ─────────────────────────
@@ -114,6 +119,8 @@ export async function GET() {
       checkedCount: number;
       reviewedCount: number;
       similarCount: number;
+      hasEng: boolean;
+      hasGuj: boolean;
     }>();
 
     for (const bank of bankAgg) {
@@ -123,15 +130,18 @@ export async function GET() {
       // Resolve identifier: prefer bank's own field, fallback to SOP map
       const identifier = bank.sopIdentifier || sopIdentifierMap.get(key) || '';
       const dept = deptFromIdentifier(identifier, bank.department || 'Other');
+      const lang = sopLanguageMap.get(key) ?? 'English';
 
       if (!sopMerged.has(key)) {
-        sopMerged.set(key, { identifier, dept, totalQuestions: 0, checkedCount: 0, reviewedCount: 0, similarCount: 0 });
+        sopMerged.set(key, { identifier, dept, totalQuestions: 0, checkedCount: 0, reviewedCount: 0, similarCount: 0, hasEng: false, hasGuj: false });
       }
       const entry = sopMerged.get(key)!;
       entry.totalQuestions += bank.totalQuestions ?? 0;
       entry.checkedCount   += bank.checkedCount   ?? 0;
       entry.reviewedCount  += bank.reviewedCount  ?? 0;
       entry.similarCount   += bank.similarCount   ?? 0;
+      if (lang === 'Gujarati') entry.hasGuj = true;
+      else entry.hasEng = true;
     }
 
     // ── 5. Count total SOPs per dept using identifier-based bucketing ───────
@@ -152,6 +162,8 @@ export async function GET() {
       checkedCount: number;
       reviewedCount: number;
       similarCount: number;
+      sopEng: number;          // SOPs with language=English (or null/undefined)
+      sopGuj: number;          // SOPs with language=Gujarati
     };
 
     const statsMap = new Map<string, DeptStats>();
@@ -159,6 +171,7 @@ export async function GET() {
       department: dept, totalSOPs: 0, sopWithMCQs: 0, sopWithoutMCQs: 0,
       approvedSOPs: 0, pendingSOPs: 0, similarSOPs: 0,
       totalQuestions: 0, checkedCount: 0, reviewedCount: 0, similarCount: 0,
+      sopEng: 0, sopGuj: 0,
     });
 
     // Count SOPs from the SOP collection — deduplicate by identifier first so that
@@ -169,14 +182,14 @@ export async function GET() {
 
     for (const sop of allSOPs) {
       const key = (sop.identifier || '').trim().toUpperCase();
-      if (key && seenIdentifiers.has(key)) continue; // skip duplicate language variant
+      if (key && seenIdentifiers.has(key)) continue;
       if (key) seenIdentifiers.add(key);
       const dept = deptFromIdentifier(sop.identifier, sop.department || 'Other');
       if (!statsMap.has(dept)) statsMap.set(dept, initDept(dept));
       statsMap.get(dept)!.totalSOPs += 1;
     }
 
-    // Now tally MCQ bank stats per dept
+    // Now tally MCQ bank stats per dept — sopEng/sopGuj counted here
     for (const [sopKey, entry] of sopMerged) {
       const dept = entry.dept;
       if (!statsMap.has(dept)) statsMap.set(dept, initDept(dept));
@@ -187,6 +200,8 @@ export async function GET() {
       ds.checkedCount   += entry.checkedCount;
       ds.reviewedCount  += entry.reviewedCount;
       ds.similarCount   += entry.similarCount;
+      if (entry.hasEng) ds.sopEng += 1;
+      if (entry.hasGuj) ds.sopGuj += 1;
 
       // Classify SOP status:
       // approved  = has questions AND all are checked
@@ -229,12 +244,15 @@ export async function GET() {
         acc.checkedCount   += ds.checkedCount;
         acc.reviewedCount  += ds.reviewedCount;
         acc.similarCount   += ds.similarCount;
+        acc.sopEng         += ds.sopEng;
+        acc.sopGuj         += ds.sopGuj;
         return acc;
       },
       {
         totalSOPs: 0, sopWithMCQs: 0, sopWithoutMCQs: 0,
         approvedSOPs: 0, pendingSOPs: 0, similarSOPs: 0,
         totalQuestions: 0, checkedCount: 0, reviewedCount: 0, similarCount: 0,
+        sopEng: 0, sopGuj: 0,
       },
     );
 
