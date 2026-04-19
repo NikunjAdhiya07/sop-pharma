@@ -2080,7 +2080,7 @@ function MCQBankContent() {
   // tree component stays mounted and fullScreenDept state is preserved.
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4">
+      <div className="min-h-screen bg-[#f8f9fa] p-4">
         <div className="max-w-7xl mx-auto pt-8">
           <DeptGridSkeleton count={8} />
         </div>
@@ -2089,13 +2089,13 @@ function MCQBankContent() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-2 md:p-4">
+    <div className="min-h-screen bg-[#f8f9fa] p-2 md:p-4">
       <div className="w-full">
         {/* Header */}
         <div className="mb-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex-1 text-left">
-              <h1 className="text-2xl font-bold text-white mb-1 bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-600">
+              <h1 className="text-2xl font-bold mb-1 bg-clip-text text-transparent bg-gradient-to-r from-purple-700 to-purple-500">
                 {sopIdFromUrl && selectedMCQBank ? (
                   <>
                     {formatSOPDisplayName(
@@ -2107,10 +2107,10 @@ function MCQBankContent() {
                   <>MCQ Question Bank</>
                 )}
               </h1>
-              <div className="text-gray-300 text-sm">
+              <div className="text-gray-600 text-sm">
                 {sopIdFromUrl && selectedMCQBank ? (
                   <div className="flex items-center gap-3">
-                    <span className="flex items-center gap-1.5 text-gray-300 tracking-tighter text-xs">
+                    <span className="flex items-center gap-1.5 text-gray-600 tracking-tighter text-xs">
                       {selectedMCQBank.sopIdentifier} -{" "}
                       {selectedMCQBank.totalQuestions} questions available
                     </span>
@@ -2120,9 +2120,9 @@ function MCQBankContent() {
                         selectedMCQBank.department,
                       ).toLowerCase()
                       ] && (
-                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-purple-500/10 border border-purple-500/20 rounded-full">
-                          <Users className="h-3 w-3 text-purple-400" />
-                          <span className="text-[10px] font-bold text-purple-300 uppercase tracking-widest">
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-purple-50 border border-purple-200 rounded-full">
+                          <Users className="h-3 w-3 text-purple-600" />
+                          <span className="text-[10px] font-bold text-purple-700 uppercase tracking-widest">
                             Trainer:{" "}
                             {
                               trainerMappings[
@@ -2147,14 +2147,14 @@ function MCQBankContent() {
               {/* Back + Home navigation — always visible */}
               <button
                 onClick={() => router.back()}
-                className="flex items-center gap-1 px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-md transition-all duration-200 border border-white/20 hover:border-white/30 whitespace-nowrap"
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-gray-50 text-gray-700 font-semibold rounded-md transition-all duration-200 border border-gray-300 hover:border-gray-400 whitespace-nowrap"
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
                 Back
               </button>
               <button
                 onClick={() => router.push('/dashboard')}
-                className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold rounded-md transition-all duration-200 shadow-sm whitespace-nowrap"
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-md transition-all duration-200 shadow-sm whitespace-nowrap"
               >
                 <Home className="h-3.5 w-3.5" />
                 Home
@@ -2164,7 +2164,7 @@ function MCQBankContent() {
                 <button
                   onClick={handleDevLock}
                   title="Re-enable copy & inspect protection"
-                  className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white font-semibold rounded-md transition-all duration-200 shadow-sm whitespace-nowrap"
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-md transition-all duration-200 shadow-sm whitespace-nowrap"
                 >
                   <LockOpen className="h-3.5 w-3.5" />
                   Dev Mode ON
@@ -2173,7 +2173,7 @@ function MCQBankContent() {
                 <button
                   onClick={() => { setShowDevModal(true); setDevPassword(""); setDevPasswordError(""); }}
                   title="Unlock copy & inspect restrictions (dev only)"
-                  className="flex items-center gap-1 px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-md transition-all duration-200 border border-white/20 hover:border-white/30 whitespace-nowrap"
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-gray-50 text-gray-700 font-semibold rounded-md transition-all duration-200 border border-gray-300 hover:border-gray-400 whitespace-nowrap"
                 >
                   <Lock className="h-3.5 w-3.5" />
                   Dev Mode
@@ -2184,7 +2184,7 @@ function MCQBankContent() {
                   <button
                     onClick={() => fetchTreeData(true)}
                     disabled={loadingTree}
-                    className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold rounded-md hover:from-green-700 hover:to-emerald-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-600 text-white font-semibold rounded-md hover:bg-emerald-700 transition-all duration-300 shadow-sm whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Refresh MCQ Bank data and clear cache"
                   >
                     <RefreshCw
@@ -2194,7 +2194,7 @@ function MCQBankContent() {
                   </button>
                   <button
                     onClick={() => router.push("/similar-questions")}
-                    className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-orange-600 to-red-600 text-white font-semibold rounded-md hover:from-orange-700 hover:to-red-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap"
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-orange-600 text-white font-semibold rounded-md hover:bg-orange-700 transition-all duration-300 shadow-sm whitespace-nowrap"
                     title="Review similar/duplicate questions"
                   >
                     <Copy className="h-3.5 w-3.5" />
@@ -2202,7 +2202,7 @@ function MCQBankContent() {
                   </button>
                   <button
                     onClick={() => router.push("/sop-upload")}
-                    className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-md hover:from-purple-700 hover:to-pink-700 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-sm whitespace-nowrap"
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-purple-600 text-white font-semibold rounded-md hover:bg-purple-700 transition-all duration-300 shadow-sm whitespace-nowrap"
                   >
                     <Upload className="h-3.5 w-3.5" />
                     Upload SOP
@@ -2222,15 +2222,15 @@ function MCQBankContent() {
         {sopIdFromUrl && !selectedMCQBank && isOpeningFromUrl && (
           <div className="flex items-center justify-center py-20">
             <div className="text-center">
-              <Loader2 className="h-12 w-12 text-purple-400 animate-spin mx-auto mb-4" />
-              <p className="text-gray-300">Loading MCQ Bank...</p>
+              <Loader2 className="h-12 w-12 text-purple-600 animate-spin mx-auto mb-4" />
+              <p className="text-gray-500">Loading MCQ Bank...</p>
             </div>
           </div>
         )}
 
         {/* Search, Filter, and Sort - only show if not loading from URL */}
         {(!sopIdFromUrl || selectedMCQBank || !isOpeningFromUrl) && (
-        <div className="bg-white/10 backdrop-blur-lg rounded-lg p-3 shadow-md border border-white/20 mb-4">
+        <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-200 mb-4">
           <div className="flex flex-col gap-2">
             {/* Search Bar */}
             <div className="flex-1 relative">
@@ -2240,7 +2240,7 @@ function MCQBankContent() {
                 placeholder="Search by SOP name, identifier, or ID..."
                 value={searchInputValue}
                 onChange={(e) => setSearchInputValue(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 text-xs bg-white/10 border border-white/20 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-transparent transition-all"
+                className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-gray-300 rounded-md text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-transparent transition-all"
               />
             </div>
 
@@ -2254,7 +2254,7 @@ function MCQBankContent() {
                     onClick={() => setDifficultyFilter(difficulty)}
                     className={`px-2 py-1 text-xs rounded-md font-semibold transition-all ${difficultyFilter === difficulty
                       ? "bg-purple-600 text-white"
-                      : "bg-white/10 text-gray-300 hover:bg-white/20"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                       }`}
                   >
                     {difficulty}
@@ -2264,7 +2264,7 @@ function MCQBankContent() {
 
               {/* Sort Options */}
               <div className="flex gap-2 items-center">
-                <span className="text-gray-300 text-xs font-semibold">
+                <span className="text-gray-600 text-xs font-semibold">
                   Sort by:
                 </span>
                 <div className="flex gap-1.5 flex-wrap">
@@ -2292,7 +2292,7 @@ function MCQBankContent() {
                       }}
                       className={`px-3 py-1.5 text-xs rounded-md font-semibold transition-all flex items-center gap-1 ${sortBy === sort.value
                         ? "bg-blue-600 text-white"
-                        : "bg-white/10 text-gray-300 hover:bg-white/20"
+                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                         }`}
                     >
                       {sort.label}
@@ -2317,9 +2317,9 @@ function MCQBankContent() {
           /* Skeleton: opening a bank from URL */
           <div className="space-y-3">
             {[1, 2, 3].map(i => (
-              <div key={i} className="bg-white/5 rounded-xl p-4 border border-white/10 animate-pulse">
-                <div className="h-4 w-1/3 bg-white/10 rounded mb-3" />
-                <div className="h-3 w-2/3 bg-white/5 rounded" />
+              <div key={i} className="bg-white rounded-xl p-4 border border-gray-200 animate-pulse">
+                <div className="h-4 w-1/3 bg-gray-200 rounded mb-3" />
+                <div className="h-3 w-2/3 bg-gray-100 rounded" />
               </div>
             ))}
           </div>
@@ -2362,7 +2362,7 @@ function MCQBankContent() {
             />
           ) : (
             <div className="text-center py-16">
-              <BookOpen className="h-16 w-16 text-gray-500 mx-auto mb-4" />
+              <BookOpen className="h-16 w-16 text-gray-300 mx-auto mb-4" />
               <p className="text-gray-400 text-xl">No tree data available</p>
             </div>
           )
@@ -2524,20 +2524,20 @@ function MCQBankContent() {
 
         {/* Bank detail loading: skeleton overlay while fetching (shown when no selectedMCQBank yet) */}
         {loadingBankDetail && !selectedMCQBank && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#0f0d1e]">
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#f8f9fa]">
             <div className="w-full h-full flex flex-col p-6 gap-4 animate-pulse">
-              <div className="h-14 w-full bg-white/5 rounded-xl" />
-              <div className="h-8 w-2/3 bg-white/5 rounded-lg" />
+              <div className="h-14 w-full bg-gray-200 rounded-xl" />
+              <div className="h-8 w-2/3 bg-gray-200 rounded-lg" />
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 flex-1 overflow-hidden">
                 {[...Array(8)].map((_, i) => (
-                  <div key={i} className="bg-white/5 rounded-2xl p-4 border border-white/10">
-                    <div className="h-4 w-3/4 bg-white/10 rounded mb-3" />
-                    <div className="h-3 w-full bg-white/5 rounded mb-2" />
+                  <div key={i} className="bg-white rounded-2xl p-4 border border-gray-200">
+                    <div className="h-4 w-3/4 bg-gray-200 rounded mb-3" />
+                    <div className="h-3 w-full bg-gray-100 rounded mb-2" />
                     <div className="grid grid-cols-2 gap-2">
-                      <div className="h-7 bg-white/5 rounded-lg" />
-                      <div className="h-7 bg-white/5 rounded-lg" />
-                      <div className="h-7 bg-white/5 rounded-lg" />
-                      <div className="h-7 bg-white/5 rounded-lg" />
+                      <div className="h-7 bg-gray-100 rounded-lg" />
+                      <div className="h-7 bg-gray-100 rounded-lg" />
+                      <div className="h-7 bg-gray-100 rounded-lg" />
+                      <div className="h-7 bg-gray-100 rounded-lg" />
                     </div>
                   </div>
                 ))}
@@ -2607,9 +2607,9 @@ function MCQBankContent() {
 
             return (
               <div className="fixed inset-0 z-[60] flex items-center justify-center animate-in fade-in duration-300">
-                <div className="bg-[#0f0d1e] w-full h-full rounded-none flex flex-col overflow-hidden shadow-2xl">
+                <div className="bg-[#f8f9fa] w-full h-full rounded-none flex flex-col overflow-hidden shadow-2xl">
                   {/* ── PREMIUM STICKY HEADER ── */}
-                  <div className="sticky top-0 z-20 bg-[#13102a]/95 border-b border-indigo-500/10 flex-shrink-0 backdrop-blur-xl">
+                  <div className="sticky top-0 z-20 bg-white border-b border-gray-200 flex-shrink-0">
                     {/* Brand / Navigation Row */}
                     <div className="flex items-center justify-between px-6 py-4">
                       <div className="flex items-center gap-4 min-w-0">
@@ -2631,18 +2631,18 @@ function MCQBankContent() {
                               window.history.replaceState({ ...window.history.state }, '', newUrl);
                             }
                           }}
-                          className="p-2 rounded-xl bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 transition-all border border-white/5"
+                          className="p-2 rounded-xl bg-gray-100 text-gray-500 hover:text-gray-800 hover:bg-gray-200 transition-all border border-gray-200"
                         >
                           <ArrowLeft className="h-5 w-5" />
                         </button>
 
                         <div className="flex flex-col min-w-0">
                           <div className="flex items-center gap-2 mb-0.5">
-                            <span className="font-mono text-[10px] font-bold tracking-widest text-[#8B5CF6] uppercase">
+                            <span className="font-mono text-[10px] font-bold tracking-widest text-purple-600 uppercase">
                               SOP Identifier
                             </span>
-                            <span className="h-1 w-1 rounded-full bg-gray-600" />
-                            <span className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">
+                            <span className="h-1 w-1 rounded-full bg-gray-300" />
+                            <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">
                               {viewLanguage || "English"} Version
                             </span>
                             {selectedMCQBank.department &&
@@ -2652,8 +2652,8 @@ function MCQBankContent() {
                               ).toLowerCase()
                               ] && (
                                 <>
-                                  <span className="h-1 w-1 rounded-full bg-gray-600" />
-                                  <span className="text-[10px] text-purple-400 font-bold uppercase tracking-wider flex items-center gap-1.5 bg-purple-500/10 px-2 py-0.5 rounded-lg border border-purple-500/20 shadow-sm animate-in fade-in slide-in-from-left-2 duration-1000">
+                                  <span className="h-1 w-1 rounded-full bg-gray-300" />
+                                  <span className="text-[10px] text-purple-600 font-bold uppercase tracking-wider flex items-center gap-1.5 bg-purple-50 px-2 py-0.5 rounded-lg border border-purple-200 shadow-sm animate-in fade-in slide-in-from-left-2 duration-1000">
                                     <Users className="h-3 w-3 opacity-70" />
                                     {
                                       trainerMappings[
@@ -2667,13 +2667,13 @@ function MCQBankContent() {
                               )}
                           </div>
                           <div className="flex items-center gap-3">
-                            <h2 className="text-xl font-bold text-gray-100 flex-shrink-0">
+                            <h2 className="text-xl font-bold text-gray-800 flex-shrink-0">
                               {cleanSOPName(
                                 selectedMCQBank.sopName,
                                 selectedMCQBank.sopIdentifier,
                               )}
                             </h2>
-                            <span className="px-2 py-0.5 rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 text-xs font-bold font-mono">
+                            <span className="px-2 py-0.5 rounded-lg bg-purple-50 border border-purple-200 text-purple-700 text-xs font-bold font-mono">
                               {selectedMCQBank.sopIdentifier}
                             </span>
                           </div>
@@ -2681,13 +2681,13 @@ function MCQBankContent() {
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <div className="hidden md:flex items-center justify-center px-2 py-1 rounded-lg bg-indigo-500/20 border border-indigo-500/30 min-w-[2.5rem]" title="Total Indexed MCQs">
-                          <span className="text-[11px] text-indigo-300 font-bold">
+                        <div className="hidden md:flex items-center justify-center px-2 py-1 rounded-lg bg-purple-50 border border-purple-200 min-w-[2.5rem]" title="Total Indexed MCQs">
+                          <span className="text-[11px] text-purple-700 font-bold">
                             {filtered.length}
                           </span>
                         </div>
 
-                        <div className="h-8 w-px bg-white/5 mx-2" />
+                        <div className="h-8 w-px bg-gray-200 mx-2" />
 
                         <div className="flex items-center gap-1">
                           <button
@@ -2695,7 +2695,7 @@ function MCQBankContent() {
                               setModalSearchInputVisible((v) => !v);
                               if (modalSearchInputVisible) setModalSearch(""); setModalSearchInput("");
                             }}
-                            className={`p-2 rounded-xl transition-all ${modalSearchInputVisible || modalSearch ? "bg-indigo-500/20 text-indigo-400 border border-indigo-500/30" : "text-gray-400 hover:text-white hover:bg-white/5 border border-transparent"}`}
+                            className={`p-2 rounded-xl transition-all ${modalSearchInputVisible || modalSearch ? "bg-purple-100 text-purple-700 border border-purple-200" : "text-gray-500 hover:text-gray-800 hover:bg-gray-100 border border-transparent"}`}
                           >
                             <Search className="h-5 w-5" />
                           </button>
@@ -2704,7 +2704,7 @@ function MCQBankContent() {
                               handleCheckSimilarityForSOP(selectedMCQBank)
                             }
                             disabled={checkingSimilarity}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 transition-all border border-amber-500/20 hover:border-amber-500/30 disabled:opacity-50 text-xs font-bold uppercase tracking-wider"
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-amber-700 bg-amber-50 hover:bg-amber-100 transition-all border border-amber-200 hover:border-amber-300 disabled:opacity-50 text-xs font-bold uppercase tracking-wider"
                           >
                             {checkingSimilarity ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
@@ -2722,7 +2722,7 @@ function MCQBankContent() {
                               handleSmartRegenerate(selectedMCQBank)
                             }
                             disabled={checkingSimilarity}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-violet-400 bg-violet-500/10 hover:bg-violet-500/20 transition-all border border-violet-500/20 hover:border-violet-500/30 disabled:opacity-50 text-xs font-bold uppercase tracking-wider"
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-violet-700 bg-violet-50 hover:bg-violet-100 transition-all border border-violet-200 hover:border-violet-300 disabled:opacity-50 text-xs font-bold uppercase tracking-wider"
                             title="Detect similar questions and regenerate them with unique content"
                           >
                             {checkingSimilarity ? (
@@ -2737,7 +2737,7 @@ function MCQBankContent() {
                             </span>
                           </button>
                           {/* Language switch toggle */}
-                          <div className="flex items-center rounded-xl border border-white/10 overflow-hidden">
+                          <div className="flex items-center rounded-xl border border-gray-200 overflow-hidden">
                             {(['English', 'Gujarati'] as const).map((lang) => {
                               const hasBank = selectedMCQBanks?.some(b => b.language === lang);
                               const isActive = viewLanguage === lang;
@@ -2754,10 +2754,10 @@ function MCQBankContent() {
                                   disabled={!hasBank}
                                   className={`px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition-all ${
                                     isActive
-                                      ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+                                      ? 'bg-purple-100 text-purple-700 border-purple-200'
                                       : hasBank
-                                        ? 'bg-white/5 text-gray-500 hover:text-gray-300 hover:bg-white/10'
-                                        : 'bg-white/5 text-gray-600 cursor-not-allowed opacity-40'
+                                        ? 'bg-white text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                                        : 'bg-gray-50 text-gray-400 cursor-not-allowed opacity-40'
                                   }`}
                                   title={!hasBank ? 'Gujarati version not available for this SOP' : `View ${lang} MCQs`}
                                 >
@@ -2865,7 +2865,7 @@ function MCQBankContent() {
                               }
                             }}
                             disabled={fixingAnswers}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 transition-all border border-rose-500/20 hover:border-rose-500/30 disabled:opacity-50 text-xs font-bold uppercase tracking-wider"
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-rose-700 bg-rose-50 hover:bg-rose-100 transition-all border border-rose-200 hover:border-rose-300 disabled:opacity-50 text-xs font-bold uppercase tracking-wider"
                             title="Re-extract content + delete bank + regenerate with correct answers"
                           >
                             {fixingAnswers ? (
@@ -2879,7 +2879,7 @@ function MCQBankContent() {
                           </button>
                           <button
                             onClick={() => setIsMaximized(!isMaximized)}
-                            className="p-2 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all border border-transparent"
+                            className="p-2 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-all border border-transparent"
                             title={isMaximized ? "Restore down" : "Maximize"}
                           >
                             {isMaximized ? (
@@ -2905,7 +2905,7 @@ function MCQBankContent() {
                                 window.history.replaceState({ ...window.history.state }, '', newUrl);
                               }
                             }}
-                            className="p-2 rounded-xl text-gray-400 hover:text-white hover:bg-[#FE4A49]/10 hover:text-[#FE4A49] transition-all border border-transparent hover:border-[#FE4A49]/20"
+                            className="p-2 rounded-xl text-gray-400 hover:bg-red-50 hover:text-red-600 transition-all border border-transparent hover:border-red-200"
                           >
                             <X className="h-5 w-5" />
                           </button>
@@ -2928,12 +2928,12 @@ function MCQBankContent() {
                               setModalSearchInput(e.target.value);
                               setVisibleCount(30);
                             }}
-                            className="w-full pl-11 pr-12 py-3 bg-indigo-950/20 border border-indigo-500/30 rounded-2xl text-sm text-gray-100 placeholder-indigo-300/30 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 hover:border-indigo-500/50 transition-all shadow-inner"
+                            className="w-full pl-11 pr-12 py-3 bg-white border border-gray-300 rounded-2xl text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-300 hover:border-purple-300 transition-all shadow-sm"
                           />
                           {modalSearch && (
                             <button
                               onClick={() => setModalSearch("")}
-                              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-white bg-white/5 rounded-md"
+                              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-700 bg-gray-100 rounded-md"
                             >
                               <X className="h-3 w-3" />
                             </button>
@@ -2943,13 +2943,13 @@ function MCQBankContent() {
 
                       {/* Navigation & Status Filter */}
                       <div className="flex items-center justify-between gap-4">
-                        <nav className="flex items-center gap-1.5 p-1.5 bg-indigo-950/30 border border-indigo-500/10 rounded-2xl shadow-inner">
+                        <nav className="flex items-center gap-1.5 p-1.5 bg-gray-100 border border-gray-200 rounded-2xl shadow-inner">
                           <button
                             onClick={() => {
                               setActiveTab("active");
                               setVisibleCount(30);
                             }}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === "active" ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/20" : "text-gray-500 hover:text-gray-300 hover:bg-white/5"}`}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === "active" ? "bg-purple-600 text-white shadow-sm" : "text-gray-500 hover:text-gray-700 hover:bg-white"}`}
                           >
                             <Grid className="h-3 w-3" />
                             Active ({banksToShow.length > 1 ? banksToShow.reduce((s, b) => s + (b.mcqs?.length ?? 0), 0) : (selectedMCQBank.mcqs?.length ?? 0)})
@@ -2960,7 +2960,7 @@ function MCQBankContent() {
                               if (selectedMCQBank?.sopId)
                                 fetchRecycledQuestions(selectedMCQBank.sopId);
                             }}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === "recycled" ? "bg-gradient-to-r from-rose-600 to-orange-600 text-white shadow-lg shadow-rose-500/20" : "text-gray-500 hover:text-gray-300 hover:bg-white/5"}`}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === "recycled" ? "bg-rose-600 text-white shadow-sm" : "text-gray-500 hover:text-gray-700 hover:bg-white"}`}
                           >
                             <Trash2 className="h-3 w-3" />
                             Recycled{" "}
@@ -2972,10 +2972,10 @@ function MCQBankContent() {
 
                         {activeTab === "active" && (
                           <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest hidden sm:inline mr-1">
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest hidden sm:inline mr-1">
                               Status Filter
                             </span>
-                            <div className="flex p-1 bg-indigo-950/30 border border-indigo-500/10 rounded-xl gap-1 shadow-inner">
+                            <div className="flex p-1 bg-gray-100 border border-gray-200 rounded-xl gap-1 shadow-inner">
                               {(
                                 [
                                   {
@@ -3024,8 +3024,8 @@ function MCQBankContent() {
                                     setVisibleCount(30);
                                   }}
                                   className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all border ${filterReviewStatus === pill.id
-                                    ? `bg-white/5 border-white/10 ${pill.activeClass}`
-                                    : "border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/5"
+                                    ? `bg-white border-gray-200 shadow-sm ${pill.activeClass}`
+                                    : "border-transparent text-gray-400 hover:text-gray-700 hover:bg-white"
                                     }`}
                                 >
                                   {pill.icon}
@@ -3042,7 +3042,7 @@ function MCQBankContent() {
                   {/* ── RICH INTERFACE BODY ── */}
                   <div
                     ref={modalBodyRef}
-                    className="flex-1 overflow-y-auto custom-scrollbar bg-[#0f0d1e] relative w-full px-0"
+                    className="flex-1 overflow-y-auto custom-scrollbar bg-[#f8f9fa] relative w-full px-0"
                     onScroll={(e) => {
                       const el = e.currentTarget;
                       if (
@@ -3055,7 +3055,7 @@ function MCQBankContent() {
                       }
                     }}
                   >
-                    <div className="border-x border-white/5">
+                    <div className="border-x border-gray-200">
                       {activeTab === "active" ? (
                         banksToShow.length > 1 ? (
                           /* Multiple banks: English section first, then Gujarati */
@@ -3065,16 +3065,16 @@ function MCQBankContent() {
                             const langLabel = (bank.language || "English") === "Gujarati" ? "Gujarati" : "English";
                             return (
                               <div key={bank._id} className="mb-10">
-                                <h3 className="text-sm font-bold text-indigo-300 uppercase tracking-wider mb-3 flex items-center gap-2">
-                                  <span className="px-2 py-0.5 rounded-lg bg-indigo-500/20 border border-indigo-500/30">
+                                <h3 className="text-sm font-bold text-purple-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                  <span className="px-2 py-0.5 rounded-lg bg-purple-50 border border-purple-200">
                                     {langLabel}
                                   </span>
-                                  <span className="text-gray-500 font-normal">
+                                  <span className="text-gray-400 font-normal">
                                     ({filteredBank.length} questions)
                                   </span>
                                 </h3>
                                 {filteredBank.length === 0 ? (
-                                  <p className="text-gray-500 text-sm py-4">No questions match filters.</p>
+                                  <p className="text-gray-400 text-sm py-4">No questions match filters.</p>
                                 ) : (
                                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 p-4">
                                     {filteredBank.slice(0, visibleCount).map((mcq, visibleIdx) => {
@@ -3083,18 +3083,18 @@ function MCQBankContent() {
                                       return (
                                         <div
                                           key={`${bank._id}-${originalIndex}`}
-                                          className="group relative bg-[#1a1535] rounded-2xl border border-indigo-500/10 hover:border-indigo-500/25 transition-all duration-300 shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 overflow-hidden min-w-0 flex flex-col"
+                                          className="group relative bg-white rounded-2xl border border-gray-200 hover:border-purple-300 transition-all duration-300 shadow-sm hover:shadow-md overflow-hidden min-w-0 flex flex-col"
                                           onClick={() => {
                                             setSelectedMCQBank(bank);
                                             setSelectedMCQ({ mcq, index: originalIndex });
                                           }}
                                         >
-                                          <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+                                          <div className="absolute inset-0 bg-gradient-to-br from-purple-50 to-indigo-50 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
                                           <div className="relative flex flex-row items-stretch flex-1">
-                                            <div className="flex flex-col items-center justify-start w-14 p-3 gap-2 bg-white/[0.02] border-r border-white/5 shrink-0">
+                                            <div className="flex flex-col items-center justify-start w-14 p-3 gap-2 bg-gray-50 border-r border-gray-100 shrink-0">
                                               <div className="flex flex-col items-center gap-1 pt-1">
-                                                <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest font-mono">Index</span>
-                                                <div className="w-9 h-9 flex items-center justify-center bg-[#1a1625] border border-white/10 rounded-lg text-sm font-mono font-bold text-indigo-300 shadow-inner group-hover:border-indigo-500/30 transition-colors">
+                                                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest font-mono">Index</span>
+                                                <div className="w-9 h-9 flex items-center justify-center bg-white border border-gray-200 rounded-lg text-sm font-mono font-bold text-purple-700 shadow-sm group-hover:border-purple-300 transition-colors">
                                                   {originalIndex + 1}
                                                 </div>
                                               </div>
@@ -3102,23 +3102,23 @@ function MCQBankContent() {
                                             <div className="flex-1 flex flex-col px-4 pt-3 pb-4 min-w-0">
                                               <div className="flex items-center justify-between mb-1.5">
                                                 <div className="flex items-center gap-2 flex-wrap">
-                                                  <span className={`w-6 h-6 flex items-center justify-center rounded text-[11px] font-black border ${mcq.difficulty === "Easy" ? "bg-indigo-500/20 text-indigo-400 border-indigo-500/30" : mcq.difficulty === "Medium" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-rose-500/10 text-rose-400 border-rose-500/20"}`} title={mcq.difficulty}>
+                                                  <span className={`w-6 h-6 flex items-center justify-center rounded text-[11px] font-black border ${mcq.difficulty === "Easy" ? "bg-blue-50 text-blue-600 border-blue-200" : mcq.difficulty === "Medium" ? "bg-amber-50 text-amber-600 border-amber-200" : "bg-rose-50 text-rose-600 border-rose-200"}`} title={mcq.difficulty}>
                                                     {mcq.difficulty === "Easy" ? "E" : mcq.difficulty === "Medium" ? "M" : "H"}
                                                   </span>
                                                   {bank.language === "Gujarati" && (
-                                                    <span className="px-2 py-0.5 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 text-xs font-bold uppercase tracking-wider">GUJ</span>
+                                                    <span className="px-2 py-0.5 rounded-lg bg-purple-50 text-purple-700 border border-purple-200 text-xs font-bold uppercase tracking-wider">GUJ</span>
                                                   )}
                                                 </div>
                                                 <div className="flex items-center gap-1.5">
-                                                  {mcq.isSimilar && <div className="p-1 rounded-md bg-amber-500/10 text-amber-500 border border-amber-500/20" title="Flagged as Similar"><Copy className="h-3.5 w-3.5" /></div>}
-                                                  {mcq.isChecked && <div className="p-1 rounded-md bg-purple-500/20 text-purple-400 border border-purple-500/30" title="Approved Status"><CheckCircle2 className="h-3.5 w-3.5" /></div>}
-                                                  {mcq.isReviewed && <div className="p-1 rounded-md bg-blue-500/10 text-blue-500 border border-blue-500/20" title="Review Completed"><CheckCircle2 className="h-3.5 w-3.5" /></div>}
+                                                  {mcq.isSimilar && <div className="p-1 rounded-md bg-amber-50 text-amber-600 border border-amber-200" title="Flagged as Similar"><Copy className="h-3.5 w-3.5" /></div>}
+                                                  {mcq.isChecked && <div className="p-1 rounded-md bg-purple-50 text-purple-600 border border-purple-200" title="Approved Status"><CheckCircle2 className="h-3.5 w-3.5" /></div>}
+                                                  {mcq.isReviewed && <div className="p-1 rounded-md bg-blue-50 text-blue-600 border border-blue-200" title="Review Completed"><CheckCircle2 className="h-3.5 w-3.5" /></div>}
                                                 </div>
                                               </div>
                                               <div className="mb-2.5 min-w-0">
                                                 <div className="flex items-start gap-1.5 min-w-0">
-                                                  <span className="text-indigo-400 text-[15px] font-black mt-px select-none shrink-0">Q.</span>
-                                                  <h3 className={`text-[15px] font-bold leading-snug tracking-tight text-gray-100 flex-1 min-w-0 break-words ${bank.language === "Gujarati" ? "font-gujarati text-base" : ""}`}>
+                                                  <span className="text-purple-600 text-[15px] font-black mt-px select-none shrink-0">Q.</span>
+                                                  <h3 className={`text-[15px] font-bold leading-snug tracking-tight text-gray-800 flex-1 min-w-0 break-words ${bank.language === "Gujarati" ? "font-gujarati text-base" : ""}`}>
                                                     {searchLower ? highlight(mcq.question) : mcq.question}
                                                   </h3>
                                                 </div>
@@ -3127,12 +3127,12 @@ function MCQBankContent() {
                                                 {(mcq.options || []).slice(0, 4).map((opt: string, oi: number) => {
                                                   const isCorrect = opt === mcq.correctAnswer;
                                                   return (
-                                                    <div key={oi} className={`flex items-center gap-2 px-3 py-3 rounded-lg border text-[13px] font-medium ${isCorrect ? "bg-emerald-500/10 border-emerald-500/25 text-emerald-300" : "bg-white/[0.03] border-white/5 text-gray-400"}`}>
-                                                      <span className={`w-5 h-5 flex-shrink-0 flex items-center justify-center rounded text-[10px] font-bold ${isCorrect ? "bg-emerald-500/20 text-emerald-300" : "bg-white/5 text-gray-600"}`}>
+                                                    <div key={oi} className={`flex items-center gap-2 px-3 py-3 rounded-lg border text-[13px] font-medium ${isCorrect ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-gray-50 border-gray-100 text-gray-600"}`}>
+                                                      <span className={`w-5 h-5 flex-shrink-0 flex items-center justify-center rounded text-[10px] font-bold ${isCorrect ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
                                                         {String.fromCharCode(65 + oi)}
                                                       </span>
                                                       <span className={`flex-1 break-words min-w-0 leading-snug ${bank.language === "Gujarati" ? "font-gujarati" : ""}`}>{opt}</span>
-                                                      {isCorrect && <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400" />}
+                                                      {isCorrect && <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-emerald-600" />}
                                                     </div>
                                                   );
                                                 })}
@@ -3150,10 +3150,10 @@ function MCQBankContent() {
                         ) : allMcqs.length > 0 ? (
                           filtered.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-24 text-center">
-                              <div className="w-20 h-20 bg-slate-800/40 border border-white/10 rounded-3xl flex items-center justify-center mb-6 shadow-2xl">
-                                <Search className="h-8 w-8 text-indigo-400/40" />
+                              <div className="w-20 h-20 bg-gray-100 border border-gray-200 rounded-3xl flex items-center justify-center mb-6 shadow-sm">
+                                <Search className="h-8 w-8 text-gray-400" />
                               </div>
-                              <h3 className="text-xl font-bold text-gray-200 mb-2">
+                              <h3 className="text-xl font-bold text-gray-700 mb-2">
                                 No results found
                               </h3>
                               <p className="text-gray-500 max-w-xs">
@@ -3164,7 +3164,7 @@ function MCQBankContent() {
                               {modalSearch && (
                                 <button
                                   onClick={() => setModalSearch("")}
-                                  className="mt-6 px-4 py-2 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-xl hover:bg-indigo-500/20 transition-all font-bold text-xs uppercase tracking-wider"
+                                  className="mt-6 px-4 py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-xl hover:bg-purple-100 transition-all font-bold text-xs uppercase tracking-wider"
                                 >
                                   Clear search query
                                 </button>
@@ -3182,7 +3182,7 @@ function MCQBankContent() {
                                   return (
                                     <div
                                       key={originalIndex}
-                                      className="group relative bg-[#1a1535] rounded-xl border border-indigo-500/10 hover:border-indigo-500/30 transition-all duration-300 shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 overflow-hidden min-w-0 flex flex-col"
+                                      className="group relative bg-white rounded-xl border border-gray-200 hover:border-purple-300 transition-all duration-300 shadow-sm hover:shadow-md overflow-hidden min-w-0 flex flex-col"
                                       onClick={() =>
                                         setSelectedMCQ({
                                           mcq,
@@ -3191,17 +3191,17 @@ function MCQBankContent() {
                                       }
                                     >
                                       {/* Interactive Accent Glow */}
-                                      <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+                                      <div className="absolute inset-0 bg-gradient-to-br from-purple-50 to-indigo-50 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
 
                                       {/* Card Content Wrapper */}
                                       <div className="relative flex flex-row items-stretch flex-1">
                                         {/* Sidebar: Navigation Meta */}
-                                        <div className="flex flex-col items-center justify-start w-14 p-3 gap-2 bg-white/[0.02] border-r border-white/5 shrink-0">
+                                        <div className="flex flex-col items-center justify-start w-14 p-3 gap-2 bg-gray-50 border-r border-gray-100 shrink-0">
                                           <div className="flex flex-col items-center gap-1 pt-1">
-                                            <span className="text-[9px] font-bold text-gray-600 uppercase tracking-widest font-mono">
+                                            <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest font-mono">
                                               #
                                             </span>
-                                            <div className="w-9 h-9 flex items-center justify-center bg-[#1a1625] border border-white/10 rounded-md text-sm font-mono font-bold text-indigo-300 shadow-inner group-hover:border-indigo-500/30 transition-colors">
+                                            <div className="w-9 h-9 flex items-center justify-center bg-white border border-gray-200 rounded-md text-sm font-mono font-bold text-purple-700 shadow-sm group-hover:border-purple-300 transition-colors">
                                               {originalIndex + 1}
                                             </div>
                                           </div>
@@ -3214,17 +3214,17 @@ function MCQBankContent() {
                                             <div className="flex items-center gap-2 flex-wrap">
                                               <span
                                                 className={`w-6 h-6 flex items-center justify-center rounded text-[11px] font-black border ${mcq.difficulty === "Easy"
-                                                  ? "bg-indigo-500/20 text-indigo-400 border-indigo-500/30"
+                                                  ? "bg-blue-50 text-blue-600 border-blue-200"
                                                   : mcq.difficulty === "Medium"
-                                                    ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                                                    : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                                                    ? "bg-amber-50 text-amber-600 border-amber-200"
+                                                    : "bg-rose-50 text-rose-600 border-rose-200"
                                                   }`}
                                                 title={mcq.difficulty}
                                               >
                                                 {mcq.difficulty === "Easy" ? "E" : mcq.difficulty === "Medium" ? "M" : "H"}
                                               </span>
                                               {selectedMCQBank.language === "Gujarati" && (
-                                                <span className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 text-xs font-bold uppercase tracking-wider">
+                                                <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 text-xs font-bold uppercase tracking-wider">
                                                   GUJ
                                                 </span>
                                               )}
@@ -3232,17 +3232,17 @@ function MCQBankContent() {
 
                                             <div className="flex items-center gap-1.5">
                                               {mcq.isSimilar && (
-                                                <div className="p-1 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20" title="Flagged as Similar">
+                                                <div className="p-1 rounded bg-amber-50 text-amber-600 border border-amber-200" title="Flagged as Similar">
                                                   <Copy className="h-3.5 w-3.5" />
                                                 </div>
                                               )}
                                               {mcq.isChecked && (
-                                                <div className="p-1 rounded bg-purple-500/20 text-purple-400 border border-purple-500/30" title="Approved Status">
+                                                <div className="p-1 rounded bg-purple-50 text-purple-600 border border-purple-200" title="Approved Status">
                                                   <CheckCircle2 className="h-3.5 w-3.5" />
                                                 </div>
                                               )}
                                               {mcq.isReviewed && (
-                                                <div className="p-1 rounded bg-blue-500/10 text-blue-500 border border-blue-500/20" title="Review Completed">
+                                                <div className="p-1 rounded bg-blue-50 text-blue-600 border border-blue-200" title="Review Completed">
                                                   <CheckCircle2 className="h-3.5 w-3.5" />
                                                 </div>
                                               )}
@@ -3252,8 +3252,8 @@ function MCQBankContent() {
                                           {/* Question Text */}
                                           <div className="mb-2.5 min-w-0">
                                             <div className="flex items-start gap-1.5 min-w-0">
-                                              <span className="text-indigo-400 text-[15px] font-black mt-px select-none shrink-0">Q.</span>
-                                              <p className={`text-[15px] font-bold leading-snug text-gray-100 flex-1 min-w-0 break-words line-clamp-3 ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati text-base" : ""}`}>
+                                              <span className="text-purple-600 text-[15px] font-black mt-px select-none shrink-0">Q.</span>
+                                              <p className={`text-[15px] font-bold leading-snug text-gray-800 flex-1 min-w-0 break-words line-clamp-3 ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati text-base" : ""}`}>
                                                 {searchLower ? highlight(mcq.question) : mcq.question}
                                               </p>
                                             </div>
@@ -3267,17 +3267,17 @@ function MCQBankContent() {
                                                 <div
                                                   key={oi}
                                                   className={`flex items-center gap-2 px-3 py-3 rounded-lg border text-[13px] font-medium ${isCorrect
-                                                    ? "bg-emerald-500/10 border-emerald-500/25 text-emerald-300"
-                                                    : "bg-white/[0.03] border-white/5 text-gray-400"
+                                                    ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                                                    : "bg-gray-50 border-gray-100 text-gray-600"
                                                     }`}
                                                 >
-                                                  <span className={`w-5 h-5 flex-shrink-0 flex items-center justify-center rounded text-[10px] font-bold ${isCorrect ? "bg-emerald-500/20 text-emerald-300" : "bg-white/5 text-gray-600"}`}>
+                                                  <span className={`w-5 h-5 flex-shrink-0 flex items-center justify-center rounded text-[10px] font-bold ${isCorrect ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
                                                     {String.fromCharCode(65 + oi)}
                                                   </span>
                                                   <span className={`flex-1 break-words min-w-0 leading-snug ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati" : ""}`}>
                                                     {searchLower ? highlight(opt) : opt}
                                                   </span>
-                                                  {isCorrect && <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400" />}
+                                                  {isCorrect && <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-emerald-600" />}
                                                 </div>
                                               );
                                             })}
@@ -3327,7 +3327,7 @@ function MCQBankContent() {
 
                                         {/* Action Toolbar - Always Visible */}
                                         <div
-                                          className="flex flex-col items-center justify-center gap-1.5 w-full sm:w-11 p-2 bg-indigo-600/5 sm:border-l border-t sm:border-t-0 border-white/5"
+                                          className="flex flex-col items-center justify-center gap-1.5 w-full sm:w-11 p-2 bg-gray-50 sm:border-l border-t sm:border-t-0 border-gray-100"
                                           onClick={(e) => e.stopPropagation()}
                                         >
                                           {/* Similar */}
@@ -3337,7 +3337,7 @@ function MCQBankContent() {
                                               e.stopPropagation();
                                               toggleSimilar(selectedMCQBank, originalIndex, mcq);
                                             }}
-                                            className={`p-2 rounded-lg transition-all ${mcq.isSimilar ? "bg-amber-500 text-white shadow-lg shadow-amber-500/30" : "bg-white/5 text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/20 border border-transparent"}`}
+                                            className={`p-2 rounded-lg transition-all ${mcq.isSimilar ? "bg-amber-500 text-white shadow-sm" : "bg-white text-gray-400 hover:text-amber-600 hover:bg-amber-50 hover:border-amber-200 border border-gray-200"}`}
                                             title="Toggle Similar"
                                           >
                                             {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
@@ -3349,7 +3349,7 @@ function MCQBankContent() {
                                               e.stopPropagation();
                                               toggleChecked(selectedMCQBank._id, originalIndex, !!mcq.isChecked);
                                             }}
-                                            className={`p-2 rounded-lg transition-all ${mcq.isChecked ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/30" : "bg-white/5 text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-500/20 border border-transparent"}`}
+                                            className={`p-2 rounded-lg transition-all ${mcq.isChecked ? "bg-emerald-500 text-white shadow-sm" : "bg-white text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200 border border-gray-200"}`}
                                             title="Approve"
                                           >
                                             {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
@@ -3361,7 +3361,7 @@ function MCQBankContent() {
                                               e.stopPropagation();
                                               toggleReview(selectedMCQBank, originalIndex, mcq);
                                             }}
-                                            className={`p-2 rounded-lg transition-all ${mcq.isReviewed ? "bg-blue-500 text-white shadow-lg shadow-blue-500/30" : "bg-white/5 text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 hover:border-blue-500/20 border border-transparent"}`}
+                                            className={`p-2 rounded-lg transition-all ${mcq.isReviewed ? "bg-blue-500 text-white shadow-sm" : "bg-white text-gray-400 hover:text-blue-600 hover:bg-blue-50 hover:border-blue-200 border border-gray-200"}`}
                                             title="Mark Reviewed"
                                           >
                                             {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
@@ -3375,13 +3375,13 @@ function MCQBankContent() {
                           )
                         ) : (
                           <div className="flex flex-col items-center justify-center py-24 text-center">
-                            <div className="w-20 h-20 bg-[#131722] border border-white/5 rounded-3xl flex items-center justify-center mb-6">
-                              <FileText className="h-8 w-8 text-gray-600" />
+                            <div className="w-20 h-20 bg-gray-100 border border-gray-200 rounded-3xl flex items-center justify-center mb-6">
+                              <FileText className="h-8 w-8 text-gray-400" />
                             </div>
-                            <p className="text-gray-500 uppercase tracking-widest text-[10px] font-bold">
+                            <p className="text-gray-400 uppercase tracking-widest text-[10px] font-bold">
                               Catalogue Empty
                             </p>
-                            <h3 className="text-xl font-bold text-gray-200 mt-2">
+                            <h3 className="text-xl font-bold text-gray-600 mt-2">
                               No active questions found
                             </h3>
                           </div>
@@ -3390,8 +3390,8 @@ function MCQBankContent() {
                         <div className="space-y-4">
                           {loadingRecycled ? (
                             <div className="flex flex-col items-center justify-center py-24">
-                              <Loader2 className="h-10 w-10 animate-spin text-indigo-500/40" />
-                              <p className="text-gray-500 text-xs mt-4 uppercase tracking-widest font-bold">
+                              <Loader2 className="h-10 w-10 animate-spin text-purple-400" />
+                              <p className="text-gray-400 text-xs mt-4 uppercase tracking-widest font-bold">
                                 Querying Archive...
                               </p>
                             </div>
@@ -3400,14 +3400,14 @@ function MCQBankContent() {
                               {recycledQuestions.map((elim, i) => (
                                 <div
                                   key={i}
-                                  className="group bg-[#0E121B] rounded-[24px] p-6 border border-rose-500/10 hover:border-rose-500/30 transition-all opacity-80 hover:opacity-100"
+                                  className="group bg-white rounded-[24px] p-6 border border-rose-200 hover:border-rose-300 transition-all"
                                 >
                                   <div className="flex items-start gap-5">
                                     <div className="flex flex-col items-center gap-1.5">
-                                      <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-500 shadow-inner">
+                                      <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-500 shadow-sm">
                                         <Trash2 className="h-5 w-5" />
                                       </div>
-                                      <span className="text-[10px] font-bold font-mono text-gray-500">
+                                      <span className="text-[10px] font-bold font-mono text-gray-400">
                                         {typeof (elim as any)
                                           .originalQuestionIndex === "number"
                                           ? `Q${(elim as any).originalQuestionIndex + 1}`
@@ -3420,7 +3420,7 @@ function MCQBankContent() {
 
                                     <div className="flex-1 min-w-0">
                                       <div className="flex items-center gap-3 mb-3 flex-wrap">
-                                        <span className="px-2 py-0.5 rounded-lg bg-rose-500/10 text-rose-500 border border-rose-500/20 text-[10px] font-bold uppercase tracking-wider">
+                                        <span className="px-2 py-0.5 rounded-lg bg-rose-50 text-rose-600 border border-rose-200 text-[10px] font-bold uppercase tracking-wider">
                                           Archived:{" "}
                                           {new Date(
                                             elim.eliminatedAt,
@@ -3429,30 +3429,30 @@ function MCQBankContent() {
                                         {(elim as any).eliminatedBy &&
                                           (elim as any).eliminatedBy !==
                                           "Unknown User" && (
-                                            <span className="px-2 py-0.5 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-bold uppercase tracking-wider">
+                                            <span className="px-2 py-0.5 rounded-lg bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-bold uppercase tracking-wider">
                                               Actor:{" "}
                                               {(elim as any).eliminatedBy}
                                             </span>
                                           )}
-                                        <span className="px-2 py-0.5 rounded-lg bg-indigo-950/40 text-indigo-400/60 border border-indigo-500/10 text-[10px] font-bold uppercase tracking-wider">
+                                        <span className="px-2 py-0.5 rounded-lg bg-gray-100 text-gray-500 border border-gray-200 text-[10px] font-bold uppercase tracking-wider">
                                           {elim.eliminationReason === "manual"
                                             ? "Manual Delete"
                                             : elim.eliminationReason}
                                         </span>
                                       </div>
 
-                                      <h3 className="text-lg font-semibold text-indigo-300/40 mb-4 line-through decoration-rose-500/40 leading-relaxed italic">
+                                      <h3 className="text-lg font-semibold text-gray-400 mb-4 line-through decoration-rose-400 leading-relaxed italic">
                                         {elim.question.question}
                                       </h3>
 
-                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pl-4 border-l-2 border-indigo-500/10">
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pl-4 border-l-2 border-gray-200">
                                         {elim.question.options?.map(
                                           (opt: string, idx: number) => (
                                             <div
                                               key={idx}
-                                              className={`text-xs p-2.5 rounded-xl border ${opt === elim.question.correctAnswer ? "bg-purple-500/10 text-purple-400 border-purple-500/20" : "text-indigo-400/40 bg-indigo-950/20 border-transparent"}`}
+                                              className={`text-xs p-2.5 rounded-xl border ${opt === elim.question.correctAnswer ? "bg-purple-50 text-purple-700 border-purple-200" : "text-gray-400 bg-gray-50 border-gray-100"}`}
                                             >
-                                              <span className="font-bold mr-2 text-[10px] underline decoration-indigo-500/20">
+                                              <span className="font-bold mr-2 text-[10px] underline decoration-gray-300">
                                                 0{idx + 1}
                                               </span>{" "}
                                               {opt}
@@ -3467,13 +3467,13 @@ function MCQBankContent() {
                             </div>
                           ) : (
                             <div className="flex flex-col items-center justify-center py-24 text-center">
-                              <div className="w-20 h-20 bg-indigo-950/40 border border-indigo-500/20 rounded-3xl flex items-center justify-center mb-6">
-                                <X className="h-8 w-8 text-indigo-400/40" />
+                              <div className="w-20 h-20 bg-gray-100 border border-gray-200 rounded-3xl flex items-center justify-center mb-6">
+                                <X className="h-8 w-8 text-gray-400" />
                               </div>
-                              <p className="text-indigo-400/30 uppercase tracking-widest text-[10px] font-bold">
+                              <p className="text-gray-400 uppercase tracking-widest text-[10px] font-bold">
                                 Archive Integrity verified
                               </p>
-                              <h3 className="text-xl font-bold text-indigo-300/40 mt-2">
+                              <h3 className="text-xl font-bold text-gray-500 mt-2">
                                 No recycled items found
                               </h3>
                             </div>
@@ -3484,10 +3484,10 @@ function MCQBankContent() {
                   </div>
                   {/* Load more footer */}
                   {activeTab === "active" && visibleCount < filtered.length && (
-                    <div className="p-6 bg-[#13102a] border-t border-indigo-500/10 flex items-center justify-center w-full">
+                    <div className="p-6 bg-white border-t border-gray-200 flex items-center justify-center w-full">
                       <div className="flex items-center gap-2">
-                        <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />
-                        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
+                        <span className="h-1.5 w-1.5 rounded-full bg-purple-500 animate-pulse" />
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
                           Displaying {visibleCount} of {filtered.length} units
                         </span>
                       </div>
@@ -3497,7 +3497,7 @@ function MCQBankContent() {
                             Math.min(v + 30, filtered.length),
                           )
                         }
-                        className="flex items-center gap-2 px-6 py-2.5 bg-indigo-950/40 border border-indigo-500/20 rounded-2xl text-indigo-300 hover:text-white hover:bg-indigo-600/20 hover:border-indigo-500/40 transition-all font-bold text-xs uppercase tracking-widest shadow-lg"
+                        className="flex items-center gap-2 px-6 py-2.5 bg-white border border-purple-200 rounded-2xl text-purple-700 hover:bg-purple-50 hover:border-purple-300 transition-all font-bold text-xs uppercase tracking-widest shadow-sm"
                       >
                         <ChevronsUpDown className="h-4 w-4" />
                         Expand Catalog ({filtered.length - visibleCount} units)
@@ -3563,10 +3563,10 @@ function MCQBankContent() {
                     <div className="flex items-center gap-2">
                       <span className="text-2xl">{mcq.aiIcon || "📝"}</span>
                       <div>
-                        <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-gray-500">
                           {label || "Question"}
                         </p>
-                        <p className="text-xs font-bold text-white">
+                        <p className="text-xs font-bold text-gray-800">
                           Q#{idx + 1}
                         </p>
                       </div>
@@ -3587,7 +3587,7 @@ function MCQBankContent() {
 
                   {/* Question Text */}
                   <h4
-                    className={`text-sm font-semibold text-gray-100 leading-relaxed ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati text-base" : ""}`}
+                    className={`text-sm font-semibold text-gray-800 leading-relaxed ${selectedMCQBank?.language === "Gujarati" ? "font-gujarati text-base" : ""}`}
                   >
                     {mcq.question || "Loading question content..."}
                   </h4>
@@ -3600,14 +3600,14 @@ function MCQBankContent() {
                         <div
                           key={oi}
                           className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-xs transition-all ${isCorrect
-                            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"
-                            : "bg-white/5 border-white/5 text-gray-400"
+                            ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                            : "bg-gray-50 border-gray-100 text-gray-600"
                             }`}
                         >
                           <span
                             className={`w-5 h-5 flex-shrink-0 flex items-center justify-center rounded-md text-[9px] font-bold border ${isCorrect
-                              ? "bg-emerald-500/30 border-emerald-500/40 text-emerald-300"
-                              : "bg-white/5 border-white/10 text-gray-500"
+                              ? "bg-emerald-100 border-emerald-200 text-emerald-700"
+                              : "bg-gray-100 border-gray-200 text-gray-500"
                               }`}
                           >
                             {String.fromCharCode(65 + oi)}
@@ -3627,18 +3627,18 @@ function MCQBankContent() {
 
                   {/* SOP Source Reference */}
                   {mcq.sopReference && (
-                    <div className="rounded-xl bg-blue-500/5 border border-blue-500/15 p-3 space-y-1">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-blue-400/70 flex items-center gap-1">
+                    <div className="rounded-xl bg-blue-50 border border-blue-200 p-3 space-y-1">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-blue-500 flex items-center gap-1">
                         <BookOpen className="h-2.5 w-2.5" /> SOP Source Line
                       </p>
-                      <p className="text-[10px] text-blue-300/80 leading-relaxed italic line-clamp-3">
+                      <p className="text-[10px] text-blue-600 leading-relaxed italic line-clamp-3">
                         &quot;{mcq.sopReference}&quot;
                       </p>
                     </div>
                   )}
 
                   {/* Action Buttons */}
-                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/5 mt-auto">
+                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100 mt-auto">
                     {/* Approve Button */}
                     <button
                       onClick={() => {
@@ -3671,7 +3671,7 @@ function MCQBankContent() {
                           ? actionFeedback.type === 'error'
                             ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
                             : "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
-                          : "bg-white/5 text-gray-400 border-white/10 hover:bg-white/10 hover:text-gray-200"
+                          : "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100 hover:text-gray-700"
                         }`}
                     >
                       {updatingStatus === approvingKey ? (
@@ -3735,12 +3735,11 @@ function MCQBankContent() {
                 onClick={() => { setSelectedMCQ(null); setEditMode(false); setEditDraft(null); }}
               >
                 <div
-                  className={`bg-[#0f0d1e] rounded-[28px] ${hasSimilar ? "max-w-6xl" : "max-w-3xl"} w-full max-h-[92vh] flex flex-col border border-indigo-500/15 shadow-2xl shadow-black/60 overflow-hidden`}
+                  className={`bg-white rounded-[28px] ${hasSimilar ? "max-w-6xl" : "max-w-3xl"} w-full max-h-[92vh] flex flex-col border border-gray-200 shadow-2xl overflow-hidden`}
                   onClick={(e) => e.stopPropagation()}
                 >
                   {/* Header */}
-                  <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 px-6 py-4 flex-shrink-0 relative overflow-hidden">
-                    <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10" />
+                  <div className="bg-purple-600 px-6 py-4 flex-shrink-0 relative overflow-hidden">
                     <div className="relative flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/20 text-white font-mono font-bold shadow-lg">
@@ -3765,7 +3764,7 @@ function MCQBankContent() {
                       </div>
                       <button
                         onClick={() => { setSelectedMCQ(null); setEditMode(false); setEditDraft(null); }}
-                        className="p-2 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-all border border-white/10 shadow-inner"
+                        className="p-2 rounded-xl bg-white/20 text-white hover:bg-white/30 transition-all border border-white/20 shadow-inner"
                       >
                         <X className="h-5 w-5" />
                       </button>
@@ -3773,18 +3772,18 @@ function MCQBankContent() {
                   </div>
 
                   {/* Body */}
-                  <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+                  <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-white">
                     {hasSimilar ? (
                       /* ── SIDE-BY-SIDE COMPARISON VIEW ── */
                       <div className="space-y-5">
                         <div className="flex items-center gap-3 px-1">
                           <div className="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_10px_#f59e0b]" />
-                          <p className="text-sm text-gray-300">
-                            <span className="font-bold text-white">
+                          <p className="text-sm text-gray-600">
+                            <span className="font-bold text-gray-800">
                               Q#{selectedMCQ.index + 1}
                             </span>{" "}
                             has been flagged as similar to{" "}
-                            <span className="font-bold text-amber-400">
+                            <span className="font-bold text-amber-600">
                               {similarIndices.length} other question
                               {similarIndices.length > 1 ? "s" : ""}
                             </span>
@@ -3798,7 +3797,7 @@ function MCQBankContent() {
                             selectedMCQ.mcq,
                             selectedMCQ.index,
                             "Primary Question",
-                            "bg-indigo-500/5 border-indigo-500/20",
+                            "bg-purple-50 border-purple-200",
                           )}
 
                           {/* Similar Questions */}
@@ -3811,7 +3810,7 @@ function MCQBankContent() {
                                   simMcq,
                                   simIdx,
                                   "Similar Match",
-                                  "bg-amber-500/5 border-amber-500/20",
+                                  "bg-amber-50 border-amber-200",
                                 )}
                               </div>
                             );
@@ -3819,13 +3818,13 @@ function MCQBankContent() {
                         </div>
 
                         {/* Quick Link */}
-                        <div className="flex items-center justify-center pt-4 border-t border-white/5">
+                        <div className="flex items-center justify-center pt-4 border-t border-gray-100">
                           <button
                             onClick={() => {
                               setSelectedMCQ(null);
                               router.push("/mcq-review");
                             }}
-                            className="flex items-center gap-3 px-6 py-3 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-bold transition-all border border-white/10 text-xs uppercase tracking-widest"
+                            className="flex items-center gap-3 px-6 py-3 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-2xl font-bold transition-all border border-gray-200 text-xs uppercase tracking-widest"
                           >
                             <Star className="h-4 w-4 text-amber-400 fill-amber-400" />
                             Resolve in Review Center
@@ -3854,7 +3853,7 @@ function MCQBankContent() {
                                 });
                                 setEditMode(true);
                               }}
-                              className="flex items-center gap-2 px-4 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 hover:border-indigo-500/40 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all"
+                              className="flex items-center gap-2 px-4 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 hover:border-purple-300 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all"
                             >
                               <Edit2 className="h-3.5 w-3.5" />
                               Edit Question
@@ -3863,7 +3862,7 @@ function MCQBankContent() {
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() => { setEditMode(false); setEditDraft(null); }}
-                                className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 border border-white/10 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all"
+                                className="flex items-center gap-2 px-4 py-2 bg-gray-50 hover:bg-gray-100 text-gray-500 border border-gray-200 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all"
                               >
                                 <RotateCcw className="h-3.5 w-3.5" />
                                 Cancel
@@ -3930,17 +3929,17 @@ function MCQBankContent() {
 
                         {/* Question Text */}
                         <div className="space-y-2">
-                          <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] ml-1">Question</h4>
+                          <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] ml-1">Question</h4>
                           {editMode && editDraft ? (
                             <textarea
                               value={editDraft.question}
                               onChange={e => setEditDraft(d => d ? { ...d, question: e.target.value } : d)}
                               rows={3}
-                              className="w-full bg-indigo-500/5 border border-indigo-500/30 rounded-2xl p-4 text-white text-base font-medium leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500/40 resize-none placeholder-gray-600 transition-all"
+                              className="w-full bg-white border border-purple-200 rounded-2xl p-4 text-gray-800 text-base font-medium leading-relaxed focus:outline-none focus:ring-2 focus:ring-purple-300 resize-none placeholder-gray-400 transition-all"
                               placeholder="Enter the question text..."
                             />
                           ) : (
-                            <h3 className={`text-2xl font-bold text-gray-100 leading-tight tracking-tight ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati' : ''}`}>
+                            <h3 className={`text-2xl font-bold text-gray-800 leading-tight tracking-tight ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati' : ''}`}>
                               {selectedMCQ.mcq.question}
                             </h3>
                           )}
@@ -3948,7 +3947,7 @@ function MCQBankContent() {
 
                         {/* Options */}
                         <div className="space-y-3">
-                          <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] ml-1">
+                          <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] ml-1">
                             {editMode ? 'Edit Options & Select Correct Answer' : 'Proposed Options'}
                           </h4>
                           <div className="space-y-2.5">
@@ -3962,8 +3961,8 @@ function MCQBankContent() {
                                   key={index}
                                   className={`group p-3 rounded-2xl flex items-center gap-3 transition-all border ${
                                     isCorrect
-                                      ? 'bg-emerald-600/10 border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.08)]'
-                                      : 'bg-white/5 border-white/5 hover:border-white/10'
+                                      ? 'bg-emerald-50 border-emerald-200'
+                                      : 'bg-gray-50 border-gray-100 hover:border-gray-200'
                                   }`}
                                 >
                                   {/* Correct Answer Radio/Badge */}
@@ -3974,7 +3973,7 @@ function MCQBankContent() {
                                       className={`w-8 h-8 flex-shrink-0 rounded-xl flex items-center justify-center text-xs font-bold border transition-all ${
                                         isCorrect
                                           ? 'bg-emerald-500 text-white border-emerald-400 shadow-lg shadow-emerald-500/20'
-                                          : 'bg-slate-900 text-gray-500 border-white/5 hover:border-emerald-500/30 hover:text-emerald-400'
+                                          : 'bg-white text-gray-500 border-gray-200 hover:border-emerald-300 hover:text-emerald-600'
                                       }`}
                                     >
                                       {label}
@@ -3982,8 +3981,8 @@ function MCQBankContent() {
                                   ) : (
                                     <div className={`w-8 h-8 flex-shrink-0 rounded-xl flex items-center justify-center text-xs font-bold border ${
                                       isCorrect
-                                        ? 'bg-gradient-to-br from-purple-600 to-indigo-600 text-white border-purple-400 shadow-lg'
-                                        : 'bg-slate-900 text-gray-500 border-white/5'
+                                        ? 'bg-purple-600 text-white border-purple-500 shadow-sm'
+                                        : 'bg-white text-gray-500 border-gray-200'
                                     }`}>
                                       {label}
                                     </div>
@@ -4008,14 +4007,14 @@ function MCQBankContent() {
                                       placeholder={`Option ${label}...`}
                                     />
                                   ) : (
-                                    <span className={`${isCorrect ? 'text-purple-400 font-semibold' : 'text-gray-400'} text-base flex-1 ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati' : ''}`}>
+                                    <span className={`${isCorrect ? 'text-purple-700 font-semibold' : 'text-gray-600'} text-base flex-1 ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati' : ''}`}>
                                       {option}
                                     </span>
                                   )}
 
                                   {isCorrect && (
                                     <div className={`ml-auto flex items-center gap-2 px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${
-                                      editMode ? 'bg-emerald-500/20 text-emerald-400' : 'bg-purple-500/20 text-purple-400'
+                                      editMode ? 'bg-emerald-50 text-emerald-700' : 'bg-purple-50 text-purple-700'
                                     }`}>
                                       <CheckCircle2 className="h-3 w-3" />
                                       {editMode ? 'Correct' : 'Correct Answer'}
@@ -4033,20 +4032,20 @@ function MCQBankContent() {
                         {/* Insights */}
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                           <div className="space-y-3">
-                            <h4 className="text-[10px] font-bold text-[#8B5CF6] uppercase tracking-[0.2em] flex items-center gap-2 ml-1">
+                            <h4 className="text-[10px] font-bold text-purple-600 uppercase tracking-[0.2em] flex items-center gap-2 ml-1">
                               <MessageSquare className="h-3 w-3" /> Pedagogical Rationale
                             </h4>
-                            <div className="bg-slate-800/30 p-4 rounded-[24px] border border-white/5 shadow-inner">
+                            <div className="bg-gray-50 p-4 rounded-[24px] border border-gray-100 shadow-inner">
                               {editMode && editDraft ? (
                                 <textarea
                                   value={editDraft.explanation}
                                   onChange={e => setEditDraft(d => d ? { ...d, explanation: e.target.value } : d)}
                                   rows={4}
-                                  className="w-full bg-transparent border-0 text-sm text-gray-400 leading-relaxed focus:outline-none resize-none placeholder-gray-600"
+                                  className="w-full bg-transparent border-0 text-sm text-gray-600 leading-relaxed focus:outline-none resize-none placeholder-gray-400"
                                   placeholder="Explanation / rationale for this question..."
                                 />
                               ) : (
-                                <p className={`text-sm text-gray-400 leading-relaxed ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati text-base' : ''}`}>
+                                <p className={`text-sm text-gray-600 leading-relaxed ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati text-base' : ''}`}>
                                   {selectedMCQ.mcq.explanation || 'No explanation provided for this question unit.'}
                                 </p>
                               )}
@@ -4056,8 +4055,8 @@ function MCQBankContent() {
                             <h4 className="text-[10px] font-bold text-blue-400 uppercase tracking-[0.2em] flex items-center gap-2 ml-1">
                               <BookOpen className="h-3 w-3" /> Technical SOP Context
                             </h4>
-                            <div className="bg-slate-800/30 p-4 rounded-[24px] border border-white/5 shadow-inner italic">
-                              <p className={`text-sm text-blue-400/80 leading-relaxed ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati text-base' : ''}`}>
+                            <div className="bg-blue-50 p-4 rounded-[24px] border border-blue-100 shadow-inner italic">
+                              <p className={`text-sm text-blue-600 leading-relaxed ${selectedMCQBank?.language === 'Gujarati' ? 'font-gujarati text-base' : ''}`}>
                                 &quot;{selectedMCQ.mcq.sopReference || 'Direct reference content is being indexed...'}&quot;
                               </p>
                             </div>
@@ -4065,25 +4064,25 @@ function MCQBankContent() {
                         </div>
 
                         {/* Status Badges */}
-                        <div className="pt-4 border-t border-white/5 flex flex-wrap gap-4">
-                          <div className="flex-1 min-w-[180px] flex items-center gap-3 p-4 bg-white/5 rounded-2xl border border-white/5">
-                            <div className={`p-3 rounded-xl ${selectedMCQ.mcq.isChecked ? 'bg-emerald-500/20 text-emerald-400' : 'bg-gray-500/10 text-gray-500'}`}>
+                        <div className="pt-4 border-t border-gray-100 flex flex-wrap gap-4">
+                          <div className="flex-1 min-w-[180px] flex items-center gap-3 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                            <div className={`p-3 rounded-xl ${selectedMCQ.mcq.isChecked ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-400'}`}>
                               <CheckCircle2 className="h-5 w-5" />
                             </div>
                             <div>
-                              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Quality Check</p>
-                              <p className={`text-sm font-bold ${selectedMCQ.mcq.isChecked ? 'text-emerald-400' : 'text-gray-400'}`}>
+                              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Quality Check</p>
+                              <p className={`text-sm font-bold ${selectedMCQ.mcq.isChecked ? 'text-emerald-600' : 'text-gray-500'}`}>
                                 {selectedMCQ.mcq.isChecked ? 'Successfully Approved' : 'Pending Verification'}
                               </p>
                             </div>
                           </div>
-                          <div className="flex-1 min-w-[180px] flex items-center gap-3 p-4 bg-white/5 rounded-2xl border border-white/5">
-                            <div className={`p-3 rounded-xl ${selectedMCQ.mcq.isReviewed ? 'bg-amber-500/20 text-amber-400' : 'bg-gray-500/10 text-gray-500'}`}>
+                          <div className="flex-1 min-w-[180px] flex items-center gap-3 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                            <div className={`p-3 rounded-xl ${selectedMCQ.mcq.isReviewed ? 'bg-amber-50 text-amber-600' : 'bg-gray-100 text-gray-400'}`}>
                               <Star className={`h-5 w-5 ${selectedMCQ.mcq.isReviewed ? 'fill-current' : ''}`} />
                             </div>
                             <div>
-                              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Priority Review</p>
-                              <p className={`text-sm font-bold ${selectedMCQ.mcq.isReviewed ? 'text-amber-400' : 'text-gray-400'}`}>
+                              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Priority Review</p>
+                              <p className={`text-sm font-bold ${selectedMCQ.mcq.isReviewed ? 'text-amber-600' : 'text-gray-500'}`}>
                                 {selectedMCQ.mcq.isReviewed ? 'Review Completed' : 'Standard Priority'}
                               </p>
                             </div>
@@ -4095,7 +4094,7 @@ function MCQBankContent() {
                           <div className="pt-2 flex gap-3">
                             <button
                               onClick={() => router.push('/mcq-review')}
-                              className="flex-1 px-6 py-4 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-bold transition-all flex items-center justify-center gap-3 border border-white/10 group"
+                              className="flex-1 px-6 py-4 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-2xl font-bold transition-all flex items-center justify-center gap-3 border border-gray-200 group"
                             >
                               <Star className="h-5 w-5 text-amber-400 fill-amber-400 group-hover:scale-110 transition-transform" />
                               <span className="uppercase tracking-widest text-xs">Go to Review Center</span>
@@ -4119,7 +4118,7 @@ function MCQBankContent() {
                           </div>
                         )}
                         {!editMode && (
-                          <p className="text-[10px] text-gray-500 text-center font-medium uppercase tracking-[0.2em]">
+                          <p className="text-[10px] text-gray-400 text-center font-medium tracking-[0.2em]">
                             Archiving moves this unit to the recycled section and triggers AI re-generation.
                           </p>
                         )}
@@ -4137,16 +4136,16 @@ function MCQBankContent() {
       {/* Smart Regenerate Progress Modal */}
       {smartRegenProgress && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 rounded-2xl border border-purple-500/20 shadow-2xl max-w-md w-full animate-in fade-in zoom-in duration-300">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl max-w-md w-full animate-in fade-in zoom-in duration-300">
             {/* Header */}
-            <div className="bg-gradient-to-r from-slate-900/95 to-purple-900/95 backdrop-blur border-b border-purple-500/20 p-6">
+            <div className="bg-purple-600 border-b border-purple-700 p-6 rounded-t-2xl">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-violet-500/20 flex items-center justify-center animate-spin">
-                  <Loader2 className="h-6 w-6 text-violet-400" />
+                <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center animate-spin">
+                  <Loader2 className="h-6 w-6 text-white" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-violet-400">Smart Regenerate</h2>
-                  <p className="text-xs text-gray-400 mt-1">
+                  <h2 className="text-lg font-bold text-white">Smart Regenerate</h2>
+                  <p className="text-xs text-white/70 mt-1">
                     {smartRegenProgress.phase === 'detecting' && 'Detecting similar questions...'}
                     {smartRegenProgress.phase === 'regenerating' && `Regenerating (Q${smartRegenProgress.currentQuestion})`}
                     {smartRegenProgress.phase === 'complete' && 'Complete!'}
@@ -4160,8 +4159,8 @@ function MCQBankContent() {
               {/* Found */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">Similar Questions Found</span>
-                  <span className="text-sm font-bold text-blue-400">{smartRegenProgress.totalFound}</span>
+                  <span className="text-xs font-bold text-gray-600 uppercase tracking-wider">Similar Questions Found</span>
+                  <span className="text-sm font-bold text-blue-600">{smartRegenProgress.totalFound}</span>
                 </div>
               </div>
 
@@ -4169,14 +4168,14 @@ function MCQBankContent() {
               {smartRegenProgress.phase !== 'detecting' && smartRegenProgress.totalFound > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">Progress</span>
-                    <span className="text-sm font-bold text-violet-400">
+                    <span className="text-xs font-bold text-gray-600 uppercase tracking-wider">Progress</span>
+                    <span className="text-sm font-bold text-purple-600">
                       {smartRegenProgress.totalReplaced + smartRegenProgress.totalFailed}/{smartRegenProgress.totalFound}
                     </span>
                   </div>
-                  <div className="h-3 bg-white/10 rounded-full overflow-hidden">
+                  <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-gradient-to-r from-violet-500 to-purple-500 rounded-full transition-all duration-300"
+                      className="h-full bg-purple-600 rounded-full transition-all duration-300"
                       style={{
                         width: smartRegenProgress.totalFound > 0
                           ? `${((smartRegenProgress.totalReplaced + smartRegenProgress.totalFailed) / smartRegenProgress.totalFound) * 100}%`
@@ -4189,20 +4188,20 @@ function MCQBankContent() {
 
               {/* Stats */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3">
-                  <div className="text-xs font-bold text-green-400 uppercase tracking-wider mb-1">Replaced</div>
-                  <div className="text-2xl font-bold text-green-300">{smartRegenProgress.totalReplaced}</div>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                  <div className="text-xs font-bold text-emerald-600 uppercase tracking-wider mb-1">Replaced</div>
+                  <div className="text-2xl font-bold text-emerald-700">{smartRegenProgress.totalReplaced}</div>
                 </div>
 
-                <div className="bg-rose-500/10 border border-rose-500/20 rounded-lg p-3">
-                  <div className="text-xs font-bold text-rose-400 uppercase tracking-wider mb-1">Failed</div>
-                  <div className="text-2xl font-bold text-rose-300">{smartRegenProgress.totalFailed}</div>
+                <div className="bg-rose-50 border border-rose-200 rounded-lg p-3">
+                  <div className="text-xs font-bold text-rose-600 uppercase tracking-wider mb-1">Failed</div>
+                  <div className="text-2xl font-bold text-rose-700">{smartRegenProgress.totalFailed}</div>
                 </div>
               </div>
 
               {/* Status */}
-              <div className="bg-white/5 border border-white/10 rounded-lg p-3">
-                <p className="text-xs text-gray-400 text-center">
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <p className="text-xs text-gray-500 text-center">
                   {smartRegenProgress.phase === 'complete' ? (
                     <span>✅ Smart regeneration completed!</span>
                   ) : (
@@ -4227,12 +4226,12 @@ function MCQBankContent() {
       {/* Dev Mode Password Modal */}
       {showDevModal && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-white/20 rounded-xl shadow-2xl w-full max-w-sm p-6 flex flex-col gap-4">
+          <div className="bg-white border border-gray-200 rounded-xl shadow-2xl w-full max-w-sm p-6 flex flex-col gap-4">
             <div className="flex items-center gap-2 mb-1">
-              <Lock className="h-5 w-5 text-yellow-400" />
-              <h2 className="text-white font-bold text-lg">Dev Mode Unlock</h2>
+              <Lock className="h-5 w-5 text-amber-500" />
+              <h2 className="text-gray-800 font-bold text-lg">Dev Mode Unlock</h2>
             </div>
-            <p className="text-gray-400 text-sm">
+            <p className="text-gray-500 text-sm">
               Enter the password to disable copy &amp; inspect protection for this session.
             </p>
             <div className="relative">
@@ -4243,12 +4242,12 @@ function MCQBankContent() {
                 onKeyDown={(e) => { if (e.key === "Enter") handleDevUnlock(); if (e.key === "Escape") { setShowDevModal(false); } }}
                 placeholder="Enter password"
                 autoFocus
-                className="w-full bg-white/10 border border-white/20 text-white rounded-md px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500/50 placeholder-gray-500"
+                className="w-full bg-white border border-gray-300 text-gray-800 rounded-md px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50 placeholder-gray-400"
               />
               <button
                 type="button"
                 onClick={() => setShowDevPassword((v) => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 transition-colors"
                 tabIndex={-1}
               >
                 {showDevPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -4260,13 +4259,13 @@ function MCQBankContent() {
             <div className="flex gap-2 mt-1">
               <button
                 onClick={handleDevUnlock}
-                className="flex-1 px-4 py-2 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white font-semibold rounded-md text-sm transition-all"
+                className="flex-1 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-md text-sm transition-all"
               >
                 Unlock
               </button>
               <button
                 onClick={() => { setShowDevModal(false); setDevPassword(""); setDevPasswordError(""); }}
-                className="flex-1 px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-md text-sm transition-all border border-white/20"
+                className="flex-1 px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 font-semibold rounded-md text-sm transition-all border border-gray-300"
               >
                 Cancel
               </button>
@@ -4283,8 +4282,8 @@ export default function MCQBankPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-          <Loader2 className="h-12 w-12 text-purple-400 animate-spin" />
+        <div className="min-h-screen bg-[#f8f9fa] flex items-center justify-center">
+          <Loader2 className="h-12 w-12 text-purple-600 animate-spin" />
         </div>
       }
     >

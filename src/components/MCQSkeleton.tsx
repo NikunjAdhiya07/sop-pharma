@@ -7,13 +7,13 @@
  */
 
 /* ── Shared pulse animation class ─────────────────────────────────────────── */
-const pulse = "animate-pulse bg-white/5 rounded";
+const pulse = "animate-pulse bg-gray-200 rounded";
 
 /* ──────────────────────────────────────────────────────────────────────────── */
 /** Skeleton for a single department card (4-column grid on xl) */
 export function DeptCardSkeleton() {
   return (
-    <div className="rounded-xl border border-white/5 bg-gradient-to-br from-white/[0.02] to-transparent p-4 space-y-3">
+    <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
       {/* Header row */}
       <div className="flex items-center gap-3">
         <div className={`${pulse} h-9 w-9 rounded-lg`} />
@@ -51,7 +51,7 @@ export function DeptGridSkeleton({ count = 8 }: { count?: number }) {
 /** Skeleton for a single row in the dept modal SOP table */
 export function SOPTableRowSkeleton() {
   return (
-    <tr className="border-b border-white/5">
+    <tr className="border-b border-gray-100">
       <td className="p-3">
         <div className="flex items-center gap-2">
           <div className={`${pulse} h-7 w-7 rounded-lg shrink-0`} />
@@ -83,7 +83,7 @@ export function SOPTableSkeleton({ rows = 10 }: { rows?: number }) {
 /** Skeleton for a single MCQ question card in the question modal */
 export function MCQCardSkeleton() {
   return (
-    <div className="bg-[#131722] rounded-2xl border border-white/5 p-6 space-y-5">
+    <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-5">
       {/* Top: identifier + difficulty */}
       <div className="flex items-center gap-2">
         <div className={`${pulse} h-5 w-20 rounded-lg`} />
@@ -121,7 +121,7 @@ export function MCQListSkeleton({ count = 5 }: { count?: number }) {
 export function InlineSpinner({ label = "Loading…" }: { label?: string }) {
   return (
     <span className="inline-flex items-center gap-1.5 text-[10px] text-gray-500 font-medium animate-pulse">
-      <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-bounce" />
+      <span className="h-1.5 w-1.5 rounded-full bg-purple-500 animate-bounce" />
       {label}
     </span>
   );

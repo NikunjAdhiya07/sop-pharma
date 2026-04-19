@@ -90,121 +90,145 @@ const getDeptTheme = (deptName: string) => {
 
   if (name.includes("qa"))
     return {
-      text: "text-purple-400",
-      textHover: "group-hover:text-purple-300",
+      text: "text-white",
+      textHover: "group-hover:text-purple-100",
       bg: "bg-purple-600",
-      badge: "bg-purple-500/10 border-purple-500/20 text-purple-400",
-      border: "border-purple-600",
+      badge: "bg-white/20 border-white/30 text-white",
+      border: "border-purple-500",
       borderHover: "hover:border-purple-400",
-      gradient: "from-purple-900/40 via-indigo-900/40 to-[#0a0817]/40",
-      subcatBg: "from-purple-900/20 to-purple-800/10",
-      icon: "text-purple-500",
-      secondary: "text-purple-200",
-      button: "bg-purple-600 hover:bg-purple-700 shadow-purple-500/20",
+      gradient: "from-purple-600 via-purple-700 to-purple-800",
+      subcatBg: "from-purple-600 to-purple-700",
+      cardBg: "bg-gradient-to-br from-purple-500 to-purple-700",
+      statBg: "bg-purple-800/40",
+      icon: "text-purple-200",
+      secondary: "text-purple-100",
+      accentText: "text-purple-200",
+      button: "bg-white/20 hover:bg-white/30 text-white border-white/30",
     };
 
   if (name.includes("qc"))
     return {
-      text: "text-blue-400",
-      textHover: "group-hover:text-blue-300",
+      text: "text-white",
+      textHover: "group-hover:text-blue-100",
       bg: "bg-blue-600",
-      badge: "bg-blue-500/10 border-blue-500/20 text-blue-400",
-      border: "border-blue-600",
+      badge: "bg-white/20 border-white/30 text-white",
+      border: "border-blue-500",
       borderHover: "hover:border-blue-400",
-      gradient: "from-blue-900/40 via-cyan-900/40 to-[#0a0817]/40",
-      subcatBg: "from-blue-900/20 to-blue-800/10",
-      icon: "text-blue-500",
-      secondary: "text-blue-200",
-      button: "bg-blue-600 hover:bg-blue-700 shadow-blue-500/20",
+      gradient: "from-blue-500 via-blue-600 to-blue-700",
+      subcatBg: "from-blue-500 to-blue-700",
+      cardBg: "bg-gradient-to-br from-blue-500 to-blue-700",
+      statBg: "bg-blue-800/40",
+      icon: "text-blue-200",
+      secondary: "text-blue-100",
+      accentText: "text-blue-200",
+      button: "bg-white/20 hover:bg-white/30 text-white border-white/30",
     };
 
   if (name.includes("microbiology"))
     return {
-      text: "text-orange-400",
-      textHover: "group-hover:text-orange-300",
+      text: "text-white",
+      textHover: "group-hover:text-orange-100",
       bg: "bg-orange-600",
-      badge: "bg-orange-500/10 border-orange-500/20 text-orange-400",
-      border: "border-orange-600",
+      badge: "bg-white/20 border-white/30 text-white",
+      border: "border-orange-500",
       borderHover: "hover:border-orange-400",
-      gradient: "from-orange-900/40 via-amber-900/40 to-[#0a0817]/40",
-      subcatBg: "from-orange-900/20 to-orange-800/10",
-      icon: "text-orange-500",
-      secondary: "text-orange-200",
-      button: "bg-orange-600 hover:bg-orange-700 shadow-orange-500/20",
+      gradient: "from-orange-500 via-orange-600 to-orange-700",
+      subcatBg: "from-orange-500 to-orange-700",
+      cardBg: "bg-gradient-to-br from-orange-500 to-orange-700",
+      statBg: "bg-orange-800/40",
+      icon: "text-orange-200",
+      secondary: "text-orange-100",
+      accentText: "text-orange-200",
+      button: "bg-white/20 hover:bg-white/30 text-white border-white/30",
     };
 
   if (name.includes("production"))
     return {
-      text: "text-emerald-400",
-      textHover: "group-hover:text-emerald-300",
+      text: "text-white",
+      textHover: "group-hover:text-emerald-100",
       bg: "bg-emerald-600",
-      badge: "bg-emerald-500/10 border-emerald-500/20 text-emerald-400",
-      border: "border-emerald-600",
+      badge: "bg-white/20 border-white/30 text-white",
+      border: "border-emerald-500",
       borderHover: "hover:border-emerald-400",
-      gradient: "from-purple-900/40 via-indigo-900/40 to-[#0a0817]/40",
-      subcatBg: "from-purple-900/20 to-purple-800/10",
-      icon: "text-purple-500",
-      secondary: "text-purple-200",
-      button: "bg-purple-600 hover:bg-purple-700 shadow-purple-500/20",
+      gradient: "from-emerald-500 via-emerald-600 to-emerald-700",
+      subcatBg: "from-emerald-500 to-emerald-700",
+      cardBg: "bg-gradient-to-br from-emerald-500 to-emerald-700",
+      statBg: "bg-emerald-800/40",
+      icon: "text-emerald-200",
+      secondary: "text-emerald-100",
+      accentText: "text-emerald-200",
+      button: "bg-white/20 hover:bg-white/30 text-white border-white/30",
     };
 
   if (name.includes("store"))
     return {
-      text: "text-amber-400",
-      textHover: "group-hover:text-amber-300",
+      text: "text-white",
+      textHover: "group-hover:text-amber-100",
       bg: "bg-amber-600",
-      badge: "bg-amber-500/10 border-amber-500/20 text-amber-400",
-      border: "border-amber-600",
+      badge: "bg-white/20 border-white/30 text-white",
+      border: "border-amber-500",
       borderHover: "hover:border-amber-400",
-      gradient: "from-amber-900/40 via-yellow-900/40 to-[#0a0817]/40",
-      subcatBg: "from-amber-900/20 to-amber-800/10",
-      icon: "text-amber-500",
-      secondary: "text-amber-200",
-      button: "bg-amber-600 hover:bg-amber-700 shadow-amber-500/20",
+      gradient: "from-amber-500 via-amber-600 to-amber-700",
+      subcatBg: "from-amber-500 to-amber-700",
+      cardBg: "bg-gradient-to-br from-amber-500 to-amber-700",
+      statBg: "bg-amber-800/40",
+      icon: "text-amber-200",
+      secondary: "text-amber-100",
+      accentText: "text-amber-200",
+      button: "bg-white/20 hover:bg-white/30 text-white border-white/30",
     };
 
   if (name.includes("engineering"))
     return {
-      text: "text-cyan-400",
-      textHover: "group-hover:text-cyan-300",
+      text: "text-white",
+      textHover: "group-hover:text-cyan-100",
       bg: "bg-cyan-600",
-      badge: "bg-cyan-500/10 border-cyan-500/20 text-cyan-400",
-      border: "border-cyan-600",
+      badge: "bg-white/20 border-white/30 text-white",
+      border: "border-cyan-500",
       borderHover: "hover:border-cyan-400",
-      gradient: "from-cyan-900/40 via-blue-900/40 to-[#0a0817]/40",
-      subcatBg: "from-cyan-900/20 to-cyan-800/10",
-      icon: "text-cyan-500",
-      secondary: "text-cyan-200",
-      button: "bg-cyan-600 hover:bg-cyan-700 shadow-cyan-500/20",
+      gradient: "from-cyan-500 via-cyan-600 to-cyan-700",
+      subcatBg: "from-cyan-500 to-cyan-700",
+      cardBg: "bg-gradient-to-br from-cyan-500 to-cyan-700",
+      statBg: "bg-cyan-800/40",
+      icon: "text-cyan-200",
+      secondary: "text-cyan-100",
+      accentText: "text-cyan-200",
+      button: "bg-white/20 hover:bg-white/30 text-white border-white/30",
     };
 
   if (name.includes("personnel") || name.includes("hr"))
     return {
-      text: "text-pink-400",
-      textHover: "group-hover:text-pink-300",
+      text: "text-white",
+      textHover: "group-hover:text-pink-100",
       bg: "bg-pink-600",
-      badge: "bg-pink-500/10 border-pink-500/20 text-pink-400",
-      border: "border-pink-600",
+      badge: "bg-white/20 border-white/30 text-white",
+      border: "border-pink-500",
       borderHover: "hover:border-pink-400",
-      gradient: "from-pink-900/40 via-rose-900/40 to-[#0a0817]/40",
-      subcatBg: "from-pink-900/20 to-pink-800/10",
-      icon: "text-pink-500",
-      secondary: "text-pink-200",
-      button: "bg-pink-600 hover:bg-pink-700 shadow-pink-500/20",
+      gradient: "from-pink-500 via-pink-600 to-rose-600",
+      subcatBg: "from-pink-500 to-rose-600",
+      cardBg: "bg-gradient-to-br from-pink-500 to-rose-600",
+      statBg: "bg-pink-800/40",
+      icon: "text-pink-200",
+      secondary: "text-pink-100",
+      accentText: "text-pink-200",
+      button: "bg-white/20 hover:bg-white/30 text-white border-white/30",
     };
 
   return {
-    text: "text-indigo-400",
-    textHover: "group-hover:text-indigo-300",
+    text: "text-white",
+    textHover: "group-hover:text-indigo-100",
     bg: "bg-indigo-600",
-    badge: "bg-indigo-500/10 border-indigo-500/20 text-indigo-400",
-    border: "border-indigo-600",
+    badge: "bg-white/20 border-white/30 text-white",
+    border: "border-indigo-500",
     borderHover: "hover:border-indigo-400",
-    gradient: "from-[#0a0817] to-indigo-950/40",
-    subcatBg: "from-[#0a0817]/50 to-indigo-950/20",
-    icon: "text-indigo-500",
-    secondary: "text-indigo-200",
-    button: "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20",
+    gradient: "from-indigo-500 via-indigo-600 to-indigo-700",
+    subcatBg: "from-indigo-500 to-indigo-700",
+    cardBg: "bg-gradient-to-br from-indigo-500 to-indigo-700",
+    statBg: "bg-indigo-800/40",
+    icon: "text-indigo-200",
+    secondary: "text-indigo-100",
+    accentText: "text-indigo-200",
+    button: "bg-white/20 hover:bg-white/30 text-white border-white/30",
   };
 };
 
@@ -1373,7 +1397,7 @@ export default function MCQTreeView({
           return (
             <div
               key={dept.name}
-              className={`rounded-xl border border-white/5 ${theme.borderHover} bg-gradient-to-br ${theme.subcatBg} transition-all duration-300 transform hover:scale-[1.01] shadow-lg hover:shadow-xl overflow-hidden cursor-pointer group`}
+              className={`rounded-xl border-0 ${theme.cardBg} transition-all duration-300 transform hover:scale-[1.02] shadow-lg hover:shadow-2xl overflow-hidden cursor-pointer group`}
             >
               <button
                 onClick={() => setFullScreenDept(dept)}
@@ -1382,49 +1406,49 @@ export default function MCQTreeView({
                 {/* Header */}
                 <div className="flex items-center justify-between w-full mb-3">
                   <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg bg-white/5 border border-white/10 ${theme.text}`}>
+                    <div className="p-2 rounded-lg bg-white/20 border border-white/30 text-white">
                       <Folder className="h-5 w-5" />
                     </div>
                     <div>
-                      <h3 className={`text-base font-bold text-white ${theme.textHover} transition-colors`}>{dept.name}</h3>
+                      <h3 className="text-base font-bold text-white transition-colors">{dept.name}</h3>
                       <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                        <p className="text-[10px] text-gray-400">{subcategoryCount} Subcategor{subcategoryCount !== 1 ? "ies" : "y"}</p>
+                        <p className="text-[10px] text-white/70">{subcategoryCount} Subcategor{subcategoryCount !== 1 ? "ies" : "y"}</p>
                         {trainerName && (
                           <div className="flex items-center gap-1.5">
-                            <span className="h-1 w-1 rounded-full bg-gray-600" />
-                            <div className={`px-1.5 py-0.5 rounded border ${theme.badge} text-[8px] font-black uppercase tracking-wider`}>
-                              <span className="opacity-60 mr-1">Trainer:</span>{trainerName}
+                            <span className="h-1 w-1 rounded-full bg-white/40" />
+                            <div className="px-1.5 py-0.5 rounded border bg-white/20 border-white/30 text-white text-[8px] font-black uppercase tracking-wider">
+                              <span className="opacity-70 mr-1">Trainer:</span>{trainerName}
                             </div>
                           </div>
                         )}
                       </div>
                     </div>
                   </div>
-                  <div className={`h-6 w-6 rounded-full flex items-center justify-center border border-white/10 ${theme.text} flex-shrink-0`}>
+                  <div className="h-6 w-6 rounded-full flex items-center justify-center border border-white/30 bg-white/20 text-white flex-shrink-0">
                     <ChevronRight className="h-3 w-3" />
                   </div>
                 </div>
 
                 {/* Top stats */}
                 <div className="grid grid-cols-2 gap-1.5 w-full mb-3">
-                  <div className="bg-black/25 rounded-lg p-2 text-left">
-                    <p className="text-gray-500 text-[8px] uppercase tracking-wider font-bold mb-0.5">SOP</p>
-                    <span className={`text-base font-black leading-none ${theme.text}`}>{sopWithMCQs}</span>
+                  <div className="bg-black/20 rounded-lg p-2 text-left">
+                    <p className="text-white/60 text-[8px] uppercase tracking-wider font-bold mb-0.5">SOP</p>
+                    <span className="text-base font-black leading-none text-white">{sopWithMCQs}</span>
                   </div>
-                  <div className="bg-black/25 rounded-lg p-2 text-left">
-                    <p className="text-gray-500 text-[8px] uppercase tracking-wider font-bold mb-0.5">Questions</p>
-                    <span className={`text-base font-black leading-none ${theme.text}`}>{totalQuestions}</span>
+                  <div className="bg-black/20 rounded-lg p-2 text-left">
+                    <p className="text-white/60 text-[8px] uppercase tracking-wider font-bold mb-0.5">Questions</p>
+                    <span className="text-base font-black leading-none text-white">{totalQuestions}</span>
                   </div>
                 </div>
 
                 {/* Coverage bar */}
                 <div className="w-full mb-3">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-[8px] font-bold text-gray-500 uppercase tracking-wider">MCQ Coverage</span>
-                    <span className={`text-[9px] font-black ${mcqCoverage === 100 ? 'text-emerald-400' : mcqCoverage >= 50 ? theme.text : 'text-amber-400'}`}>{mcqCoverage}%</span>
+                    <span className="text-[8px] font-bold text-white/70 uppercase tracking-wider">MCQ Coverage</span>
+                    <span className="text-[9px] font-black text-white">{mcqCoverage}%</span>
                   </div>
-                  <div className="w-full h-1.5 bg-black/30 rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full transition-all duration-700 ${mcqCoverage === 100 ? 'bg-emerald-500' : mcqCoverage >= 50 ? 'bg-blue-500' : 'bg-amber-500'}`} style={{ width: `${mcqCoverage}%` }} />
+                  <div className="w-full h-1.5 bg-black/25 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full transition-all duration-700 bg-white/80" style={{ width: `${mcqCoverage}%` }} />
                   </div>
                 </div>
 
@@ -1434,65 +1458,65 @@ export default function MCQTreeView({
                     role="button" tabIndex={0}
                     onClick={(e) => { e.stopPropagation(); setApprovalFilter('approved'); setFullScreenDept(dept); }}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); setApprovalFilter('approved'); setFullScreenDept(dept); } }}
-                    className="flex items-center gap-1.5 justify-between bg-emerald-500/10 border border-emerald-500/25 rounded-lg px-2.5 py-1.5 hover:bg-emerald-500/20 hover:border-emerald-500/50 transition-all cursor-pointer"
+                    className="flex items-center gap-1.5 justify-between bg-white/15 border border-white/25 rounded-lg px-2.5 py-1.5 hover:bg-white/25 transition-all cursor-pointer"
                   >
                     <div className="flex items-center gap-1">
-                      <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />
-                      <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wide">Approved</span>
+                      <CheckCircle2 className="h-3 w-3 text-white shrink-0" />
+                      <span className="text-[9px] font-bold text-white/80 uppercase tracking-wide">Approved</span>
                     </div>
-                    <span className="text-sm font-black text-emerald-400 leading-none">{approvedSOPs}</span>
+                    <span className="text-sm font-black text-white leading-none">{approvedSOPs}</span>
                   </div>
                   <div
                     role="button" tabIndex={0}
                     onClick={(e) => { e.stopPropagation(); setApprovalFilter('pending'); setFullScreenDept(dept); }}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); setApprovalFilter('pending'); setFullScreenDept(dept); } }}
-                    className="flex items-center gap-1.5 justify-between bg-amber-500/10 border border-amber-500/25 rounded-lg px-2.5 py-1.5 hover:bg-amber-500/20 hover:border-amber-500/50 transition-all cursor-pointer"
+                    className="flex items-center gap-1.5 justify-between bg-white/15 border border-white/25 rounded-lg px-2.5 py-1.5 hover:bg-white/25 transition-all cursor-pointer"
                   >
                     <div className="flex items-center gap-1">
-                      <AlertTriangle className="h-3 w-3 text-amber-400 shrink-0" />
-                      <span className="text-[9px] font-bold text-amber-600 uppercase tracking-wide">Pending</span>
+                      <AlertTriangle className="h-3 w-3 text-yellow-200 shrink-0" />
+                      <span className="text-[9px] font-bold text-white/80 uppercase tracking-wide">Pending</span>
                     </div>
-                    <span className="text-sm font-black text-amber-400 leading-none">{pendingSOPs}</span>
+                    <span className="text-sm font-black text-yellow-200 leading-none">{pendingSOPs}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 justify-between bg-rose-500/10 border border-rose-500/25 rounded-lg px-2.5 py-1.5">
+                  <div className="flex items-center gap-1.5 justify-between bg-white/15 border border-white/25 rounded-lg px-2.5 py-1.5">
                     <div className="flex items-center gap-1">
-                      <Copy className="h-3 w-3 text-rose-400 shrink-0" />
-                      <span className="text-[9px] font-bold text-rose-600 uppercase tracking-wide">Similar</span>
+                      <Copy className="h-3 w-3 text-red-200 shrink-0" />
+                      <span className="text-[9px] font-bold text-white/80 uppercase tracking-wide">Similar</span>
                     </div>
-                    <span className={`text-sm font-black leading-none ${similarSOPs > 0 ? 'text-rose-400' : 'text-rose-700'}`}>{similarSOPs}</span>
+                    <span className={`text-sm font-black leading-none ${similarSOPs > 0 ? 'text-red-200' : 'text-white/40'}`}>{similarSOPs}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 justify-between bg-slate-500/10 border border-slate-500/25 rounded-lg px-2.5 py-1.5">
+                  <div className="flex items-center gap-1.5 justify-between bg-white/15 border border-white/25 rounded-lg px-2.5 py-1.5">
                     <div className="flex items-center gap-1">
-                      <FileText className="h-3 w-3 text-slate-400 shrink-0" />
-                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Remaining</span>
+                      <FileText className="h-3 w-3 text-white/60 shrink-0" />
+                      <span className="text-[9px] font-bold text-white/80 uppercase tracking-wide">Remaining</span>
                     </div>
-                    <span className={`text-sm font-black leading-none ${sopWithoutMCQs > 0 ? 'text-slate-300' : 'text-slate-600'}`}>{sopWithoutMCQs}</span>
+                    <span className={`text-sm font-black leading-none ${sopWithoutMCQs > 0 ? 'text-white' : 'text-white/30'}`}>{sopWithoutMCQs}</span>
                   </div>
                 </div>
 
                 {/* Question breakdown */}
                 {((dept.checkedCount || 0) > 0 || (dept.similarCount || 0) > 0) && (
-                  <div className="flex items-center gap-1.5 w-full bg-black/15 rounded-lg px-2 py-1.5 overflow-hidden flex-wrap">
-                    <span className="text-[8px] font-bold text-gray-600 uppercase tracking-wider mr-0.5">Qs:</span>
+                  <div className="flex items-center gap-1.5 w-full bg-black/20 rounded-lg px-2 py-1.5 overflow-hidden flex-wrap">
+                    <span className="text-[8px] font-bold text-white/60 uppercase tracking-wider mr-0.5">Qs:</span>
                     {(dept.checkedCount || 0) > 0 && (
-                      <div className="flex items-center gap-1 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                        <CheckCircle2 className="h-2.5 w-2.5 text-emerald-400" />
-                        <span className="text-[9px] font-bold text-emerald-400 leading-none">{dept.checkedCount}</span>
-                        <span className="text-[8px] text-emerald-700 leading-none">chkd</span>
+                      <div className="flex items-center gap-1 bg-white/15 px-1.5 py-0.5 rounded border border-white/25">
+                        <CheckCircle2 className="h-2.5 w-2.5 text-green-200 shrink-0" />
+                        <span className="text-[9px] font-bold text-green-200 leading-none">{dept.checkedCount}</span>
+                        <span className="text-[8px] text-white/60 leading-none">chkd</span>
                       </div>
                     )}
                     {(dept.reviewedCount || 0) > 0 && (
-                      <div className="flex items-center gap-1 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20">
-                        <Eye className="h-2.5 w-2.5 text-blue-400" />
-                        <span className="text-[9px] font-bold text-blue-400 leading-none">{dept.reviewedCount}</span>
-                        <span className="text-[8px] text-blue-700 leading-none">rvwd</span>
+                      <div className="flex items-center gap-1 bg-white/15 px-1.5 py-0.5 rounded border border-white/25">
+                        <Eye className="h-2.5 w-2.5 text-blue-200 shrink-0" />
+                        <span className="text-[9px] font-bold text-blue-200 leading-none">{dept.reviewedCount}</span>
+                        <span className="text-[8px] text-white/60 leading-none">rvwd</span>
                       </div>
                     )}
                     {(dept.similarCount || 0) > 0 && (
-                      <div className="flex items-center gap-1 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20 animate-pulse">
-                        <AlertTriangle className="h-2.5 w-2.5 text-rose-400" />
-                        <span className="text-[9px] font-bold text-rose-400 leading-none">{dept.similarCount}</span>
-                        <span className="text-[8px] text-rose-700 leading-none">sim</span>
+                      <div className="flex items-center gap-1 bg-white/15 px-1.5 py-0.5 rounded border border-white/25 animate-pulse">
+                        <AlertTriangle className="h-2.5 w-2.5 text-red-200 shrink-0" />
+                        <span className="text-[9px] font-bold text-red-200 leading-none">{dept.similarCount}</span>
+                        <span className="text-[8px] text-white/60 leading-none">sim</span>
                       </div>
                     )}
                   </div>
