@@ -477,7 +477,7 @@ export async function runPlatformUpdateStage(sopId: string) {
 async function createDepartmentNotification(department: string, sopIdentifier: string, sopName: string) {
   try {
     const User = (await import('@/models/User')).default;
-    const Notification = (await import('@/models/Notification')).default;
+    const { Notification } = await import('@/models/Notification');
 
     const managers = await User.find({
       department,
