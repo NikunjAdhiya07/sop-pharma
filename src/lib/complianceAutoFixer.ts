@@ -53,13 +53,14 @@ export async function autoFixCompliance(
     clauseText: string;
     sopSectionAffected: string;
   }> },
-  bank: { mcqs: IMCQ[]; sopId: unknown; sopName: string; sopIdentifier: string; department: string; language?: string },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  bank: { mcqs: any[]; sopId: unknown; sopName: string; sopIdentifier: string; department: string; language?: string },
   sop: { content: string; name: string; identifier: string }
 ): Promise<AutoFixResult> {
   let fixedCount = 0;
   let regeneratedCount = 0;
   const unresolvedFindings: AutoFixResult['unresolvedFindings'] = [];
-  const mcqs = bank.mcqs as IMCQ[];
+  const mcqs: IMCQ[] = bank.mcqs as IMCQ[];
 
   // ── Category A: Format fixes (no AI) ─────────────────────────────────────
   for (const mcq of mcqs) {
@@ -137,8 +138,8 @@ export async function autoFixCompliance(
 
         if (result.mcqs && result.mcqs.length > 0) {
           const newMcqs = result.mcqs.filter(
-            (m: IMCQ) => m.difficulty === imbalancedDifficulty
-          );
+            (m: { difficulty: string }) => m.difficulty === imbalancedDifficulty
+          ) as unknown as IMCQ[];
           mcqs.push(...newMcqs);
           regeneratedCount += newMcqs.length;
         }
@@ -159,7 +160,7 @@ export async function autoFixCompliance(
   if (missingClauses.length > 0) {
     try {
       const focusText = missingClauses
-        .slice(0, 5) // limit to top 5 to avoid token overload
+        .slice(0, 5)
         .map(f => `${f.clauseTitle}: ${f.clauseText}`)
         .join('\n\n');
 
@@ -176,7 +177,7 @@ export async function autoFixCompliance(
       });
 
       if (result.mcqs && result.mcqs.length > 0) {
-        mcqs.push(...result.mcqs);
+        mcqs.push(...(result.mcqs as unknown as IMCQ[]));
         regeneratedCount += result.mcqs.length;
       }
     } catch (err) {
