@@ -53,6 +53,7 @@ import {
   Sparkles,
   ScanSearch,
 } from "lucide-react";
+import Link from "next/link";
 import MCQTreeView from "@/components/MCQTreeView";
 import TrainerUploadModal from "@/components/TrainerUploadModal";
 import TrainingMatrixUploadModal from "@/components/TrainingMatrixUploadModal";
@@ -328,6 +329,9 @@ function MCQBankContent() {
   // Track whether component has fully mounted (skip clearing session on first render)
   const hasMountedRef = useRef(false);
   useEffect(() => { hasMountedRef.current = true; }, []);
+
+  // Prefetch dashboard route in background so Home navigation is instant
+  useEffect(() => { router.prefetch('/dashboard'); }, [router]);
 
   // Persist active department to session so refresh restores it even if URL loses ?dept=
   useEffect(() => {
@@ -2152,13 +2156,14 @@ function MCQBankContent() {
                 <ArrowLeft className="h-3.5 w-3.5" />
                 Back
               </button>
-              <button
-                onClick={() => router.push('/dashboard')}
+              <Link
+                href="/dashboard"
+                prefetch={true}
                 className="flex items-center gap-1 px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-md transition-all duration-200 shadow-sm whitespace-nowrap"
               >
                 <Home className="h-3.5 w-3.5" />
                 Home
-              </button>
+              </Link>
               {/* Dev-mode toggle: unlock/lock copy+inspect protection */}
               {devModeUnlocked ? (
                 <button

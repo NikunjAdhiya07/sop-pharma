@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
-import SOP from '@/models/SOP';
+import SOPLibrary from '@/models/SOPLibrary';
+import {
+  normalizeSopIdentifierKey,
+  sopFamilyKeyFromIdentifier,
+  parseRevisionFromSopIdentifier,
+} from '@/lib/sopIdentifierNormalize';
 
-/**
- * API Endpoint: List SOPs for Compliance Analysis
- * 
- * Returns SOPs available for compliance checking
- */
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,53 +16,84 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const department = searchParams.get('department');
     const search = searchParams.get('search');
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '50');
 
-    // Build query
-    const query: any = {};
-    
+    const matchStage: any = {
+      sopIdentifier: { $regex: /^[A-Z]{2,6}\d{1,4}-\d{1,3}$/i },
+      sopName: { $not: /annexure/i },
+    };
+
     if (department && department !== 'all') {
-      query.department = department;
+      matchStage.department = department;
     }
-    
+
     if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { identifier: { $regex: search, $options: 'i' } },
+      matchStage.$or = [
+        { sopName: { $regex: search, $options: 'i' } },
+        { sopIdentifier: { $regex: search, $options: 'i' } },
       ];
     }
 
-    // Get total count
-    const total = await SOP.countDocuments(query);
-
-    // Fetch SOPs with pagination
-    const sops = await SOP.find(query)
-      .select('_id identifier name department version status uploadedAt location')
-      .sort({ department: 1, identifier: 1 })
-      .skip((page - 1) * limit)
-      .limit(limit)
+    // Fetch all matching English rows (one per identifier, language already unique-indexed)
+    const rows = await SOPLibrary.find({ ...matchStage, language: { $in: ['English', null, undefined] } })
+      .select('_id sopId sopIdentifier sopName department language location updatedAt')
       .lean();
 
-    // Get unique departments for filter dropdown
-    const departments = await SOP.distinct('department');
+    // Also grab any rows without a language field (legacy)
+    const allRows = rows.length > 0 ? rows : await SOPLibrary.find(matchStage)
+      .select('_id sopId sopIdentifier sopName department language location updatedAt')
+      .lean();
+
+    // Group by SOP family key (e.g. MAGE01-06, MAGE01-07, MAGE01-08 → family MAGE:1)
+    // Keep only the highest revision per family
+    const familyMap = new Map<string, any>();
+
+    for (const row of allRows) {
+      const identifier = String(row.sopIdentifier || '').trim().toUpperCase();
+      const familyKey = sopFamilyKeyFromIdentifier(identifier);
+      if (!familyKey) continue;
+
+      const rev = parseRevisionFromSopIdentifier(identifier) ?? -1;
+      const existing = familyMap.get(familyKey);
+
+      if (!existing || rev > existing.rev) {
+        familyMap.set(familyKey, { row, rev });
+      }
+    }
+
+    const sops = Array.from(familyMap.values())
+      .map(({ row }) => ({
+        _id: row.sopId,   // SOP._id — used by analyze API (SOP.findById)
+        identifier: normalizeSopIdentifierKey(String(row.sopIdentifier || '').trim().toUpperCase()),
+        name: row.sopName,
+        department: row.department,
+        location: row.location,
+      }))
+      .sort((a, b) => {
+        const deptCmp = (a.department || '').localeCompare(b.department || '');
+        if (deptCmp !== 0) return deptCmp;
+        return a.identifier.localeCompare(b.identifier);
+      });
+
+    const departments: string[] = Array.from(
+      new Set(sops.map((s) => s.department).filter(Boolean))
+    ).sort() as string[];
 
     return NextResponse.json({
       success: true,
       sops,
-      departments: departments.filter(Boolean).sort(),
+      departments,
       pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
+        page: 1,
+        limit: sops.length,
+        total: sops.length,
+        totalPages: 1,
       },
     });
   } catch (error) {
     console.error('Error fetching SOPs for compliance:', error);
     return NextResponse.json(
-      { 
-        success: false, 
+      {
+        success: false,
         error: 'Failed to fetch SOPs',
         details: (error as Error).message,
       },

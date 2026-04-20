@@ -194,8 +194,51 @@ export default function DashboardPageClient() {
   const sopRegistryRef = useRef<HTMLDivElement | null>(null);
 
   // ── Load persisted compliance results on mount (shuttle pre-load) ────────────
+  const COMPLIANCE_CACHE_KEY = 'dashboard_compliance_cache';
+  const COMPLIANCE_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
   useEffect(() => {
     let cancelled = false;
+
+    // Try sessionStorage first to avoid re-fetching on every navigation
+    try {
+      const raw = sessionStorage.getItem(COMPLIANCE_CACHE_KEY);
+      if (raw) {
+        const { data: cachedData, cachedAt } = JSON.parse(raw);
+        if (Date.now() - cachedAt < COMPLIANCE_CACHE_TTL && cachedData) {
+          setComplianceCache(cachedData);
+          // Still refresh in background after 1s delay so UI shows instantly
+          setTimeout(() => {
+            if (cancelled) return;
+            fetch('/api/dashboard/sop-guideline-review?listAll=true', { cache: 'no-store' })
+              .then(res => res.json())
+              .catch(() => ({ success: false }))
+              .then((json) => {
+                if (cancelled || !json.success || !Array.isArray(json.results)) return;
+                const cache: Record<string, ComplianceResult> = {};
+                for (const r of json.results) {
+                  cache[r.sopNo] = {
+                    sopNo: r.sopNo, sopName: r.sopName || '',
+                    findings: Array.isArray(r.findings) ? r.findings : [],
+                    overallScore: r.overallScore ?? 0,
+                    clausesAnalyzed: r.clausesAnalyzed ?? 0,
+                    guidelineDocumentsUsed: r.guidelineDocumentsUsed ?? 0,
+                    runAt: r.runAt,
+                    ...(r.source ? { source: r.source } : {}),
+                  } as any;
+                }
+                if (!cancelled) {
+                  setComplianceCache(cache);
+                  try { sessionStorage.setItem(COMPLIANCE_CACHE_KEY, JSON.stringify({ data: cache, cachedAt: Date.now() })); } catch { /* ignore */ }
+                }
+              });
+          }, 1000);
+          return () => { cancelled = true; };
+        }
+      }
+    } catch { /* ignore */ }
+
+    // No cache — fetch immediately
     fetch('/api/dashboard/sop-guideline-review?listAll=true', { cache: 'no-store' })
       .then(res => res.json())
       .catch(() => ({ success: false }))
@@ -211,11 +254,11 @@ export default function DashboardPageClient() {
             clausesAnalyzed: r.clausesAnalyzed ?? 0,
             guidelineDocumentsUsed: r.guidelineDocumentsUsed ?? 0,
             runAt: r.runAt,
-            // Pass through the source so the full viewer can show the badge
             ...(r.source ? { source: r.source } : {}),
           } as any;
         }
         setComplianceCache(cache);
+        try { sessionStorage.setItem(COMPLIANCE_CACHE_KEY, JSON.stringify({ data: cache, cachedAt: Date.now() })); } catch { /* ignore */ }
       });
     return () => { cancelled = true; };
   }, []);

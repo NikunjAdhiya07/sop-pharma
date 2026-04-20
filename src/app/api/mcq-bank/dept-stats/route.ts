@@ -110,8 +110,8 @@ export async function GET() {
       }
     }
 
-    // ── 4. Merge English + Gujarati banks per sopId ─────────────────────────
-    // Key = sopId (or bank._id if no sopId). Each SOP counts as 1 logical unit.
+    // ── 4. Merge English + Gujarati banks per IDENTIFIER ────────────────────
+    // Key = identifier (or bank._id if no identifier). Each logical SOP counts as 1 unit.
     const sopMerged = new Map<string, {
       identifier: string;
       dept: string;
@@ -124,13 +124,14 @@ export async function GET() {
     }>();
 
     for (const bank of bankAgg) {
-      const key = bank.sopId?.toString() ?? bank._id?.toString();
-      if (!key) continue;
+      const fallbackKey = bank.sopId?.toString() ?? bank._id?.toString();
+      if (!fallbackKey) continue;
 
-      // Resolve identifier: prefer bank's own field, fallback to SOP map
-      const identifier = bank.sopIdentifier || sopIdentifierMap.get(key) || '';
+      const identifier = (bank.sopIdentifier || sopIdentifierMap.get(fallbackKey) || '').trim().toUpperCase();
+      const key = identifier || fallbackKey; // group by identifier if possible
+      
       const dept = deptFromIdentifier(identifier, bank.department || 'Other');
-      const lang = sopLanguageMap.get(key) ?? 'English';
+      const lang = sopLanguageMap.get(fallbackKey) ?? 'English';
 
       if (!sopMerged.has(key)) {
         sopMerged.set(key, { identifier, dept, totalQuestions: 0, checkedCount: 0, reviewedCount: 0, similarCount: 0, hasEng: false, hasGuj: false });
@@ -155,8 +156,11 @@ export async function GET() {
       totalSOPs: number;       // all active SOPs in SOP collection for this dept
       sopWithMCQs: number;     // SOPs that have at least one MCQ bank
       sopWithoutMCQs: number;  // SOPs with no MCQ bank yet (remaining)
+      sopCompletedGen: number; // SOPs with >= 100 MCQs
+      sopUnder100MCQs: number; // SOPs with > 0 but < 100 MCQs
       approvedSOPs: number;    // all questions checked
-      pendingSOPs: number;     // has MCQs but not fully checked and no similar issues
+      partialSOPs: number;     // some questions checked but not all
+      pendingSOPs: number;     // has MCQs but zero questions checked and no similar issues
       similarSOPs: number;     // has at least one similar question flagged
       totalQuestions: number;
       checkedCount: number;
@@ -169,7 +173,8 @@ export async function GET() {
     const statsMap = new Map<string, DeptStats>();
     const initDept = (dept: string): DeptStats => ({
       department: dept, totalSOPs: 0, sopWithMCQs: 0, sopWithoutMCQs: 0,
-      approvedSOPs: 0, pendingSOPs: 0, similarSOPs: 0,
+      sopCompletedGen: 0, sopUnder100MCQs: 0,
+      approvedSOPs: 0, partialSOPs: 0, pendingSOPs: 0, similarSOPs: 0,
       totalQuestions: 0, checkedCount: 0, reviewedCount: 0, similarCount: 0,
       sopEng: 0, sopGuj: 0,
     });
@@ -203,14 +208,23 @@ export async function GET() {
       if (entry.hasEng) ds.sopEng += 1;
       if (entry.hasGuj) ds.sopGuj += 1;
 
+      if (entry.totalQuestions >= 100) {
+        ds.sopCompletedGen += 1;
+      } else if (entry.totalQuestions > 0 && entry.totalQuestions < 100) {
+        ds.sopUnder100MCQs += 1;
+      }
+
       // Classify SOP status:
       // approved  = has questions AND all are checked
-      // similar   = has at least one similar question (needs resolution)
-      // pending   = has questions but not fully checked and no similar issues
+      // partial   = some questions checked but not all (checkedCount > 0 and < totalQuestions)
+      // similar   = has at least one similar question flagged
+      // pending   = has questions but zero checked and no similar issues
       if (entry.totalQuestions > 0 && entry.checkedCount >= entry.totalQuestions) {
         ds.approvedSOPs += 1;
       } else if (entry.similarCount > 0) {
         ds.similarSOPs += 1;
+      } else if (entry.totalQuestions > 0 && entry.checkedCount > 0) {
+        ds.partialSOPs += 1;
       } else if (entry.totalQuestions > 0) {
         ds.pendingSOPs += 1;
       }
@@ -237,7 +251,10 @@ export async function GET() {
         acc.totalSOPs      += ds.totalSOPs;
         acc.sopWithMCQs    += ds.sopWithMCQs;
         acc.sopWithoutMCQs += ds.sopWithoutMCQs;
+        acc.sopCompletedGen+= ds.sopCompletedGen;
+        acc.sopUnder100MCQs+= ds.sopUnder100MCQs;
         acc.approvedSOPs   += ds.approvedSOPs;
+        acc.partialSOPs    += ds.partialSOPs;
         acc.pendingSOPs    += ds.pendingSOPs;
         acc.similarSOPs    += ds.similarSOPs;
         acc.totalQuestions += ds.totalQuestions;
@@ -250,7 +267,8 @@ export async function GET() {
       },
       {
         totalSOPs: 0, sopWithMCQs: 0, sopWithoutMCQs: 0,
-        approvedSOPs: 0, pendingSOPs: 0, similarSOPs: 0,
+        sopCompletedGen: 0, sopUnder100MCQs: 0,
+        approvedSOPs: 0, partialSOPs: 0, pendingSOPs: 0, similarSOPs: 0,
         totalQuestions: 0, checkedCount: 0, reviewedCount: 0, similarCount: 0,
         sopEng: 0, sopGuj: 0,
       },

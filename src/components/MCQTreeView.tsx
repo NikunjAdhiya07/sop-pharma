@@ -330,6 +330,7 @@ export default function MCQTreeView({
     sopWithMCQs: number;
     sopWithoutMCQs: number;
     approvedSOPs: number;
+    partialSOPs: number;
     pendingSOPs: number;
     similarSOPs: number;
     totalQuestions: number;
@@ -338,6 +339,8 @@ export default function MCQTreeView({
     similarCount: number;
     sopEng: number;
     sopGuj: number;
+    sopCompletedGen: number;
+    sopUnder100MCQs: number;
   }>>({});
   const [deptStatsLoading, setDeptStatsLoading] = useState(true);
 
@@ -346,7 +349,7 @@ export default function MCQTreeView({
   const [generateMoreResults, setGenerateMoreResults] = useState<Record<string, { success: boolean; message: string }>>({});
 
   // Approval filter for department modal (set by clicking capsules on dept cards)
-  const [approvalFilter, setApprovalFilter] = useState<'all' | 'approved' | 'pending'>('all');
+  const [approvalFilter, setApprovalFilter] = useState<'all' | 'approved' | 'partial' | 'pending' | 'similar' | 'sops' | 'checked' | 'reviewed' | 'completed' | 'target' | 'zero'>('all');
 
   // Delete SOP state
   const [deleteModal, setDeleteModal] = useState<{ sopId: string; sopCode: string; sopName: string } | null>(null);
@@ -798,7 +801,7 @@ export default function MCQTreeView({
     setDeptSearchTerm("");
     setDeptQuestions([]);
     setSimilarGroups([]);
-    setApprovalFilter('all');
+    // Do NOT reset approvalFilter here, because onRowClick sets a specific filter BEFORE opening the modal!
   }, [fullScreenDept?.name]);
 
   // Efficient search filter function
@@ -1180,12 +1183,13 @@ export default function MCQTreeView({
 
         // Overall totals from API only
         const overall = (() => {
-          const base = { totalSOPs:0, sopWithMCQs:0, sopWithoutMCQs:0, approvedSOPs:0, pendingSOPs:0, similarSOPs:0, totalQuestions:0, checkedCount:0, reviewedCount:0, similarCount:0, sopEng:0, sopGuj:0 };
+          const base = { totalSOPs:0, sopWithMCQs:0, sopWithoutMCQs:0, approvedSOPs:0, partialSOPs:0, pendingSOPs:0, similarSOPs:0, totalQuestions:0, checkedCount:0, reviewedCount:0, similarCount:0, sopEng:0, sopGuj:0, sopCompletedGen:0, sopUnder100MCQs:0 };
           for (const ds of Object.values(deptStats)) {
             base.totalSOPs      += ds.totalSOPs      ?? 0;
             base.sopWithMCQs    += ds.sopWithMCQs    ?? 0;
             base.sopWithoutMCQs += ds.sopWithoutMCQs ?? 0;
             base.approvedSOPs   += ds.approvedSOPs   ?? 0;
+            base.partialSOPs    += ds.partialSOPs    ?? 0;
             base.pendingSOPs    += ds.pendingSOPs    ?? 0;
             base.similarSOPs    += ds.similarSOPs    ?? 0;
             base.totalQuestions += ds.totalQuestions ?? 0;
@@ -1194,18 +1198,24 @@ export default function MCQTreeView({
             base.similarCount   += ds.similarCount   ?? 0;
             base.sopEng         += (ds as any).sopEng ?? 0;
             base.sopGuj         += (ds as any).sopGuj ?? 0;
+            base.sopCompletedGen += ds.sopCompletedGen ?? 0;
+            base.sopUnder100MCQs += ds.sopUnder100MCQs ?? 0;
           }
           return base;
         })();
         const overallCoverage = overall.totalSOPs > 0 ? Math.round((overall.sopWithMCQs / overall.totalSOPs) * 100) : 0;
 
         // Row: label left, value right — white bg style
-        const R = ({ label, value, vc = 'text-gray-900', dim = false }: {
-          label: string; value: number; vc?: string; dim?: boolean;
+        const R = ({ label, value, vc = 'text-gray-900', dim = false, onClick }: {
+          label: string; value: number; vc?: string; dim?: boolean; onClick?: () => void;
         }) => (
-          <div className="flex items-center justify-between px-3 py-[4px] border-b border-gray-100 last:border-0">
+          <div
+            className={`flex items-center justify-between px-3 py-[4px] border-b border-gray-100 last:border-0 ${onClick ? 'cursor-pointer hover:bg-gray-50 active:bg-gray-100 transition-colors' : ''}`}
+            onClick={onClick}
+            title={onClick ? `Filter by ${label}` : undefined}
+          >
             <span className="text-[11px] text-gray-500 font-medium leading-none">{label}</span>
-            <span className={`text-[13px] font-black tabular-nums leading-none ${dim || value === 0 ? 'text-gray-300' : vc}`}>{value}</span>
+            <span className={`text-[13px] font-black tabular-nums leading-none ${dim || value === 0 ? 'text-gray-300' : vc} ${onClick ? 'underline decoration-dotted underline-offset-2' : ''}`}>{value}</span>
           </div>
         );
 
@@ -1230,15 +1240,17 @@ export default function MCQTreeView({
 
         const Card = ({
           title, subtitle, accentClass, borderClass, headerBg, icon,
-          totalSOPs, sopWithMCQs, approvedSOPs, pendingSOPs, similarSOPs, sopWithoutMCQs,
+          totalSOPs, sopWithMCQs, approvedSOPs, partialSOPs, pendingSOPs, similarSOPs, sopWithoutMCQs,
           totalQuestions, checkedCount, reviewedCount, similarCount,
-          coverage, themeText, sopEng, sopGuj, onOpen,
+          coverage, themeText, sopEng, sopGuj, onOpen, onRowClick,
         }: {
           title: string; subtitle: string; accentClass: string; borderClass: string; headerBg: string;
           icon: React.ReactNode; totalSOPs: number; sopWithMCQs: number; approvedSOPs: number;
-          pendingSOPs: number; similarSOPs: number; sopWithoutMCQs: number;
+          partialSOPs: number; pendingSOPs: number; similarSOPs: number; sopWithoutMCQs: number;
           totalQuestions: number; checkedCount: number; reviewedCount: number; similarCount: number;
-          coverage: number; themeText: string; sopEng: number; sopGuj: number; onOpen?: () => void;
+          coverage: number; themeText: string; sopEng: number; sopGuj: number;
+          onOpen?: () => void;
+          onRowClick?: (filter: 'sops' | 'approved' | 'partial' | 'pending' | 'similar' | 'checked' | 'reviewed') => void;
         }) => (
           <div className={`flex flex-col rounded-xl border ${borderClass} bg-white overflow-hidden w-[170px] shrink-0`}>
             {/* Header */}
@@ -1251,20 +1263,21 @@ export default function MCQTreeView({
             </div>
             {/* SOP counts */}
             <div className="py-1">
-              <R label="SOPs"         value={sopWithMCQs}  vc="text-gray-900" />
+              <R label="SOPs"         value={sopWithMCQs}  vc="text-gray-900"     onClick={onRowClick ? () => onRowClick('sops')     : undefined} />
               <R label="SOP Eng"      value={sopEng}       vc="text-blue-600" />
               <R label="SOP Guj"      value={sopGuj}       vc="text-orange-500" />
-              <R label="Approved"     value={approvedSOPs} vc="text-emerald-600" />
-              <R label="Pending"      value={pendingSOPs}  vc="text-red-600" />
-              <R label="Similar"      value={similarSOPs}  vc="text-gray-900" />
+              <R label="Approved"     value={approvedSOPs} vc="text-emerald-600"  onClick={onRowClick ? () => onRowClick('approved')  : undefined} />
+              <R label="Partial"      value={partialSOPs}  vc="text-yellow-600"   onClick={onRowClick ? () => onRowClick('partial')   : undefined} />
+              <R label="Pending"      value={pendingSOPs}  vc="text-red-600"      onClick={onRowClick ? () => onRowClick('pending')   : undefined} />
+              <R label="Similar"      value={similarSOPs}  vc="text-gray-900"     onClick={onRowClick ? () => onRowClick('similar')   : undefined} />
             </div>
             {/* Question counts */}
             <Divider label="Questions" />
             <div className="py-1">
               <R label="Total"    value={totalQuestions} vc="text-gray-900" />
-              <R label="Checked"  value={checkedCount}   vc="text-gray-900" />
-              <R label="Reviewed" value={reviewedCount}  vc="text-gray-900" />
-              <R label="Similar"  value={similarCount}   vc="text-gray-900" />
+              <R label="Checked"  value={checkedCount}   vc="text-gray-900" onClick={onRowClick ? () => onRowClick('checked')  : undefined} />
+              <R label="Reviewed" value={reviewedCount}  vc="text-gray-900" onClick={onRowClick ? () => onRowClick('reviewed') : undefined} />
+              <R label="Similar"  value={similarCount}   vc="text-gray-900" onClick={onRowClick ? () => onRowClick('similar')  : undefined} />
             </div>
             {/* Coverage + open button */}
             <CoverageBar pct={coverage} />
@@ -1303,6 +1316,7 @@ export default function MCQTreeView({
                   totalSOPs={overall.totalSOPs}
                   sopWithMCQs={overall.sopWithMCQs}
                   approvedSOPs={overall.approvedSOPs}
+                  partialSOPs={overall.partialSOPs}
                   pendingSOPs={overall.pendingSOPs}
                   similarSOPs={overall.similarSOPs}
                   sopWithoutMCQs={overall.sopWithoutMCQs}
@@ -1315,6 +1329,53 @@ export default function MCQTreeView({
                   sopEng={overall.sopEng}
                   sopGuj={overall.sopGuj}
                 />
+
+                {/* Generation Status Card */}
+                {(() => {
+                  const handleGenerationClick = (filter: 'completed' | 'target' | 'zero') => {
+                    const allSubcats = tree.flatMap(dept =>
+                      dept.subcategories.map(sub => ({
+                        ...sub,
+                        name: `[${dept.name}] ${sub.name}`,
+                      }))
+                    );
+
+                    const fakeDept: typeof tree[0] = {
+                      type: "department",
+                      name: "All Departments",
+                      icon: "🌐",
+                      totalSOPs: overall.totalSOPs,
+                      totalQuestions: overall.totalQuestions,
+                      checkedCount: overall.checkedCount,
+                      reviewedCount: overall.reviewedCount,
+                      similarCount: overall.similarCount,
+                      subcategories: allSubcats,
+                    };
+                    
+                    setApprovalFilter(filter);
+                    setSOPViewMode('table');
+                    setFullScreenDept(fakeDept);
+                  };
+
+                  return (
+                    <div className="flex flex-col rounded-xl border border-blue-200 bg-white overflow-hidden w-[170px] shrink-0">
+                      <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border-b border-blue-200">
+                        <span className="text-blue-500 shrink-0"><BookOpen className="h-3.5 w-3.5" /></span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] font-bold tracking-wide truncate leading-tight text-gray-800">Generation</p>
+                          <p className="text-[8px] text-gray-500 font-medium leading-tight">All Departments</p>
+                        </div>
+                      </div>
+                      <div className="py-1 flex-1">
+                        <R label="Total SOPs" value={overall.sopWithMCQs} vc="text-blue-600" />
+                        <R label="Completed (≥100)" value={overall.sopCompletedGen} vc="text-emerald-600" onClick={() => handleGenerationClick('completed')} />
+                        <R label="Target (<100)" value={overall.sopUnder100MCQs} vc="text-amber-600" onClick={() => handleGenerationClick('target')} />
+                        <R label="Remaining (0)" value={Math.max(0, overall.sopWithMCQs - overall.sopCompletedGen - overall.sopUnder100MCQs)} vc="text-red-600" onClick={() => handleGenerationClick('zero')} />
+                      </div>
+                      <CoverageBar pct={overall.sopWithMCQs > 0 ? Math.round((overall.sopCompletedGen / overall.sopWithMCQs) * 100) : 0} />
+                    </div>
+                  );
+                })()}
 
                 {/* Per-dept cards */}
                 {orderedDepts.map((dept) => {
@@ -1340,6 +1401,7 @@ export default function MCQTreeView({
                       totalSOPs={ds?.totalSOPs      ?? 0}
                       sopWithMCQs={ds?.sopWithMCQs   ?? 0}
                       approvedSOPs={ds?.approvedSOPs  ?? 0}
+                      partialSOPs={ds?.partialSOPs   ?? 0}
                       pendingSOPs={ds?.pendingSOPs    ?? 0}
                       similarSOPs={ds?.similarSOPs    ?? 0}
                       sopWithoutMCQs={ds?.sopWithoutMCQs ?? 0}
@@ -1351,7 +1413,11 @@ export default function MCQTreeView({
                       themeText={theme.text}
                       sopEng={ds?.sopEng ?? 0}
                       sopGuj={ds?.sopGuj ?? 0}
-                      onOpen={() => setFullScreenDept(dept)}
+                      onOpen={() => {
+                        setApprovalFilter('all');
+                        setFullScreenDept(dept);
+                      }}
+                      onRowClick={(filter) => { setApprovalFilter(filter); setSOPViewMode('table'); setFullScreenDept(dept); }}
                     />
                   );
                 })}
@@ -1400,7 +1466,10 @@ export default function MCQTreeView({
               className={`rounded-xl border-0 ${theme.cardBg} transition-all duration-300 transform hover:scale-[1.02] shadow-lg hover:shadow-2xl overflow-hidden cursor-pointer group`}
             >
               <button
-                onClick={() => setFullScreenDept(dept)}
+                onClick={() => {
+                  setApprovalFilter('all');
+                  setFullScreenDept(dept);
+                }}
                 className="w-full px-4 pt-4 pb-3 flex flex-col gap-0 bg-transparent transition-all text-left"
               >
                 {/* Header */}
@@ -1642,7 +1711,10 @@ export default function MCQTreeView({
               {/* Backdrop Click Handler */}
               <div
                 className="absolute inset-0 cursor-pointer"
-                onClick={() => setFullScreenDept(null)}
+                onClick={() => {
+                  setApprovalFilter('all');
+                  setFullScreenDept(null);
+                }}
               />
 
               <div
@@ -1891,7 +1963,10 @@ export default function MCQTreeView({
                         </button>
 
                         <button
-                          onClick={() => setFullScreenDept(null)}
+                          onClick={() => {
+                            setApprovalFilter('all');
+                            setFullScreenDept(null);
+                          }}
                           className="p-2.5 bg-white/5 hover:bg-rose-500/20 border border-white/10 hover:border-rose-500/40 rounded-lg transition-all group shadow-md"
                         >
                           <X className="h-4 w-4 text-white/70 group-hover:text-white group-hover:rotate-90 transition-all duration-300" />
@@ -1942,26 +2017,35 @@ export default function MCQTreeView({
                       )}
                     </div>
 
-                    {/* Active Approval Filter Badge */}
-                    {approvalFilter !== 'all' && (
-                      <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-widest shrink-0 ${
-                        approvalFilter === 'approved'
-                          ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
-                          : 'bg-rose-500/15 border-rose-500/40 text-rose-300'
-                      }`}>
-                        {approvalFilter === 'approved'
-                          ? <CheckCircle2 className="h-3 w-3 shrink-0" />
-                          : <AlertTriangle className="h-3 w-3 shrink-0" />}
-                        <span>{approvalFilter === 'approved' ? 'Approved' : 'Pending'} Filter</span>
-                        <button
-                          onClick={() => setApprovalFilter('all')}
-                          className="ml-1 opacity-70 hover:opacity-100 transition-opacity"
-                          title="Clear filter"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
-                    )}
+                    {/* Active Filter Badge */}
+                    {approvalFilter !== 'all' && (() => {
+                      const filterMeta: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+                        approved: { label: 'Approved', color: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300', icon: <CheckCircle2 className="h-3 w-3 shrink-0" /> },
+                        partial:  { label: 'Partial',  color: 'bg-yellow-500/15 border-yellow-500/40 text-yellow-300', icon: <AlertCircle className="h-3 w-3 shrink-0" /> },
+                        pending:  { label: 'Pending',  color: 'bg-rose-500/15 border-rose-500/40 text-rose-300',       icon: <AlertTriangle className="h-3 w-3 shrink-0" /> },
+                        similar:  { label: 'Similar',  color: 'bg-amber-500/15 border-amber-500/40 text-amber-300',    icon: <Copy className="h-3 w-3 shrink-0" /> },
+                        sops:     { label: 'All SOPs', color: 'bg-purple-500/15 border-purple-500/40 text-purple-300', icon: <FileText className="h-3 w-3 shrink-0" /> },
+                        checked:  { label: 'Checked Questions', color: 'bg-blue-500/15 border-blue-500/40 text-blue-300', icon: <CheckCircle2 className="h-3 w-3 shrink-0" /> },
+                        reviewed: { label: 'Reviewed Questions', color: 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300', icon: <Star className="h-3 w-3 shrink-0" /> },
+                        completed:{ label: 'Completed (≥100)', color: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300', icon: <CheckCircle2 className="h-3 w-3 shrink-0" /> },
+                        target:   { label: 'Target (<100)', color: 'bg-amber-500/15 border-amber-500/40 text-amber-300', icon: <AlertCircle className="h-3 w-3 shrink-0" /> },
+                        zero:     { label: 'Remaining (0)', color: 'bg-rose-500/15 border-rose-500/40 text-rose-300', icon: <FileText className="h-3 w-3 shrink-0" /> },
+                      };
+                      const meta = filterMeta[approvalFilter] ?? filterMeta.pending;
+                      return (
+                        <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-widest shrink-0 ${meta.color}`}>
+                          {meta.icon}
+                          <span>{meta.label} Filter</span>
+                          <button
+                            onClick={() => setApprovalFilter('all')}
+                            className="ml-1 opacity-70 hover:opacity-100 transition-opacity"
+                            title="Clear filter"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      );
+                    })()}
 
                     {/* View Strategy Toggle */}
                     {deptFilterMode === "sops" ? (
@@ -2478,17 +2562,21 @@ export default function MCQTreeView({
                         fullScreenDept.subcategories
                           .map((sub) => ({
                             ...sub,
-                            sops: deptSearchTerm.trim()
-                              ? sub.sops.filter((s) => {
-                                const st = deptSearchTerm
-                                  .toLowerCase()
-                                  .trim();
-                                return (
-                                  s.sopName.toLowerCase().includes(st) ||
-                                  s.sopCode.toLowerCase().includes(st)
-                                );
-                              })
-                              : sub.sops,
+                            sops: sub.sops.filter((s) => {
+                              const st = deptSearchTerm.toLowerCase().trim();
+                              const matchesSearch = !st || s.sopName.toLowerCase().includes(st) || s.sopCode.toLowerCase().includes(st);
+                              if (!matchesSearch) return false;
+                              if (approvalFilter === 'approved') return (s.totalQuestions ?? 0) > 0 && (s.checkedCount ?? 0) >= (s.totalQuestions ?? 0);
+                              if (approvalFilter === 'similar')  return (s.similarCount ?? 0) > 0;
+                              if (approvalFilter === 'partial')  return (s.totalQuestions ?? 0) > 0 && (s.checkedCount ?? 0) > 0 && (s.checkedCount ?? 0) < (s.totalQuestions ?? 0) && (s.similarCount ?? 0) === 0;
+                              if (approvalFilter === 'pending')  return (s.totalQuestions ?? 0) > 0 && (s.checkedCount ?? 0) === 0 && (s.similarCount ?? 0) === 0;
+                              if (approvalFilter === 'checked')  return (s.checkedCount ?? 0) > 0;
+                              if (approvalFilter === 'reviewed') return (s.reviewedCount ?? 0) > 0;
+                              if (approvalFilter === 'completed') return (s.mcqBanks && s.mcqBanks.length > 0) && (s.totalQuestions ?? 0) >= 100;
+                              if (approvalFilter === 'target')   return (s.mcqBanks && s.mcqBanks.length > 0) && (s.totalQuestions ?? 0) > 0 && (s.totalQuestions ?? 0) < 100;
+                              if (approvalFilter === 'zero')     return (s.mcqBanks && s.mcqBanks.length > 0) && (s.totalQuestions ?? 0) === 0;
+                              return true;
+                            }),
                           }))
                           .filter((sub) => sub.sops.length > 0),
                         fullScreenDept.name,
@@ -2795,13 +2883,21 @@ export default function MCQTreeView({
                     <div className="w-full bg-[#131722] rounded-2xl border border-white/5 shadow-xl overflow-hidden mt-4">
                       {/* TABLE VIEW */}
                       {(() => {
-                        const isSopApproved = (sop: SOPNode) => {
-                          const total = sop.totalQuestions ?? 0;
-                          if (total === 0) return false;
-                          return (
-                            (sop.checkedCount ?? 0) + (sop.reviewedCount ?? 0) + (sop.similarCount ?? 0)
-                          ) >= total;
+                        // Mirror API classification exactly (dept-stats route.ts)
+                        const isSopApproved  = (sop: SOPNode) => (sop.totalQuestions ?? 0) > 0 && (sop.checkedCount ?? 0) >= (sop.totalQuestions ?? 0);
+                        const isSopSimilar   = (sop: SOPNode) => (sop.similarCount ?? 0) > 0;
+                        const isSopPartial   = (sop: SOPNode) => {
+                          const total   = sop.totalQuestions ?? 0;
+                          const checked = sop.checkedCount   ?? 0;
+                          return total > 0 && !isSopApproved(sop) && !isSopSimilar(sop) && checked > 0;
                         };
+                        const isSopPending   = (sop: SOPNode) => {
+                          const total = sop.totalQuestions ?? 0;
+                          return total > 0 && !isSopApproved(sop) && !isSopSimilar(sop) && (sop.checkedCount ?? 0) === 0;
+                        };
+                        const hasSopChecked  = (sop: SOPNode) => (sop.checkedCount  ?? 0) > 0;
+                        const hasSopReviewed = (sop: SOPNode) => (sop.reviewedCount ?? 0) > 0;
+
                         const allSOPs = fullScreenDept.subcategories.flatMap((sub) => sub.sops);
                         const filteredSOPs = allSOPs.filter((s) => {
                           const st = deptSearchTerm.toLowerCase().trim();
@@ -2810,7 +2906,15 @@ export default function MCQTreeView({
                             s.sopCode.toLowerCase().includes(st);
                           if (!matchesSearch) return false;
                           if (approvalFilter === 'approved') return isSopApproved(s);
-                          if (approvalFilter === 'pending') return !isSopApproved(s);
+                          if (approvalFilter === 'partial')  return isSopPartial(s);
+                          if (approvalFilter === 'pending')  return isSopPending(s);
+                          if (approvalFilter === 'similar')  return isSopSimilar(s);
+                          if (approvalFilter === 'checked')  return hasSopChecked(s);
+                          if (approvalFilter === 'reviewed') return hasSopReviewed(s);
+                          if (approvalFilter === 'completed') return (s.mcqBanks && s.mcqBanks.length > 0) && (s.totalQuestions ?? 0) >= 100;
+                          if (approvalFilter === 'target')   return (s.mcqBanks && s.mcqBanks.length > 0) && (s.totalQuestions ?? 0) > 0 && (s.totalQuestions ?? 0) < 100;
+                          if (approvalFilter === 'zero')     return (s.mcqBanks && s.mcqBanks.length > 0) && (s.totalQuestions ?? 0) === 0;
+                          // 'sops' and 'all' — show everything
                           return true;
                         });
 

@@ -795,6 +795,19 @@ export default function SOPTable({
                   SOP Name <SortIcon field="sopName" />
                 </button>
               </th>
+              <th className={thBase}>
+                <div className="flex flex-col items-center gap-0.5 min-w-[66px]">
+                  <span className="text-[8px] font-bold text-gray-500 uppercase tracking-widest leading-none">Guideline</span>
+                  <button
+                    type="button"
+                    className={`${sortBtn} justify-center py-0.5`}
+                    onClick={() => onSort("guidelineScore")}
+                    title="Sort by guideline compliance score">
+                    <Sparkles className="h-3 w-3 text-orange-500 shrink-0" />
+                    <SortIcon field="guidelineScore" />
+                  </button>
+                </div>
+              </th>
               <th className={`${thBase} min-w-[80px] max-w-[100px]`}>
                 <button
                   type="button"
@@ -955,17 +968,7 @@ export default function SOPTable({
                   </select>
                 </div>
               </th>
-              <th className={thBase}>
-                <div className="flex flex-col gap-px min-w-[60px]">
-                  <button
-                    type="button"
-                    className={sortBtn}
-                    onClick={() => onSort("guidelineScore")}
-                    title="Sort by guideline compliance score">
-                    Guideline <SortIcon field="guidelineScore" />
-                  </button>
-                </div>
-              </th>
+
             </tr>
           </thead>
           <tbody className="text-[10px] text-gray-700">
@@ -1060,48 +1063,51 @@ export default function SOPTable({
                                   </span>
                                 ) : null}
                               </div>
-                              {/* ── Orange Guideline Button ── */}
-                              {/* Opens full viewer if result cached, otherwise opens wizard */}
-                              {(() => {
-                                const isRunning = reviewingInBackground?.has(String(row.sopNo));
-                                const guidelineCount = getGuidelineMetrics(row).total;
-                                return (
-                                  <button
-                                    type="button"
-                                    title={isRunning ? `Analyzing guideline compliance for ${row.sopNo}` : hasResult ? `View guideline compliance results for ${row.sopNo}` : "Run guideline compliance check"}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (hasResult) {
-                                        onViewCompliance?.(row.sopNo);
-                                      } else if (!isRunning) {
-                                        onOpenGuidelineWizard?.({ _id: String(row._id), sopNo: String(row.sopNo) });
-                                      }
-                                    }}
-                                    disabled={isRunning}
-                                    className={`relative shrink-0 rounded-full p-0.5 transition-colors ${
-                                      isRunning
-                                        ? 'text-indigo-700 bg-indigo-50 animate-pulse'
-                                        : hasResult
-                                        ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100'
-                                        : 'text-orange-600 bg-orange-50 hover:bg-orange-100'
-                                    }`}
-                                  >
-                                    {isRunning ? (
-                                      <Loader2 className="h-3 w-3 animate-spin" />
-                                    ) : (
-                                      <Sparkles className="h-3 w-3" />
-                                    )}
-                                    {hasResult ? (
-                                      <span
-                                        className="absolute -top-2 -right-2 min-w-[16px] rounded-full border border-white bg-emerald-600 px-1 py-[1px] text-center text-[8px] font-black leading-none text-white tabular-nums"
-                                        title={`Total guideline findings: ${guidelineCount}`}>
-                                        {guidelineCount}
-                                      </span>
-                                    ) : null}
-                                  </button>
-                                );
-                              })()}
+
                             </div>
+                          );
+                        })()}
+                      </td>
+                      {/* Guideline compliance score */}
+                      <td className="px-1 py-px text-center align-middle">
+                        {(() => {
+                          const isRunning = reviewingInBackground?.has(String(row.sopNo));
+                          const { result, total: guidelineCount } = getGuidelineMetrics(row);
+                          const hasResult = !!result;
+                          return (
+                            <button
+                              type="button"
+                              title={isRunning ? `Analyzing guideline compliance for ${row.sopNo}` : hasResult ? `View guideline compliance results for ${row.sopNo}` : "Run guideline compliance check"}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (hasResult) {
+                                  onViewCompliance?.(row.sopNo);
+                                } else if (!isRunning) {
+                                  onOpenGuidelineWizard?.({ _id: String(row._id), sopNo: String(row.sopNo) });
+                                }
+                              }}
+                              disabled={isRunning}
+                              className={`relative shrink-0 rounded-full p-1 transition-colors ${
+                                isRunning
+                                  ? 'text-indigo-700 bg-indigo-50 animate-pulse'
+                                  : hasResult
+                                  ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100'
+                                  : 'text-orange-600 bg-orange-50 hover:bg-orange-100'
+                              }`}
+                            >
+                              {isRunning ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Sparkles className="h-3.5 w-3.5" />
+                              )}
+                              {hasResult ? (
+                                <span
+                                  className="absolute -top-1 -right-1 min-w-[14px] rounded-full border border-white bg-emerald-600 px-0.5 py-[0.5px] text-center text-[7px] font-black leading-none text-white tabular-nums"
+                                  title={`Total guideline findings: ${guidelineCount}`}>
+                                  {guidelineCount}
+                                </span>
+                              ) : null}
+                            </button>
                           );
                         })()}
                       </td>
@@ -1338,97 +1344,7 @@ export default function SOPTable({
                           )}
                         </div>
                       </td>
-                      {/* Guideline compliance score */}
-                      <td className="px-1 py-px text-center align-middle">
-                        {(() => {
-                          const {
-                            result,
-                            nonCompliant,
-                            partial,
-                            informational,
-                            total,
-                          } = getGuidelineMetrics(row);
-                          if (!result) return <span className="text-gray-300 text-[9px]">—</span>;
-                          const score = result.overallScore ?? 0;
-                          const colorClass =
-                            score >= 7 ? 'text-emerald-700 bg-emerald-50 border-emerald-200' :
-                            score >= 4 ? 'text-amber-700 bg-amber-50 border-amber-200' :
-                                         'text-red-700 bg-red-50 border-red-200';
-                          return (
-                            <div className="inline-flex flex-col items-center gap-0.5">
-                              <span
-                                className={`inline-flex items-baseline gap-px rounded border px-1 py-0.5 text-[10px] font-black tabular-nums ${colorClass}`}
-                                title={`Score: ${score}/10 · ${result.clausesAnalyzed ?? 0} clauses · ${total} findings`}
-                              >
-                                {score}
-                                <span className="text-[8px] font-normal opacity-60">/10</span>
-                              </span>
-                              <div className="flex items-center gap-0.5">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onViewCompliance?.(row.sopNo, {
-                                      status: "non-compliant",
-                                      severity: "all",
-                                    });
-                                  }}
-                                  className="inline-flex items-center gap-0.5 rounded border border-rose-200 bg-rose-50 px-1 py-px text-[8px] font-bold text-rose-700 hover:bg-rose-100"
-                                  title="Open non-compliant findings"
-                                >
-                                  <AlertTriangle className="h-2.5 w-2.5" />
-                                  <span className="tabular-nums">{nonCompliant}</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onViewCompliance?.(row.sopNo, {
-                                      status: "partial",
-                                      severity: "all",
-                                    });
-                                  }}
-                                  className="inline-flex items-center gap-0.5 rounded border border-amber-200 bg-amber-50 px-1 py-px text-[8px] font-bold text-amber-700 hover:bg-amber-100"
-                                  title="Open partial findings"
-                                >
-                                  <Sparkles className="h-2.5 w-2.5" />
-                                  <span className="tabular-nums">{partial}</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onViewCompliance?.(row.sopNo, {
-                                      status: "all",
-                                      severity: "informational",
-                                    });
-                                  }}
-                                  className="inline-flex items-center gap-0.5 rounded border border-blue-200 bg-blue-50 px-1 py-px text-[8px] font-bold text-blue-700 hover:bg-blue-100"
-                                  title="Open informational findings"
-                                >
-                                  <Info className="h-2.5 w-2.5" />
-                                  <span className="tabular-nums">{informational}</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onViewCompliance?.(row.sopNo, {
-                                      status: "all",
-                                      severity: "all",
-                                    });
-                                  }}
-                                  className="inline-flex items-center gap-0.5 rounded border border-emerald-200 bg-emerald-50 px-1 py-px text-[8px] font-bold text-emerald-700 hover:bg-emerald-100"
-                                  title="Open all compliance details"
-                                >
-                                  <CheckCircle2 className="h-2.5 w-2.5" />
-                                  <span className="tabular-nums">{total}</span>
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })()}
-                      </td>
+
                     </tr>
 
                     {/* Expanded detail panel */}
