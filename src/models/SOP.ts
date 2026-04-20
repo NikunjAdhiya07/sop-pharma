@@ -59,6 +59,8 @@ export interface ISOP extends Document {
   obsoleteAt?: Date;
   obsoleteReason?: string;
 
+  pipelineStatus?: 'idle' | 'mcq_generating' | 'similarity_checking' | 'compliance_checking' | 'compliance_fixing' | 'updating_platform' | 'approved' | 'failed';
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -219,6 +221,12 @@ const SOPSchema = new Schema<ISOP>({
   isObsolete: { type: Boolean, default: false },
   obsoleteAt: { type: Date },
   obsoleteReason: { type: String },
+
+  pipelineStatus: {
+    type: String,
+    enum: ['idle', 'mcq_generating', 'similarity_checking', 'compliance_checking', 'compliance_fixing', 'updating_platform', 'approved', 'failed'],
+    default: 'idle',
+  },
 }, {
   timestamps: true,
 });
@@ -231,6 +239,7 @@ SOPSchema.index({ folderPath: 1 });
 SOPSchema.index({ parentFolder: 1 });
 SOPSchema.index({ department: 1, folderPath: 1 });
 SOPSchema.index({ checksum: 1 });
+SOPSchema.index({ pipelineStatus: 1 });
 
 const SOP: Model<ISOP> = mongoose.models.SOP || mongoose.model<ISOP>('SOP', SOPSchema);
 

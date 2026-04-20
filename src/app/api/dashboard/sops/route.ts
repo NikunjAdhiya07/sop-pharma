@@ -1296,7 +1296,7 @@ export async function GET(request: NextRequest) {
       mcqBanks,
     ] = await Promise.all([
       SOP.find({})
-        .select('_id name identifier department fileUrl fileType originalFileName folderPath location metadata reviewDate expiryDate version language createdAt sopDocuments isObsolete')
+        .select('_id name identifier department fileUrl fileType originalFileName folderPath location metadata reviewDate expiryDate version language createdAt sopDocuments isObsolete pipelineStatus')
         .lean(),
       MasterSOPRepository.find({})
         .select('sopIdentifier sopName englishName gujaratiName metadata.reviewDate metadata.expiryDate')
@@ -1565,6 +1565,7 @@ export async function GET(request: NextRequest) {
         sopFile: primaryFile,
         _engSopFile: engSopFile,
         _extraSopFile: extraFile,
+        pipelineStatus: row.pipelineStatus || 'idle',
       };
     });
 

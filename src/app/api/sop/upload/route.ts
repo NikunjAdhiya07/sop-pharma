@@ -407,35 +407,36 @@ export async function POST(request: NextRequest) {
       // Don't fail the upload — log and continue
     }
 
-    // --- OVERWRITE: Auto-generate new MCQs for the updated SOP (fire and forget) ---
-    if (overwrite && sop) {
+    // --- AUTO PIPELINE: Trigger full automated pipeline for ALL uploads (new + overwrite) ---
+    {
       const sopIdStr = sop._id.toString();
       const baseUrl =
         process.env.NEXTAUTH_URL?.replace(/\/$/, '') ||
         process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
         (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
 
-      fetch(`${baseUrl}/api/sop/generate-mcqs`, {
+      fetch(`${baseUrl}/api/sop/pipeline/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sopId: sopIdStr,
           sopIdentifier,
-          language,
-          targetCount: 100,
+          sopName: sop.name,
+          department: sop.department,
+          language: language || sop.language || 'English',
         }),
       }).catch((err) =>
-        console.error('[OVERWRITE] Auto MCQ generation trigger failed:', err)
+        console.error('[PIPELINE] Auto pipeline trigger failed:', err)
       );
 
-      console.log(`🤖 [OVERWRITE] Triggered MCQ generation for ${sopIdentifier} (${language})`);
+      console.log(`🚀 [PIPELINE] Triggered automated pipeline for ${sopIdentifier} (${language})`);
     }
 
     const response = {
       success: true,
       message: overwrite
-        ? 'SOP updated successfully! Old MCQs archived. New MCQs are being generated in the background.'
-        : 'SOP uploaded successfully',
+        ? 'SOP updated successfully! Automated pipeline started: MCQ generation → Similarity check → Compliance check.'
+        : 'SOP uploaded successfully! Automated pipeline started in the background.',
       sop: {
         id: sop._id,
         name: sop.name,
@@ -444,7 +445,7 @@ export async function POST(request: NextRequest) {
         wordCount: sop.metadata?.wordCount,
         language: sop.language,
       },
-      mcqGenerating: overwrite ? true : undefined,
+      pipelineStarted: true,
     };
 
     console.log('🎉 Upload successful!', response);

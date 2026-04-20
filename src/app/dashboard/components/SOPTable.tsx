@@ -24,6 +24,7 @@ import {
   X,
   Loader2,
 } from "lucide-react";
+import SOPPipelineStatus from "@/components/SOPPipelineStatus";
 import { useState, Fragment, useEffect, useRef, type ReactNode } from "react";
 import {
   fileKindFromStoredPath,
@@ -1062,6 +1063,16 @@ export default function SOPTable({
                                     {cleanSOPName(line2, row.sopNo)}
                                   </span>
                                 ) : null}
+                                {/* Automated pipeline status tracker */}
+                                {row._id && row.pipelineStatus && row.pipelineStatus !== 'idle' && (
+                                  <div onClick={e => e.stopPropagation()}>
+                                    <SOPPipelineStatus
+                                      sopId={String(row._id)}
+                                      sopName={line1}
+                                      compact={true}
+                                    />
+                                  </div>
+                                )}
                               </div>
 
                             </div>

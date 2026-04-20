@@ -1238,6 +1238,19 @@ export default function MCQTreeView({
           </div>
         );
 
+        // Horizontal stat item
+        const Stat = ({ label, value, vc = 'text-gray-900', onClick, br = false }: {
+          label: string; value: number; vc?: string; onClick?: () => void; br?: boolean;
+        }) => (
+          <div
+            className={`flex flex-col items-center justify-center flex-1 py-1.5 ${br ? 'border-r border-gray-100' : ''} ${onClick ? 'cursor-pointer hover:bg-gray-50 active:bg-gray-100 transition-colors' : ''}`}
+            onClick={onClick}
+          >
+            <span className="text-[7.5px] text-gray-400 font-black uppercase tracking-tight leading-none mb-1">{label}</span>
+            <span className={`text-[12px] font-black tabular-nums leading-none ${value === 0 ? 'text-gray-200' : vc}`}>{value}</span>
+          </div>
+        );
+
         const Card = ({
           title, subtitle, accentClass, borderClass, headerBg, icon,
           totalSOPs, sopWithMCQs, approvedSOPs, partialSOPs, pendingSOPs, similarSOPs, sopWithoutMCQs,
@@ -1264,11 +1277,20 @@ export default function MCQTreeView({
             {/* SOP counts */}
             <div className="py-1">
               <R label="SOPs"         value={sopWithMCQs}  vc="text-gray-900"     onClick={onRowClick ? () => onRowClick('sops')     : undefined} />
-              <R label="SOP Eng"      value={sopEng}       vc="text-blue-600" />
-              <R label="SOP Guj"      value={sopGuj}       vc="text-orange-500" />
-              <R label="Approved"     value={approvedSOPs} vc="text-emerald-600"  onClick={onRowClick ? () => onRowClick('approved')  : undefined} />
-              <R label="Partial"      value={partialSOPs}  vc="text-yellow-600"   onClick={onRowClick ? () => onRowClick('partial')   : undefined} />
-              <R label="Pending"      value={pendingSOPs}  vc="text-red-600"      onClick={onRowClick ? () => onRowClick('pending')   : undefined} />
+              
+              {/* Languages Inline */}
+              <div className="flex border-b border-gray-100">
+                <Stat label="Eng" value={sopEng} vc="text-blue-600" br />
+                <Stat label="Guj" value={sopGuj} vc="text-orange-500" />
+              </div>
+
+              {/* Status Inline */}
+              <div className="flex border-b border-gray-100">
+                <Stat label="Approved" value={approvedSOPs} vc="text-emerald-600" onClick={onRowClick ? () => onRowClick('approved') : undefined} br />
+                <Stat label="Partial"  value={partialSOPs}  vc="text-yellow-600"  onClick={onRowClick ? () => onRowClick('partial') : undefined} br />
+                <Stat label="Pending"  value={pendingSOPs}  vc="text-red-600"     onClick={onRowClick ? () => onRowClick('pending') : undefined} />
+              </div>
+
               <R label="Similar"      value={similarSOPs}  vc="text-gray-900"     onClick={onRowClick ? () => onRowClick('similar')   : undefined} />
             </div>
             {/* Question counts */}
@@ -1368,9 +1390,12 @@ export default function MCQTreeView({
                       </div>
                       <div className="py-1 flex-1">
                         <R label="Total SOPs" value={overall.sopWithMCQs} vc="text-blue-600" />
-                        <R label="Completed (≥100)" value={overall.sopCompletedGen} vc="text-emerald-600" onClick={() => handleGenerationClick('completed')} />
-                        <R label="Target (<100)" value={overall.sopUnder100MCQs} vc="text-amber-600" onClick={() => handleGenerationClick('target')} />
-                        <R label="Remaining (0)" value={Math.max(0, overall.sopWithMCQs - overall.sopCompletedGen - overall.sopUnder100MCQs)} vc="text-red-600" onClick={() => handleGenerationClick('zero')} />
+                        
+                        <div className="flex border-b border-gray-100">
+                          <Stat label="Completed" value={overall.sopCompletedGen} vc="text-emerald-600" onClick={() => handleGenerationClick('completed')} br />
+                          <Stat label="Target"    value={overall.sopUnder100MCQs} vc="text-amber-600" onClick={() => handleGenerationClick('target')} br />
+                          <Stat label="Remaining" value={Math.max(0, overall.sopWithMCQs - overall.sopCompletedGen - overall.sopUnder100MCQs)} vc="text-red-600" onClick={() => handleGenerationClick('zero')} />
+                        </div>
                       </div>
                       <CoverageBar pct={overall.sopWithMCQs > 0 ? Math.round((overall.sopCompletedGen / overall.sopWithMCQs) * 100) : 0} />
                     </div>
