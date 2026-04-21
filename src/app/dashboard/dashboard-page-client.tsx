@@ -175,7 +175,14 @@ export default function DashboardPageClient() {
         guidelineDocumentsUsed: result.guidelineDocumentsUsed ?? 0,
         runAt: new Date().toISOString(),
       };
-      setComplianceCache((prev) => ({ ...prev, [sopNo]: entry }));
+      setComplianceCache((prev) => {
+        const next = { ...prev, [sopNo]: entry };
+        // Persist to sessionStorage so refresh keeps the result
+        try {
+          sessionStorage.setItem('dashboard_compliance_cache', JSON.stringify({ data: next, cachedAt: Date.now() }));
+        } catch { /* ignore */ }
+        return next;
+      });
       // Remove from background tracking
       setReviewingInBackground((prev) => {
         const next = new Set(prev);
@@ -205,7 +212,14 @@ export default function DashboardPageClient() {
       const raw = sessionStorage.getItem(COMPLIANCE_CACHE_KEY);
       if (raw) {
         const { data: cachedData, cachedAt } = JSON.parse(raw);
-        if (Date.now() - cachedAt < COMPLIANCE_CACHE_TTL && cachedData) {
+        // Invalidate cache if all entries have empty findings (stale pre-fix data)
+        const hasAnyFindings = cachedData && Object.values(cachedData).some(
+          (r: any) => Array.isArray(r?.findings) && r.findings.length > 0
+        );
+        if (cachedData && !hasAnyFindings) {
+          sessionStorage.removeItem(COMPLIANCE_CACHE_KEY);
+        }
+        if (Date.now() - cachedAt < COMPLIANCE_CACHE_TTL && cachedData && hasAnyFindings) {
           setComplianceCache(cachedData);
           // Still refresh in background after 1s delay so UI shows instantly
           setTimeout(() => {

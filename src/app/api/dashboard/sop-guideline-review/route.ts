@@ -370,7 +370,8 @@ export async function GET(request: NextRequest) {
       }
 
       // ── Source 2: Compliance section results (ComplianceReport)
-      // Fetch completed reports; only override if no wizard result exists for that SOP
+      // Use compliance reports to: (a) fill in findings for wizard results that have none,
+      // (b) add entries for SOPs that have no wizard result at all.
       try {
         const complianceReports = await ComplianceReport
           .find({ analysisStatus: 'completed' })
@@ -384,9 +385,10 @@ export async function GET(request: NextRequest) {
           const key = r.sopIdentifier;
           if (!key) continue;
 
-          // Only add if dashboard wizard has no result for this SOP
+          const normalizedFindings = normalizeComplianceFindings(r.findings || []);
+
           if (!cache[key]) {
-            const normalizedFindings = normalizeComplianceFindings(r.findings || []);
+            // No wizard result — add from compliance report
             cache[key] = {
               sopNo: key,
               sopName: r.sopName || '',
@@ -397,6 +399,12 @@ export async function GET(request: NextRequest) {
               findings: normalizedFindings,
               source: 'compliance-section',
             };
+          } else if (cache[key].findings.length === 0 && normalizedFindings.length > 0) {
+            // Wizard result exists but findings weren't persisted — backfill from compliance report
+            cache[key].findings = normalizedFindings;
+            cache[key].overallScore = cache[key].overallScore || (r.overallScore ?? 0);
+            cache[key].clausesAnalyzed = cache[key].clausesAnalyzed || (r.scoreBreakdown?.totalChecks ?? normalizedFindings.length);
+            cache[key].guidelineDocumentsUsed = cache[key].guidelineDocumentsUsed || (r.guidelinesUsed || []).length;
           }
         }
       } catch (compErr) {
@@ -409,34 +417,49 @@ export async function GET(request: NextRequest) {
 
     if (sopNo) {
       // Check wizard results first
-      let result: any = await SOPGuidelineResult.findOne({ sopNo }).lean();
-      if (result) {
-        return NextResponse.json({ success: true, result, source: 'dashboard-wizard' });
-      }
+      const wizardResult: any = await SOPGuidelineResult.findOne({ sopNo }).lean();
 
-      // Fall back to compliance section results
+      // Always also fetch the latest compliance report so we can backfill findings
+      let complianceFindings: any[] = [];
+      let complianceReport: any = null;
       try {
-        const cr = await ComplianceReport
+        complianceReport = await ComplianceReport
           .findOne({ sopIdentifier: sopNo, analysisStatus: 'completed' })
           .sort({ analysisCompletedAt: -1 })
           .allowDiskUse(true)
           .lean();
-        if (cr) {
-          return NextResponse.json({
-            success: true,
-            source: 'compliance-section',
-            result: {
-              sopNo: cr.sopIdentifier,
-              sopName: cr.sopName || '',
-              overallScore: cr.overallScore ?? 0,
-              clausesAnalyzed: cr.scoreBreakdown?.totalChecks ?? 0,
-              guidelineDocumentsUsed: (cr.guidelinesUsed || []).length,
-              runAt: cr.analysisCompletedAt || new Date(),
-              findings: normalizeComplianceFindings(cr.findings || []),
-            },
-          });
+        if (complianceReport) {
+          complianceFindings = normalizeComplianceFindings(complianceReport.findings || []);
         }
       } catch (_) { /* ignore */ }
+
+      if (wizardResult) {
+        // Wizard result found — backfill findings if they weren't persisted
+        const findings = Array.isArray(wizardResult.findings) && wizardResult.findings.length > 0
+          ? wizardResult.findings
+          : complianceFindings;
+        return NextResponse.json({
+          success: true,
+          source: 'dashboard-wizard',
+          result: { ...wizardResult, findings },
+        });
+      }
+
+      if (complianceReport) {
+        return NextResponse.json({
+          success: true,
+          source: 'compliance-section',
+          result: {
+            sopNo: complianceReport.sopIdentifier,
+            sopName: complianceReport.sopName || '',
+            overallScore: complianceReport.overallScore ?? 0,
+            clausesAnalyzed: complianceReport.scoreBreakdown?.totalChecks ?? 0,
+            guidelineDocumentsUsed: (complianceReport.guidelinesUsed || []).length,
+            runAt: complianceReport.analysisCompletedAt || new Date(),
+            findings: complianceFindings,
+          },
+        });
+      }
 
       return NextResponse.json({ success: false, error: 'No stored result for this SOP' }, { status: 404 });
     }

@@ -319,6 +319,22 @@ export default function MCQTreeView({
   const [isCinemaMode, setIsCinemaMode] = useState(false);
   // Expansion state is now managed by parent
   const [isUnorganizedExpanded, setIsUnorganizedExpanded] = useState(false);
+  // Inline subcategory dropdown expansion state for folder cards
+  const [expandedFolderDropdowns, setExpandedFolderDropdowns] = useState<Set<string>>(new Set());
+  const toggleFolderDropdown = (deptName: string) => {
+    setExpandedFolderDropdowns(prev => {
+      const next = new Set(prev);
+      if (next.has(deptName)) next.delete(deptName); else next.add(deptName);
+      return next;
+    });
+  };
+
+  // MCQ Registry table state
+  const [mcqRegistryDeptFilter, setMcqRegistryDeptFilter] = useState('All');
+  const [mcqRegistryLangFilter, setMcqRegistryLangFilter] = useState('All');
+  const [mcqRegistrySearch, setMcqRegistrySearch] = useState('');
+  const [mcqRegistrySortCol, setMcqRegistrySortCol] = useState<'identifier' | 'name' | 'dept' | 'lang' | 'totalQ' | 'remaining' | 'approved' | 'partial' | 'similar' | 'lastUpdated'>('identifier');
+  const [mcqRegistrySortDir, setMcqRegistrySortDir] = useState<'asc' | 'desc'>('asc');
 
   // Archived / Removed SOPs state
   const [archivedSOPs, setArchivedSOPs] = useState<any[]>([]);
@@ -341,7 +357,16 @@ export default function MCQTreeView({
     sopGuj: number;
     sopCompletedGen: number;
     sopUnder100MCQs: number;
+    totalSopEng: number;
+    totalSopGuj: number;
+    remainingEng: number;
+    remainingGuj: number;
+    remainingSOPs: { identifier: string; name: string }[];
   }>>({});
+  // Overall remaining SOPs list (no MCQ bank yet) — from dept-stats API
+  const [overallRemainingSOPs, setOverallRemainingSOPs] = useState<{ identifier: string; name: string }[]>([]);
+  // When set, show a "remaining SOPs" panel instead of opening fullscreen dept modal
+  const [remainingPanel, setRemainingPanel] = useState<{ dept: string; sops: { identifier: string; name: string }[] } | null>(null);
   const [deptStatsLoading, setDeptStatsLoading] = useState(true);
 
   // Generate More state
@@ -515,7 +540,7 @@ export default function MCQTreeView({
   const fetchDeptStats = useCallback(async () => {
     setDeptStatsLoading(true);
     try {
-      const res = await fetch('/api/mcq-bank/dept-stats', { cache: 'no-store' });
+      const res = await fetch(`/api/mcq-bank/dept-stats?t=${Date.now()}`, { cache: 'no-store' });
       const data = await res.json();
       if (data.success && data.departments) {
         const map: typeof deptStats = {};
@@ -523,6 +548,9 @@ export default function MCQTreeView({
           map[ds.department] = ds;
         }
         setDeptStats(map);
+        if (data.overall?.remainingSOPs) {
+          setOverallRemainingSOPs(data.overall.remainingSOPs);
+        }
       }
     } catch (err) {
       console.error('Failed to fetch dept stats:', err);
@@ -1183,23 +1211,33 @@ export default function MCQTreeView({
 
         // Overall totals from API only
         const overall = (() => {
-          const base = { totalSOPs:0, sopWithMCQs:0, sopWithoutMCQs:0, approvedSOPs:0, partialSOPs:0, pendingSOPs:0, similarSOPs:0, totalQuestions:0, checkedCount:0, reviewedCount:0, similarCount:0, sopEng:0, sopGuj:0, sopCompletedGen:0, sopUnder100MCQs:0 };
+          const base = {
+            totalSOPs:0, sopWithMCQs:0, sopWithoutMCQs:0,
+            approvedSOPs:0, partialSOPs:0, pendingSOPs:0, similarSOPs:0,
+            totalQuestions:0, checkedCount:0, reviewedCount:0, similarCount:0,
+            sopEng:0, sopGuj:0, sopCompletedGen:0, sopUnder100MCQs:0,
+            totalSopEng:0, totalSopGuj:0, remainingEng:0, remainingGuj:0,
+          };
           for (const ds of Object.values(deptStats)) {
-            base.totalSOPs      += ds.totalSOPs      ?? 0;
-            base.sopWithMCQs    += ds.sopWithMCQs    ?? 0;
-            base.sopWithoutMCQs += ds.sopWithoutMCQs ?? 0;
-            base.approvedSOPs   += ds.approvedSOPs   ?? 0;
-            base.partialSOPs    += ds.partialSOPs    ?? 0;
-            base.pendingSOPs    += ds.pendingSOPs    ?? 0;
-            base.similarSOPs    += ds.similarSOPs    ?? 0;
-            base.totalQuestions += ds.totalQuestions ?? 0;
-            base.checkedCount   += ds.checkedCount   ?? 0;
-            base.reviewedCount  += ds.reviewedCount  ?? 0;
-            base.similarCount   += ds.similarCount   ?? 0;
-            base.sopEng         += (ds as any).sopEng ?? 0;
-            base.sopGuj         += (ds as any).sopGuj ?? 0;
+            base.totalSOPs       += ds.totalSOPs       ?? 0;
+            base.sopWithMCQs     += ds.sopWithMCQs     ?? 0;
+            base.sopWithoutMCQs  += ds.sopWithoutMCQs  ?? 0;
+            base.approvedSOPs    += ds.approvedSOPs    ?? 0;
+            base.partialSOPs     += ds.partialSOPs     ?? 0;
+            base.pendingSOPs     += ds.pendingSOPs     ?? 0;
+            base.similarSOPs     += ds.similarSOPs     ?? 0;
+            base.totalQuestions  += ds.totalQuestions  ?? 0;
+            base.checkedCount    += ds.checkedCount    ?? 0;
+            base.reviewedCount   += ds.reviewedCount   ?? 0;
+            base.similarCount    += ds.similarCount    ?? 0;
+            base.sopEng          += ds.sopEng          ?? 0;
+            base.sopGuj          += ds.sopGuj          ?? 0;
             base.sopCompletedGen += ds.sopCompletedGen ?? 0;
             base.sopUnder100MCQs += ds.sopUnder100MCQs ?? 0;
+            base.totalSopEng     += ds.totalSopEng     ?? 0;
+            base.totalSopGuj     += ds.totalSopGuj     ?? 0;
+            base.remainingEng    += ds.remainingEng    ?? 0;
+            base.remainingGuj    += ds.remainingGuj    ?? 0;
           }
           return base;
         })();
@@ -1251,70 +1289,188 @@ export default function MCQTreeView({
           </div>
         );
 
-        const Card = ({
-          title, subtitle, accentClass, borderClass, headerBg, icon,
-          totalSOPs, sopWithMCQs, approvedSOPs, partialSOPs, pendingSOPs, similarSOPs, sopWithoutMCQs,
-          totalQuestions, checkedCount, reviewedCount, similarCount,
-          coverage, themeText, sopEng, sopGuj, onOpen, onRowClick,
+        // ── Exact copy of Dashboard's CapsuleMetric ──────────────────────────
+        const CM = ({
+          label, value, vc, onClick, isActive = false,
         }: {
-          title: string; subtitle: string; accentClass: string; borderClass: string; headerBg: string;
-          icon: React.ReactNode; totalSOPs: number; sopWithMCQs: number; approvedSOPs: number;
-          partialSOPs: number; pendingSOPs: number; similarSOPs: number; sopWithoutMCQs: number;
-          totalQuestions: number; checkedCount: number; reviewedCount: number; similarCount: number;
-          coverage: number; themeText: string; sopEng: number; sopGuj: number;
-          onOpen?: () => void;
-          onRowClick?: (filter: 'sops' | 'approved' | 'partial' | 'pending' | 'similar' | 'checked' | 'reviewed') => void;
+          label: string; value: number; vc?: string;
+          onClick?: () => void; isActive?: boolean;
         }) => (
-          <div className={`flex flex-col rounded-xl border ${borderClass} bg-white overflow-hidden w-[170px] shrink-0`}>
-            {/* Header */}
-            <div className={`flex items-center gap-2 px-3 py-2 ${headerBg} border-b ${borderClass}`}>
-              <span className="text-gray-500 shrink-0">{icon}</span>
-              <div className="flex-1 min-w-0">
-                <p className="text-[11px] font-bold tracking-wide truncate leading-tight text-gray-800" title={typeof title === 'string' ? title : undefined}>{title || '—'}</p>
-                <p className="text-[8px] text-gray-500 font-medium leading-tight">{subtitle}</p>
-              </div>
-            </div>
-            {/* SOP counts */}
-            <div className="py-1">
-              <R label="SOPs"         value={sopWithMCQs}  vc="text-gray-900"     onClick={onRowClick ? () => onRowClick('sops')     : undefined} />
-              
-              {/* Languages Inline */}
-              <div className="flex border-b border-gray-100">
-                <Stat label="Eng" value={sopEng} vc="text-blue-600" br />
-                <Stat label="Guj" value={sopGuj} vc="text-orange-500" />
-              </div>
+          <button
+            type="button"
+            onClick={onClick ? (e) => { e.preventDefault(); e.stopPropagation(); onClick(); } : undefined}
+            aria-pressed={isActive ? true : undefined}
+            className={`flex w-full min-h-[24px] cursor-pointer items-center justify-between gap-1.5 rounded-[4px] px-1 py-0.5 text-left text-[10px] transition-colors hover:bg-purple-100/80 active:bg-purple-200/60 focus:z-10 focus:outline-none focus:ring-1 focus:ring-purple-400 focus:ring-offset-0 ${
+              isActive ? "border border-purple-400 bg-purple-100/90" : "border border-transparent"
+            }`}
+          >
+            <span className="min-w-0 shrink text-gray-600 whitespace-nowrap overflow-hidden text-ellipsis">{label}</span>
+            <span className={`font-bold tabular-nums shrink-0 leading-tight ${vc ?? "text-gray-900"}`}>{value}</span>
+          </button>
+        );
 
-              {/* Status Inline */}
-              <div className="flex border-b border-gray-100">
-                <Stat label="Approved" value={approvedSOPs} vc="text-emerald-600" onClick={onRowClick ? () => onRowClick('approved') : undefined} br />
-                <Stat label="Partial"  value={partialSOPs}  vc="text-yellow-600"  onClick={onRowClick ? () => onRowClick('partial') : undefined} br />
-                <Stat label="Pending"  value={pendingSOPs}  vc="text-red-600"     onClick={onRowClick ? () => onRowClick('pending') : undefined} />
+        // ── Exact copy of Dashboard's "Expired | Near | No Dt" row pattern ──
+        // flex w-full gap-0.5, each item in flex-1 min-w-0 wrapper
+        const TripleRow = ({ items }: {
+          items: { label: string; value: number; vc?: string; onClick?: () => void; isActive?: boolean }[];
+        }) => (
+          <div className="flex w-full gap-0.5">
+            {items.map((item) => (
+              <div key={item.label} className="flex-1 min-w-0">
+                <CM label={item.label} value={item.value} vc={item.vc} onClick={item.onClick} isActive={item.isActive} />
               </div>
+            ))}
+          </div>
+        );
 
-              <R label="Similar"      value={similarSOPs}  vc="text-gray-900"     onClick={onRowClick ? () => onRowClick('similar')   : undefined} />
+        // ── Exact copy of Dashboard's coverage section ────────────────────────
+        const CovBar = ({ pct, label = "COVERAGE" }: { pct: number; label?: string }) => (
+          <div className="pt-1.5 mt-1.5 border-t border-gray-100">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[8px] font-bold text-gray-400 uppercase tracking-wider">{label}</span>
+              <span className={`text-[9px] font-black ${
+                pct >= 100 ? "text-emerald-600" : pct >= 60 ? "text-blue-600" : "text-amber-500"
+              }`}>{pct}%</span>
             </div>
-            {/* Question counts */}
-            <Divider label="Questions" />
-            <div className="py-1">
-              <R label="Total"    value={totalQuestions} vc="text-gray-900" />
-              <R label="Checked"  value={checkedCount}   vc="text-gray-900" onClick={onRowClick ? () => onRowClick('checked')  : undefined} />
-              <R label="Reviewed" value={reviewedCount}  vc="text-gray-900" onClick={onRowClick ? () => onRowClick('reviewed') : undefined} />
-              <R label="Similar"  value={similarCount}   vc="text-gray-900" onClick={onRowClick ? () => onRowClick('similar')  : undefined} />
+            <div className="w-full h-[3px] bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  pct >= 100 ? "bg-emerald-500" : pct >= 60 ? "bg-blue-500" : "bg-amber-500"
+                }`}
+                style={{ width: `${Math.min(pct, 100)}%` }}
+              />
             </div>
-            {/* Coverage + open button */}
-            <CoverageBar pct={coverage} />
-            {onOpen && (
-              <div className="px-2 pb-2">
-                <button
-                  onClick={onOpen}
-                  className={`w-full text-[8px] font-black uppercase tracking-widest rounded py-1 transition-all ${headerBg} ${accentClass} border ${borderClass} hover:brightness-125`}
-                >
-                  Open
-                </button>
+          </div>
+        );
+
+        // ── MCQ Capsule Card — exact structural clone of DepartmentCapsuleCard ─
+        const Card = ({
+          title, subtitle, isGrand = false,
+          totalSOPs, sopWithMCQs, sopWithoutMCQs,
+          approvedSOPs, partialSOPs, pendingSOPs, similarSOPs,
+          totalSopEng, totalSopGuj, remainingEng, remainingGuj,
+          onOpen, onRowClick, onRemainingClick,
+          genCompleted, genTarget, genRemaining, onGenClick,
+        }: {
+          title: string; subtitle: string; isGrand?: boolean;
+          totalSOPs: number; sopWithMCQs: number; sopWithoutMCQs: number;
+          approvedSOPs: number; partialSOPs: number; pendingSOPs: number; similarSOPs: number;
+          totalSopEng: number; totalSopGuj: number; remainingEng: number; remainingGuj: number;
+          onOpen?: () => void;
+          onRowClick?: (f: "approved" | "partial" | "pending" | "similar") => void;
+          onRemainingClick?: () => void;
+          genCompleted?: number; genTarget?: number; genRemaining?: number;
+          onGenClick?: (f: "completed" | "target" | "zero") => void;
+        }) => (
+          <div className={`flex w-full min-w-0 flex-col rounded-[10px] border px-2 py-1.5 text-left shadow-sm ${
+            isGrand ? "border-purple-300 bg-purple-50" : "border-gray-200 bg-white"
+          }`}>
+
+            {/* ── Header ── */}
+            <div
+              role="button"
+              tabIndex={isGrand ? -1 : 0}
+              onClick={isGrand ? undefined : onOpen}
+              onKeyDown={isGrand ? undefined : (e) => {
+                if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen?.(); }
+              }}
+              className={`mb-2 flex w-full min-h-[40px] items-start gap-1.5 rounded-md border-b pb-2 ${
+                isGrand
+                  ? "cursor-default border-purple-200"
+                  : "cursor-pointer border-gray-100 hover:bg-purple-50/80 focus:outline-none focus:ring-2 focus:ring-purple-400"
+              }`}
+            >
+              <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-600" />
+              <div className="min-w-0 flex-1">
+                <span className="block min-w-0 text-[11px] font-bold leading-tight text-gray-800 truncate" title={title}>{title}</span>
+                <span className="block text-[9px] font-medium text-gray-500 leading-tight mt-0.5">{subtitle}</span>
+              </div>
+            </div>
+
+            {/* ── SOP counts — totalSOPs from SOP collection matches Dashboard ── */}
+            <div className="flex flex-col gap-0 border-t border-transparent pt-0.5">
+
+              <CM label="SOPs" value={totalSOPs} onClick={onOpen} />
+              <CM label="w/ EN" value={totalSopEng} />
+              <CM label="w/ GU" value={totalSopGuj} vc="text-orange-500" />
+
+              <TripleRow items={[
+                { label: "Approved", value: approvedSOPs, vc: "text-emerald-600",
+                  onClick: onRowClick ? () => onRowClick("approved") : undefined },
+                { label: "Partial",  value: partialSOPs,  vc: "text-amber-500",
+                  onClick: onRowClick ? () => onRowClick("partial")  : undefined },
+                { label: "Pending",  value: pendingSOPs,  vc: "text-red-600",
+                  onClick: onRowClick ? () => onRowClick("pending")  : undefined },
+              ]} />
+
+              <CM label="Similar" value={similarSOPs}
+                onClick={onRowClick ? () => onRowClick("similar") : undefined} />
+
+            </div>
+
+            {/* ── Remaining SOPs (no MCQs yet) ── */}
+            <div className={`mt-1.5 pt-1.5 border-t ${isGrand ? "border-purple-200" : "border-gray-100"}`}>
+              <div className="flex items-center gap-1.5 mb-1">
+                <FileText className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                <span className="min-w-0 flex-1 text-[11px] font-bold leading-tight text-gray-800">Remaining</span>
+              </div>
+              <div className="flex flex-col gap-0 border-t border-transparent pt-0.5">
+                <CM label="w/ MCQs"   value={sopWithMCQs}    vc="text-emerald-600" onClick={onOpen} />
+                <CM label="Remaining" value={sopWithoutMCQs} vc={sopWithoutMCQs > 0 ? "text-red-600" : "text-gray-900"} onClick={onRemainingClick} />
+                <TripleRow items={[
+                  { label: "EN rem.", value: remainingEng, vc: remainingEng > 0 ? "text-red-600" : "text-gray-900",
+                    onClick: onRemainingClick },
+                  { label: "GU rem.", value: remainingGuj, vc: remainingGuj > 0 ? "text-red-600" : "text-gray-900",
+                    onClick: onRemainingClick },
+                ]} />
+              </div>
+            </div>
+
+            {/* ── Generation section (Total card only) ── */}
+            {genCompleted !== undefined && (
+              <div className={`mt-1.5 pt-1.5 border-t ${isGrand ? "border-purple-200" : "border-gray-100"}`}>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <BookOpen className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+                  <span className="min-w-0 flex-1 text-[11px] font-bold leading-tight text-gray-800">Generation</span>
+                </div>
+                <div className="flex flex-col gap-0 border-t border-transparent pt-0.5">
+                  <CM label="Total SOPs" value={sopWithMCQs} vc="text-blue-600" />
+                  <TripleRow items={[
+                    { label: "Completed", value: genCompleted, vc: "text-emerald-600",
+                      onClick: onGenClick ? () => onGenClick("completed") : undefined },
+                    { label: "Target",    value: genTarget ?? 0, vc: "text-amber-500",
+                      onClick: onGenClick ? () => onGenClick("target")    : undefined },
+                    { label: "Remaining", value: genRemaining ?? 0, vc: "text-red-600",
+                      onClick: onGenClick ? () => onGenClick("zero")      : undefined },
+                  ]} />
+                </div>
               </div>
             )}
           </div>
         );
+
+        const handleGenerationClick = (filter: 'completed' | 'target' | 'zero') => {
+          const allSubcats = tree.flatMap(dept =>
+            dept.subcategories.map(sub => ({
+              ...sub,
+              name: `[${dept.name}] ${sub.name}`,
+            }))
+          );
+          const fakeDept: typeof tree[0] = {
+            type: "department",
+            name: "All Departments",
+            icon: "🌐",
+            totalSOPs: overall.totalSOPs,
+            totalQuestions: overall.totalQuestions,
+            checkedCount: overall.checkedCount,
+            reviewedCount: overall.reviewedCount,
+            similarCount: overall.similarCount,
+            subcategories: allSubcats,
+          };
+          setApprovalFilter(filter);
+          setSOPViewMode('table');
+          setFullScreenDept(fakeDept);
+        };
 
         return (
           <div className="mb-4">
@@ -1324,129 +1480,61 @@ export default function MCQTreeView({
               {deptStatsLoading && <span className="text-[9px] text-gray-500">Loading…</span>}
             </div>
 
-            <div className="overflow-x-auto pb-1">
-              <div className="flex gap-2 min-w-max">
+            <div className="grid w-full grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-8 2xl:grid-cols-9 px-1 py-2 sm:px-2">
 
-                {/* Total card */}
-                <Card
-                  title="Total"
-                  subtitle={`${orderedDepts.length} departments`}
-                  accentClass="text-purple-600"
-                  borderClass="border-purple-200"
-                  headerBg="bg-purple-50"
-                  icon={<FileText className="h-3.5 w-3.5" />}
-                  totalSOPs={overall.totalSOPs}
-                  sopWithMCQs={overall.sopWithMCQs}
-                  approvedSOPs={overall.approvedSOPs}
-                  partialSOPs={overall.partialSOPs}
-                  pendingSOPs={overall.pendingSOPs}
-                  similarSOPs={overall.similarSOPs}
-                  sopWithoutMCQs={overall.sopWithoutMCQs}
-                  totalQuestions={overall.totalQuestions}
-                  checkedCount={overall.checkedCount}
-                  reviewedCount={overall.reviewedCount}
-                  similarCount={overall.similarCount}
-                  coverage={overallCoverage}
-                  themeText="text-purple-600"
-                  sopEng={overall.sopEng}
-                  sopGuj={overall.sopGuj}
-                />
+              {/* Total card */}
+              <Card
+                title="Total"
+                subtitle={`${orderedDepts.length} departments`}
+                isGrand
+                totalSOPs={overall.totalSOPs}
+                sopWithMCQs={overall.sopWithMCQs}
+                sopWithoutMCQs={overall.sopWithoutMCQs}
+                approvedSOPs={overall.approvedSOPs}
+                partialSOPs={overall.partialSOPs}
+                pendingSOPs={overall.pendingSOPs}
+                similarSOPs={overall.similarSOPs}
+                totalSopEng={overall.totalSopEng}
+                totalSopGuj={overall.totalSopGuj}
+                remainingEng={overall.remainingEng}
+                remainingGuj={overall.remainingGuj}
+                onRemainingClick={() => {
+                  setRemainingPanel({ dept: 'All Departments', sops: overallRemainingSOPs });
+                }}
+                genCompleted={overall.sopCompletedGen}
+                genTarget={overall.sopUnder100MCQs}
+                genRemaining={Math.max(0, overall.sopWithMCQs - overall.sopCompletedGen - overall.sopUnder100MCQs)}
+                onGenClick={handleGenerationClick}
+              />
 
-                {/* Generation Status Card */}
-                {(() => {
-                  const handleGenerationClick = (filter: 'completed' | 'target' | 'zero') => {
-                    const allSubcats = tree.flatMap(dept =>
-                      dept.subcategories.map(sub => ({
-                        ...sub,
-                        name: `[${dept.name}] ${sub.name}`,
-                      }))
-                    );
-
-                    const fakeDept: typeof tree[0] = {
-                      type: "department",
-                      name: "All Departments",
-                      icon: "🌐",
-                      totalSOPs: overall.totalSOPs,
-                      totalQuestions: overall.totalQuestions,
-                      checkedCount: overall.checkedCount,
-                      reviewedCount: overall.reviewedCount,
-                      similarCount: overall.similarCount,
-                      subcategories: allSubcats,
-                    };
-                    
-                    setApprovalFilter(filter);
-                    setSOPViewMode('table');
-                    setFullScreenDept(fakeDept);
-                  };
-
-                  return (
-                    <div className="flex flex-col rounded-xl border border-blue-200 bg-white overflow-hidden w-[170px] shrink-0">
-                      <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border-b border-blue-200">
-                        <span className="text-blue-500 shrink-0"><BookOpen className="h-3.5 w-3.5" /></span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[11px] font-bold tracking-wide truncate leading-tight text-gray-800">Generation</p>
-                          <p className="text-[8px] text-gray-500 font-medium leading-tight">All Departments</p>
-                        </div>
-                      </div>
-                      <div className="py-1 flex-1">
-                        <R label="Total SOPs" value={overall.sopWithMCQs} vc="text-blue-600" />
-                        
-                        <div className="flex border-b border-gray-100">
-                          <Stat label="Completed" value={overall.sopCompletedGen} vc="text-emerald-600" onClick={() => handleGenerationClick('completed')} br />
-                          <Stat label="Target"    value={overall.sopUnder100MCQs} vc="text-amber-600" onClick={() => handleGenerationClick('target')} br />
-                          <Stat label="Remaining" value={Math.max(0, overall.sopWithMCQs - overall.sopCompletedGen - overall.sopUnder100MCQs)} vc="text-red-600" onClick={() => handleGenerationClick('zero')} />
-                        </div>
-                      </div>
-                      <CoverageBar pct={overall.sopWithMCQs > 0 ? Math.round((overall.sopCompletedGen / overall.sopWithMCQs) * 100) : 0} />
-                    </div>
-                  );
-                })()}
-
-                {/* Per-dept cards */}
-                {orderedDepts.map((dept) => {
-                  const theme = getDeptTheme(dept.name);
-                  const ds = deptStats[dept.name];
-                  const pct = (ds?.totalSOPs ?? 0) > 0
-                    ? Math.round(((ds?.sopWithMCQs ?? 0) / (ds?.totalSOPs ?? 1)) * 100) : 0;
-
-                  // Map theme.text to a light mode border/header colour
-                  const borderClass = 'border-gray-200';
-                  const headerBg = 'bg-gray-50';
-                  const textColor = theme.text ? theme.text.replace('400', '600') : 'text-gray-800';
-
-                  return (
-                    <Card
-                      key={dept.name}
-                      title={dept.name}
-                      subtitle={`${dept.subcategories?.length ?? 0} subcategories`}
-                      accentClass={textColor}
-                      borderClass={borderClass}
-                      headerBg={headerBg}
-                      icon={<FileText className="h-3.5 w-3.5" />}
-                      totalSOPs={ds?.totalSOPs      ?? 0}
-                      sopWithMCQs={ds?.sopWithMCQs   ?? 0}
-                      approvedSOPs={ds?.approvedSOPs  ?? 0}
-                      partialSOPs={ds?.partialSOPs   ?? 0}
-                      pendingSOPs={ds?.pendingSOPs    ?? 0}
-                      similarSOPs={ds?.similarSOPs    ?? 0}
-                      sopWithoutMCQs={ds?.sopWithoutMCQs ?? 0}
-                      totalQuestions={ds?.totalQuestions ?? 0}
-                      checkedCount={ds?.checkedCount   ?? 0}
-                      reviewedCount={ds?.reviewedCount  ?? 0}
-                      similarCount={ds?.similarCount   ?? 0}
-                      coverage={pct}
-                      themeText={theme.text}
-                      sopEng={ds?.sopEng ?? 0}
-                      sopGuj={ds?.sopGuj ?? 0}
-                      onOpen={() => {
-                        setApprovalFilter('all');
-                        setFullScreenDept(dept);
-                      }}
-                      onRowClick={(filter) => { setApprovalFilter(filter); setSOPViewMode('table'); setFullScreenDept(dept); }}
-                    />
-                  );
-                })}
-              </div>
+              {/* Per-dept cards */}
+              {orderedDepts.map((dept) => {
+                const ds = deptStats[dept.name];
+                return (
+                  <Card
+                    key={dept.name}
+                    title={dept.name}
+                    subtitle={`${dept.subcategories?.length ?? 0} subcategories`}
+                    totalSOPs={ds?.totalSOPs       ?? 0}
+                    sopWithMCQs={ds?.sopWithMCQs   ?? 0}
+                    sopWithoutMCQs={ds?.sopWithoutMCQs ?? 0}
+                    approvedSOPs={ds?.approvedSOPs  ?? 0}
+                    partialSOPs={ds?.partialSOPs    ?? 0}
+                    pendingSOPs={ds?.pendingSOPs    ?? 0}
+                    similarSOPs={ds?.similarSOPs    ?? 0}
+                    totalSopEng={ds?.totalSopEng    ?? 0}
+                    totalSopGuj={ds?.totalSopGuj    ?? 0}
+                    remainingEng={ds?.remainingEng  ?? 0}
+                    remainingGuj={ds?.remainingGuj  ?? 0}
+                    onOpen={() => { setApprovalFilter('all'); setFullScreenDept(dept); }}
+                    onRowClick={(filter) => { setApprovalFilter(filter); setSOPViewMode('table'); setFullScreenDept(dept); }}
+                    onRemainingClick={() => {
+                      const remSops = ds?.remainingSOPs ?? [];
+                      setRemainingPanel({ dept: dept.name, sops: remSops });
+                    }}
+                  />
+                );
+              })}
             </div>
           </div>
         );
@@ -1485,11 +1573,14 @@ export default function MCQTreeView({
           const similarSOPs    = ds ? ds.similarSOPs  : treeSimilar;
           const mcqCoverage    = realTotalSOPs > 0 ? Math.round((sopWithMCQs / realTotalSOPs) * 100) : 0;
 
+          const isFolderExpanded = expandedFolderDropdowns.has(dept.name);
+
           return (
             <div
               key={dept.name}
-              className={`rounded-xl border-0 ${theme.cardBg} transition-all duration-300 transform hover:scale-[1.02] shadow-lg hover:shadow-2xl overflow-hidden cursor-pointer group`}
+              className={`rounded-xl border-0 ${theme.cardBg} transition-all duration-300 shadow-lg hover:shadow-2xl overflow-hidden group`}
             >
+              {/* Main clickable header area */}
               <button
                 onClick={() => {
                   setApprovalFilter('all');
@@ -1518,9 +1609,13 @@ export default function MCQTreeView({
                       </div>
                     </div>
                   </div>
-                  <div className="h-6 w-6 rounded-full flex items-center justify-center border border-white/30 bg-white/20 text-white flex-shrink-0">
-                    <ChevronRight className="h-3 w-3" />
-                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); toggleFolderDropdown(dept.name); }}
+                    title={isFolderExpanded ? 'Hide folders' : 'Show folders'}
+                    className="h-6 w-6 rounded-full flex items-center justify-center border border-white/30 bg-white/20 text-white flex-shrink-0 hover:bg-white/30 transition-all duration-200"
+                  >
+                    <ChevronDown className={`h-3 w-3 transition-transform duration-300 ${isFolderExpanded ? 'rotate-180' : ''}`} />
+                  </button>
                 </div>
 
                 {/* Top stats */}
@@ -1616,10 +1711,296 @@ export default function MCQTreeView({
                   </div>
                 )}
               </button>
+
+              {/* Inline subcategory dropdown */}
+              {isFolderExpanded && (
+                <div className="border-t border-white/10 bg-black/30 px-3 py-2 flex flex-col gap-1 max-h-48 overflow-y-auto">
+                  {dept.subcategories.map((sub) => {
+                    const subSOPs = sub.sops?.length ?? sub.totalSOPs ?? 0;
+                    const subQs = sub.totalQuestions ?? sub.sops?.reduce((s, sop) => s + (sop.totalQuestions ?? 0), 0) ?? 0;
+                    const subChecked = sub.checkedCount ?? sub.sops?.reduce((s, sop) => s + (sop.checkedCount ?? 0), 0) ?? 0;
+                    const subSimilar = sub.similarCount ?? sub.sops?.reduce((s, sop) => s + (sop.similarCount ?? 0), 0) ?? 0;
+                    return (
+                      <button
+                        key={sub.code}
+                        onClick={() => { setApprovalFilter('all'); setFullScreenDept(dept); }}
+                        className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all text-left w-full group/sub"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FolderOpen className="h-3 w-3 text-white/40 shrink-0 group-hover/sub:text-white/70 transition-colors" />
+                          <div className="min-w-0">
+                            <p className="text-[9px] font-black text-white/80 uppercase tracking-wider leading-tight truncate">{sub.code}</p>
+                            <p className="text-[8px] text-white/40 leading-tight truncate">{sub.name}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="text-[8px] text-white/50">{subSOPs} SOPs</span>
+                          {subQs > 0 && <span className="text-[8px] font-bold text-white/70">{subQs}Q</span>}
+                          {subChecked > 0 && <span className="text-[8px] font-bold text-emerald-300">✓{subChecked}</span>}
+                          {subSimilar > 0 && <span className="text-[8px] font-bold text-red-300">⚠{subSimilar}</span>}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           );
         })}
       </div>
+
+      {/* ══════════════════════════════════════════════════════════════════
+           MCQ REGISTRY TABLE — mirrors SOP Registry style
+          ══════════════════════════════════════════════════════════════════ */}
+      {(() => {
+        // Build flat registry rows from tree: one row per SOP bank
+        const allRows: {
+          identifier: string; name: string; dept: string; lang: string;
+          totalQ: number; checkedCount: number; reviewedCount: number;
+          similarCount: number; approvedSOPs: number; partialSOPs: number;
+          pendingSOPs: number; lastUpdated: string | null;
+          sopNode: SOPNode;
+        }[] = [];
+
+        tree.forEach((dept) => {
+          dept.subcategories.forEach((sub) => {
+            sub.sops.forEach((sop) => {
+              sop.mcqBanks.forEach((bank: any) => {
+                const lang = bank.language === 'Gujarati' ? 'Gujarati' : 'English';
+                const totalQ = bank.mcqs?.length ?? sop.totalQuestions ?? 0;
+                const checkedCount = bank.mcqs?.filter((q: any) => q.isChecked).length ?? sop.checkedCount ?? 0;
+                const reviewedCount = bank.mcqs?.filter((q: any) => q.isReviewed).length ?? sop.reviewedCount ?? 0;
+                const similarCount = bank.mcqs?.filter((q: any) => q.isSimilar).length ?? sop.similarCount ?? 0;
+
+                let genStatus = 'Pending';
+                if (totalQ >= 100) genStatus = 'Completed';
+                else if (totalQ > 0) genStatus = 'In Progress';
+
+                let approvalStatus = 'Pending';
+                if (totalQ > 0 && checkedCount >= totalQ) approvalStatus = 'Approved';
+                else if (similarCount > 0) approvalStatus = 'Similar';
+                else if (totalQ > 0 && checkedCount > 0) approvalStatus = 'Partial';
+
+                const lastUpdated = bank.updatedAt || bank.createdAt || null;
+
+                allRows.push({
+                  identifier: sop.sopCode,
+                  name: cleanSOPName(sop.sopName, sop.sopCode),
+                  dept: dept.name,
+                  lang,
+                  totalQ,
+                  checkedCount,
+                  reviewedCount,
+                  similarCount,
+                  approvedSOPs: approvalStatus === 'Approved' ? 1 : 0,
+                  partialSOPs: approvalStatus === 'Partial' ? 1 : 0,
+                  pendingSOPs: approvalStatus === 'Pending' ? 1 : 0,
+                  lastUpdated,
+                  sopNode: sop,
+                });
+              });
+            });
+          });
+        });
+
+        // Filter
+        const filtered = allRows.filter((row) => {
+          if (mcqRegistryDeptFilter !== 'All' && row.dept !== mcqRegistryDeptFilter) return false;
+          if (mcqRegistryLangFilter !== 'All' && row.lang !== mcqRegistryLangFilter) return false;
+          if (mcqRegistrySearch) {
+            const q = mcqRegistrySearch.toLowerCase();
+            if (!row.identifier.toLowerCase().includes(q) && !row.name.toLowerCase().includes(q) && !row.dept.toLowerCase().includes(q)) return false;
+          }
+          return true;
+        });
+
+        // Sort
+        const sorted = [...filtered].sort((a, b) => {
+          let cmp = 0;
+          switch (mcqRegistrySortCol) {
+            case 'identifier': cmp = a.identifier.localeCompare(b.identifier, undefined, { numeric: true }); break;
+            case 'name': cmp = a.name.localeCompare(b.name); break;
+            case 'dept': cmp = a.dept.localeCompare(b.dept); break;
+            case 'lang': cmp = a.lang.localeCompare(b.lang); break;
+            case 'totalQ': cmp = a.totalQ - b.totalQ; break;
+            case 'remaining': cmp = (a.totalQ - a.checkedCount) - (b.totalQ - b.checkedCount); break;
+            case 'approved': cmp = a.approvedSOPs - b.approvedSOPs; break;
+            case 'partial': cmp = a.partialSOPs - b.partialSOPs; break;
+            case 'similar': cmp = a.similarCount - b.similarCount; break;
+            case 'lastUpdated':
+              cmp = (a.lastUpdated ? new Date(a.lastUpdated).getTime() : 0) - (b.lastUpdated ? new Date(b.lastUpdated).getTime() : 0);
+              break;
+          }
+          return mcqRegistrySortDir === 'asc' ? cmp : -cmp;
+        });
+
+        const toggleRegistrySort = (col: typeof mcqRegistrySortCol) => {
+          if (mcqRegistrySortCol === col) setMcqRegistrySortDir(d => d === 'asc' ? 'desc' : 'asc');
+          else { setMcqRegistrySortCol(col); setMcqRegistrySortDir('asc'); }
+        };
+
+        const SortIcon = ({ col }: { col: typeof mcqRegistrySortCol }) => {
+          if (mcqRegistrySortCol !== col) return <span className="text-white/20 ml-0.5">↕</span>;
+          return <span className="text-purple-300 ml-0.5">{mcqRegistrySortDir === 'asc' ? '↑' : '↓'}</span>;
+        };
+
+        const uniqueDepts = ['All', ...Array.from(new Set(allRows.map(r => r.dept))).sort()];
+
+        return (
+          <div className="mt-8">
+            {/* Section header */}
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20">
+                  <LayoutList className="h-5 w-5 text-purple-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white uppercase tracking-widest">MCQ Registry</h3>
+                  <p className="text-[10px] text-gray-500 mt-0.5">{sorted.length} of {allRows.length} banks</p>
+                </div>
+              </div>
+
+              {/* Controls */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Search */}
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-500 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Search SOPs..."
+                    value={mcqRegistrySearch}
+                    onChange={e => setMcqRegistrySearch(e.target.value)}
+                    className="pl-8 pr-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-[11px] placeholder-gray-500 focus:outline-none focus:border-purple-500/50 focus:bg-white/8 w-44 transition-colors"
+                  />
+                </div>
+                {/* Dept filter */}
+                <select
+                  value={mcqRegistryDeptFilter}
+                  onChange={e => setMcqRegistryDeptFilter(e.target.value)}
+                  className="px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-[11px] focus:outline-none focus:border-purple-500/50 cursor-pointer"
+                >
+                  {uniqueDepts.map(d => <option key={d} value={d} className="bg-[#1a1f2e]">{d}</option>)}
+                </select>
+                {/* Language filter */}
+                <select
+                  value={mcqRegistryLangFilter}
+                  onChange={e => setMcqRegistryLangFilter(e.target.value)}
+                  className="px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-[11px] focus:outline-none focus:border-purple-500/50 cursor-pointer"
+                >
+                  <option value="All" className="bg-[#1a1f2e]">All Languages</option>
+                  <option value="English" className="bg-[#1a1f2e]">English</option>
+                  <option value="Gujarati" className="bg-[#1a1f2e]">Gujarati</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="rounded-2xl border border-white/8 overflow-hidden bg-[#0D1117]">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-white/5 border-b border-white/8">
+                      {([
+                        ['identifier', 'SOP No.'],
+                        ['name', 'SOP Name'],
+                        ['dept', 'Dept'],
+                        ['lang', 'Lang'],
+                        ['totalQ', 'Total MCQs'],
+                        ['remaining', 'Remaining'],
+                        ['approved', 'Approved'],
+                        ['partial', 'Partial'],
+                        ['similar', 'Similar'],
+                        ['lastUpdated', 'Last Updated'],
+                      ] as [typeof mcqRegistrySortCol, string][]).map(([col, label]) => (
+                        <th
+                          key={col}
+                          onClick={() => toggleRegistrySort(col)}
+                          className="px-3 py-3 text-[9px] font-black uppercase tracking-widest text-gray-400 cursor-pointer hover:text-white whitespace-nowrap select-none transition-colors"
+                        >
+                          {label}<SortIcon col={col} />
+                        </th>
+                      ))}
+                      <th className="px-3 py-3 text-[9px] font-black uppercase tracking-widest text-gray-400 whitespace-nowrap">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sorted.length === 0 ? (
+                      <tr>
+                        <td colSpan={11} className="text-center py-12 text-gray-500 text-sm">No MCQ banks match the current filters.</td>
+                      </tr>
+                    ) : sorted.map((row, idx) => {
+                      const remaining = Math.max(0, row.totalQ - row.checkedCount);
+                      const complianceStatus = row.totalQ >= 100 ? 'Compliant' : row.totalQ > 0 ? 'Partial' : 'None';
+                      const genStatus = row.totalQ >= 100 ? 'Completed' : row.totalQ > 0 ? 'In Progress' : 'Not Started';
+                      return (
+                        <tr
+                          key={`${row.identifier}-${row.lang}-${idx}`}
+                          className="border-b border-white/5 hover:bg-white/3 transition-colors group/row"
+                        >
+                          {/* SOP No */}
+                          <td className="px-3 py-2.5">
+                            <span className="text-[10px] font-black text-purple-300 uppercase tracking-wider">{row.identifier}</span>
+                          </td>
+                          {/* SOP Name */}
+                          <td className="px-3 py-2.5 max-w-[220px]">
+                            <span className="text-[11px] text-white/80 leading-tight line-clamp-2">{row.name}</span>
+                          </td>
+                          {/* Dept */}
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            <span className="text-[10px] font-bold text-gray-400">{row.dept}</span>
+                          </td>
+                          {/* Lang */}
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
+                              row.lang === 'Gujarati' ? 'bg-orange-500/15 text-orange-300 border border-orange-500/20' : 'bg-blue-500/15 text-blue-300 border border-blue-500/20'
+                            }`}>{row.lang === 'Gujarati' ? 'GUJ' : 'ENG'}</span>
+                          </td>
+                          {/* Total MCQs */}
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            <span className={`text-[12px] font-black tabular-nums ${row.totalQ >= 100 ? 'text-emerald-400' : row.totalQ > 0 ? 'text-amber-400' : 'text-gray-600'}`}>{row.totalQ}</span>
+                          </td>
+                          {/* Remaining MCQs */}
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            <span className={`text-[12px] font-black tabular-nums ${remaining > 0 ? 'text-red-400' : 'text-gray-600'}`}>{remaining}</span>
+                          </td>
+                          {/* Approved */}
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            <span className={`text-[11px] font-bold tabular-nums ${row.checkedCount > 0 ? 'text-emerald-400' : 'text-gray-600'}`}>{row.checkedCount}</span>
+                          </td>
+                          {/* Partial */}
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            <span className={`text-[11px] font-bold tabular-nums ${row.partialSOPs > 0 ? 'text-amber-400' : 'text-gray-600'}`}>{row.reviewedCount}</span>
+                          </td>
+                          {/* Similar */}
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            <span className={`text-[11px] font-bold tabular-nums ${row.similarCount > 0 ? 'text-red-400' : 'text-gray-600'}`}>{row.similarCount}</span>
+                          </td>
+                          {/* Last Updated */}
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            <span className="text-[10px] text-gray-500">
+                              {row.lastUpdated ? new Date(row.lastUpdated).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}
+                            </span>
+                          </td>
+                          {/* Actions */}
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            <button
+                              onClick={() => onViewMCQs(row.sopNode, 'all')}
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-300 text-[9px] font-bold uppercase tracking-wider hover:bg-purple-500/20 hover:border-purple-400/40 transition-all"
+                            >
+                              <Eye className="h-3 w-3" />
+                              View MCQs
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Removed / Obsolete SOPs Section */}
       {archivedSOPs.length > 0 && (
@@ -1724,6 +2105,45 @@ export default function MCQTreeView({
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Remaining SOPs Panel — SOPs with no MCQ bank yet */}
+      {remainingPanel && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-300">
+          <div className="absolute inset-0 cursor-pointer bg-black/60 backdrop-blur-sm" onClick={() => setRemainingPanel(null)} />
+          <div className="relative w-full max-w-2xl max-h-[80vh] flex flex-col rounded-2xl bg-[#0D1117] border border-white/10 shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 shrink-0">
+              <div>
+                <h3 className="text-base font-black text-white">Remaining SOPs — No MCQs Yet</h3>
+                <p className="text-[11px] text-gray-400 mt-0.5">{remainingPanel.dept} · {remainingPanel.sops.length} SOP{remainingPanel.sops.length !== 1 ? 's' : ''} pending generation</p>
+              </div>
+              <button onClick={() => setRemainingPanel(null)} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {/* List */}
+            <div className="overflow-y-auto flex-1 px-4 py-3">
+              {remainingPanel.sops.length === 0 ? (
+                <div className="text-center py-12 text-gray-500 text-sm">All SOPs have MCQ banks generated.</div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {remainingPanel.sops.map((sop) => (
+                    <div key={sop.identifier} className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
+                      <div className="mt-0.5 p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 shrink-0">
+                        <FileText className="h-3 w-3 text-amber-400" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-black text-amber-300 uppercase tracking-wider leading-tight">{sop.identifier}</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5 leading-tight line-clamp-2">{sop.name || '—'}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
