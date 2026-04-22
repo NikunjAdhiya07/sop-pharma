@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
-import { sopFamilyKeyFromIdentifier } from '@/lib/sopIdentifierNormalize';
+import { sopFamilyKeyFromIdentifier, normalizeSopIdentifierKey } from '@/lib/sopIdentifierNormalize';
 
 /**
  * GET /api/mcq-bank/dept-stats
@@ -144,36 +144,56 @@ export async function GET() {
       }
     }
 
-    // ── 4. Count registry-equivalent SOPs per dept ─────────────────────────
-    // Deduplicate by family key (prefix:number, ignoring revision) so the count
-    // matches the dashboard's "431 primary registry rows" logic.
+    // ── 4. Count SOPs per dept ────────────────────────────────────────────────
+    // Three dedup levels — mirroring dashboard exactly:
     //
-    // familyKey → { dept, langs, identifier (canonical), name }
+    //  familyMap   — by family key (QAGE:1)  → totalSOPs (unique SOP numbers, ~428)
+    //  normalMap   — by normalizeSopIdentifierKey (QAGE1-10) merging EN+GU into one
+    //                → totalSopVersions (matches dashboard MERGED_DATA.length, ~479)
+    //
+    // normalMap key = normalizeSopIdentifierKey(raw), value = { dept, hasEng, hasGuj }
     const familyMap = new Map<string, { dept: string; langs: Set<string>; identifier: string; name: string }>();
+    const normalMap = new Map<string, { dept: string; hasEng: boolean; hasGuj: boolean; identifier: string; name: string }>();
 
     for (const sop of allSOPs) {
       const raw = (sop.identifier as string).trim().toUpperCase();
       if (!raw) continue;
 
       const fk = sopFamilyKeyFromIdentifier(raw);
-      if (!fk) continue; // skip non-standard identifiers (manuals, junk IDs)
+      if (!fk) continue; // skip non-standard identifiers
 
       const dept = resolveDept(raw, sop.department);
-      if (dept === 'Other') continue; // skip unknown depts — mirrors dashboard exclude
+      if (dept === 'Other') continue;
 
       const lang = sop.language === 'Gujarati' ? 'Gujarati' : 'English';
 
+      // Family-level (totalSOPs = unique SOP numbers ignoring revision+language)
       if (!familyMap.has(fk)) {
         familyMap.set(fk, { dept, langs: new Set(), identifier: raw, name: sop.name || '' });
       }
       familyMap.get(fk)!.langs.add(lang);
+
+      // Normalized-identifier level (matches dashboard MERGED_DATA — EN+GU merged as one)
+      const nk = normalizeSopIdentifierKey(raw);
+      if (!normalMap.has(nk)) {
+        normalMap.set(nk, { dept, hasEng: false, hasGuj: false, identifier: raw, name: sop.name || '' });
+      }
+      const ne = normalMap.get(nk)!;
+      if (lang === 'Gujarati') ne.hasGuj = true;
+      else ne.hasEng = true;
     }
 
-    console.log(`[dept-stats v4] unique family keys (matches dashboard count): ${familyMap.size}`);
+    console.log(`[dept-stats] family keys=${familyMap.size}  normalized identifiers=${normalMap.size}`);
 
     type DeptStats = {
       department: string;
       totalSOPs: number;
+      totalSopVersions: number;
+      mcqFoundVersions: number;
+      mcqNotFoundVersions: number;
+      totalSopPairs: number;
+      mcqFoundPairs: number;
+      mcqNotFoundPairs: number;
       sopWithMCQs: number;
       sopWithoutMCQs: number;
       sopCompletedGen: number;
@@ -192,12 +212,15 @@ export async function GET() {
       totalSopGuj: number;
       remainingEng: number;
       remainingGuj: number;
-      remainingSOPs: { identifier: string; name: string }[]; // SOPs with no MCQ bank yet
+      remainingSOPs: { identifier: string; name: string }[];
     };
 
     const statsMap = new Map<string, DeptStats>();
     const initDept = (dept: string): DeptStats => ({
-      department: dept, totalSOPs: 0, sopWithMCQs: 0, sopWithoutMCQs: 0,
+      department: dept,
+      totalSOPs: 0, totalSopVersions: 0, mcqFoundVersions: 0, mcqNotFoundVersions: 0,
+      totalSopPairs: 0, mcqFoundPairs: 0, mcqNotFoundPairs: 0,
+      sopWithMCQs: 0, sopWithoutMCQs: 0,
       sopCompletedGen: 0, sopUnder100MCQs: 0,
       approvedSOPs: 0, partialSOPs: 0, pendingSOPs: 0, similarSOPs: 0,
       totalQuestions: 0, checkedCount: 0, reviewedCount: 0, similarCount: 0,
@@ -206,8 +229,7 @@ export async function GET() {
       remainingSOPs: [],
     });
 
-    // Tally totalSOPs + totalSopEng + totalSopGuj from deduplicated family keys
-    // Also track all family keys so we can compute which ones have no MCQ bank
+    // Tally totalSOPs from family keys (unique SOP numbers, ~428)
     for (const { dept, langs } of familyMap.values()) {
       if (!statsMap.has(dept)) statsMap.set(dept, initDept(dept));
       const ds = statsMap.get(dept)!;
@@ -216,8 +238,18 @@ export async function GET() {
       if (langs.has('Gujarati')) ds.totalSopGuj += 1;
     }
 
-    // ── 5. Merge MCQ bank stats per family key ─────────────────────────────
-    // Group MCQ banks by family key so all revisions of the same SOP are counted once.
+    // Tally totalSopVersions from normalMap (matches dashboard MERGED_DATA.length, ~479)
+    // Each unique normalized identifier = one "version" regardless of EN/GU
+    for (const { dept } of normalMap.values()) {
+      if (!statsMap.has(dept)) statsMap.set(dept, initDept(dept));
+      const ds = statsMap.get(dept)!;
+      ds.totalSopVersions += 1;
+      ds.totalSopPairs = ds.totalSopVersions; // alias for frontend
+    }
+
+    // ── 5. Merge MCQ bank stats ────────────────────────────────────────────────
+    // mcqByFamily: grouped by family key for sopWithMCQs, questions, approval stats
+    // mcqFoundNormSet: normalized identifier keys that have any MCQ bank (EN or GU)
     const mcqByFamily = new Map<string, {
       dept: string;
       totalQuestions: number;
@@ -227,6 +259,7 @@ export async function GET() {
       hasEng: boolean;
       hasGuj: boolean;
     }>();
+    const mcqFoundNormSet = new Set<string>(); // normalized identifier keys with a bank
 
     for (const bank of bankAgg) {
       const fallbackKey = bank.sopId?.toString() ?? bank._id?.toString();
@@ -236,13 +269,16 @@ export async function GET() {
       if (!rawIdentifier) continue;
 
       const fk = sopFamilyKeyFromIdentifier(rawIdentifier);
-      if (!fk) continue; // skip non-standard identifiers
+      if (!fk) continue;
 
       const storedDept = sopDeptMap.get(fallbackKey) ?? bank.department;
       const dept = resolveDept(rawIdentifier, storedDept);
       if (dept === 'Other') continue;
 
       const lang = sopLanguageMap.get(fallbackKey) ?? 'English';
+
+      // Track normalized identifier keys that have any bank (same level as normalMap)
+      mcqFoundNormSet.add(normalizeSopIdentifierKey(rawIdentifier));
 
       if (!mcqByFamily.has(fk)) {
         mcqByFamily.set(fk, { dept, totalQuestions: 0, checkedCount: 0, reviewedCount: 0, similarCount: 0, hasEng: false, hasGuj: false });
@@ -256,7 +292,18 @@ export async function GET() {
       else entry.hasEng = true;
     }
 
-    // Tally MCQ stats per dept
+    // Tally mcqFoundVersions per dept from the normalized set
+    for (const nk of mcqFoundNormSet) {
+      const entry = normalMap.get(nk);
+      if (!entry) continue;
+      const dept = entry.dept;
+      if (!statsMap.has(dept)) statsMap.set(dept, initDept(dept));
+      const ds = statsMap.get(dept)!;
+      ds.mcqFoundVersions += 1;
+      ds.mcqFoundPairs = ds.mcqFoundVersions; // alias for frontend
+    }
+
+    // Tally MCQ stats per dept from family map
     for (const [, entry] of mcqByFamily) {
       const dept = entry.dept;
       if (!statsMap.has(dept)) statsMap.set(dept, initDept(dept));
@@ -289,9 +336,11 @@ export async function GET() {
 
     // Derive remaining counts + build list of SOPs with no MCQ bank
     for (const ds of statsMap.values()) {
-      ds.sopWithoutMCQs = Math.max(0, ds.totalSOPs - ds.sopWithMCQs);
-      ds.remainingEng   = Math.max(0, ds.totalSopEng - ds.sopEng);
-      ds.remainingGuj   = Math.max(0, ds.totalSopGuj - ds.sopGuj);
+      ds.sopWithoutMCQs      = Math.max(0, ds.totalSOPs - ds.sopWithMCQs);
+      ds.remainingEng        = Math.max(0, ds.totalSopEng - ds.sopEng);
+      ds.remainingGuj        = Math.max(0, ds.totalSopGuj - ds.sopGuj);
+      ds.mcqNotFoundVersions = Math.max(0, ds.totalSopVersions - ds.mcqFoundVersions);
+      ds.mcqNotFoundPairs    = ds.mcqNotFoundVersions; // alias for frontend
     }
 
     // Populate remainingSOPs: family keys in familyMap that have no MCQ bank entry
@@ -315,30 +364,39 @@ export async function GET() {
     // Overall totals — sum only named departments
     const overall = result.reduce(
       (acc, ds) => {
-        acc.totalSOPs      += ds.totalSOPs;
-        acc.sopWithMCQs    += ds.sopWithMCQs;
-        acc.sopWithoutMCQs += ds.sopWithoutMCQs;
-        acc.sopCompletedGen+= ds.sopCompletedGen;
-        acc.sopUnder100MCQs+= ds.sopUnder100MCQs;
-        acc.approvedSOPs   += ds.approvedSOPs;
-        acc.partialSOPs    += ds.partialSOPs;
-        acc.pendingSOPs    += ds.pendingSOPs;
-        acc.similarSOPs    += ds.similarSOPs;
-        acc.totalQuestions += ds.totalQuestions;
-        acc.checkedCount   += ds.checkedCount;
-        acc.reviewedCount  += ds.reviewedCount;
-        acc.similarCount   += ds.similarCount;
-        acc.sopEng         += ds.sopEng;
-        acc.sopGuj         += ds.sopGuj;
-        acc.totalSopEng    += ds.totalSopEng;
-        acc.totalSopGuj    += ds.totalSopGuj;
-        acc.remainingEng   += ds.remainingEng;
-        acc.remainingGuj   += ds.remainingGuj;
+        acc.totalSOPs            += ds.totalSOPs;
+        acc.totalSopVersions     += ds.totalSopVersions;
+        acc.mcqFoundVersions     += ds.mcqFoundVersions;
+        acc.mcqNotFoundVersions  += ds.mcqNotFoundVersions;
+        acc.totalSopPairs        += ds.totalSopVersions;   // alias
+        acc.mcqFoundPairs        += ds.mcqFoundVersions;   // alias
+        acc.mcqNotFoundPairs     += ds.mcqNotFoundVersions;// alias
+        acc.sopWithMCQs       += ds.sopWithMCQs;
+        acc.sopWithoutMCQs    += ds.sopWithoutMCQs;
+        acc.sopCompletedGen   += ds.sopCompletedGen;
+        acc.sopUnder100MCQs   += ds.sopUnder100MCQs;
+        acc.approvedSOPs      += ds.approvedSOPs;
+        acc.partialSOPs       += ds.partialSOPs;
+        acc.pendingSOPs       += ds.pendingSOPs;
+        acc.similarSOPs       += ds.similarSOPs;
+        acc.totalQuestions    += ds.totalQuestions;
+        acc.checkedCount      += ds.checkedCount;
+        acc.reviewedCount     += ds.reviewedCount;
+        acc.similarCount      += ds.similarCount;
+        acc.sopEng            += ds.sopEng;
+        acc.sopGuj            += ds.sopGuj;
+        acc.totalSopEng       += ds.totalSopEng;
+        acc.totalSopGuj       += ds.totalSopGuj;
+        acc.remainingEng      += ds.remainingEng;
+        acc.remainingGuj      += ds.remainingGuj;
         acc.remainingSOPs.push(...ds.remainingSOPs);
         return acc;
       },
       {
-        totalSOPs: 0, sopWithMCQs: 0, sopWithoutMCQs: 0,
+        totalSOPs: 0,
+        totalSopVersions: 0, mcqFoundVersions: 0, mcqNotFoundVersions: 0,
+        totalSopPairs: 0, mcqFoundPairs: 0, mcqNotFoundPairs: 0,
+        sopWithMCQs: 0, sopWithoutMCQs: 0,
         sopCompletedGen: 0, sopUnder100MCQs: 0,
         approvedSOPs: 0, partialSOPs: 0, pendingSOPs: 0, similarSOPs: 0,
         totalQuestions: 0, checkedCount: 0, reviewedCount: 0, similarCount: 0,

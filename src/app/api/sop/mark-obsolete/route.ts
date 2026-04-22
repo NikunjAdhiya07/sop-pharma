@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
 import User from '@/models/User';
+import { invalidateDashboardSopsCache } from '@/lib/dashboardSopsCache';
 
 const OBSOLETE_FIXED_PASSWORD = 'indiana@132';
 
@@ -61,6 +62,9 @@ export async function POST(request: NextRequest) {
     if (result.matchedCount === 0) {
       return NextResponse.json({ error: 'SOP not found' }, { status: 404 });
     }
+
+    // Invalidate server-side dashboard cache so the next load reflects the change immediately.
+    invalidateDashboardSopsCache();
 
     return NextResponse.json({
       success: true,

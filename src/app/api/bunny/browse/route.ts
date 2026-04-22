@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const maxDuration = 60; // seconds
+
 interface BunnyFile {
   Guid: string;
   StorageZoneName: string;
@@ -46,6 +48,8 @@ async function listDirectory(storageHostname: string, storageZone: string, apiKe
   return res.json();
 }
 
+type FileResult = { name: string; path: string; size: number; lastModified: string; cdnUrl: string; type: 'docx' | 'pdf' };
+
 async function collectFiles(
   storageHostname: string,
   storageZone: string,
@@ -53,7 +57,7 @@ async function collectFiles(
   path: string,
   cdnHostname: string,
   depth = 0,
-): Promise<Array<{ name: string; path: string; size: number; lastModified: string; cdnUrl: string; type: 'docx' | 'pdf' | 'other' }>> {
+): Promise<FileResult[]> {
   if (depth > 6) return [];
 
   let entries: BunnyFile[];
@@ -63,32 +67,35 @@ async function collectFiles(
     return [];
   }
 
-  const results: Array<{ name: string; path: string; size: number; lastModified: string; cdnUrl: string; type: 'docx' | 'pdf' | 'other' }> = [];
+  const files: FileResult[] = [];
+  const subdirPromises: Promise<FileResult[]>[] = [];
 
   for (const entry of entries) {
     const entryPath = path ? `${path.replace(/\/$/, '')}/${entry.ObjectName}` : entry.ObjectName;
 
     if (entry.IsDirectory) {
-      const children = await collectFiles(storageHostname, storageZone, apiKey, entryPath, cdnHostname, depth + 1);
-      results.push(...children);
+      // Kick off all subdirectory crawls in parallel
+      subdirPromises.push(collectFiles(storageHostname, storageZone, apiKey, entryPath, cdnHostname, depth + 1));
     } else {
       const ext = entry.ObjectName.split('.').pop()?.toLowerCase() ?? '';
-      const type = ext === 'docx' || ext === 'doc' ? 'docx' : ext === 'pdf' ? 'pdf' : 'other';
-      if (type === 'other') continue; // skip non-docx/pdf
-
-      const cdnUrl = `https://${cdnHostname}/${entryPath}`;
-      results.push({
+      const type = ext === 'docx' || ext === 'doc' ? 'docx' : ext === 'pdf' ? 'pdf' : null;
+      if (!type) continue;
+      files.push({
         name: entry.ObjectName,
         path: entryPath,
         size: entry.Length,
         lastModified: entry.LastChanged,
-        cdnUrl,
+        cdnUrl: `https://${cdnHostname}/${entryPath}`,
         type,
       });
     }
   }
 
-  return results;
+  // Wait for all subdirectory crawls to complete in parallel
+  const subdirResults = await Promise.all(subdirPromises);
+  for (const children of subdirResults) files.push(...children);
+
+  return files;
 }
 
 export async function GET(request: NextRequest) {

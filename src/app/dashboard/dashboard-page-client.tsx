@@ -115,6 +115,7 @@ export default function DashboardPageClient() {
   });
   // When true, show charts full-width; when false, show capsules full-width
   const [showCharts, setShowCharts] = useState(false);
+  const [showCapsules, setShowCapsules] = useState(true);
   const [showSuperseded, setShowSuperseded] = useState(false);
   const [showGuidelinesLibrary, setShowGuidelinesLibrary] = useState(false);
   const [wizardMinimized, setWizardMinimized] = useState(false);
@@ -1462,7 +1463,6 @@ export default function DashboardPageClient() {
               <Upload className="h-3.5 w-3.5" />
               Version Fetch Upload
             </button>
-
             <div className="flex items-center gap-2 rounded-md border border-purple-200 bg-white/80 px-1.5 py-1">
               <span className="px-1 text-[9px] font-bold uppercase tracking-wide text-purple-700">
                 Bulk
@@ -1566,18 +1566,42 @@ export default function DashboardPageClient() {
 
       {/* Main Content Area */}
 
-      {/* Capsules (always visible) */}
-      <section className="border-b border-gray-200 bg-gray-100 px-2 py-1 sm:px-3">
-        <div className="min-w-0 max-w-[1920px] mx-auto">
-          <DepartmentCapsules
-            data={data}
-            showTotalCapsule
-            applyCapsuleFilter={applyCapsuleFilter}
-            applyCapsuleAvailMiss={applyCapsuleAvailMiss}
-            applyCapsuleVersionSegment={applyCapsuleVersionSegment}
-            filterSnapshot={capsuleFilterSnapshot}
-          />
-        </div>
+      {/* Capsules with collapsible header */}
+      <section className="border-b border-gray-200 bg-white">
+        {/* Collapsible header */}
+        <button
+          onClick={() => setShowCapsules(prev => !prev)}
+          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left group"
+        >
+          <span className="flex items-center justify-center w-7 h-7 rounded-md bg-gradient-to-br from-violet-500 to-indigo-500 shadow-sm shrink-0">
+            <BarChart2 className="h-4 w-4 text-white" />
+          </span>
+          <div className="flex-1 min-w-0">
+            <span className="text-sm font-semibold text-gray-800">
+              By Department <span className="text-gray-500 font-medium">(7)</span>
+            </span>
+            <p className="text-xs text-gray-400 leading-none mt-0.5">Filter SOPs by department</p>
+          </div>
+          <span className="text-gray-400 group-hover:text-gray-600 transition-colors shrink-0">
+            {showCapsules ? <ChevronDown className="h-4 w-4" /> : <ChevronDown className="h-4 w-4 -rotate-90" />}
+          </span>
+        </button>
+
+        {/* Capsule cards */}
+        {showCapsules && (
+          <div className="bg-gray-100 px-2 py-1 sm:px-3 border-t border-gray-100">
+            <div className="min-w-0 max-w-[1920px] mx-auto">
+              <DepartmentCapsules
+                data={data}
+                showTotalCapsule
+                applyCapsuleFilter={applyCapsuleFilter}
+                applyCapsuleAvailMiss={applyCapsuleAvailMiss}
+                applyCapsuleVersionSegment={applyCapsuleVersionSegment}
+                filterSnapshot={capsuleFilterSnapshot}
+              />
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Charts panel toggled from header */}
@@ -2027,7 +2051,7 @@ export default function DashboardPageClient() {
                 setShowGuidelinesLibrary(true);
                 setWizardMinimized(false);
               }}
-              onMarkObsolete={() => setRefreshKey((k) => k + 1)}
+              onMarkObsolete={() => triggerRefresh()}
               onMarkVersionSuperseded={handleMarkVersionSuperseded}
               isObsoleteView={filterObsolete}
               onRemoveObsolete={handleRemoveFromObsolete}

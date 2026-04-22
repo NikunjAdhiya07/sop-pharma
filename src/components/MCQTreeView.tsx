@@ -319,6 +319,7 @@ export default function MCQTreeView({
   const [isCinemaMode, setIsCinemaMode] = useState(false);
   // Expansion state is now managed by parent
   const [isUnorganizedExpanded, setIsUnorganizedExpanded] = useState(false);
+  const [showDeptCards, setShowDeptCards] = useState(false);
   // Inline subcategory dropdown expansion state for folder cards
   const [expandedFolderDropdowns, setExpandedFolderDropdowns] = useState<Set<string>>(new Set());
   const toggleFolderDropdown = (deptName: string) => {
@@ -333,8 +334,10 @@ export default function MCQTreeView({
   const [mcqRegistryDeptFilter, setMcqRegistryDeptFilter] = useState('All');
   const [mcqRegistryLangFilter, setMcqRegistryLangFilter] = useState('All');
   const [mcqRegistrySearch, setMcqRegistrySearch] = useState('');
+  const [mcqRegistryMcqFilter, setMcqRegistryMcqFilter] = useState<'all' | 'found' | 'notfound'>('all');
   const [mcqRegistrySortCol, setMcqRegistrySortCol] = useState<'identifier' | 'name' | 'dept' | 'lang' | 'totalQ' | 'remaining' | 'approved' | 'partial' | 'similar' | 'lastUpdated'>('identifier');
   const [mcqRegistrySortDir, setMcqRegistrySortDir] = useState<'asc' | 'desc'>('asc');
+  const mcqRegistryRef = useRef<HTMLDivElement>(null);
 
   // Archived / Removed SOPs state
   const [archivedSOPs, setArchivedSOPs] = useState<any[]>([]);
@@ -343,6 +346,9 @@ export default function MCQTreeView({
   // Per-department MCQ stats from /api/mcq-bank/dept-stats (includes total SOP count from SOP model)
   const [deptStats, setDeptStats] = useState<Record<string, {
     totalSOPs: number;
+    totalSopPairs: number;
+    mcqFoundPairs: number;
+    mcqNotFoundPairs: number;
     sopWithMCQs: number;
     sopWithoutMCQs: number;
     approvedSOPs: number;
@@ -1212,32 +1218,36 @@ export default function MCQTreeView({
         // Overall totals from API only
         const overall = (() => {
           const base = {
-            totalSOPs:0, sopWithMCQs:0, sopWithoutMCQs:0,
+            totalSOPs:0, totalSopPairs:0, mcqFoundPairs:0, mcqNotFoundPairs:0,
+            sopWithMCQs:0, sopWithoutMCQs:0,
             approvedSOPs:0, partialSOPs:0, pendingSOPs:0, similarSOPs:0,
             totalQuestions:0, checkedCount:0, reviewedCount:0, similarCount:0,
             sopEng:0, sopGuj:0, sopCompletedGen:0, sopUnder100MCQs:0,
             totalSopEng:0, totalSopGuj:0, remainingEng:0, remainingGuj:0,
           };
           for (const ds of Object.values(deptStats)) {
-            base.totalSOPs       += ds.totalSOPs       ?? 0;
-            base.sopWithMCQs     += ds.sopWithMCQs     ?? 0;
-            base.sopWithoutMCQs  += ds.sopWithoutMCQs  ?? 0;
-            base.approvedSOPs    += ds.approvedSOPs    ?? 0;
-            base.partialSOPs     += ds.partialSOPs     ?? 0;
-            base.pendingSOPs     += ds.pendingSOPs     ?? 0;
-            base.similarSOPs     += ds.similarSOPs     ?? 0;
-            base.totalQuestions  += ds.totalQuestions  ?? 0;
-            base.checkedCount    += ds.checkedCount    ?? 0;
-            base.reviewedCount   += ds.reviewedCount   ?? 0;
-            base.similarCount    += ds.similarCount    ?? 0;
-            base.sopEng          += ds.sopEng          ?? 0;
-            base.sopGuj          += ds.sopGuj          ?? 0;
-            base.sopCompletedGen += ds.sopCompletedGen ?? 0;
-            base.sopUnder100MCQs += ds.sopUnder100MCQs ?? 0;
-            base.totalSopEng     += ds.totalSopEng     ?? 0;
-            base.totalSopGuj     += ds.totalSopGuj     ?? 0;
-            base.remainingEng    += ds.remainingEng    ?? 0;
-            base.remainingGuj    += ds.remainingGuj    ?? 0;
+            base.totalSOPs          += ds.totalSOPs          ?? 0;
+            base.totalSopPairs      += ds.totalSopPairs      ?? 0;
+            base.mcqFoundPairs      += ds.mcqFoundPairs      ?? 0;
+            base.mcqNotFoundPairs   += ds.mcqNotFoundPairs   ?? 0;
+            base.sopWithMCQs        += ds.sopWithMCQs        ?? 0;
+            base.sopWithoutMCQs     += ds.sopWithoutMCQs     ?? 0;
+            base.approvedSOPs       += ds.approvedSOPs       ?? 0;
+            base.partialSOPs        += ds.partialSOPs        ?? 0;
+            base.pendingSOPs        += ds.pendingSOPs        ?? 0;
+            base.similarSOPs        += ds.similarSOPs        ?? 0;
+            base.totalQuestions     += ds.totalQuestions     ?? 0;
+            base.checkedCount       += ds.checkedCount       ?? 0;
+            base.reviewedCount      += ds.reviewedCount      ?? 0;
+            base.similarCount       += ds.similarCount       ?? 0;
+            base.sopEng             += ds.sopEng             ?? 0;
+            base.sopGuj             += ds.sopGuj             ?? 0;
+            base.sopCompletedGen    += ds.sopCompletedGen    ?? 0;
+            base.sopUnder100MCQs    += ds.sopUnder100MCQs    ?? 0;
+            base.totalSopEng        += ds.totalSopEng        ?? 0;
+            base.totalSopGuj        += ds.totalSopGuj        ?? 0;
+            base.remainingEng       += ds.remainingEng       ?? 0;
+            base.remainingGuj       += ds.remainingGuj       ?? 0;
           }
           return base;
         })();
@@ -1349,16 +1359,20 @@ export default function MCQTreeView({
           totalSOPs, sopWithMCQs, sopWithoutMCQs,
           approvedSOPs, partialSOPs, pendingSOPs, similarSOPs,
           totalSopEng, totalSopGuj, remainingEng, remainingGuj,
-          onOpen, onRowClick, onRemainingClick,
+          totalSopPairs, mcqFoundPairs, mcqNotFoundPairs,
+          onOpen, onRowClick, onRemainingClick, onMcqFoundClick, onMcqNotFoundClick,
           genCompleted, genTarget, genRemaining, onGenClick,
         }: {
           title: string; subtitle: string; isGrand?: boolean;
           totalSOPs: number; sopWithMCQs: number; sopWithoutMCQs: number;
           approvedSOPs: number; partialSOPs: number; pendingSOPs: number; similarSOPs: number;
           totalSopEng: number; totalSopGuj: number; remainingEng: number; remainingGuj: number;
+          totalSopPairs?: number; mcqFoundPairs?: number; mcqNotFoundPairs?: number;
           onOpen?: () => void;
           onRowClick?: (f: "approved" | "partial" | "pending" | "similar") => void;
           onRemainingClick?: () => void;
+          onMcqFoundClick?: () => void;
+          onMcqNotFoundClick?: () => void;
           genCompleted?: number; genTarget?: number; genRemaining?: number;
           onGenClick?: (f: "completed" | "target" | "zero") => void;
         }) => (
@@ -1386,6 +1400,16 @@ export default function MCQTreeView({
                 <span className="block text-[9px] font-medium text-gray-500 leading-tight mt-0.5">{subtitle}</span>
               </div>
             </div>
+
+            {/* ── Summary counts (Total card only) — same style as CM rows ── */}
+            {isGrand && totalSopPairs !== undefined && (
+              <div className="flex flex-col gap-0 border-t border-transparent pt-0.5 mb-1">
+                <CM label="Unique SOPs" value={totalSOPs} />
+                <CM label="Total Versions" value={totalSopPairs ?? 0} />
+                <CM label="MCQ Found" value={mcqFoundPairs ?? 0} vc="text-emerald-600" onClick={onMcqFoundClick} />
+                <CM label="Not Found" value={mcqNotFoundPairs ?? 0} vc={mcqNotFoundPairs && mcqNotFoundPairs > 0 ? "text-red-600" : "text-gray-900"} onClick={onMcqNotFoundClick} />
+              </div>
+            )}
 
             {/* ── SOP counts — totalSOPs from SOP collection matches Dashboard ── */}
             <div className="flex flex-col gap-0 border-t border-transparent pt-0.5">
@@ -1488,6 +1512,9 @@ export default function MCQTreeView({
                 subtitle={`${orderedDepts.length} departments`}
                 isGrand
                 totalSOPs={overall.totalSOPs}
+                totalSopPairs={overall.totalSopPairs}
+                mcqFoundPairs={overall.mcqFoundPairs}
+                mcqNotFoundPairs={overall.mcqNotFoundPairs}
                 sopWithMCQs={overall.sopWithMCQs}
                 sopWithoutMCQs={overall.sopWithoutMCQs}
                 approvedSOPs={overall.approvedSOPs}
@@ -1499,6 +1526,13 @@ export default function MCQTreeView({
                 remainingEng={overall.remainingEng}
                 remainingGuj={overall.remainingGuj}
                 onRemainingClick={() => {
+                  setRemainingPanel({ dept: 'All Departments', sops: overallRemainingSOPs });
+                }}
+                onMcqFoundClick={() => {
+                  setMcqRegistryMcqFilter('found');
+                  setTimeout(() => mcqRegistryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+                }}
+                onMcqNotFoundClick={() => {
                   setRemainingPanel({ dept: 'All Departments', sops: overallRemainingSOPs });
                 }}
                 genCompleted={overall.sopCompletedGen}
@@ -1540,8 +1574,29 @@ export default function MCQTreeView({
         );
       })()}
 
-      {/* Department folder grid (unchanged — shown below the stats strip) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      {/* Department folder grid */}
+      {/* Collapsible header */}
+      <button
+        onClick={() => setShowDeptCards(prev => !prev)}
+        className="w-full flex items-center gap-3 px-4 py-3 mb-2 rounded-xl bg-white border border-gray-200 shadow-sm hover:bg-gray-50 transition-colors text-left group"
+      >
+        <span className="flex items-center justify-center w-7 h-7 rounded-md bg-gradient-to-br from-violet-500 to-indigo-500 shadow-sm shrink-0">
+          <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" />
+          </svg>
+        </span>
+        <div className="flex-1 min-w-0">
+          <span className="text-sm font-semibold text-gray-800">
+            By Department <span className="text-gray-500 font-medium">({tree.length})</span>
+          </span>
+          <p className="text-xs text-gray-400 leading-none mt-0.5">Filter MCQs by department</p>
+        </div>
+        <span className="text-gray-400 group-hover:text-gray-600 transition-colors shrink-0">
+          <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${showDeptCards ? '' : '-rotate-90'}`} />
+        </span>
+      </button>
+
+      {showDeptCards && <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {tree.map((dept) => {
           const theme = getDeptTheme(dept.name);
           const subcategoryCount = dept.subcategories?.length ?? 0;
@@ -1581,12 +1636,12 @@ export default function MCQTreeView({
               className={`rounded-xl border-0 ${theme.cardBg} transition-all duration-300 shadow-lg hover:shadow-2xl overflow-hidden group`}
             >
               {/* Main clickable header area */}
-              <button
-                onClick={() => {
-                  setApprovalFilter('all');
-                  setFullScreenDept(dept);
-                }}
-                className="w-full px-4 pt-4 pb-3 flex flex-col gap-0 bg-transparent transition-all text-left"
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => { setApprovalFilter('all'); setFullScreenDept(dept); }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setApprovalFilter('all'); setFullScreenDept(dept); } }}
+                className="w-full px-4 pt-4 pb-3 flex flex-col gap-0 bg-transparent transition-all text-left cursor-pointer"
               >
                 {/* Header */}
                 <div className="flex items-center justify-between w-full mb-3">
@@ -1710,7 +1765,7 @@ export default function MCQTreeView({
                     )}
                   </div>
                 )}
-              </button>
+              </div>
 
               {/* Inline subcategory dropdown */}
               {isFolderExpanded && (
@@ -1747,7 +1802,7 @@ export default function MCQTreeView({
             </div>
           );
         })}
-      </div>
+      </div>}
 
       {/* ══════════════════════════════════════════════════════════════════
            MCQ REGISTRY TABLE — mirrors SOP Registry style
@@ -1807,6 +1862,8 @@ export default function MCQTreeView({
         const filtered = allRows.filter((row) => {
           if (mcqRegistryDeptFilter !== 'All' && row.dept !== mcqRegistryDeptFilter) return false;
           if (mcqRegistryLangFilter !== 'All' && row.lang !== mcqRegistryLangFilter) return false;
+          // mcqRegistryMcqFilter: 'found' = has MCQ bank (all rows qualify), 'notfound' = no bank (none qualify — shown via remaining panel)
+          if (mcqRegistryMcqFilter === 'notfound') return false;
           if (mcqRegistrySearch) {
             const q = mcqRegistrySearch.toLowerCase();
             if (!row.identifier.toLowerCase().includes(q) && !row.name.toLowerCase().includes(q) && !row.dept.toLowerCase().includes(q)) return false;
@@ -1847,7 +1904,7 @@ export default function MCQTreeView({
         const uniqueDepts = ['All', ...Array.from(new Set(allRows.map(r => r.dept))).sort()];
 
         return (
-          <div className="mt-8">
+          <div className="mt-8" ref={mcqRegistryRef}>
             {/* Section header */}
             <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
               <div className="flex items-center gap-3">
@@ -1855,7 +1912,7 @@ export default function MCQTreeView({
                   <LayoutList className="h-5 w-5 text-purple-400" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-white uppercase tracking-widest">MCQ Registry</h3>
+                  <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest">MCQ Registry</h3>
                   <p className="text-[10px] text-gray-500 mt-0.5">{sorted.length} of {allRows.length} banks</p>
                 </div>
               </div>
@@ -1870,36 +1927,45 @@ export default function MCQTreeView({
                     placeholder="Search SOPs..."
                     value={mcqRegistrySearch}
                     onChange={e => setMcqRegistrySearch(e.target.value)}
-                    className="pl-8 pr-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-[11px] placeholder-gray-500 focus:outline-none focus:border-purple-500/50 focus:bg-white/8 w-44 transition-colors"
+                    className="pl-8 pr-3 py-1.5 rounded-lg bg-white border border-gray-300 text-gray-800 text-[11px] placeholder-gray-400 focus:outline-none focus:border-purple-400 w-44 transition-colors"
                   />
                 </div>
                 {/* Dept filter */}
                 <select
                   value={mcqRegistryDeptFilter}
                   onChange={e => setMcqRegistryDeptFilter(e.target.value)}
-                  className="px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-[11px] focus:outline-none focus:border-purple-500/50 cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-lg bg-white border border-gray-300 text-gray-800 text-[11px] focus:outline-none focus:border-purple-400 cursor-pointer"
                 >
-                  {uniqueDepts.map(d => <option key={d} value={d} className="bg-[#1a1f2e]">{d}</option>)}
+                  {uniqueDepts.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
                 {/* Language filter */}
                 <select
                   value={mcqRegistryLangFilter}
                   onChange={e => setMcqRegistryLangFilter(e.target.value)}
-                  className="px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-[11px] focus:outline-none focus:border-purple-500/50 cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-lg bg-white border border-gray-300 text-gray-800 text-[11px] focus:outline-none focus:border-purple-400 cursor-pointer"
                 >
-                  <option value="All" className="bg-[#1a1f2e]">All Languages</option>
-                  <option value="English" className="bg-[#1a1f2e]">English</option>
-                  <option value="Gujarati" className="bg-[#1a1f2e]">Gujarati</option>
+                  <option value="All">All Languages</option>
+                  <option value="English">English</option>
+                  <option value="Gujarati">Gujarati</option>
                 </select>
+                {/* MCQ Found active filter badge + clear */}
+                {mcqRegistryMcqFilter === 'found' && (
+                  <button
+                    onClick={() => setMcqRegistryMcqFilter('all')}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-100 border border-emerald-300 text-emerald-700 text-[10px] font-bold hover:bg-emerald-200 transition-colors"
+                  >
+                    MCQ Found <X className="h-3 w-3 ml-0.5" />
+                  </button>
+                )}
               </div>
             </div>
 
             {/* Table */}
-            <div className="rounded-2xl border border-white/8 overflow-hidden bg-[#0D1117]">
+            <div className="rounded-2xl border border-gray-200 overflow-hidden bg-gray-100">
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-white/5 border-b border-white/8">
+                    <tr className="bg-gray-200/70 border-b border-gray-200">
                       {([
                         ['identifier', 'SOP No.'],
                         ['name', 'SOP Name'],
@@ -1915,12 +1981,12 @@ export default function MCQTreeView({
                         <th
                           key={col}
                           onClick={() => toggleRegistrySort(col)}
-                          className="px-3 py-3 text-[9px] font-black uppercase tracking-widest text-gray-400 cursor-pointer hover:text-white whitespace-nowrap select-none transition-colors"
+                          className="px-3 py-3 text-[9px] font-black uppercase tracking-widest text-gray-500 cursor-pointer hover:text-gray-800 whitespace-nowrap select-none transition-colors"
                         >
                           {label}<SortIcon col={col} />
                         </th>
                       ))}
-                      <th className="px-3 py-3 text-[9px] font-black uppercase tracking-widest text-gray-400 whitespace-nowrap">Actions</th>
+                      <th className="px-3 py-3 text-[9px] font-black uppercase tracking-widest text-gray-500 whitespace-nowrap">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1935,45 +2001,45 @@ export default function MCQTreeView({
                       return (
                         <tr
                           key={`${row.identifier}-${row.lang}-${idx}`}
-                          className="border-b border-white/5 hover:bg-white/3 transition-colors group/row"
+                          className="border-b border-gray-200 hover:bg-gray-200/60 transition-colors group/row"
                         >
                           {/* SOP No */}
                           <td className="px-3 py-2.5">
-                            <span className="text-[10px] font-black text-purple-300 uppercase tracking-wider">{row.identifier}</span>
+                            <span className="text-[10px] font-black text-purple-700 uppercase tracking-wider">{row.identifier}</span>
                           </td>
                           {/* SOP Name */}
                           <td className="px-3 py-2.5 max-w-[220px]">
-                            <span className="text-[11px] text-white/80 leading-tight line-clamp-2">{row.name}</span>
+                            <span className="text-[11px] text-gray-700 leading-tight line-clamp-2">{row.name}</span>
                           </td>
                           {/* Dept */}
                           <td className="px-3 py-2.5 whitespace-nowrap">
-                            <span className="text-[10px] font-bold text-gray-400">{row.dept}</span>
+                            <span className="text-[10px] font-bold text-gray-500">{row.dept}</span>
                           </td>
                           {/* Lang */}
                           <td className="px-3 py-2.5 whitespace-nowrap">
                             <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
-                              row.lang === 'Gujarati' ? 'bg-orange-500/15 text-orange-300 border border-orange-500/20' : 'bg-blue-500/15 text-blue-300 border border-blue-500/20'
+                              row.lang === 'Gujarati' ? 'bg-orange-100 text-orange-700 border border-orange-200' : 'bg-blue-100 text-blue-700 border border-blue-200'
                             }`}>{row.lang === 'Gujarati' ? 'GUJ' : 'ENG'}</span>
                           </td>
                           {/* Total MCQs */}
                           <td className="px-3 py-2.5 whitespace-nowrap">
-                            <span className={`text-[12px] font-black tabular-nums ${row.totalQ >= 100 ? 'text-emerald-400' : row.totalQ > 0 ? 'text-amber-400' : 'text-gray-600'}`}>{row.totalQ}</span>
+                            <span className={`text-[12px] font-black tabular-nums ${row.totalQ >= 100 ? 'text-emerald-600' : row.totalQ > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{row.totalQ}</span>
                           </td>
                           {/* Remaining MCQs */}
                           <td className="px-3 py-2.5 whitespace-nowrap">
-                            <span className={`text-[12px] font-black tabular-nums ${remaining > 0 ? 'text-red-400' : 'text-gray-600'}`}>{remaining}</span>
+                            <span className={`text-[12px] font-black tabular-nums ${remaining > 0 ? 'text-red-500' : 'text-gray-400'}`}>{remaining}</span>
                           </td>
                           {/* Approved */}
                           <td className="px-3 py-2.5 whitespace-nowrap">
-                            <span className={`text-[11px] font-bold tabular-nums ${row.checkedCount > 0 ? 'text-emerald-400' : 'text-gray-600'}`}>{row.checkedCount}</span>
+                            <span className={`text-[11px] font-bold tabular-nums ${row.checkedCount > 0 ? 'text-emerald-600' : 'text-gray-400'}`}>{row.checkedCount}</span>
                           </td>
                           {/* Partial */}
                           <td className="px-3 py-2.5 whitespace-nowrap">
-                            <span className={`text-[11px] font-bold tabular-nums ${row.partialSOPs > 0 ? 'text-amber-400' : 'text-gray-600'}`}>{row.reviewedCount}</span>
+                            <span className={`text-[11px] font-bold tabular-nums ${row.partialSOPs > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{row.reviewedCount}</span>
                           </td>
                           {/* Similar */}
                           <td className="px-3 py-2.5 whitespace-nowrap">
-                            <span className={`text-[11px] font-bold tabular-nums ${row.similarCount > 0 ? 'text-red-400' : 'text-gray-600'}`}>{row.similarCount}</span>
+                            <span className={`text-[11px] font-bold tabular-nums ${row.similarCount > 0 ? 'text-red-500' : 'text-gray-400'}`}>{row.similarCount}</span>
                           </td>
                           {/* Last Updated */}
                           <td className="px-3 py-2.5 whitespace-nowrap">
@@ -1985,7 +2051,7 @@ export default function MCQTreeView({
                           <td className="px-3 py-2.5 whitespace-nowrap">
                             <button
                               onClick={() => onViewMCQs(row.sopNode, 'all')}
-                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-300 text-[9px] font-bold uppercase tracking-wider hover:bg-purple-500/20 hover:border-purple-400/40 transition-all"
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-purple-100 border border-purple-200 text-purple-700 text-[9px] font-bold uppercase tracking-wider hover:bg-purple-200 transition-all"
                             >
                               <Eye className="h-3 w-3" />
                               View MCQs

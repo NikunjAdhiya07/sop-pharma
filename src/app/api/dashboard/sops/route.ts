@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import connectDB from '@/lib/mongodb';
+import { fetchBunnyVersionMap } from '@/lib/bunnyVersionSync';
 import {
   getDashboardSopsCache,
   invalidateDashboardSopsCache,
@@ -30,8 +31,7 @@ import { getMaxPriorVersionsStored } from '@/lib/sopFolderUploadLimits';
 import { filterPrimaryRegistryRows, isArtifactOnlyRegistryRow } from '@/lib/registryPrimaryRows';
 import { looksLikePathOrFolderStructure } from '@/lib/registryDisplayName';
 
-/** Cache for 5 minutes to improve dashboard load performance — user can refresh manually if needed */
-export const revalidate = 300;
+export const dynamic = 'force-dynamic';
 
 type VersionArtifactEntry = { version: number; docxPath?: string; pdfPath?: string };
 
@@ -1283,7 +1283,7 @@ export async function GET(request: NextRequest) {
 
     await connectDB();
 
-    // Run all independent DB queries in parallel — cuts serial round-trip time by ~70%.
+    // Run all independent DB queries AND Bunny CDN crawl in parallel.
     const [
       allSOPsIncludingObsolete,
       masterSOPs,
@@ -1294,6 +1294,7 @@ export async function GET(request: NextRequest) {
       versionArtifactsDocs,
       supersedeOverridesRaw,
       mcqBanks,
+      bunnyVersionMap,
     ] = await Promise.all([
       SOP.find({})
         .select('_id name identifier department fileUrl fileType originalFileName folderPath location metadata reviewDate expiryDate version language createdAt sopDocuments isObsolete pipelineStatus')
@@ -1312,6 +1313,7 @@ export async function GET(request: NextRequest) {
       SupersedeSOPVersion.find({})
         .select('sopNo language version docxPath pdfPath').lean(),
       MCQBank.find({}).select('sopIdentifier sopName').lean(),
+      fetchBunnyVersionMap(),
     ]);
 
     // Derived filtered list for current SOPs from the full collection in-memory.
@@ -1778,6 +1780,13 @@ export async function GET(request: NextRequest) {
           if (!prevN || sn.length > prevN.length) versionArtifactNameByKey.set(key, sn);
         }
       }
+    }
+
+    // Merge Bunny CDN files into versionArtifactsByKey so any file already stored in Bunny
+    // shows up as a version entry even if it was never registered via folder-upload.
+    for (const [key, bunnyEntries] of bunnyVersionMap) {
+      const existing = versionArtifactsByKey.get(key);
+      versionArtifactsByKey.set(key, existing ? mergeVersionArtifactEntries(existing, bunnyEntries) : bunnyEntries);
     }
 
     // REMOVED: artifactsMergedByFamilyLang was causing cross-contamination between different SOP revisions.
