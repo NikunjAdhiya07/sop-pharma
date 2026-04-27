@@ -758,7 +758,7 @@ export default function SOPTable({
 
 
   const thBase =
-    "px-1 py-0.5 align-top text-[9px] font-bold text-gray-600 uppercase tracking-wide whitespace-nowrap";
+    "px-1 py-0.5 align-top text-[9px] font-bold text-gray-600 uppercase tracking-wide whitespace-normal break-words";
   const selBase =
     "w-full text-[8px] p-px border border-gray-300 rounded bg-white focus:outline-none focus:border-purple-500 cursor-pointer leading-tight";
   const sortBtn =
@@ -766,11 +766,14 @@ export default function SOPTable({
 
   return (
     <div className="flex flex-col w-full bg-gray-50">
-      <div className="overflow-x-auto w-full">
-        <table className="w-full text-left border-collapse min-w-[1180px]">
-          <thead className="bg-gray-100 border-b border-gray-300 sticky top-0 z-10">
+      <div className="overflow-x-hidden w-full">
+        <table className="w-full table-fixed text-left border-collapse">
+          <thead className="bg-gray-100 border-b border-gray-300">
             <tr>
-              <th className={thBase}>
+              <th className={`${thBase} text-center w-10`} title="Serial number">
+                SR
+              </th>
+              <th className={`${thBase} whitespace-nowrap w-32`}>
                 <button
                   type="button"
                   className={sortBtn}
@@ -779,7 +782,7 @@ export default function SOPTable({
                 </button>
               </th>
               <th
-                className={`${thBase} text-center w-10`}
+                className={`${thBase} text-center w-12 whitespace-nowrap`}
                 title="Current revision from SOP number (e.g. QAGE01-11 → 11)">
                 <button
                   type="button"
@@ -788,7 +791,7 @@ export default function SOPTable({
                   Ver <SortIcon field="version" />
                 </button>
               </th>
-              <th className={`${thBase} flex-1 min-w-[250px]`}>
+              <th className={`${thBase} w-[24rem]`}>
                 <button
                   type="button"
                   className={sortBtn}
@@ -796,8 +799,8 @@ export default function SOPTable({
                   SOP Name <SortIcon field="sopName" />
                 </button>
               </th>
-              <th className={thBase}>
-                <div className="flex flex-col items-center gap-0.5 min-w-[66px]">
+              <th className={`${thBase} w-20`}>
+                <div className="flex flex-col items-center gap-0.5">
                   <span className="text-[8px] font-bold text-gray-500 uppercase tracking-widest leading-none">Guideline</span>
                   <button
                     type="button"
@@ -809,7 +812,7 @@ export default function SOPTable({
                   </button>
                 </div>
               </th>
-              <th className={`${thBase} min-w-[80px] max-w-[100px]`}>
+              <th className={`${thBase} w-28`}>
                 <button
                   type="button"
                   className={sortBtn}
@@ -818,7 +821,7 @@ export default function SOPTable({
                 </button>
               </th>
               <th
-                className={`${thBase} min-w-[160px] max-w-[260px]`}
+                className={`${thBase} w-[16rem]`}
                 title="Up to two prior revisions (DOCX/PDF links) per language. Older files: Supersede SOP.">
                 <button
                   type="button"
@@ -827,8 +830,8 @@ export default function SOPTable({
                   Prior versions <SortIcon field="priorVersionCount" />
                 </button>
               </th>
-              <th className={thBase}>
-                <div className="flex flex-col gap-px min-w-[80px]">
+              <th className={`${thBase} w-40`}>
+                <div className="flex flex-col gap-px">
                   <button
                     type="button"
                     className={sortBtn}
@@ -850,8 +853,8 @@ export default function SOPTable({
                   </select>
                 </div>
               </th>
-              <th className={thBase}>
-                <div className="flex flex-col gap-px min-w-[56px]">
+              <th className={`${thBase} w-20`}>
+                <div className="flex flex-col gap-px">
                   <button
                     type="button"
                     className={sortBtn}
@@ -876,7 +879,7 @@ export default function SOPTable({
               <th
                 className={thBase}
                 title="Current approved files: English first, then Gujarati when dual">
-                <div className="flex flex-col gap-px min-w-[56px]">
+                <div className="flex flex-col gap-px">
                   <button
                     type="button"
                     className={sortBtn}
@@ -898,8 +901,8 @@ export default function SOPTable({
                   </select>
                 </div>
               </th>
-              <th className={thBase}>
-                <div className="flex flex-col gap-px min-w-[40px]">
+              <th className={`${thBase} w-20`}>
+                <div className="flex flex-col gap-px">
                   <button
                     type="button"
                     className={sortBtn}
@@ -922,8 +925,8 @@ export default function SOPTable({
                   </select>
                 </div>
               </th>
-              <th className={thBase}>
-                <div className="flex flex-col gap-px min-w-[40px]">
+              <th className={`${thBase} w-20`}>
+                <div className="flex flex-col gap-px">
                   <button
                     type="button"
                     className={sortBtn}
@@ -946,8 +949,8 @@ export default function SOPTable({
                   </select>
                 </div>
               </th>
-              <th className={thBase}>
-                <div className="flex flex-col gap-px min-w-[130px]">
+              <th className={`${thBase} w-36`}>
+                <div className="flex flex-col gap-px">
                   <button
                     type="button"
                     className={sortBtn}
@@ -975,7 +978,7 @@ export default function SOPTable({
           <tbody className="text-[10px] text-gray-700">
             {isObsoleteView && displayedData.length > 0 && (
               <tr className="bg-rose-50 border-b border-rose-200">
-                <td colSpan={12} className="px-3 py-1.5 text-[10px] font-semibold text-rose-700">
+                <td colSpan={13} className="px-3 py-1.5 text-[10px] font-semibold text-rose-700">
                   Showing {displayedData.length} obsolete SOP{displayedData.length !== 1 ? "s" : ""} — these have been removed from the active registry. Expand a row to restore.
                 </td>
               </tr>
@@ -983,7 +986,7 @@ export default function SOPTable({
             {displayedData.length === 0 ? (
               <tr>
                 <td
-                  colSpan={12}
+                  colSpan={13}
                   className="px-4 py-6 text-center text-gray-500">
                   <div className="flex flex-col items-center gap-1">
                     <FileText className="h-5 w-5 text-gray-300" />
@@ -1011,6 +1014,10 @@ export default function SOPTable({
                     <tr
                       onClick={() => toggleRow(row._id)}
                       className={`hover:bg-purple-50/80 cursor-pointer transition-colors group border-b border-gray-100/80 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/60"} ${isExpanded ? "bg-purple-50" : ""}`}>
+                      {/* SR No */}
+                      <td className="px-1 py-px text-center align-middle text-[10px] font-bold text-gray-600 tabular-nums">
+                        {idx + 1}
+                      </td>
                       {/* SOP No */}
                       <td className={`px-1 py-px font-mono text-[14px] font-bold tracking-wider group-hover:underline whitespace-nowrap align-middle ${isObsoleteView ? "text-rose-700" : "text-purple-700"}`}>
                         <span className="inline-flex items-center gap-1">
@@ -1055,11 +1062,11 @@ export default function SOPTable({
                               className="flex items-center gap-2 w-full"
                               title={title}>
                               <div className="flex flex-col gap-0 leading-tight min-w-0 flex-1">
-                                <span className="text-[12px] font-bold leading-tight text-gray-900 whitespace-nowrap">
+                                <span className="text-[12px] font-bold leading-tight text-gray-900 whitespace-normal break-words">
                                   {line1}
                                 </span>
                                 {showLine2 ? (
-                                  <span className="text-[10px] font-bold leading-tight text-indigo-700 whitespace-nowrap">
+                                  <span className="text-[10px] font-bold leading-tight text-indigo-700 whitespace-normal break-words">
                                     {cleanSOPName(line2, row.sopNo)}
                                   </span>
                                 ) : null}
@@ -1134,7 +1141,7 @@ export default function SOPTable({
                         </span>
                       </td>
                       {/* Versions: uploaded last-3 PDF/DOCX, else legacy AV availability */}
-                      <td className="px-0.5 py-px align-middle min-w-[160px] max-w-[260px]">
+                      <td className="px-0.5 py-px align-middle">
                         {(() => {
                           const eng = Array.isArray(row.versionArtifacts)
                             ? row.versionArtifacts
@@ -1361,7 +1368,7 @@ export default function SOPTable({
                     {/* Expanded detail panel */}
                     {isExpanded && (
                       <tr className="bg-purple-50 border-b border-purple-200">
-                        <td colSpan={12} className="px-4 py-3">
+                        <td colSpan={13} className="px-4 py-3">
                           <div className="grid grid-cols-3 gap-3">
                             <div className="space-y-2">
                               <h4 className="text-[10px] font-bold text-gray-700 uppercase tracking-wide border-b border-gray-300 pb-0.5">

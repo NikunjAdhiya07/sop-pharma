@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import TrainingMatrixRecord from '@/models/TrainingMatrixRecord';
 import TrainingMatrixUpload from '@/models/TrainingMatrixUpload';
+import SOP from '@/models/SOP';
 
 const STATUS_PRIORITY: Record<string, number> = {
   completed: 4,
@@ -22,6 +23,7 @@ export async function GET(request: NextRequest) {
     const sopSearch = (sp.get('sop')       || '').toLowerCase();
     const desigF    = sp.get('designation')|| 'all';
     const statusF   = sp.get('status')     || 'all';
+    const includeObsolete = sp.get('includeObsolete') === '1';
 
     const match: Record<string, any> = {};
     if (dept    !== 'all') match.department   = dept;
@@ -32,9 +34,23 @@ export async function GET(request: NextRequest) {
     if (sopSearch)         match.sopCode      = { $regex: sopSearch, $options: 'i' };
     // Don't filter by status here — we need all statuses to build the employee map correctly
 
-    const records = await TrainingMatrixRecord.find(match)
+    const stripVersion = (code: string) =>
+      String(code || '').toUpperCase().replace(/-\d+$/, '').trim();
+    const obsoleteBaseSet = new Set<string>();
+    if (!includeObsolete) {
+      const obs = await SOP.find({ isObsolete: true }, { identifier: 1 }).lean() as any[];
+      for (const r of obs) {
+        const base = stripVersion(String(r?.identifier || ''));
+        if (base) obsoleteBaseSet.add(base);
+      }
+    }
+
+    const recordsRaw = await TrainingMatrixRecord.find(match)
       .sort({ department: 1, employeeName: 1, sopCode: 1 })
       .lean();
+    const records = includeObsolete
+      ? recordsRaw
+      : (recordsRaw as any[]).filter((r: any) => !obsoleteBaseSet.has(stripVersion(String(r?.sopCode || ''))));
 
     // Build employee map with SOP matrix
     // Key: department||employeeName

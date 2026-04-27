@@ -27,8 +27,7 @@ export async function POST() {
     // Uses MongoDB arrayFilters for an efficient in-place update.
     const result = await collection.updateMany(
       {
-        // Only active (non-obsolete) banks
-        $or: [{ isObsolete: { $ne: true } }, { isObsolete: { $exists: false } }],
+        // Do not filter by MCQBank.isObsolete — obsolete is derived from SOP.isObsolete (dashboard source of truth).
         // Only banks that actually have at least one flagged question
         'mcqs.isSimilar': true,
       },

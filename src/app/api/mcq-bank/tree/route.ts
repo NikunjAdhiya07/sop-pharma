@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
-import SOP from '@/models/SOP';
 import User from '@/models/User';
 import { buildMCQTreeStructure, getTreeAsArray } from '@/lib/mcqTreeBuilder';
+import { filterPrimaryRegistryRows } from '@/lib/registryPrimaryRows';
+import { getDashboardRegistryPayload } from '@/lib/dashboardRegistrySource';
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,6 +12,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const username = searchParams.get('username');
+    const includeObsolete = searchParams.get('includeObsolete') === '1';
 
     let allowedDepartments: string[] = [];
     let isAdmin = false;
@@ -34,19 +36,13 @@ export async function GET(request: NextRequest) {
     const dbConnection = mongoose.connection.db;
     if (!dbConnection) throw new Error('Database connection lost');
 
-    // Run SOP fetch and MCQ aggregation in parallel
-    // Exclude obsolete SOPs so superseded versions never appear in the active tree
-    const [sops, mcqBanks] = await Promise.all([
-      SOP.find({ $or: [{ isObsolete: { $ne: true } }, { isObsolete: { $exists: false } }] })
-        .select('_id name identifier department fileUrl fileType language')
-        .lean(),
+    // Run dashboard registry fetch and MCQ aggregation in parallel.
+    const [dashboard, mcqBanks] = await Promise.all([
+      getDashboardRegistryPayload(process.env.NEXTAUTH_URL || 'http://localhost:3000'),
 
       // Aggregate counts server-side — sends ~50 bytes per bank instead of ~5KB of subdocuments
       dbConnection.collection('mcqbanks').aggregate([
-        {
-          // Exclude MCQ banks that belong to obsolete (superseded) SOP versions
-          $match: { $or: [{ isObsolete: { $ne: true } }, { isObsolete: { $exists: false } }] },
-        },
+        ...(includeObsolete ? [] : [{ $match: { isObsolete: { $ne: true } } }]),
         {
           $project: {
             _id: 1,
@@ -78,7 +74,29 @@ export async function GET(request: NextRequest) {
       ]).toArray(),
     ]);
 
-    console.log(`📊 Building tree from ${sops.length} SOPs and ${mcqBanks.length} MCQ banks (aggregated counts)`);
+    const registryRows = Array.isArray((dashboard as any)?.data) ? (dashboard as any).data : [];
+    const primaryRows = filterPrimaryRegistryRows(registryRows);
+    const sops = (primaryRows as any[])
+      .filter((r) => (includeObsolete ? true : !Boolean(r?.isObsolete)))
+      .map((r) => {
+      const primaryPath = r?.sopFile?.filePath || '';
+      const primaryType = (r?.sopFile?.fileType || 'pdf') as 'pdf' | 'docx';
+      const langRaw = String(r?.language || '').toLowerCase();
+      const isObsolete = Boolean(r?.isObsolete);
+      // Normalize into SOP-like shape expected by tree builder.
+      return {
+        _id: r?._id || r?.sopNo || r?.sopIdentifier,
+        name: r?.englishName || r?.sopName || r?.name || '',
+        identifier: r?.sopNo || r?.identifier || '',
+        department: r?.department || '',
+        fileUrl: primaryPath,
+        fileType: primaryType,
+        language: langRaw === 'gujarati' ? 'Gujarati' : 'English',
+        isObsolete,
+      };
+    });
+
+    console.log(`📊 Building tree from ${sops.length} dashboard SOPs and ${mcqBanks.length} MCQ banks (aggregated counts)`);
 
     const tree = buildMCQTreeStructure(sops as any, mcqBanks as any);
     let treeArray = getTreeAsArray(tree);

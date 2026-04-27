@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import ArchivedMCQBank from '@/models/ArchivedMCQBank';
+import MCQBank from '@/models/MCQBank';
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,10 +12,24 @@ export async function GET(request: NextRequest) {
       .sort({ archivedAt: -1 })
       .lean();
 
+    // Filter out stale archive entries when an active MCQ bank already exists.
+    const archivedIdentifiers = Array.from(
+      new Set(
+        archivedBanks
+          .map((b: any) => String(b?.sopIdentifier || '').trim())
+          .filter(Boolean),
+      ),
+    );
+    const activeIdentifiers = new Set<string>(
+      (await MCQBank.distinct('sopIdentifier', { sopIdentifier: { $in: archivedIdentifiers } }))
+        .map((s: any) => String(s || '').trim()),
+    );
+
     // Group by sopIdentifier
     const grouped: Record<string, any> = {};
     for (const bank of archivedBanks) {
       const key = bank.sopIdentifier;
+      if (!key || activeIdentifiers.has(String(key).trim())) continue;
       if (!grouped[key]) {
         grouped[key] = {
           sopName: bank.sopName,

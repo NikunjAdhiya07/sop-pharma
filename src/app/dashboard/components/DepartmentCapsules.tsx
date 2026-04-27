@@ -9,7 +9,6 @@ import {
   scanRowLanguageFileSlots,
 } from "@/lib/registryRowDocCounts";
 import { isStandardRegistrySopNumber, isArtifactOnlyRegistryRow } from "@/lib/registryPrimaryRows";
-import { sopFamilyKeyFromIdentifier } from "@/lib/sopIdentifierNormalize";
 import { CAPSULE_DEPARTMENTS } from "@/lib/capsuleDepartments";
 import {
   classifySopVersionCapsule,
@@ -270,36 +269,18 @@ function accToDeptCapsuleStats(department: string, s: CapsuleAcc): DeptCapsuleSt
   };
 }
 
-/**
- * Build a set of SOP family keys (letters+docNum, no revision) that have at least
- * one primary (non-artifact-only) row. Used to skip artifact-only rows for SOPs
- * that already exist in the main SOP collection (different revision = same family).
- */
-function buildPrimaryFamilyKeys(data: any[]): Set<string> {
-  const keys = new Set<string>();
-  for (const row of data || []) {
-    if (isArtifactOnlyRegistryRow(row)) continue;
-    if (!isStandardRegistrySopNumber(row)) continue;
-    const fk = sopFamilyKeyFromIdentifier(row.sopNo || '');
-    if (fk) keys.add(fk);
-  }
-  return keys;
-}
-
 /** Total row: every primary-format registry row (same scope as `filterPrimaryRegistryRows`), not only the 7 named departments. */
 export function computeCapsuleGrandTotalStat(data: any[]): DeptCapsuleStats {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const dayMs = 1000 * 60 * 60 * 24;
-  const primaryFamilies = buildPrimaryFamilyKeys(data);
   const s = emptyCapsuleAcc();
   for (const row of data || []) {
     if (!isStandardRegistrySopNumber(row)) continue;
-    // Skip artifact-only rows whose family already has a primary row (different revision)
-    if (isArtifactOnlyRegistryRow(row)) {
-      const fk = sopFamilyKeyFromIdentifier(row.sopNo || '');
-      if (fk && primaryFamilies.has(fk)) continue;
-    }
+    // Exclude all artifact-only rows — they are not full SOP registry entries.
+    // This keeps the capsule total aligned with the SOP table (both use
+    // `filterPrimaryRegistryRows`), so users see the same number everywhere.
+    if (isArtifactOnlyRegistryRow(row)) continue;
     foldRegistryRowIntoCapsuleAcc(s, row, today, dayMs);
   }
   return accToDeptCapsuleStats("Total", s);
@@ -348,7 +329,6 @@ function computeDepartmentStats(data: any[]): DeptCapsuleStats[] {
   const day = 1000 * 60 * 60 * 24;
 
   const byDept = new Map<string, CapsuleAcc>();
-  const primaryFamilies = buildPrimaryFamilyKeys(data);
 
   const order = [...CAPSULE_DEPARTMENTS];
   order.forEach((dept) => {
@@ -392,11 +372,10 @@ function computeDepartmentStats(data: any[]): DeptCapsuleStats[] {
 
   data.forEach((row: any) => {
     if (!isStandardRegistrySopNumber(row)) return;
-    // Skip artifact-only rows whose SOP family already has a primary row
-    if (isArtifactOnlyRegistryRow(row)) {
-      const fk = sopFamilyKeyFromIdentifier(row.sopNo || '');
-      if (fk && primaryFamilies.has(fk)) return;
-    }
+    // Exclude all artifact-only rows — per-dept capsule counts must match the SOP
+    // table (which uses `filterPrimaryRegistryRows`), so both always show the same
+    // number.
+    if (isArtifactOnlyRegistryRow(row)) return;
 
     const rawDept = row.department || "";
     let dept = normalizeDept(rawDept);

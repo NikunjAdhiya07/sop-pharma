@@ -54,7 +54,7 @@ import {
   expectedDocxSlotsForRow,
   expectedPdfSlotsForRow,
 } from "@/lib/registryRowDocCounts";
-import { filterPrimaryRegistryRows, isStandardRegistrySopNumber } from "@/lib/registryPrimaryRows";
+import { filterPrimaryRegistryRowsUniqueByFamily } from "@/lib/registryPrimaryRows";
 import {
   classifySopVersionCapsule,
   type SopVersionFilterSegment,
@@ -138,6 +138,7 @@ export default function DashboardPageClient() {
   const [obsoleteList, setObsoleteList] = useState<any[]>([]);
   const [obsoleteListLoading, setObsoleteListLoading] = useState(false);
   const [removingObsoleteId, setRemovingObsoleteId] = useState<string | null>(null);
+  const [showObsoleteDetails, setShowObsoleteDetails] = useState(false);
 
   // Filter panel state
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
@@ -287,6 +288,13 @@ export default function DashboardPageClient() {
     finally { setObsoleteListLoading(false); }
   };
 
+  const openObsoleteDetails = async () => {
+    setShowObsoleteDetails(true);
+    if (obsoleteList.length === 0 && !obsoleteListLoading) {
+      await fetchObsoleteList();
+    }
+  };
+
   const handleToggleObsoleteFilter = () => {
     if (!filterObsolete) {
       setFilterObsolete(true);
@@ -327,8 +335,11 @@ export default function DashboardPageClient() {
 
   const LOCATION_XLSX_INPUT_ID = "dashboard-sop-location-xlsx";
 
+  // Canonical Dashboard view: one row per SOP family. If the same SOP exists in the
+  // registry under multiple revisions, only the latest revision is shown, so the
+  // total count matches the MCQ Bank page's "Unique SOPs" value.
   const primaryRegistryData = useMemo(
-    () => filterPrimaryRegistryRows(data),
+    () => filterPrimaryRegistryRowsUniqueByFamily(data),
     [data],
   );
 
@@ -621,12 +632,10 @@ export default function DashboardPageClient() {
 
   // The perfect sorting & filtering logic
   const filteredAndSortedData = useMemo(() => {
-    // Include artifact-only rows (SOPs uploaded via Version Fetch that have no SOP
-    // collection record) so the table count matches the capsule counts.
-    // Junk identifiers (SOP-timestamp, FILLED-…) are still excluded by isStandardRegistrySopNumber.
-    let result = [...effectiveData].filter(
-      (row: any) => isStandardRegistrySopNumber(row)
-    );
+    // One row per SOP family (latest revision only). Matches the capsule counts —
+    // both capsules and this table ultimately reduce to the same per-family set,
+    // so the "Total" capsule always equals the number of rows in this table.
+    let result = filterPrimaryRegistryRowsUniqueByFamily(effectiveData);
 
     if (search) {
       const s = search.toLowerCase();
@@ -1592,7 +1601,7 @@ export default function DashboardPageClient() {
           <div className="bg-gray-100 px-2 py-1 sm:px-3 border-t border-gray-100">
             <div className="min-w-0 max-w-[1920px] mx-auto">
               <DepartmentCapsules
-                data={data}
+                data={primaryRegistryData}
                 showTotalCapsule
                 applyCapsuleFilter={applyCapsuleFilter}
                 applyCapsuleAvailMiss={applyCapsuleAvailMiss}
@@ -1631,6 +1640,19 @@ export default function DashboardPageClient() {
               className="shrink-0 rounded border border-gray-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-gray-600 shadow-sm transition-colors hover:bg-gray-50 hover:border-gray-400"
               title="Clear search and all filters (default view)">
               Reset
+            </button>
+            <button
+              type="button"
+              onClick={() => void openObsoleteDetails()}
+              className="shrink-0 rounded border border-rose-300 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700 shadow-sm transition-colors hover:bg-rose-100 hover:border-rose-400"
+              title="View obsolete SOP details (same as Dashboard obsolete list)"
+            >
+              <Archive className="h-3 w-3" /> Obsolete details
+              {obsoleteList.length > 0 ? (
+                <span className="ml-1 rounded-full bg-rose-200 px-1 py-px text-[9px] font-bold tabular-nums text-rose-900">
+                  {obsoleteList.length}
+                </span>
+              ) : null}
             </button>
             <button
               type="button"
@@ -2187,6 +2209,98 @@ export default function DashboardPageClient() {
         onClose={() => setShowSuperseded(false)}
         data={effectiveData}
       />
+
+      {/* Obsolete SOP Details modal */}
+      {showObsoleteDetails && (
+        <div
+          className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setShowObsoleteDetails(false)}
+        >
+          <div
+            className="w-full max-w-5xl rounded-xl border border-gray-200 bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-100 text-rose-700">
+                  <Archive className="h-4 w-4" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-gray-900">Obsolete SOP Details</h2>
+                  <p className="text-[10px] font-semibold text-gray-500">
+                    {obsoleteListLoading ? "Loading…" : `${obsoleteList.length} SOP(s)`}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowObsoleteDetails(false)}
+                className="rounded p-1 text-gray-400 hover:text-gray-600"
+                title="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="max-h-[70vh] overflow-auto p-4">
+              {obsoleteListLoading ? (
+                <div className="flex items-center justify-center py-16 text-gray-400">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-rose-400 border-t-transparent" />
+                  <span className="ml-3 text-sm font-semibold">Loading obsolete SOPs…</span>
+                </div>
+              ) : obsoleteList.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 py-16 text-gray-400">
+                  <Archive className="h-10 w-10 opacity-30" />
+                  <p className="text-sm font-semibold">No obsolete SOPs found</p>
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-lg border border-gray-200">
+                  <table className="w-full text-left text-[11px]">
+                    <thead className="sticky top-0 bg-gray-50">
+                      <tr className="border-b border-gray-200">
+                        <th className="px-3 py-2 font-bold uppercase tracking-wider text-[10px] text-gray-600">SOP No</th>
+                        <th className="px-3 py-2 font-bold uppercase tracking-wider text-[10px] text-gray-600">Name</th>
+                        <th className="px-3 py-2 font-bold uppercase tracking-wider text-[10px] text-gray-600">Department</th>
+                        <th className="px-3 py-2 font-bold uppercase tracking-wider text-[10px] text-gray-600">Language</th>
+                        <th className="px-3 py-2 font-bold uppercase tracking-wider text-[10px] text-gray-600">Obsolete At</th>
+                        <th className="px-3 py-2 font-bold uppercase tracking-wider text-[10px] text-gray-600">Reason</th>
+                        <th className="px-3 py-2 font-bold uppercase tracking-wider text-[10px] text-gray-600 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white">
+                      {obsoleteList.map((item: any) => (
+                        <tr key={item.identifier} className="border-b border-gray-100 hover:bg-rose-50/30">
+                          <td className="px-3 py-2 font-mono font-bold text-rose-800 whitespace-nowrap">{item.identifier}</td>
+                          <td className="px-3 py-2 font-semibold text-gray-800">
+                            {item.englishName || item.gujaratiName || item.identifier}
+                          </td>
+                          <td className="px-3 py-2 text-gray-700">{item.department || "—"}</td>
+                          <td className="px-3 py-2 text-gray-700">{item.language || "—"}</td>
+                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                            {item.obsoleteAt ? new Date(item.obsoleteAt).toLocaleDateString() : "—"}
+                          </td>
+                          <td className="px-3 py-2 text-gray-600">{item.obsoleteReason || "—"}</td>
+                          <td className="px-3 py-2 text-right">
+                            <button
+                              type="button"
+                              disabled={!!removingObsoleteId}
+                              onClick={() => void handleRemoveFromObsolete(String(item.identifier))}
+                              className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                              {removingObsoleteId === String(item.identifier) ? "Restoring…" : "Restore"}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <GuidelinesComplianceWizard
         open={showGuidelinesLibrary}
         minimized={wizardMinimized}

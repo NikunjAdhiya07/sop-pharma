@@ -22,6 +22,7 @@ export interface IUser extends mongoose.Document {
     sopsRead: mongoose.Types.ObjectId[];
     completed: boolean;
   };
+  assignedSOPs: string[]; // SOP identifiers this trainer is responsible for
 }
 
 const UserSchema = new mongoose.Schema<IUser>({
@@ -115,7 +116,11 @@ const UserSchema = new mongoose.Schema<IUser>({
     videosWatched: [{ type: mongoose.Schema.Types.ObjectId, ref: 'VideoResource' }],
     sopsRead: [{ type: mongoose.Schema.Types.ObjectId, ref: 'SOP' }],
     completed: { type: Boolean, default: false }
-  }
+  },
+  assignedSOPs: {
+    type: [String],
+    default: [],
+  },
 });
 
 export default mongoose.models.User || mongoose.model<IUser>('User', UserSchema);

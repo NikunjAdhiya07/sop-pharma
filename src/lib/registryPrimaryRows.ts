@@ -33,3 +33,38 @@ export function filterPrimaryRegistryRows<T extends any>(data: T[] | undefined |
     (row) => !isArtifactOnlyRegistryRow(row) && isStandardRegistrySopNumber(row),
   );
 }
+
+/** Extract trailing numeric revision from a sopNo like "MAGE1-8" → 8. Falls back to 0. */
+function parseRevisionFromSopNo(sopNo: string): number {
+  const m = String(sopNo || '').trim().match(/-(\d+)$/);
+  return m ? parseInt(m[1]!, 10) || 0 : 0;
+}
+
+/**
+ * Primary registry rows deduped to a single row per SOP family (same letters + doc number,
+ * regardless of revision). When multiple primary rows exist for the same family, keeps the
+ * one with the highest revision number. This is the canonical "one SOP = one row" view the
+ * Dashboard shows: its total and every per-department count match the MCQ Bank page's
+ * "Unique SOPs" computation.
+ */
+export function filterPrimaryRegistryRowsUniqueByFamily<T extends any>(
+  data: T[] | undefined | null,
+): T[] {
+  const primary = filterPrimaryRegistryRows(data);
+  if (!primary.length) return [];
+  const best = new Map<string, T>();
+  for (const row of primary) {
+    const sopNo = String((row as any)?.sopNo ?? '').trim();
+    const fk = sopFamilyKeyFromIdentifier(sopNo);
+    if (!fk) continue;
+    const existing = best.get(fk);
+    if (!existing) {
+      best.set(fk, row);
+      continue;
+    }
+    const existingRev = parseRevisionFromSopNo(String((existing as any)?.sopNo ?? ''));
+    const currentRev = parseRevisionFromSopNo(sopNo);
+    if (currentRev > existingRev) best.set(fk, row);
+  }
+  return Array.from(best.values());
+}

@@ -19,6 +19,7 @@ import {
   Loader2,
   Plus,
   Trash2,
+  Archive,
   FolderOpen,
   Upload,
   Home,
@@ -228,6 +229,14 @@ function MCQBankContent() {
   const [activeTab, setActiveTab] = useState<"active" | "recycled">("active");
   const [recycledQuestions, setRecycledQuestions] = useState<any[]>([]);
   const [loadingRecycled, setLoadingRecycled] = useState(false);
+
+  // Obsolete SOP details (top-bar)
+  const [showObsoleteDetails, setShowObsoleteDetails] = useState(false);
+  const [obsoleteDetailsLoading, setObsoleteDetailsLoading] = useState(false);
+  const [obsoleteDetails, setObsoleteDetails] = useState<any[]>([]);
+  const [obsoleteRestoreBusy, setObsoleteRestoreBusy] = useState<string | null>(
+    null,
+  );
 
   // Similarity Check State
   const [checkingSimilarity, setCheckingSimilarity] = useState(false);
@@ -804,6 +813,60 @@ function MCQBankContent() {
       setLoading(false);
     }
   };
+
+  const fetchObsoleteDetails = useCallback(async () => {
+    setObsoleteDetailsLoading(true);
+    try {
+      const res = await fetch("/api/mcq-bank/obsolete", { cache: "no-store" });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j.success) {
+        setObsoleteDetails(Array.isArray(j.obsoleteSOPs) ? j.obsoleteSOPs : []);
+      } else {
+        setObsoleteDetails([]);
+      }
+    } catch {
+      setObsoleteDetails([]);
+    } finally {
+      setObsoleteDetailsLoading(false);
+    }
+  }, []);
+
+  const openObsoleteDetails = useCallback(async () => {
+    setShowObsoleteDetails(true);
+    if (obsoleteDetails.length === 0 && !obsoleteDetailsLoading) {
+      await fetchObsoleteDetails();
+    }
+  }, [fetchObsoleteDetails, obsoleteDetails.length, obsoleteDetailsLoading]);
+
+  const restoreObsoleteSop = useCallback(
+    async (sopIdentifier: string) => {
+      if (obsoleteRestoreBusy) return;
+      const password = window.prompt(
+        `Enter password to restore "${sopIdentifier}" from Obsolete:`,
+      );
+      if (!password) return;
+      setObsoleteRestoreBusy(sopIdentifier);
+      try {
+        const res = await fetch("/api/sop/remove-obsolete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sopIdentifier, password }),
+        });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok || !j.success) {
+          window.alert(j.error || "Failed to restore SOP");
+          return;
+        }
+        await fetchObsoleteDetails();
+        await fetchTreeData(true);
+      } catch {
+        window.alert("Network error — please try again");
+      } finally {
+        setObsoleteRestoreBusy(null);
+      }
+    },
+    [fetchObsoleteDetails, fetchTreeData, obsoleteRestoreBusy],
+  );
 
   /** Open SOP node with all its MCQ banks (English first, then Gujarati) */
   const openSOPNodeWithAllBanks = async (
@@ -2198,6 +2261,14 @@ function MCQBankContent() {
                     {loadingTree ? "Refreshing..." : "Refresh"}
                   </button>
                   <button
+                    onClick={() => void openObsoleteDetails()}
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-rose-600 text-white font-semibold rounded-md hover:bg-rose-700 transition-all duration-300 shadow-sm whitespace-nowrap"
+                    title="View obsolete SOP details"
+                  >
+                    <Archive className="h-3.5 w-3.5" />
+                    Obsolete Details
+                  </button>
+                  <button
                     onClick={() => router.push("/similar-questions")}
                     className="flex items-center gap-1 px-2.5 py-1.5 bg-orange-600 text-white font-semibold rounded-md hover:bg-orange-700 transition-all duration-300 shadow-sm whitespace-nowrap"
                     title="Review similar/duplicate questions"
@@ -2222,6 +2293,131 @@ function MCQBankContent() {
           isOpen={showMatrixModal}
           onClose={() => setShowMatrixModal(false)}
         />
+
+        {/* Obsolete SOP Details modal */}
+        {showObsoleteDetails && (
+          <div
+            className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 p-4"
+            onClick={() => setShowObsoleteDetails(false)}
+          >
+            <div
+              className="w-full max-w-5xl rounded-xl border border-gray-200 bg-white shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-100 text-rose-700">
+                    <Archive className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-bold text-gray-900">
+                      Obsolete SOP Details
+                    </h2>
+                    <p className="text-[10px] font-semibold text-gray-500">
+                      {obsoleteDetailsLoading
+                        ? "Loading…"
+                        : `${obsoleteDetails.length} SOP(s)`}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowObsoleteDetails(false)}
+                  className="rounded p-1 text-gray-400 hover:text-gray-600"
+                  title="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="max-h-[70vh] overflow-auto p-4">
+                {obsoleteDetailsLoading ? (
+                  <div className="flex items-center justify-center py-16 text-gray-400">
+                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-rose-400 border-t-transparent" />
+                    <span className="ml-3 text-sm font-semibold">
+                      Loading obsolete SOPs…
+                    </span>
+                  </div>
+                ) : obsoleteDetails.length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-16 text-gray-400">
+                    <Archive className="h-10 w-10 opacity-30" />
+                    <p className="text-sm font-semibold">
+                      No obsolete SOPs found
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-hidden rounded-lg border border-gray-200">
+                    <table className="w-full text-left text-[11px]">
+                      <thead className="sticky top-0 bg-gray-50">
+                        <tr className="border-b border-gray-200">
+                          <th className="px-3 py-2 font-bold uppercase tracking-wider text-[10px] text-gray-600">
+                            SOP No
+                          </th>
+                          <th className="px-3 py-2 font-bold uppercase tracking-wider text-[10px] text-gray-600">
+                            Name
+                          </th>
+                          <th className="px-3 py-2 font-bold uppercase tracking-wider text-[10px] text-gray-600">
+                            Department
+                          </th>
+                          <th className="px-3 py-2 font-bold uppercase tracking-wider text-[10px] text-gray-600">
+                            Questions
+                          </th>
+                          <th className="px-3 py-2 font-bold uppercase tracking-wider text-[10px] text-gray-600">
+                            Obsolete At
+                          </th>
+                          <th className="px-3 py-2 font-bold uppercase tracking-wider text-[10px] text-gray-600 text-right">
+                            Action
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white">
+                        {obsoleteDetails.map((sop: any) => (
+                          <tr
+                            key={`obs-${sop.sopIdentifier}`}
+                            className="border-b border-gray-100 hover:bg-rose-50/30"
+                          >
+                            <td className="px-3 py-2 font-mono font-bold text-rose-800 whitespace-nowrap">
+                              {sop.sopIdentifier}
+                            </td>
+                            <td className="px-3 py-2 font-semibold text-gray-800">
+                              {sop.sopName || "—"}
+                            </td>
+                            <td className="px-3 py-2 text-gray-700">
+                              {sop.department || "—"}
+                            </td>
+                            <td className="px-3 py-2 text-gray-700 font-bold tabular-nums">
+                              {sop.totalQuestions ?? 0}
+                            </td>
+                            <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                              {sop.obsoleteAt
+                                ? new Date(sop.obsoleteAt).toLocaleDateString()
+                                : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <button
+                                type="button"
+                                disabled={obsoleteRestoreBusy === sop.sopIdentifier}
+                                onClick={() =>
+                                  void restoreObsoleteSop(String(sop.sopIdentifier))
+                                }
+                                className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                              >
+                                <RotateCcw className="h-3 w-3" />
+                                {obsoleteRestoreBusy === sop.sopIdentifier
+                                  ? "Restoring…"
+                                  : "Restore"}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Show loading state if opening from URL */}
         {sopIdFromUrl && !selectedMCQBank && isOpeningFromUrl && (

@@ -24,11 +24,6 @@ export async function GET() {
     // 1. Get all non-obsolete SOPs from the SOP model that have MCQ banks with questions
     const sopsWithMCQs = await db.collection('mcqbanks').aggregate([
       {
-        $match: {
-          $or: [{ isObsolete: { $ne: true } }, { isObsolete: { $exists: false } }],
-        },
-      },
-      {
         $project: {
           sopId: 1,
           sopName: 1,

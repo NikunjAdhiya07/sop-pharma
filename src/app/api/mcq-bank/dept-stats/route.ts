@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
-import SOP from '@/models/SOP';
 import { sopFamilyKeyFromIdentifier, normalizeSopIdentifierKey } from '@/lib/sopIdentifierNormalize';
+import { filterPrimaryRegistryRows } from '@/lib/registryPrimaryRows';
+import { getDashboardRegistryPayload } from '@/lib/dashboardRegistrySource';
 
 /**
  * GET /api/mcq-bank/dept-stats
@@ -75,29 +76,22 @@ export async function GET() {
 
     const mcqBankCollection = db.collection('mcqbanks');
 
-    // ── 1. Fetch all non-obsolete SOPs that have an identifier ─────────────
-    const allSOPs = await SOP.find({
-      $and: [
-        { $or: [{ isObsolete: { $ne: true } }, { isObsolete: { $exists: false } }] },
-        { identifier: { $exists: true, $nin: [null, '', undefined] } },
-      ],
-    })
-      .select('_id identifier department language name')
-      .lean() as any[];
+    // ── 1. Fetch SOP registry rows from Dashboard source of truth ───────────
+    const origin = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+    const dashboard = await getDashboardRegistryPayload(origin);
+    const registryRows = Array.isArray(dashboard?.data) ? dashboard.data : [];
+    const primaryRows = filterPrimaryRegistryRows(registryRows);
+    const obsoleteSOPs: any[] = [];
 
     // ── 2. Aggregate MCQ bank stats per bank ──────────────────────────────
     const bankAgg = await mcqBankCollection
       .aggregate([
         {
-          $match: {
-            $or: [{ isObsolete: { $ne: true } }, { isObsolete: { $exists: false } }],
-          },
-        },
-        {
           $project: {
             sopId: 1,
             sopIdentifier: 1,
             department: 1,
+            language: 1,
             totalQuestions: { $size: { $ifNull: ['$mcqs', []] } },
             checkedCount: {
               $size: {
@@ -131,19 +125,6 @@ export async function GET() {
       ])
       .toArray() as any[];
 
-    // ── 3. Build sopId → identifier + language + department map ───────────────
-    const sopIdentifierMap = new Map<string, string>();
-    const sopLanguageMap = new Map<string, string>();
-    const sopDeptMap = new Map<string, string>(); // sopId → stored department
-    for (const sop of allSOPs) {
-      if (sop._id) {
-        const id = sop._id.toString();
-        if (sop.identifier) sopIdentifierMap.set(id, sop.identifier);
-        sopLanguageMap.set(id, sop.language === 'Gujarati' ? 'Gujarati' : 'English');
-        if (sop.department) sopDeptMap.set(id, sop.department);
-      }
-    }
-
     // ── 4. Count SOPs per dept ────────────────────────────────────────────────
     // Three dedup levels — mirroring dashboard exactly:
     //
@@ -155,32 +136,41 @@ export async function GET() {
     const familyMap = new Map<string, { dept: string; langs: Set<string>; identifier: string; name: string }>();
     const normalMap = new Map<string, { dept: string; hasEng: boolean; hasGuj: boolean; identifier: string; name: string }>();
 
-    for (const sop of allSOPs) {
-      const raw = (sop.identifier as string).trim().toUpperCase();
+    for (const sop of primaryRows as any[]) {
+      const raw = String(sop.sopNo || sop.identifier || '').trim().toUpperCase();
       if (!raw) continue;
 
       const fk = sopFamilyKeyFromIdentifier(raw);
       if (!fk) continue; // skip non-standard identifiers
 
-      const dept = resolveDept(raw, sop.department);
+      const dept = resolveDept(raw, (sop.department as string) || null);
       if (dept === 'Other') continue;
 
-      const lang = sop.language === 'Gujarati' ? 'Gujarati' : 'English';
+      const langRaw = String(sop.language || '').toLowerCase();
+      // Dashboard primary rows can be "Both" — count both lang slots.
+      const langs: ('English' | 'Gujarati')[] =
+        langRaw === 'gujarati'
+          ? ['Gujarati']
+          : langRaw === 'both'
+            ? ['English', 'Gujarati']
+            : ['English'];
 
       // Family-level (totalSOPs = unique SOP numbers ignoring revision+language)
       if (!familyMap.has(fk)) {
-        familyMap.set(fk, { dept, langs: new Set(), identifier: raw, name: sop.name || '' });
+        familyMap.set(fk, { dept, langs: new Set(), identifier: raw, name: sop.sopName || sop.englishName || '' });
       }
-      familyMap.get(fk)!.langs.add(lang);
+      for (const l of langs) familyMap.get(fk)!.langs.add(l);
 
       // Normalized-identifier level (matches dashboard MERGED_DATA — EN+GU merged as one)
       const nk = normalizeSopIdentifierKey(raw);
       if (!normalMap.has(nk)) {
-        normalMap.set(nk, { dept, hasEng: false, hasGuj: false, identifier: raw, name: sop.name || '' });
+        normalMap.set(nk, { dept, hasEng: false, hasGuj: false, identifier: raw, name: sop.sopName || sop.englishName || '' });
       }
       const ne = normalMap.get(nk)!;
-      if (lang === 'Gujarati') ne.hasGuj = true;
-      else ne.hasEng = true;
+      for (const l of langs) {
+        if (l === 'Gujarati') ne.hasGuj = true;
+        else ne.hasEng = true;
+      }
     }
 
     console.log(`[dept-stats] family keys=${familyMap.size}  normalized identifiers=${normalMap.size}`);
@@ -262,20 +252,16 @@ export async function GET() {
     const mcqFoundNormSet = new Set<string>(); // normalized identifier keys with a bank
 
     for (const bank of bankAgg) {
-      const fallbackKey = bank.sopId?.toString() ?? bank._id?.toString();
-      if (!fallbackKey) continue;
-
-      const rawIdentifier = (bank.sopIdentifier || sopIdentifierMap.get(fallbackKey) || '').trim().toUpperCase();
+      const rawIdentifier = String(bank.sopIdentifier || '').trim().toUpperCase();
       if (!rawIdentifier) continue;
 
       const fk = sopFamilyKeyFromIdentifier(rawIdentifier);
       if (!fk) continue;
 
-      const storedDept = sopDeptMap.get(fallbackKey) ?? bank.department;
-      const dept = resolveDept(rawIdentifier, storedDept);
+      const dept = resolveDept(rawIdentifier, bank.department ?? null);
       if (dept === 'Other') continue;
 
-      const lang = sopLanguageMap.get(fallbackKey) ?? 'English';
+      const lang = String(bank.language || '').toLowerCase() === 'gujarati' ? 'Gujarati' : 'English';
 
       // Track normalized identifier keys that have any bank (same level as normalMap)
       mcqFoundNormSet.add(normalizeSopIdentifierKey(rawIdentifier));
@@ -361,6 +347,16 @@ export async function GET() {
       if (statsMap.has(dept)) result.push(statsMap.get(dept)!);
     }
 
+    // Informational: obsolete SOP counts (by dept) from SOP.isObsolete.
+    const obsoleteByDept: Record<string, number> = {};
+    for (const sop of obsoleteSOPs) {
+      const raw = String(sop?.identifier || '').trim().toUpperCase();
+      if (!raw) continue;
+      const dept = resolveDept(raw, sop?.department);
+      if (!dept || dept === 'Other') continue;
+      obsoleteByDept[dept] = (obsoleteByDept[dept] || 0) + 1;
+    }
+
     // Overall totals — sum only named departments
     const overall = result.reduce(
       (acc, ds) => {
@@ -407,7 +403,12 @@ export async function GET() {
     );
 
     return NextResponse.json(
-      { success: true, departments: result, overall },
+      {
+        success: true,
+        departments: result,
+        overall,
+        obsolete: { total: obsoleteSOPs.length, byDept: obsoleteByDept },
+      },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {

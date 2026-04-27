@@ -75,10 +75,13 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingBank) {
-      return NextResponse.json(
-        { success: false, error: `MCQ bank already exists for "${sopIdentifier}" with ${existingBank.totalQuestions} questions. Cannot restore duplicate.` },
-        { status: 409 }
-      );
+      // Treat as already restored: remove stale archive rows so UI doesn't keep showing it.
+      await ArchivedMCQBank.deleteMany({ sopIdentifier });
+      return NextResponse.json({
+        success: true,
+        message: `MCQ bank already exists for "${sopIdentifier}". Removed it from archive.`,
+        alreadyExisted: true,
+      });
     }
 
     // Step 4: Recreate the MCQ bank from the archived data

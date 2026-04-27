@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const dept = searchParams.get('dept');
+    const includeObsolete = searchParams.get('includeObsolete') === '1';
 
     if (!dept) {
       return NextResponse.json({ error: 'dept query param required' }, { status: 400 });
@@ -34,7 +35,9 @@ export async function GET(request: NextRequest) {
     // Single pipeline: match dept, project only counts (no mcqs array content)
     const banks = await mcqBankCollection.aggregate([
       {
-        $match: { department: dept },
+        $match: includeObsolete
+          ? { department: dept }
+          : { department: dept, isObsolete: { $ne: true } },
       },
       {
         $project: {

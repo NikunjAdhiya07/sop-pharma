@@ -60,9 +60,9 @@ export async function POST(request: NextRequest) {
 
     // Fetch only lightweight fields — NO mcqs array (that's huge and causes timeouts).
     // We only need sopIdentifier for department matching; detection happens in the worker.
-    // Exclude obsolete banks (belonging to superseded SOP versions).
+    // NOTE: Do not use MCQBank.isObsolete as a filter — obsolete is derived from SOP.isObsolete (dashboard source of truth).
     const banks = await MCQBank.find(
-      { $or: [{ isObsolete: { $ne: true } }, { isObsolete: { $exists: false } }] },
+      {},
       { _id: 1, sopIdentifier: 1, sopName: 1, language: 1 }
     ).lean();
 

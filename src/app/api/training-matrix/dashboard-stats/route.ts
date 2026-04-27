@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import TrainingMatrixRecord from '@/models/TrainingMatrixRecord';
 import TrainingExamRecord from '@/models/TrainingExamRecord';
+import SOP from '@/models/SOP';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +14,18 @@ export async function GET(request: NextRequest) {
     const monthP = sp.get('month')      || 'all';
     const yearP  = sp.get('year')       || 'all';
     const search = sp.get('search')     || '';
+    const includeObsolete = sp.get('includeObsolete') === '1';
+
+    const stripVersion = (code: string) =>
+      String(code || '').toUpperCase().replace(/-\d+$/, '').trim();
+    const obsoleteBaseSet = new Set<string>();
+    if (!includeObsolete) {
+      const obs = await SOP.find({ isObsolete: true }, { identifier: 1 }).lean() as any[];
+      for (const r of obs) {
+        const base = stripVersion(String(r?.identifier || ''));
+        if (base) obsoleteBaseSet.add(base);
+      }
+    }
 
     const now = new Date();
     const curMonth = now.getMonth() + 1;
@@ -24,6 +37,11 @@ export async function GET(request: NextRequest) {
     if (monthP !== 'all') matrixMatch.month        = parseInt(monthP);
     if (yearP  !== 'all') matrixMatch.year         = parseInt(yearP);
     if (search) matrixMatch.employeeName = { $regex: search, $options: 'i' };
+
+    // Filter out obsolete SOP codes by default.
+    if (!includeObsolete && obsoleteBaseSet.size > 0) {
+      matrixMatch.$expr = { $not: { $in: [{ $toUpper: '$sopCode' }, Array.from(obsoleteBaseSet)] } };
+    }
 
     // ── Overall KPI from matrix ───────────────────────────────────────────────
     const [overallKpi] = await TrainingMatrixRecord.aggregate([

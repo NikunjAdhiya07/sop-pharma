@@ -1284,37 +1284,106 @@ export async function GET(request: NextRequest) {
     await connectDB();
 
     // Run all independent DB queries AND Bunny CDN crawl in parallel.
-    const [
-      allSOPsIncludingObsolete,
-      masterSOPs,
-      allUsers,
-      trainingMatrixEntries,
-      matrixEntries,
-      sopLibraries,
-      versionArtifactsDocs,
-      supersedeOverridesRaw,
-      mcqBanks,
-      bunnyVersionMap,
-    ] = await Promise.all([
+    // IMPORTANT: Use allSettled so one failing source doesn't crash the entire dashboard.
+    const settled = await Promise.allSettled([
       SOP.find({})
-        .select('_id name identifier department fileUrl fileType originalFileName folderPath location metadata reviewDate expiryDate version language createdAt sopDocuments isObsolete pipelineStatus')
+        .select(
+          '_id name identifier department fileUrl fileType originalFileName folderPath location metadata reviewDate expiryDate version language createdAt sopDocuments isObsolete pipelineStatus',
+        )
         .lean(),
       MasterSOPRepository.find({})
-        .select('sopIdentifier sopName englishName gujaratiName metadata.reviewDate metadata.expiryDate')
+        .select(
+          'sopIdentifier sopName englishName gujaratiName metadata.reviewDate metadata.expiryDate',
+        )
         .lean(),
       User.find({}).lean(),
       TrainingMatrix.find({ trainerName: { $exists: true, $nin: [null, ''] } })
-        .select('sopIdentifier department trainerName').lean(),
+        .select('sopIdentifier department trainerName')
+        .lean(),
       MatrixEntry.find({}).select('sopCode employeeName').lean(),
-      SOPLibrary.find({ sopIdentifier: { $regex: /^[A-Z]{1,6}\d{1,4}([-_]\d{1,3})?$/i } })
-        .select('sopIdentifier sopName sopDocuments videos slides completionStatus language location').lean(),
+      SOPLibrary.find({
+        sopIdentifier: { $regex: /^[A-Z]{1,6}\d{1,4}([-_]\d{1,3})?$/i },
+      })
+        .select(
+          'sopIdentifier sopName sopDocuments videos slides completionStatus language location',
+        )
+        .lean(),
       SOPVersionArtifacts.find({})
-        .select('identifier language entries sopName department updatedAt').lean(),
+        .select('identifier language entries sopName department updatedAt')
+        .lean(),
       SupersedeSOPVersion.find({})
-        .select('sopNo language version docxPath pdfPath').lean(),
+        .select('sopNo language version docxPath pdfPath')
+        .lean(),
       MCQBank.find({}).select('sopIdentifier sopName').lean(),
       fetchBunnyVersionMap(),
     ]);
+
+    const unwrap = <T,>(
+      idx: number,
+      label: string,
+      fallback: T,
+    ): T => {
+      const r = settled[idx];
+      if (r.status === 'fulfilled') return r.value as T;
+      const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      console.error(`[dashboard/sops] Source failed: ${label}:`, r.reason);
+      // Preserve the failure as a warning in dev, but keep the endpoint usable.
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn(`[dashboard/sops] Using fallback for ${label}: ${reason}`);
+      }
+      return fallback;
+    };
+
+    const allSOPsIncludingObsolete = unwrap<any[]>(
+      0,
+      'SOP',
+      [],
+    );
+    const masterSOPs = unwrap<any[]>(
+      1,
+      'MasterSOPRepository',
+      [],
+    );
+    const allUsers = unwrap<any[]>(
+      2,
+      'User',
+      [],
+    );
+    const trainingMatrixEntries = unwrap<any[]>(
+      3,
+      'TrainingMatrix',
+      [],
+    );
+    const matrixEntries = unwrap<any[]>(
+      4,
+      'MatrixEntry',
+      [],
+    );
+    const sopLibraries = unwrap<any[]>(
+      5,
+      'SOPLibrary',
+      [],
+    );
+    const versionArtifactsDocs = unwrap<any[]>(
+      6,
+      'SOPVersionArtifacts',
+      [],
+    );
+    const supersedeOverridesRaw = unwrap<any[]>(
+      7,
+      'SupersedeSOPVersion',
+      [],
+    );
+    const mcqBanks = unwrap<any[]>(
+      8,
+      'MCQBank',
+      [],
+    );
+    const bunnyVersionMap = unwrap<Map<string, any[]>>(
+      9,
+      'BunnyVersionMap',
+      new Map(),
+    );
 
     // Derived filtered list for current SOPs from the full collection in-memory.
     const allSOPs = allSOPsIncludingObsolete.filter((sop: any) =>
@@ -1373,19 +1442,21 @@ export async function GET(request: NextRequest) {
       const department = getDepartmentForSubcategory(subcategoryCode);
 
       let reviewDate: Date | null = null;
-      if (identifier && reviewDateByIdentifier.has(identifier)) {
-        reviewDate = reviewDateByIdentifier.get(identifier)!;
-      } else if (identifier) {
-        const fk = sopFamilyKeyFromIdentifier(identifier);
-        if (fk && reviewDateByFamily.has(fk)) {
-          reviewDate = reviewDateByFamily.get(fk)!.date;
-        }
-      }
-      
-      if (!reviewDate && sop.reviewDate) {
+      if (sop.reviewDate) {
         reviewDate = new Date(sop.reviewDate);
       } else if (sop.expiryDate) {
         reviewDate = new Date(sop.expiryDate);
+      }
+
+      if (!reviewDate || isNaN(reviewDate.getTime())) {
+        if (identifier && reviewDateByIdentifier.has(identifier)) {
+          reviewDate = reviewDateByIdentifier.get(identifier)!;
+        } else if (identifier) {
+          const fk = sopFamilyKeyFromIdentifier(identifier);
+          if (fk && reviewDateByFamily.has(fk)) {
+            reviewDate = reviewDateByFamily.get(fk)!.date;
+          }
+        }
       }
 
       const expiryDateIso = (reviewDate && !isNaN(reviewDate.getTime())) ? reviewDate.toISOString() : null;
@@ -2676,9 +2747,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'JSON Serialization Failed: ' + jsonErr.message }, { status: 500 });
     }
   } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
     console.error('Error fetching dashboard sops:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch dashboard sops' },
+      {
+        success: false,
+        error: 'Failed to fetch dashboard sops',
+        ...(process.env.NODE_ENV !== 'production' ? { detail: msg } : {}),
+      },
       { status: 500 }
     );
   }

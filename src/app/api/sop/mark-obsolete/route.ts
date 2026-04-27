@@ -3,8 +3,8 @@ import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
 import User from '@/models/User';
 import { invalidateDashboardSopsCache } from '@/lib/dashboardSopsCache';
-
-const OBSOLETE_FIXED_PASSWORD = 'indiana@132';
+import mongoose from 'mongoose';
+import { isValidObsoletePassword } from '@/lib/obsoletePasswordAuth';
 
 // Extract family prefix: "QAGE01-10" → "QAGE01", "MAGE01-05" → "MAGE01"
 function familyPrefix(identifier: string): string | null {
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate password
-    let authorized = password === OBSOLETE_FIXED_PASSWORD;
+    let authorized = await isValidObsoletePassword(password);
     if (!authorized && username) {
       const user = await User.findOne({ username }).lean() as any;
       if (user && user.password === password) {
@@ -61,6 +61,29 @@ export async function POST(request: NextRequest) {
 
     if (result.matchedCount === 0) {
       return NextResponse.json({ error: 'SOP not found' }, { status: 404 });
+    }
+
+    // Mark related MCQ banks as obsolete too (so MCQ Bank views can filter quickly)
+    const db = mongoose.connection.db;
+    if (db) {
+      try {
+        await db.collection('mcqbanks').updateMany(
+          // MCQ banks store SOP identifier in sopIdentifier
+          prefix
+            ? { sopIdentifier: { $regex: `^${prefix}-`, $options: 'i' } }
+            : { sopIdentifier: { $regex: `^${sopIdentifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } },
+          {
+            $set: {
+              isObsolete: true,
+              obsoleteAt: new Date(),
+              obsoleteReason: 'SOP marked obsolete',
+            },
+          },
+        );
+      } catch (e) {
+        // Non-fatal: SOP is already obsolete; MCQ bank filtering can still be done via SOP flag.
+        console.warn('[mark-obsolete] could not mark mcqbanks obsolete:', e);
+      }
     }
 
     // Invalidate server-side dashboard cache so the next load reflects the change immediately.

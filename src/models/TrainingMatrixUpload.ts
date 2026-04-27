@@ -1,5 +1,18 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
+export interface ITrainingMatrixEmployeeSnapshot {
+  name: string;
+  designation: string;
+  training: Record<string, boolean>;
+}
+
+export interface ITrainingMatrixSnapshot {
+  sopCodes: string[];
+  sopMonthMap: Record<string, string>;
+  monthCounts: Record<string, number>;
+  employees: ITrainingMatrixEmployeeSnapshot[];
+}
+
 export interface ITrainingMatrixUpload extends Document {
   department: string;
   fileName: string;
@@ -12,6 +25,9 @@ export interface ITrainingMatrixUpload extends Document {
   recordsImported: number;
   uploadedAt: Date;
   uploadedBy?: string;
+  fileUrl?: string;
+  bunnyPath?: string;
+  snapshot?: ITrainingMatrixSnapshot;
 }
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -28,6 +44,9 @@ const TrainingMatrixUploadSchema = new Schema<ITrainingMatrixUpload>({
   recordsImported: { type: Number, default: 0 },
   uploadedAt:      { type: Date, default: Date.now },
   uploadedBy:      { type: String },
+  fileUrl:         { type: String },
+  bunnyPath:       { type: String },
+  snapshot:        { type: Schema.Types.Mixed },
 });
 
 TrainingMatrixUploadSchema.index({ department: 1, year: 1, month: 1 });

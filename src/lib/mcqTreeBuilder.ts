@@ -12,6 +12,8 @@ export interface SOPNode {
   /** When this identifier has a Gujarati SOP, its document URL (so View opens correct language) */
   sopFileUrlGujarati?: string;
   sopFileType: 'pdf' | 'docx';
+  /** Derived from SOP.isObsolete (dashboard source of truth). */
+  isObsolete?: boolean;
   mcqBanks: IMCQBank[];
   totalQuestions: number;
   checkedCount: number;
@@ -315,6 +317,7 @@ export function buildMCQTreeStructure(
 
     const gujaratiSop = sopsWithId.find((s: any) => s.language === 'Gujarati');
     const sopFileUrlGujarati = gujaratiSop?.fileUrl || undefined;
+    const isObsolete = sopsWithId.some((s: any) => s?.isObsolete === true || s?.isObsolete === 'true');
 
     const totalQuestions = sopMCQBanks.reduce(
       (sum, bank) => sum + ((bank as any).totalQuestions ?? bank.mcqs?.length ?? 0),
@@ -341,6 +344,7 @@ export function buildMCQTreeStructure(
       sopFileUrl: primarySop.fileUrl,
       sopFileUrlGujarati,
       sopFileType: primarySop.fileType,
+      isObsolete,
       mcqBanks: sopMCQBanks,
       totalQuestions,
       checkedCount,

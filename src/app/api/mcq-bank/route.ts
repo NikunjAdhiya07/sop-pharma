@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
     const limit = Math.min(parseInt(searchParams.get('limit') || '10'), 1000);
     const summary = searchParams.get('summary') === 'true';
+    const includeObsolete = searchParams.get('includeObsolete') === '1';
 
     // When fetching by specific ID, use native MongoDB driver
     // to bypass Mongoose schema filtering that strips isChecked/isReviewed
@@ -115,6 +116,11 @@ export async function GET(request: NextRequest) {
     }
     if (folderSubcategory) {
       query.folderSubcategory = folderSubcategory;
+    }
+
+    // Default: hide obsolete MCQ banks (they are tied to obsolete SOPs)
+    if (!includeObsolete) {
+      query.isObsolete = { $ne: true };
     }
 
     // If summary mode, only fetch essential fields

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import TrainingMatrixRecord from '@/models/TrainingMatrixRecord';
+import SOP from '@/models/SOP';
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,6 +16,7 @@ export async function GET(request: NextRequest) {
     const sopF   = (sp.get('sop')       || '').trim();
     const statusF = sp.get('status')    || 'all';     // 'pending' | 'completed' | 'all'
     const examF   = sp.get('examPending') || 'false';
+    const includeObsolete = sp.get('includeObsolete') === '1';
 
     const match: Record<string, any> = {};
     if (monthP !== 'all') match.month      = parseInt(monthP);
@@ -23,7 +25,26 @@ export async function GET(request: NextRequest) {
     if (empF)             match.employeeName = { $regex: empF, $options: 'i' };
     if (sopF)             match.sopCode      = { $regex: sopF, $options: 'i' };
 
-    const records = await TrainingMatrixRecord.find(match).lean();
+    // Default: hide obsolete SOP codes from all training-matrix views
+    // (TrainingMatrixRecord stores SOP codes without version; SOP.identifier may have version.)
+    const stripVersion = (code: string) =>
+      String(code || '').toUpperCase().replace(/-\d+$/, '').trim();
+    const obsoleteBaseSet = (() => {
+      // lazy populated below only when needed
+      return new Set<string>();
+    })();
+    if (!includeObsolete) {
+      const obs = await SOP.find({ isObsolete: true }, { identifier: 1 }).lean() as any[];
+      for (const r of obs) {
+        const base = stripVersion(String(r?.identifier || ''));
+        if (base) obsoleteBaseSet.add(base);
+      }
+    }
+
+    const recordsRaw = await TrainingMatrixRecord.find(match).lean();
+    const records = includeObsolete
+      ? recordsRaw
+      : recordsRaw.filter((r: any) => !obsoleteBaseSet.has(stripVersion(String(r?.sopCode || ''))));
 
     // ── Fetch exam data from TrainingMatrix (linked test sessions) ────────────
     let examRows: Array<{
@@ -75,7 +96,6 @@ export async function GET(request: NextRequest) {
     // Build sopCode → { hasDocx, hasPdf } map
     const sopFileMap = new Map<string, { hasDocx: boolean; hasPdf: boolean }>();
     try {
-      const SOP = (await import('@/models/SOP')).default;
       // Collect all sopCodes in our records
       const allSopCodes = [...new Set(records.map(r => r.sopCode))];
       if (allSopCodes.length > 0) {

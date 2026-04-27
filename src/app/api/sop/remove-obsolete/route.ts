@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
-
-const OBSOLETE_FIXED_PASSWORD = 'indiana123';
+import mongoose from 'mongoose';
+import { isValidObsoletePassword } from '@/lib/obsoletePasswordAuth';
 
 // Extract family prefix: "QAGE01-10" → "QAGE01"
 function familyPrefix(identifier: string): string | null {
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     if (!sopIdentifier) {
       return NextResponse.json({ error: 'sopIdentifier is required' }, { status: 400 });
     }
-    if (!password || password !== OBSOLETE_FIXED_PASSWORD) {
+    if (!password || !(await isValidObsoletePassword(password))) {
       return NextResponse.json({ error: 'Incorrect password' }, { status: 403 });
     }
 
@@ -45,6 +45,21 @@ export async function POST(request: NextRequest) {
         success: false,
         error: `No obsolete records found for "${sopIdentifier}". It may already be active.`,
       }, { status: 404 });
+    }
+
+    // Restore related MCQ banks too
+    const db = mongoose.connection.db;
+    if (db) {
+      try {
+        await db.collection('mcqbanks').updateMany(
+          prefix
+            ? { sopIdentifier: { $regex: `^${prefix}-`, $options: 'i' } }
+            : { sopIdentifier: { $regex: `^${sopIdentifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } },
+          { $unset: { isObsolete: '', obsoleteAt: '', obsoleteReason: '' } },
+        );
+      } catch (e) {
+        console.warn('[remove-obsolete] could not restore mcqbanks obsolete flags:', e);
+      }
     }
 
     return NextResponse.json({
