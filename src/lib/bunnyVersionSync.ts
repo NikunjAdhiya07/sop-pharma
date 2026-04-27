@@ -20,7 +20,7 @@ export interface BunnyVersionEntry {
 
 // ── Bunny listing ─────────────────────────────────────────────────────────
 
-function getBunnyConfig() {
+export function getBunnyConfig() {
   const storageZone = process.env.BUNNY_STORAGE_ZONE || process.env.BUNNY_STORAGE_ZONE_NAME || '';
   const apiKey = process.env.BUNNY_STORAGE_PASSWORD || process.env.BUNNY_API_KEY || '';
   const rawCdn = process.env.BUNNY_PULL_ZONE_URL || process.env.BUNNY_CDN_HOSTNAME || '';
@@ -29,7 +29,7 @@ function getBunnyConfig() {
   return { storageZone, apiKey, cdnHostname, storageHostname };
 }
 
-async function listDir(
+export async function listDir(
   storageHostname: string,
   storageZone: string,
   apiKey: string,
@@ -50,7 +50,7 @@ async function listDir(
   return res.json();
 }
 
-async function crawl(
+export async function crawl(
   storageHostname: string,
   storageZone: string,
   apiKey: string,
@@ -149,7 +149,7 @@ interface Parsed {
   department: string;
 }
 
-function parseStoragePath(storagePath: string): Parsed | null {
+export function parseStoragePath(storagePath: string): Parsed | null {
   if (isAnnexure(storagePath)) return null;
   const norm = normalizeUnicodeHyphens(storagePath);
   const parts = norm.split(/[/\\]/).filter(Boolean);

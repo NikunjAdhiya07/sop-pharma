@@ -21,7 +21,7 @@ const CACHE_TTL_MS = 60_000;
 function getCacheKey(req: NextRequest) {
   // Keep it simple: one cache for the whole overview payload.
   // If later this route becomes user-specific, include user/session key here.
-  return 'training-matrix-overview:v9';
+  return 'training-matrix-overview:v10';
 }
 
 function getCached(req: NextRequest): any | null {
@@ -219,18 +219,23 @@ export async function GET(req: NextRequest) {
       .map(m => m.latestIdentifier)
       .filter(Boolean);
 
-    // Primary source: SOP collection `reviewDate` field
+    // Primary source: SOP collection `reviewDate` field.
+    // Sort newest-first so that when multiple records share the same identifier (duplicate
+    // uploads), the most recently uploaded SOP's review date wins.
     const sopDateDocs = await SOP.find(
-      { identifier: { $in: latestIdentifiers }, reviewDate: { $exists: true, $ne: null } },
-      { identifier: 1, reviewDate: 1 }
-    ).lean();
+      { identifier: { $in: latestIdentifiers }, reviewDate: { $exists: true, $ne: null }, isObsolete: { $ne: true } },
+      { identifier: 1, reviewDate: 1, uploadedAt: 1 }
+    )
+      .sort({ uploadedAt: -1 })
+      .lean();
 
     for (const doc of sopDateDocs as any[]) {
       const id = String(doc?.identifier || '');
       const base = stripVersion(id);
       if (!base || !dbBaseMeta.has(base)) continue;
-      
+
       const meta = dbBaseMeta.get(base)!;
+      if (meta.targetDate) continue; // already set by a newer doc for this family
       const rawDate = doc?.reviewDate;
       if (!rawDate) continue;
       const t = new Date(rawDate);
@@ -425,14 +430,8 @@ export async function GET(req: NextRequest) {
         employees: Array<{ name: string; designation: string; training: Record<string, boolean> }>;
       };
 
-      // Count raw occurrences of each SOP code (a SOP appearing in multiple month columns = multiple occurrences)
-      const rawOccurrences = new Map<string, number>();
-      for (const raw of (snapshot.sopCodes || [])) {
-        const c = String(raw).toUpperCase().replace(/-\d+$/, '').trim();
-        if (!c) continue;
-        rawOccurrences.set(c, (rawOccurrences.get(c) || 0) + 1);
-      }
-      const codes = [...rawOccurrences.keys()].filter(Boolean);
+      // Unique SOP codes from snapshot header row
+      const codes = Array.from(new Set((snapshot.sopCodes || []).map((c) => String(c).toUpperCase().replace(/-\d+$/, '').trim()))).filter(Boolean);
       codes.forEach((c) => allExcelCodes.add(c));
       sopCodesByDept[dept] = codes;
       sopMonthMapAll[dept] = snapshot.sopMonthMap || {};
@@ -453,19 +452,29 @@ export async function GET(req: NextRequest) {
         return resolveDeptForBaseSop(c, meta) === dept && !codes.includes(c);
       });
 
-      // Repetitive SOP categorisation — based on raw column count in the Excel snapshot
+      // Repetitive SOP categorisation — count how many employees have each SOP ticked (assigned)
+      const tickCountBySop = new Map<string, number>();
+      for (const emp of (snapshot.employees || [])) {
+        for (const [rawCode, ticked] of Object.entries(emp.training || {})) {
+          if (!ticked) continue;
+          const c = String(rawCode).toUpperCase().replace(/-\d+$/, '').trim();
+          if (!c) continue;
+          tickCountBySop.set(c, (tickCountBySop.get(c) || 0) + 1);
+        }
+      }
       type RepeatItem = { sopCode: string; title: string; department: string; count: number };
       const repeat3PlusList: RepeatItem[] = [];
       const repeat2List: RepeatItem[] = [];
       const repeat1List: RepeatItem[] = [];
-      for (const [c, count] of rawOccurrences) {
+      for (const c of codes) {
+        const count = tickCountBySop.get(c) || 0;
         const meta = dbBaseMeta.get(c);
         const item: RepeatItem = { sopCode: c, title: meta?.title || '', department: dept, count };
         if (count >= 3) repeat3PlusList.push(item);
         else if (count === 2) repeat2List.push(item);
         else repeat1List.push(item);
       }
-      repeat3PlusList.sort((a, b) => a.sopCode.localeCompare(b.sopCode));
+      repeat3PlusList.sort((a, b) => b.count - a.count || a.sopCode.localeCompare(b.sopCode));
       repeat2List.sort((a, b) => a.sopCode.localeCompare(b.sopCode));
       repeat1List.sort((a, b) => a.sopCode.localeCompare(b.sopCode));
 
@@ -646,7 +655,6 @@ export async function GET(req: NextRequest) {
         repeat3PlusCount: repeat3PlusList.length,
         repeat2Count: repeat2List.length,
         repeat1Count: repeat1List.length,
-        noRepeatCount: missingFromExcel.length,
         repeat3PlusList,
         repeat2List,
         repeat1List,

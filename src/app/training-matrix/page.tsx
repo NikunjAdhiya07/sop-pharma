@@ -96,7 +96,6 @@ interface DeptCardData {
   repeat3PlusCount?: number;
   repeat2Count?: number;
   repeat1Count?: number;
-  noRepeatCount?: number;
   repeat3PlusList?: Array<{ sopCode: string; title: string; department: string; count: number }>;
   repeat2List?: Array<{ sopCode: string; title: string; department: string; count: number }>;
   repeat1List?: Array<{ sopCode: string; title: string; department: string; count: number }>;
@@ -1495,11 +1494,20 @@ export default function TrainingMatrixPage() {
     const term = search.trim().toLowerCase();
     const depts: Dept[] = activeDept === 'All' ? [...DEPARTMENTS] : [activeDept];
 
+    // Build a title lookup from dbSopsByDept
+    const titleMap = new Map<string, string>();
+    for (const sopList of Object.values((data.totalCard as any)?.dbSopsByDept || {})) {
+      for (const s of sopList as Array<{ sopCode: string; title: string }>) {
+        if (s.sopCode) titleMap.set(s.sopCode.toUpperCase(), s.title || '');
+      }
+    }
+
     // dept → sopCode → { completed, pending, notRequired, employeesPending, employeesCompleted }
     const out: Array<{
       department: string;
       sops: Array<{
         sopCode: string;
+        title: string;
         month: string;
         completed: number;
         pending: number;
@@ -1564,6 +1572,7 @@ export default function TrainingMatrixPage() {
           const status = data.sopStatusByCode?.[sopCode];
           return {
             sopCode,
+            title: titleMap.get(sopCode.toUpperCase()) || '',
             month: monthMap[sopCode] || '',
             trainer: trainerMap[sopCode] || '',
             completed: stat.completed,
@@ -1779,7 +1788,12 @@ export default function TrainingMatrixPage() {
           <button
             type="button"
             onClick={() => {
-              clearCapsuleFilter();
+              const dbSopList: Array<{ sopCode: string }> = (data?.totalCard?.dbSopsByDept as any)?.[dept] || [];
+              setCapsuleSopFilter({
+                title: `${dept} · DB SOPs (${dbDeptCount})`,
+                dept,
+                sopCodes: new Set(dbSopList.map((x) => String(x.sopCode).toUpperCase())),
+              });
               setViewMode('sop');
               setGroupBy('department');
               setActiveMonth('All');
@@ -1947,14 +1961,6 @@ export default function TrainingMatrixPage() {
           onClick={() => {
             const list = d.repeat1List;
             if (list?.length) setMissingModal({ title: `${dept} · SOPs appearing once in Excel`, kind: 'repeat-sop', rows: list });
-          }}
-        />
-        <RowD
-          label="Not in Excel"
-          value={d.noRepeatCount ?? d.missingFromExcel}
-          color="red"
-          onClick={() => {
-            if (d.missingFromExcelList?.length) setMissingModal({ title: `${dept} · SOPs not in Excel (DB only)`, kind: 'sop', rows: d.missingFromExcelList });
           }}
         />
         <RowB
@@ -2218,6 +2224,7 @@ export default function TrainingMatrixPage() {
     sr?: number;
     sop: {
       sopCode: string;
+      title?: string;
       month: string;
       trainer?: string;
       completed: number;
@@ -2279,6 +2286,11 @@ export default function TrainingMatrixPage() {
               </span>
             </div>
             <div className="min-w-0">
+              {sop.title && (
+                <div className="text-[10px] text-gray-500 font-medium truncate mb-0.5" title={sop.title}>
+                  {sop.title}
+                </div>
+              )}
               <div className="flex items-center gap-2 flex-wrap mb-0.5">
                 <span className="text-[11px] font-black text-gray-900">{dept}</span>
                 {!!sop.month && (
