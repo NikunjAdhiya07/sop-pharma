@@ -57,6 +57,7 @@ export default function SOPTable({
   isObsoleteView,
   onRemoveObsolete,
   removingObsoleteId,
+  fileAvailability,
 }: any) {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
@@ -435,8 +436,23 @@ export default function SOPTable({
         });
       }
     }
-    if (rawDocs.length === 0)
-      return <span className="text-gray-400 text-[9px]">—</span>;
+    if (rawDocs.length === 0) {
+      const isDual = Boolean(row.isDualLanguage) || Boolean(row.gujaratiFileMissing);
+      const missingRow = (langLabel: string) => (
+        <div className="grid grid-cols-[24px_58px_6px_50px] items-center gap-x-0.5 text-left leading-none min-h-[10px]">
+          {isDual && <span className="text-[8px] font-bold text-gray-500">{langLabel}</span>}
+          <span className="text-[8px] font-bold leading-none text-red-600" title="DOCX link cleared — file missing">DOCX ✗</span>
+          <div className="flex justify-center text-gray-300 text-[9px] select-none" />
+          <span className="text-[8px] font-bold leading-none text-red-600" title="PDF link cleared — file missing">PDF ✗</span>
+        </div>
+      );
+      return (
+        <div className="flex w-max flex-col gap-px text-left leading-none">
+          {missingRow("ENG")}
+          {isDual ? missingRow("GUJ") : null}
+        </div>
+      );
+    }
 
     const pathsSeenAsEng = new Set<string>();
     rawDocs.forEach((d) => {
@@ -512,6 +528,17 @@ export default function SOPTable({
       const linkColor = isWord ? "text-purple-600" : "text-blue-600";
       const fileLinkClass = `font-bold text-[9px] ${linkColor} hover:underline whitespace-nowrap shrink-0`;
 
+      // If a recheck has been run and this specific path is confirmed missing in Bunny CDN
+      if (fileAvailability && fileAvailability[doc.path] === false) {
+        return (
+          <span
+            className="text-[8px] font-bold leading-none text-red-600"
+            title={`${doc.type} not found in Bunny CDN (file was deleted or moved)`}>
+            {doc.type} ✗
+          </span>
+        );
+      }
+
       return (
         <div className="flex flex-nowrap items-center gap-0.5 overflow-visible">
           {isWord ? (
@@ -568,7 +595,11 @@ export default function SOPTable({
             {langLabel}
           </span>
           {docs.length === 0 ? (
-            <span className="text-gray-400 text-[9px] translate-y-px">—</span>
+            <>
+              <span className="text-[8px] font-bold leading-none text-red-600" title="DOCX link cleared — file missing">DOCX ✗</span>
+              <div className="flex justify-center text-gray-300 text-[9px] select-none" />
+              <span className="text-[8px] font-bold leading-none text-red-600" title="PDF link cleared — file missing">PDF ✗</span>
+            </>
           ) : (
             <>
               {wordDoc ? (

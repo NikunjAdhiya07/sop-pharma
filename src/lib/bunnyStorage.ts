@@ -227,17 +227,36 @@ export async function deleteFromBunny(storagePath: string): Promise<boolean> {
 }
 
 /**
- * Check if a file exists in Bunny Storage (by making a HEAD request to CDN)
+ * Check if a file exists in Bunny Storage (bypassing CDN cache by hitting Storage API)
  * @param storagePath - The path within the storage zone
  * @returns true if file exists, false otherwise
  */
 export async function checkBunnyFileExists(storagePath: string): Promise<boolean> {
-  const cdnUrl = getBunnyCdnUrl(extractBunnyPath(storagePath));
+  const config = getConfig();
   
+  // Use Storage API if configured to avoid edge caching issues where deleted files still return 200
+  if (config.storageZone && config.apiKey) {
+    const cleanPath = extractBunnyPath(storagePath);
+    const url = `https://${config.storageHostname}/${config.storageZone}/${cleanPath}`;
+    try {
+      const response = await fetch(url, {
+        method: 'HEAD',
+        headers: {
+          'AccessKey': config.apiKey,
+        },
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  // Fallback to CDN URL
+  const cdnUrl = getBunnyCdnUrl(extractBunnyPath(storagePath));
   if (!cdnUrl) return false;
 
   try {
-    const response = await fetch(cdnUrl, { method: 'HEAD' });
+    const response = await fetch(`${cdnUrl}?_t=${Date.now()}`, { method: 'HEAD' });
     return response.ok;
   } catch {
     return false;
