@@ -9,7 +9,7 @@ import {
   validateDocumentContent,
   type ParsedDocument,
 } from '@/lib/documentParser';
-import { extractDatesFromContent } from '@/lib/dateExtractor';
+import { extractDatesFromBuffer } from '@/lib/dateExtractor';
 import { uploadToBunny, generateSOPDocumentPath } from '@/lib/bunnyStorage';
 import { persistUploadPath } from '@/lib/persistUploadPath';
 import { getDepartmentForSubcategory, extractSubcategoryFromIdentifier } from '@/lib/mcqTreeBuilder';
@@ -227,7 +227,7 @@ export async function POST(request: NextRequest) {
           department = fromIdentifier || normalizeDeptForDisplay(fromContent);
         }
 
-        const extractedDates = extractDatesFromContent(parsed.content);
+        const extractedDates = await extractDatesFromBuffer(buffer, fileType, parsed.content);
         const sanitizedDept = department.replace(/[^a-zA-Z0-9-_]/g, '_');
         let fileUrl: string;
 
