@@ -23,6 +23,7 @@ import {
   Trash2,
   X,
   Loader2,
+  Pencil,
 } from "lucide-react";
 import SOPPipelineStatus from "@/components/SOPPipelineStatus";
 import { useState, Fragment, useEffect, useRef, type ReactNode } from "react";
@@ -68,6 +69,29 @@ export default function SOPTable({
   const [obsoleteBusy, setObsoleteBusy] = useState(false);
   const [obsoleteError, setObsoleteError] = useState("");
   const obsoleteInputRef = useRef<HTMLInputElement>(null);
+
+  // Edit modal state
+  const [editTarget, setEditTarget] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState({
+    sopName: '',
+    department: '',
+    location: '',
+    version: '',
+    effectiveDate: '',
+    reviewDate: '',
+    owner: '',
+    processArea: '',
+    guidelineReference: '',
+    remarks: '',
+    englishDocxLink: '',
+    englishPdfLink: '',
+    gujaratiDocxLink: '',
+    gujaratiPdfLink: '',
+  });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
+  const [editSuccess, setEditSuccess] = useState(false);
+
   const [filters, setFilters] = useState({
     department: "",
     language: "",
@@ -122,6 +146,34 @@ export default function SOPTable({
     (row.mediaStatus?.slideCount ?? (row.mediaStatus?.slides ? 1 : 0)) > 0
       ? "Yes"
       : "No";
+
+  const extractLinksFromRow = (row: any) => {
+    let engDocx = '';
+    let engPdf = '';
+    let gujDocx = '';
+    let gujPdf = '';
+
+    const addLink = (path: string, lang: string, type: string) => {
+      if (!path) return;
+      const k = fileKindFromStoredPath(path, type);
+      const isGuj = isGujaratiLanguage(lang) || pathSuggestsGujarati(path);
+      if (isGuj) {
+        if ((k === 'docx' || k === 'doc') && !gujDocx) gujDocx = path;
+        if (k === 'pdf' && !gujPdf) gujPdf = path;
+      } else {
+        if ((k === 'docx' || k === 'doc') && !engDocx) engDocx = path;
+        if (k === 'pdf' && !engPdf) engPdf = path;
+      }
+    };
+
+    if (row.sopFile?.filePath) addLink(row.sopFile.filePath, row.sopFile.language || 'English', row.sopFile.fileType);
+    if (row.gujaratiFileUrl) addLink(row.gujaratiFileUrl, 'Gujarati', 'pdf');
+    (row.sopDocuments || []).forEach((doc: any) => {
+      addLink(doc.filePath, doc.language || 'English', doc.fileType);
+    });
+
+    return { engDocx, engPdf, gujDocx, gujPdf };
+  };
 
   const getRawExpiryStatus = (row: any) => {
     if (!row.expiryDate) return "Not Set";
@@ -1380,16 +1432,51 @@ export default function SOPTable({
                         <div className="flex items-center gap-0.5">
                           {formatExpiryVerbose(row.expiryDate)}
                           {!isObsoleteView && (
-                            <button
-                              type="button"
-                              title="Print this SOP"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                window.print();
-                              }}
-                              className="shrink-0 rounded p-0.5 text-slate-500 hover:bg-slate-100 transition-colors">
-                              <Printer className="h-2.5 w-2.5" />
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                title="Edit this SOP"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const toDate = (d: any) =>
+                                    d ? new Date(d).toISOString().split("T")[0] : "";
+                                  const links = extractLinksFromRow(row);
+                                  setEditForm({
+                                    sopName: String(row.englishName || row.sopName || ""),
+                                    department: String(row.department || ""),
+                                    location: String(row.location || ""),
+                                    version: String(row.version || ""),
+                                    effectiveDate: toDate(row.effectiveDate),
+                                    reviewDate: toDate(row.expiryDate),
+                                    owner: String(row.owner || ""),
+                                    processArea: String(row.processArea || ""),
+                                    guidelineReference: String(row.guidelineReference || ""),
+                                    remarks: String(row.remarks || ""),
+                                    englishDocxLink: links.engDocx,
+                                    englishPdfLink: links.engPdf,
+                                    gujaratiDocxLink: links.gujDocx,
+                                    gujaratiPdfLink: links.gujPdf,
+                                  });
+                                  setEditError("");
+                                  setEditSuccess(false);
+                                  setEditTarget(row);
+                                }}
+                                className="shrink-0 rounded p-0.5 text-purple-600 hover:bg-purple-100 transition-colors"
+                              >
+                                <Pencil className="h-2.5 w-2.5" />
+                              </button>
+                              <button
+                                type="button"
+                                title="Print this SOP"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  window.print();
+                                }}
+                                className="shrink-0 rounded p-0.5 text-slate-500 hover:bg-slate-100 transition-colors"
+                              >
+                                <Printer className="h-2.5 w-2.5" />
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>
@@ -1713,6 +1800,7 @@ export default function SOPTable({
 
                                 <div className="space-y-1 pt-2">
                                   <button type="button" onClick={(e) => { e.stopPropagation(); onOpenGuidelineWizard?.({ _id: String(row._id), sopNo: String(row.sopNo) }); }} className="inline-flex w-full items-center justify-center gap-1.5 rounded border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-[10px] font-bold text-indigo-800 hover:bg-indigo-100 transition-colors"><BookOpen className="h-3.5 w-3.5" />Guideline check</button>
+                                  <button type="button" onClick={(e) => { e.stopPropagation(); const toDate = (d: any) => d ? new Date(d).toISOString().split('T')[0] : ''; const links = extractLinksFromRow(row); setEditForm({ sopName: String(row.englishName || row.sopName || ''), department: String(row.department || ''), location: String(row.location || ''), version: String(row.version || ''), effectiveDate: toDate(row.effectiveDate), reviewDate: toDate(row.expiryDate), owner: String(row.owner || ''), processArea: String(row.processArea || ''), guidelineReference: String(row.guidelineReference || ''), remarks: String(row.remarks || ''), englishDocxLink: links.engDocx, englishPdfLink: links.engPdf, gujaratiDocxLink: links.gujDocx, gujaratiPdfLink: links.gujPdf }); setEditError(''); setEditSuccess(false); setEditTarget(row); }} className="inline-flex w-full items-center justify-center gap-1.5 rounded border border-purple-200 bg-purple-50 px-2 py-1.5 text-[10px] font-bold text-purple-700 hover:bg-purple-100 transition-colors"><Pencil className="h-3.5 w-3.5" />Edit SOP</button>
                                   {isObsoleteView && (
                                     <button type="button" onClick={(e) => { e.stopPropagation(); window.print(); }} className="inline-flex w-full items-center justify-center gap-1.5 rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-[10px] font-bold text-slate-700 hover:bg-slate-100 transition-colors"><Printer className="h-3.5 w-3.5" />Print record</button>
                                   )}
@@ -1736,6 +1824,230 @@ export default function SOPTable({
         </table>
       </div>
 
+
+      {/* Edit SOP modal */}
+      {editTarget && (
+        <div
+          className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onClick={() => { if (!editSaving) setEditTarget(null); }}>
+          <div
+            className="w-full max-w-2xl rounded-2xl border border-purple-200 bg-white shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between bg-gradient-to-r from-purple-600 to-indigo-600 px-6 py-4">
+              <div>
+                <h3 className="text-base font-bold text-white">Edit SOP Details</h3>
+                <p className="text-xs text-purple-200 font-mono mt-0.5">{editTarget.sopNo}</p>
+              </div>
+              <button
+                type="button"
+                disabled={editSaving}
+                onClick={() => setEditTarget(null)}
+                className="rounded-lg p-1.5 text-white/80 hover:bg-white/20 transition-colors">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+              {editSuccess && (
+                <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-2.5 text-sm font-semibold text-emerald-700 flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" /> SOP updated successfully!
+                </div>
+              )}
+              {editError && (
+                <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-700">
+                  {editError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold text-gray-700 mb-1">SOP Name</label>
+                  <input
+                    type="text"
+                    value={editForm.sopName}
+                    onChange={(e) => setEditForm({ ...editForm, sopName: e.target.value })}
+                    placeholder="Enter SOP name"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Department</label>
+                  <input
+                    type="text"
+                    value={editForm.department}
+                    onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
+                    placeholder="e.g. Quality Assurance"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Location</label>
+                  <input
+                    type="text"
+                    value={editForm.location}
+                    onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
+                    placeholder="e.g. Building A, Area 2"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Version</label>
+                  <input
+                    type="text"
+                    value={editForm.version}
+                    onChange={(e) => setEditForm({ ...editForm, version: e.target.value })}
+                    placeholder="e.g. 1.0"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Owner</label>
+                  <input
+                    type="text"
+                    value={editForm.owner}
+                    onChange={(e) => setEditForm({ ...editForm, owner: e.target.value })}
+                    placeholder="e.g. John Doe"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Effective Date</label>
+                  <input
+                    type="date"
+                    value={editForm.effectiveDate}
+                    onChange={(e) => setEditForm({ ...editForm, effectiveDate: e.target.value })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                    style={{ colorScheme: 'light' }}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Review / Expiry Date</label>
+                  <input
+                    type="date"
+                    value={editForm.reviewDate}
+                    onChange={(e) => setEditForm({ ...editForm, reviewDate: e.target.value })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                    style={{ colorScheme: 'light' }}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Process Area</label>
+                  <input
+                    type="text"
+                    value={editForm.processArea}
+                    onChange={(e) => setEditForm({ ...editForm, processArea: e.target.value })}
+                    placeholder="e.g. Quality Control"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                  />
+                </div>
+
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Guideline Reference</label>
+                  <input
+                    type="text"
+                    value={editForm.guidelineReference}
+                    onChange={(e) => setEditForm({ ...editForm, guidelineReference: e.target.value })}
+                    placeholder="e.g. ICH Q7, FDA 21 CFR Part 211"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                  />
+                </div>
+
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Remarks</label>
+                  <textarea
+                    value={editForm.remarks}
+                    onChange={(e) => setEditForm({ ...editForm, remarks: e.target.value })}
+                    rows={3}
+                    placeholder="Add any notes or remarks about this SOP..."
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent resize-none"
+                  />
+                </div>
+
+                <div className="col-span-2 pt-2 border-t border-gray-200">
+                  <h4 className="text-xs font-bold text-gray-700 mb-3">Document Links</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-600 mb-1">English DOCX Link</label>
+                      <input
+                        type="text"
+                        value={editForm.englishDocxLink}
+                        onChange={(e) => setEditForm({ ...editForm, englishDocxLink: e.target.value })}
+                        placeholder="https://..."
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-600 mb-1">English PDF Link</label>
+                      <input
+                        type="text"
+                        value={editForm.englishPdfLink}
+                        onChange={(e) => setEditForm({ ...editForm, englishPdfLink: e.target.value })}
+                        placeholder="https://..."
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                      />
+                    </div>
+                    {(editTarget?.isDualLanguage || editTarget?.language === 'Gujarati' || editForm.gujaratiDocxLink || editForm.gujaratiPdfLink || (editTarget?.sopDocuments || []).some((d: any) => isGujaratiLanguage(d.language) || pathSuggestsGujarati(d.filePath))) ? (
+                      <>
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-600 mb-1">Gujarati DOCX Link</label>
+                          <input
+                            type="text"
+                            value={editForm.gujaratiDocxLink}
+                            onChange={(e) => setEditForm({ ...editForm, gujaratiDocxLink: e.target.value })}
+                            placeholder="https://..."
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-600 mb-1">Gujarati PDF Link</label>
+                          <input
+                            type="text"
+                            value={editForm.gujaratiPdfLink}
+                            onChange={(e) => setEditForm({ ...editForm, gujaratiPdfLink: e.target.value })}
+                            placeholder="https://..."
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                          />
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex gap-3 justify-end px-6 py-4 border-t border-gray-100 bg-gray-50">
+              <button
+                type="button"
+                disabled={editSaving}
+                onClick={() => setEditTarget(null)}
+                className="px-5 py-2 rounded-lg border border-gray-300 bg-white text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50">
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={editSaving}
+                onClick={handleEditSave}
+                className="px-5 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 text-sm font-bold text-white hover:from-purple-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-md shadow-purple-200">
+                {editSaving ? (
+                  <><Loader2 className="h-3.5 w-3.5 animate-spin" />Saving…</>
+                ) : (
+                  <><Pencil className="h-3.5 w-3.5" />Save Changes</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Obsolete confirmation modal */}
       {obsoleteTarget && (
@@ -1804,6 +2116,84 @@ export default function SOPTable({
       )}
     </div>
   );
+
+  async function handleEditSave() {
+    if (!editTarget) return;
+    setEditSaving(true);
+    setEditError('');
+    setEditSuccess(false);
+    try {
+      const res = await fetch('/api/sop-monitoring/update', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sopId: String(editTarget._id),
+          sopName: editForm.sopName,
+          department: editForm.department,
+          location: editForm.location,
+          version: editForm.version,
+          effectiveDate: editForm.effectiveDate,
+          reviewDate: editForm.reviewDate,
+          owner: editForm.owner,
+          processArea: editForm.processArea,
+          guidelineReference: editForm.guidelineReference,
+          remarks: editForm.remarks,
+          userId: 'system_user',
+          userName: 'Dashboard User',
+          userRole: 'Administrator',
+          userDepartment: editTarget.department,
+          reason: 'Manual update via Dashboard',
+          englishDocxLink: editForm.englishDocxLink,
+          englishPdfLink: editForm.englishPdfLink,
+          gujaratiDocxLink: editForm.gujaratiDocxLink,
+          gujaratiPdfLink: editForm.gujaratiPdfLink,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        setEditError(json.error || 'Failed to save changes');
+        return;
+      }
+      setEditSuccess(true);
+      // Update the local row data so the table reflects changes immediately
+      if (editTarget.englishName !== undefined) editTarget.englishName = editForm.sopName;
+      else editTarget.sopName = editForm.sopName;
+      editTarget.department = editForm.department;
+      editTarget.location = editForm.location;
+      editTarget.version = editForm.version;
+      editTarget.owner = editForm.owner;
+      editTarget.processArea = editForm.processArea;
+      editTarget.guidelineReference = editForm.guidelineReference;
+      editTarget.remarks = editForm.remarks;
+      if (editForm.effectiveDate) editTarget.effectiveDate = editForm.effectiveDate;
+      if (editForm.reviewDate) editTarget.expiryDate = editForm.reviewDate;
+      
+      // Update document links locally
+      if (editForm.englishPdfLink) editTarget.fileUrl = editForm.englishPdfLink;
+      
+      // Update sopDocuments array locally
+      let updatedDocs = editTarget.sopDocuments ? [...editTarget.sopDocuments] : [];
+      
+      const upsertLocalDoc = (lang: string, type: string, path: string, label: string) => {
+        updatedDocs = updatedDocs.filter((d: any) => !(d.language === lang && d.fileType === type));
+        if (path) {
+          updatedDocs.push({ fileName: label, filePath: path, fileType: type, language: lang });
+        }
+      };
+      
+      if (editForm.englishDocxLink !== undefined) upsertLocalDoc('English', 'docx', editForm.englishDocxLink, 'English DOCX');
+      if (editForm.gujaratiDocxLink !== undefined) upsertLocalDoc('Gujarati', 'docx', editForm.gujaratiDocxLink, 'Gujarati DOCX');
+      if (editForm.gujaratiPdfLink !== undefined) upsertLocalDoc('Gujarati', 'pdf', editForm.gujaratiPdfLink, 'Gujarati PDF');
+      
+      editTarget.sopDocuments = updatedDocs;
+
+      setTimeout(() => setEditTarget(null), 1200);
+    } catch {
+      setEditError('Network error — please try again');
+    } finally {
+      setEditSaving(false);
+    }
+  }
 
   async function handleObsoleteConfirm() {
     if (!obsoleteTarget || !obsoletePassword) return;

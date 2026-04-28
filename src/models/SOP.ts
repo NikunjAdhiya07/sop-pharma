@@ -58,6 +58,13 @@ export interface ISOP extends Document {
   isObsolete?: boolean;
   obsoleteAt?: Date;
   obsoleteReason?: string;
+  
+  sopDocuments?: {
+    fileName?: string;
+    filePath?: string;
+    fileType?: string;
+    language?: string;
+  }[];
 
   pipelineStatus?: 'idle' | 'mcq_generating' | 'similarity_checking' | 'compliance_checking' | 'compliance_fixing' | 'updating_platform' | 'approved' | 'failed';
 
@@ -221,6 +228,13 @@ const SOPSchema = new Schema<ISOP>({
   isObsolete: { type: Boolean, default: false },
   obsoleteAt: { type: Date },
   obsoleteReason: { type: String },
+
+  sopDocuments: [{
+    fileName: String,
+    filePath: String,
+    fileType: String,
+    language: String,
+  }],
 
   pipelineStatus: {
     type: String,

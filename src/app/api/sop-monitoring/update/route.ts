@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import MasterSOPRepository from '@/models/MasterSOPRepository';
+import SOP from '@/models/SOP';
 import { logSOPActivity, compareSOPVersions } from '@/lib/activityLogger';
 import { logAudit } from '@/lib/sopAuditLogger';
 
@@ -26,7 +27,12 @@ export async function PUT(req: NextRequest) {
       // Legacy fields
       validityPeriod, 
       complianceStatus, 
-      complianceNotes 
+      complianceNotes,
+      // Document links
+      englishDocxLink,
+      englishPdfLink,
+      gujaratiDocxLink,
+      gujaratiPdfLink
     } = await req.json();
 
     if (!sopId) {
@@ -34,11 +40,19 @@ export async function PUT(req: NextRequest) {
     }
 
     // Fetch current SOP state for comparison
-    const currentSOP = await MasterSOPRepository.findById(sopId).lean();
+    let currentSOP: any = await SOP.findById(sopId).lean();
+    let isMasterSop = false;
+    
+    if (!currentSOP) {
+      currentSOP = await MasterSOPRepository.findById(sopId).lean();
+      isMasterSop = true;
+    }
     
     if (!currentSOP) {
       return NextResponse.json({ success: false, error: 'SOP not found' }, { status: 404 });
     }
+
+    const sopIdentifier = currentSOP.identifier || currentSOP.sopIdentifier || currentSOP.sopNo;
 
     const updateData: any = {};
     
@@ -74,6 +88,31 @@ export async function PUT(req: NextRequest) {
     if (remarks !== undefined) {
       updateData.remarks = remarks;
     }
+
+    if (englishPdfLink !== undefined && englishPdfLink !== "") {
+      updateData.fileUrl = englishPdfLink;
+    }
+
+    if (englishDocxLink !== undefined || gujaratiDocxLink !== undefined || gujaratiPdfLink !== undefined || englishPdfLink !== undefined) {
+       let docs = currentSOP.sopDocuments ? [...currentSOP.sopDocuments] : [];
+       
+       if (englishDocxLink !== undefined) {
+         docs = docs.filter((d: any) => !( (d.language === 'English' || !d.language) && (d.fileType === 'docx' || d.fileType === 'doc') ));
+         if (englishDocxLink) docs.push({ fileName: 'English DOCX', filePath: englishDocxLink, fileType: 'docx', language: 'English' });
+       }
+       if (englishPdfLink !== undefined) {
+         docs = docs.filter((d: any) => !( (d.language === 'English' || !d.language) && d.fileType === 'pdf' ));
+       }
+       if (gujaratiDocxLink !== undefined) {
+         docs = docs.filter((d: any) => d.language === 'Gujarati' && (d.fileType === 'docx' || d.fileType === 'doc') ? false : true);
+         if (gujaratiDocxLink) docs.push({ fileName: 'Gujarati DOCX', filePath: gujaratiDocxLink, fileType: 'docx', language: 'Gujarati' });
+       }
+       if (gujaratiPdfLink !== undefined) {
+         docs = docs.filter((d: any) => d.language === 'Gujarati' && d.fileType === 'pdf' ? false : true);
+         if (gujaratiPdfLink) docs.push({ fileName: 'Gujarati PDF', filePath: gujaratiPdfLink, fileType: 'pdf', language: 'Gujarati' });
+       }
+       updateData.sopDocuments = docs;
+    }
     
     // Legacy fields (keeping for backward compatibility)
     if (validityPeriod) {
@@ -104,12 +143,48 @@ export async function PUT(req: NextRequest) {
       updateData.nextReviewDate = nextReview;
     }
 
+    console.log(`[API] Updating SOP ${sopId} (isMaster: ${isMasterSop}). Payload:`, JSON.stringify(updateData, null, 2));
+
     // Update the SOP
-    const updatedSOP = await MasterSOPRepository.findByIdAndUpdate(
-      sopId,
-      { $set: updateData },
-      { new: true }
-    );
+    let updatedSOP;
+    if (isMasterSop) {
+      // Map to MasterSOPRepository schema (metadata nested)
+      const masterData = { ...updateData };
+      const metadata: any = { ...currentSOP.metadata };
+      if (updateData.expiryDate) metadata.expiryDate = updateData.expiryDate;
+      if (updateData.reviewDate) metadata.reviewDate = updateData.reviewDate;
+      if (updateData.version) metadata.version = updateData.version;
+      if (updateData.effectiveDate) metadata.effectiveDate = updateData.effectiveDate;
+      masterData.metadata = metadata;
+      
+      updatedSOP = await MasterSOPRepository.findByIdAndUpdate(sopId, { $set: masterData }, { new: true });
+      if (sopIdentifier) {
+        await SOP.updateMany({ identifier: sopIdentifier }, { $set: updateData });
+      }
+    } else {
+      updatedSOP = await SOP.findByIdAndUpdate(sopId, { $set: updateData }, { new: true });
+      if (sopIdentifier) {
+        const masterUpdate: any = { ...updateData };
+        delete masterUpdate.fileUrl;
+        delete masterUpdate.sopDocuments;
+        
+        // Map to MasterSOPRepository schema
+        const metadata: any = {};
+        if (updateData.expiryDate) metadata.expiryDate = updateData.expiryDate;
+        if (updateData.reviewDate) metadata.reviewDate = updateData.reviewDate;
+        if (updateData.version) metadata.version = updateData.version;
+        if (updateData.effectiveDate) metadata.effectiveDate = updateData.effectiveDate;
+        
+        if (Object.keys(metadata).length > 0) {
+          masterUpdate.metadata = metadata;
+        }
+
+        await MasterSOPRepository.updateMany(
+          { $or: [{ sopIdentifier: sopIdentifier }, { identifier: sopIdentifier }] as any }, 
+          { $set: masterUpdate }
+        );
+      }
+    }
 
     if (!updatedSOP) {
       return NextResponse.json({ success: false, error: 'SOP not found' }, { status: 404 });
@@ -126,8 +201,8 @@ export async function PUT(req: NextRequest) {
       // Log to activity tracker
       await logSOPActivity({
         sopId: sopId,
-        sopIdentifier: currentSOP.sopIdentifier,
-        sopName: currentSOP.sopName,
+        sopIdentifier: sopIdentifier || currentSOP.sopIdentifier || 'Unknown',
+        sopName: currentSOP.sopName || currentSOP.name || 'Unknown',
         userId,
         userName,
         userRole,
@@ -163,8 +238,8 @@ export async function PUT(req: NextRequest) {
         actionType: auditActionType,
         module: 'Monitoring',
         sopId: sopId,
-        sopIdentifier: currentSOP.sopIdentifier,
-        sopName: currentSOP.sopName,
+        sopIdentifier: sopIdentifier || currentSOP.sopIdentifier || 'Unknown',
+        sopName: currentSOP.sopName || currentSOP.name || 'Unknown',
         oldValue: previousValues,
         newValue: updatedValues,
         fieldsChanged,

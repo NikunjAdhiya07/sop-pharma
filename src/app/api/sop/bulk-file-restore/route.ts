@@ -17,7 +17,10 @@ export async function POST(request: NextRequest) {
     const identifier = formData.get('identifier') as string;
     const manualReviewDate = formData.get('reviewDate') as string | null;
     const manualEffectiveDate = formData.get('effectiveDate') as string | null;
-    
+    const rawLang = (formData.get('language') as string | null)?.trim();
+    const language: 'English' | 'Gujarati' =
+      rawLang === 'Gujarati' ? 'Gujarati' : 'English';
+
     if (!file || !identifier) {
       return NextResponse.json(
         { error: 'File and identifier are required' },
@@ -38,9 +41,11 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(bytes);
     const checksum = crypto.createHash('sha256').update(buffer).digest('hex');
 
-    // Find the SOP first to ensure it exists
-    const existingSOP = await SOP.findOne({ identifier: identifier });
-    
+    // Find the SOP matching the chosen language; fall back to any record with that identifier
+    const existingSOP =
+      (await SOP.findOne({ identifier, language })) ??
+      (await SOP.findOne({ identifier }));
+
     if (!existingSOP) {
       return NextResponse.json(
         { error: `No SOP found with identifier ${identifier}` },
@@ -99,6 +104,7 @@ export async function POST(request: NextRequest) {
     // We do NOT change mcqCount, pipelineStatus, etc.
     existingSOP.fileUrl = fileUrl;
     existingSOP.fileType = fileType;
+    existingSOP.language = language;
     existingSOP.originalFileName = file.name;
     existingSOP.content = parsed.content;
     existingSOP.checksum = checksum;

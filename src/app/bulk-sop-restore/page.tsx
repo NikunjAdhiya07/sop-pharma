@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Upload, FileText, CheckCircle2, Loader2, AlertCircle, RefreshCw, CalendarClock, XCircle } from 'lucide-react';
+import { Upload, FileText, CheckCircle2, Loader2, AlertCircle, RefreshCw, CalendarClock, XCircle, Languages } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 
 interface SOP {
@@ -9,16 +9,31 @@ interface SOP {
   name: string;
   identifier: string;
   department: string;
+  language?: string;
   reviewDate?: string;
 }
 
 interface MatchedPair {
   file: File;
   sop: SOP;
+  language: 'English' | 'Gujarati';
   status: 'pending' | 'uploading' | 'success' | 'error';
   message?: string;
   reviewDate?: string;
   reviewDateSource?: 'manual' | 'extracted' | 'calculated';
+}
+
+/** Detect language from file name heuristics (Gujarati chars, keywords, folder hints). */
+function detectLangFromFilename(name: string): 'English' | 'Gujarati' {
+  const lower = name.toLowerCase();
+  if (/[઀-૿]/.test(name)) return 'Gujarati';
+  try {
+    if (/[઀-૿]/.test(decodeURIComponent(name))) return 'Gujarati';
+  } catch { /* ignore */ }
+  if (/\bgujarati\b/.test(lower)) return 'Gujarati';
+  if (/\/guj(\/|$|[_.\-])/i.test(lower)) return 'Gujarati';
+  if (/[_\-]guj([._/\-]|arati)/i.test(lower)) return 'Gujarati';
+  return 'English';
 }
 
 export default function BulkSOPRestorePage() {
@@ -28,7 +43,7 @@ export default function BulkSOPRestorePage() {
   const [matchedPairs, setMatchedPairs] = useState<MatchedPair[]>([]);
   const [unmatchedFiles, setUnmatchedFiles] = useState<File[]>([]);
   const [remainingSOPs, setRemainingSOPs] = useState<SOP[]>([]);
-  
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [overallProgress, setOverallProgress] = useState(0);
 
@@ -63,41 +78,62 @@ export default function BulkSOPRestorePage() {
       const fileNameUpper = file.name.toUpperCase();
       const filePrefix = file.name.split('_')[0].toUpperCase();
 
-      // 1. Try exact match with prefix
       let match = sops.find((sop) => sop.identifier.toUpperCase() === filePrefix);
 
-      // 2. Try if filename includes sop identifier (longest identifier first to avoid partial matches)
       if (!match) {
         const sortedSops = [...sops].sort((a, b) => b.identifier.length - a.identifier.length);
         match = sortedSops.find((sop) => fileNameUpper.includes(sop.identifier.toUpperCase()));
       }
 
-      // 3. Try if sop identifier includes the prefix
       if (!match) {
         match = sops.find((sop) => sop.identifier.toUpperCase().includes(filePrefix));
       }
 
       if (match) {
-        matched.push({ file, sop: match, status: 'pending' });
+        // Pre-populate language: filename hint first, then the existing SOP's language
+        const detectedLang = detectLangFromFilename(file.name);
+        const sopLang =
+          String(match.language || '').toLowerCase() === 'gujarati' ? 'Gujarati' : 'English';
+        // Filename hint takes priority; fall back to the SOP record's own language
+        const language: 'English' | 'Gujarati' =
+          detectedLang === 'Gujarati' ? 'Gujarati' : sopLang;
+
+        matched.push({ file, sop: match, language, status: 'pending' });
         matchedSopIds.add(match._id);
       } else {
         unmatched.push(file);
       }
     });
 
-    const remaining = sops.filter(sop => !matchedSopIds.has(sop._id));
+    const remaining = sops.filter((sop) => !matchedSopIds.has(sop._id));
 
     setMatchedPairs(matched);
     setUnmatchedFiles(unmatched);
     setRemainingSOPs(remaining);
   }, [selectedFiles, sops]);
 
+  const setAllLanguage = (lang: 'English' | 'Gujarati') => {
+    setMatchedPairs((prev) =>
+      prev.map((p) => (p.status === 'pending' ? { ...p, language: lang } : p)),
+    );
+  };
+
+  const togglePairLanguage = (idx: number) => {
+    setMatchedPairs((prev) =>
+      prev.map((p, i) =>
+        i === idx && p.status === 'pending'
+          ? { ...p, language: p.language === 'English' ? 'Gujarati' : 'English' }
+          : p,
+      ),
+    );
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const filesArray = Array.from(e.target.files).filter(
-        file => file.name.endsWith('.docx') || file.name.endsWith('.pdf')
+        (file) => file.name.endsWith('.docx') || file.name.endsWith('.pdf'),
       );
-      setSelectedFiles(prev => [...prev, ...filesArray]);
+      setSelectedFiles((prev) => [...prev, ...filesArray]);
     }
   };
 
@@ -122,7 +158,6 @@ export default function BulkSOPRestorePage() {
       const pair = newPairs[i];
       if (pair.status === 'success') continue;
 
-      // Update status to uploading
       newPairs[i].status = 'uploading';
       setMatchedPairs([...newPairs]);
 
@@ -130,12 +165,13 @@ export default function BulkSOPRestorePage() {
         const formData = new FormData();
         formData.append('file', pair.file);
         formData.append('identifier', pair.sop.identifier);
+        formData.append('language', pair.language);
         if (overrideEffectiveDate) formData.append('effectiveDate', overrideEffectiveDate);
         if (overrideReviewDate) formData.append('reviewDate', overrideReviewDate);
 
         const res = await fetch('/api/sop/bulk-file-restore', {
           method: 'POST',
-          body: formData
+          body: formData,
         });
 
         const data = await res.json();
@@ -161,7 +197,8 @@ export default function BulkSOPRestorePage() {
     setIsProcessing(false);
   };
 
-  const isRestoreComplete = matchedPairs.length > 0 && matchedPairs.every(p => p.status === 'success' || p.status === 'error');
+  const isRestoreComplete =
+    matchedPairs.length > 0 && matchedPairs.every((p) => p.status === 'success' || p.status === 'error');
 
   // ── Manual Review Date Restore ────────────────────────────────────────────
   interface RestoreResult {
@@ -173,7 +210,12 @@ export default function BulkSOPRestorePage() {
   }
   const [isDateRestoring, setIsDateRestoring] = useState(false);
   const [dateRestoreResults, setDateRestoreResults] = useState<RestoreResult[]>([]);
-  const [dateRestoreStats, setDateRestoreStats] = useState<{ total: number; fixed: number; skipped: number; failed: number } | null>(null);
+  const [dateRestoreStats, setDateRestoreStats] = useState<{
+    total: number;
+    fixed: number;
+    skipped: number;
+    failed: number;
+  } | null>(null);
   const [dateRestoreProgress, setDateRestoreProgress] = useState(0);
 
   const handleManualDateRestore = async () => {
@@ -204,22 +246,41 @@ export default function BulkSOPRestorePage() {
             if (event.type === 'init') {
               setDateRestoreProgress(0);
             } else if (event.type === 'fixed') {
-              setDateRestoreResults(prev => [...prev, { identifier: event.identifier, status: 'fixed', reviewDate: event.reviewDate, dateSource: event.dateSource }]);
-              setDateRestoreProgress(prev => prev + 1);
+              setDateRestoreResults((prev) => [
+                ...prev,
+                { identifier: event.identifier, status: 'fixed', reviewDate: event.reviewDate, dateSource: event.dateSource },
+              ]);
+              setDateRestoreProgress((prev) => prev + 1);
             } else if (event.type === 'skip') {
-              setDateRestoreResults(prev => [...prev, { identifier: event.identifier, status: 'skip', reason: event.reason }]);
-              setDateRestoreProgress(prev => prev + 1);
+              setDateRestoreResults((prev) => [
+                ...prev,
+                { identifier: event.identifier, status: 'skip', reason: event.reason },
+              ]);
+              setDateRestoreProgress((prev) => prev + 1);
             } else if (event.type === 'error') {
-              setDateRestoreResults(prev => [...prev, { identifier: event.identifier, status: 'error', reason: event.reason }]);
-              setDateRestoreProgress(prev => prev + 1);
+              setDateRestoreResults((prev) => [
+                ...prev,
+                { identifier: event.identifier, status: 'error', reason: event.reason },
+              ]);
+              setDateRestoreProgress((prev) => prev + 1);
             } else if (event.type === 'done') {
-              setDateRestoreStats({ total: event.total, fixed: event.fixed, skipped: event.skipped, failed: event.failed });
+              setDateRestoreStats({
+                total: event.total,
+                fixed: event.fixed,
+                skipped: event.skipped,
+                failed: event.failed,
+              });
             }
-          } catch { /* skip malformed line */ }
+          } catch {
+            /* skip malformed line */
+          }
         }
       }
     } catch (err: any) {
-      setDateRestoreResults(prev => [...prev, { identifier: '—', status: 'error', reason: err.message }]);
+      setDateRestoreResults((prev) => [
+        ...prev,
+        { identifier: '—', status: 'error', reason: err.message },
+      ]);
     } finally {
       setIsDateRestoring(false);
     }
@@ -233,8 +294,9 @@ export default function BulkSOPRestorePage() {
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-white mb-4">Bulk SOP File Restore</h1>
           <p className="text-gray-300">
-            Upload your DOCX/PDF files here. We will match them against existing SOPs by Document Number. 
-            The file links and review dates will be updated in the system, leaving the rest of the SOP data intact.
+            Upload your DOCX/PDF files here. We will match them against existing SOPs by Document
+            Number. The file links, language, and review dates will be updated in the system,
+            leaving the rest of the SOP data intact.
           </p>
         </div>
 
@@ -246,13 +308,12 @@ export default function BulkSOPRestorePage() {
               <p className="mb-2 text-lg text-white font-semibold">Click to browse or drop folder/files</p>
               <p className="text-sm text-gray-400">PDF or DOCX files only</p>
             </div>
-            {/* Note: directory selection requires webkitdirectory attribute */}
-            <input 
-              type="file" 
-              className="hidden" 
-              multiple 
-              accept=".pdf,.docx" 
-              onChange={handleFileChange} 
+            <input
+              type="file"
+              className="hidden"
+              multiple
+              accept=".pdf,.docx"
+              onChange={handleFileChange}
               disabled={isProcessing}
             />
           </label>
@@ -261,25 +322,48 @@ export default function BulkSOPRestorePage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Left Column: Matched Files */}
           <div className="bg-white/5 backdrop-blur-md rounded-2xl p-6 border border-white/10">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-3">
               <h2 className="text-2xl font-bold text-white flex items-center">
                 <CheckCircle2 className="mr-2 text-green-400" /> Matched SOPs ({matchedPairs.length})
               </h2>
               {matchedPairs.length > 0 && !isProcessing && (
-                <button 
+                <button
                   onClick={clearFiles}
                   className="px-3 py-1 bg-white/10 hover:bg-white/20 rounded-md text-sm text-white transition-colors"
                 >
-                  Clear Selection
+                  Clear
                 </button>
               )}
             </div>
 
+            {/* Bulk language buttons */}
+            {matchedPairs.length > 0 && !isProcessing && !isRestoreComplete && (
+              <div className="flex items-center gap-2 mb-3">
+                <Languages className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                <span className="text-xs text-gray-400">Set all to:</span>
+                <button
+                  onClick={() => setAllLanguage('English')}
+                  className="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40 hover:bg-blue-500/30 transition-colors"
+                >
+                  English
+                </button>
+                <button
+                  onClick={() => setAllLanguage('Gujarati')}
+                  className="px-2.5 py-1 rounded-full text-xs font-bold bg-orange-500/20 text-orange-300 border border-orange-500/40 hover:bg-orange-500/30 transition-colors"
+                >
+                  Gujarati
+                </button>
+              </div>
+            )}
+
             {matchedPairs.length > 0 ? (
-              <div className="space-y-3 max-h-96 overflow-y-auto pr-2 custom-scrollbar">
+              <div className="space-y-2 max-h-96 overflow-y-auto pr-2 custom-scrollbar">
                 {matchedPairs.map((pair, idx) => (
-                  <div key={idx} className="bg-slate-800/80 p-3 rounded-lg flex items-center justify-between border border-white/5">
-                    <div className="truncate pr-4 flex-1">
+                  <div
+                    key={idx}
+                    className="bg-slate-800/80 p-3 rounded-lg flex items-center justify-between border border-white/5"
+                  >
+                    <div className="truncate pr-3 flex-1 min-w-0">
                       <p className="text-white font-medium truncate">{pair.sop.identifier}</p>
                       <p className="text-xs text-gray-400 truncate">{pair.file.name}</p>
                       {pair.status === 'success' && pair.reviewDate && (
@@ -294,14 +378,52 @@ export default function BulkSOPRestorePage() {
                         </p>
                       )}
                     </div>
-                    <div>
-                      {pair.status === 'pending' && <span className="text-xs px-2 py-1 bg-yellow-500/20 text-yellow-400 rounded">Ready</span>}
-                      {pair.status === 'uploading' && <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />}
-                      {pair.status === 'success' && <CheckCircle2 className="w-4 h-4 text-green-400" />}
+
+                    {/* Language toggle + status */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {/* Language pill — clickable when pending */}
+                      {pair.status === 'pending' ? (
+                        <button
+                          onClick={() => togglePairLanguage(idx)}
+                          title="Click to toggle language"
+                          className={`px-2 py-0.5 rounded-full text-[11px] font-bold border transition-colors ${
+                            pair.language === 'English'
+                              ? 'bg-blue-500/20 text-blue-300 border-blue-500/40 hover:bg-blue-500/35'
+                              : 'bg-orange-500/20 text-orange-300 border-orange-500/40 hover:bg-orange-500/35'
+                          }`}
+                        >
+                          {pair.language === 'English' ? 'ENG' : 'GUJ'}
+                        </button>
+                      ) : (
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${
+                            pair.language === 'English'
+                              ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                              : 'bg-orange-500/10 text-orange-400 border-orange-500/20'
+                          }`}
+                        >
+                          {pair.language === 'English' ? 'ENG' : 'GUJ'}
+                        </span>
+                      )}
+
+                      {/* Upload status */}
+                      {pair.status === 'pending' && (
+                        <span className="text-xs px-2 py-1 bg-yellow-500/20 text-yellow-400 rounded">
+                          Ready
+                        </span>
+                      )}
+                      {pair.status === 'uploading' && (
+                        <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />
+                      )}
+                      {pair.status === 'success' && (
+                        <CheckCircle2 className="w-4 h-4 text-green-400" />
+                      )}
                       {pair.status === 'error' && (
                         <div className="flex flex-col items-end" title={pair.message}>
-                           <AlertCircle className="w-4 h-4 text-red-400" />
-                           <span className="text-[10px] text-red-400 mt-1 truncate max-w-[100px]">{pair.message}</span>
+                          <AlertCircle className="w-4 h-4 text-red-400" />
+                          <span className="text-[10px] text-red-400 mt-1 truncate max-w-[80px]">
+                            {pair.message}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -318,12 +440,14 @@ export default function BulkSOPRestorePage() {
               <div className="mt-6 space-y-4">
                 {!isProcessing && !isRestoreComplete && (
                   <div className="bg-white/5 p-4 rounded-xl border border-white/10 space-y-3">
-                    <p className="text-sm text-gray-300 font-medium">Optional: Override Dates for all matched files</p>
+                    <p className="text-sm text-gray-300 font-medium">
+                      Optional: Override Dates for all matched files
+                    </p>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-xs text-gray-400 mb-1">Effective Date</label>
-                        <input 
-                          type="date" 
+                        <input
+                          type="date"
                           value={overrideEffectiveDate}
                           onChange={(e) => setOverrideEffectiveDate(e.target.value)}
                           className="w-full bg-slate-800 border border-white/10 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500 [color-scheme:dark]"
@@ -331,8 +455,8 @@ export default function BulkSOPRestorePage() {
                       </div>
                       <div>
                         <label className="block text-xs text-gray-400 mb-1">Review Date</label>
-                        <input 
-                          type="date" 
+                        <input
+                          type="date"
                           value={overrideReviewDate}
                           onChange={(e) => setOverrideReviewDate(e.target.value)}
                           className="w-full bg-slate-800 border border-white/10 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500 [color-scheme:dark]"
@@ -349,7 +473,10 @@ export default function BulkSOPRestorePage() {
                       <span>{overallProgress}%</span>
                     </div>
                     <div className="w-full bg-gray-700 rounded-full h-2">
-                      <div className="bg-green-500 h-2 rounded-full transition-all" style={{ width: `${overallProgress}%` }}></div>
+                      <div
+                        className="bg-green-500 h-2 rounded-full transition-all"
+                        style={{ width: `${overallProgress}%` }}
+                      />
                     </div>
                   </div>
                 ) : isRestoreComplete ? (
@@ -357,7 +484,7 @@ export default function BulkSOPRestorePage() {
                     <CheckCircle2 className="mr-2" /> Restore Complete!
                   </div>
                 ) : (
-                  <button 
+                  <button
                     onClick={handleBulkRestore}
                     className="w-full py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold rounded-xl transition-all shadow-lg"
                   >
@@ -421,7 +548,8 @@ export default function BulkSOPRestorePage() {
                 <CalendarClock className="text-cyan-400 w-5 h-5" /> Manual Restore Review Dates
               </h2>
               <p className="text-sm text-gray-400 mt-1">
-                Scans every SOP stored in Bunny, downloads the DOCX, extracts the Review Date directly from the header table, and updates the database. No file upload needed.
+                Scans every SOP stored in Bunny, downloads the DOCX, extracts the Review Date
+                directly from the header table, and updates the database. No file upload needed.
               </p>
             </div>
             <button
@@ -429,12 +557,15 @@ export default function BulkSOPRestorePage() {
               disabled={isDateRestoring}
               className="shrink-0 flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all shadow-lg"
             >
-              {isDateRestoring ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              {isDateRestoring ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4" />
+              )}
               {isDateRestoring ? 'Restoring…' : 'Restore Review Dates'}
             </button>
           </div>
 
-          {/* Progress bar */}
           {isDateRestoring && dateRestoreStats === null && dateRestoreResults.length > 0 && (
             <div className="mt-4">
               <div className="flex justify-between text-xs text-gray-400 mb-1">
@@ -444,13 +575,15 @@ export default function BulkSOPRestorePage() {
               <div className="w-full bg-gray-700 rounded-full h-2">
                 <div
                   className="bg-cyan-500 h-2 rounded-full transition-all"
-                  style={{ width: dateRestoreResults.length > 0 ? '100%' : '0%', animation: 'pulse 1.5s infinite' }}
+                  style={{
+                    width: dateRestoreResults.length > 0 ? '100%' : '0%',
+                    animation: 'pulse 1.5s infinite',
+                  }}
                 />
               </div>
             </div>
           )}
 
-          {/* Summary stats */}
           {dateRestoreStats && (
             <div className="mt-4 grid grid-cols-4 gap-3 text-center">
               {[
@@ -467,11 +600,13 @@ export default function BulkSOPRestorePage() {
             </div>
           )}
 
-          {/* Per-SOP results */}
           {dateRestoreResults.length > 0 && (
             <div className="mt-4 space-y-1.5 max-h-72 overflow-y-auto pr-1 custom-scrollbar">
               {dateRestoreResults.map((r, i) => (
-                <div key={i} className="flex items-center justify-between bg-slate-800/70 px-3 py-2 rounded-lg border border-white/5 text-sm">
+                <div
+                  key={i}
+                  className="flex items-center justify-between bg-slate-800/70 px-3 py-2 rounded-lg border border-white/5 text-sm"
+                >
                   <span className="font-mono text-white text-xs">{r.identifier}</span>
                   <div className="flex items-center gap-2 text-xs">
                     {r.status === 'fixed' && (
@@ -479,10 +614,13 @@ export default function BulkSOPRestorePage() {
                         <span className="text-emerald-400 font-semibold">
                           {r.reviewDate ? new Date(r.reviewDate).toLocaleDateString() : '—'}
                         </span>
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                          r.dateSource === 'header-table' ? 'bg-blue-500/20 text-blue-300' :
-                                                            'bg-purple-500/20 text-purple-300'
-                        }`}>
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                            r.dateSource === 'header-table'
+                              ? 'bg-blue-500/20 text-blue-300'
+                              : 'bg-purple-500/20 text-purple-300'
+                          }`}
+                        >
                           {r.dateSource === 'header-table' ? 'from doc' : 'regex'}
                         </span>
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
@@ -506,7 +644,6 @@ export default function BulkSOPRestorePage() {
             </div>
           )}
         </div>
-
       </div>
     </div>
   );
