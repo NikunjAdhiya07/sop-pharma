@@ -741,47 +741,90 @@ const EMPTY_HEADER_DATA: SOPHeaderTableData = {
  *  - Label and value in the same cell separated by a newline
  *  - Label in one cell, value in the adjacent/next cell
  */
+/** Collect cell texts from up to `maxTables` tables in a parsed XML body/header object. */
+function collectCellTextsFromBody(body: any, maxTables = 3): string[] {
+  const texts: string[] = [];
+  const tblRaw = body['w:tbl'] ?? [];
+  const tables = Array.isArray(tblRaw) ? tblRaw : tblRaw ? [tblRaw] : [];
+  for (const tbl of tables.slice(0, maxTables)) {
+    const trRaw = tbl['w:tr'] ?? [];
+    const rows = Array.isArray(trRaw) ? trRaw : trRaw ? [trRaw] : [];
+    for (const tr of rows) {
+      const tcRaw = tr['w:tc'] ?? [];
+      const cells = Array.isArray(tcRaw) ? tcRaw : tcRaw ? [tcRaw] : [];
+      for (const tc of cells) {
+        const text = getAllCellText(tc).trim();
+        if (text) texts.push(text);
+      }
+    }
+  }
+  return texts;
+}
+
 export async function extractSOPHeaderTableData(buffer: Buffer): Promise<SOPHeaderTableData> {
   try {
     const zip = new AdmZip(buffer);
-    const docXml = zip.readAsText('word/document.xml');
-    if (!docXml) return EMPTY_HEADER_DATA;
 
-    const parsed = await parseStringPromise(docXml);
-    const docKey = Object.keys(parsed || {}).find(
-      (k) => k === 'w:document' || k.endsWith(':document') || k === 'document',
-    );
-    const docObj = docKey
-      ? Array.isArray(parsed[docKey])
-        ? parsed[docKey][0]
-        : parsed[docKey]
-      : parsed;
-    const bodyKey = Object.keys(docObj || {}).find(
-      (k) => k === 'w:body' || k.endsWith(':body') || k === 'body',
-    );
-    const bodyRaw = bodyKey ? docObj[bodyKey] : undefined;
-    const body = Array.isArray(bodyRaw) ? bodyRaw[0] : bodyRaw;
-    if (!body || typeof body !== 'object') return EMPTY_HEADER_DATA;
-
-    const result: SOPHeaderTableData = { ...EMPTY_HEADER_DATA };
-
-    // Collect all cell texts from the first 3 tables (the SOP header is in the first 1-2 tables)
-    const tblRaw = body['w:tbl'] ?? [];
-    const tables = Array.isArray(tblRaw) ? tblRaw : tblRaw ? [tblRaw] : [];
+    // Collect cell texts from ALL header XMLs + the document body.
+    // Many SOPs put the metadata table (SOP NO., EFF. DATE, REVIEW DT.) in a
+    // Word page-header (header1/2/3.xml) rather than the document body.
     const allCellTexts: string[] = [];
 
-    for (const tbl of tables.slice(0, 3)) {
-      const trRaw = tbl['w:tr'] ?? [];
-      const rows = Array.isArray(trRaw) ? trRaw : trRaw ? [trRaw] : [];
-      for (const tr of rows) {
-        const tcRaw = tr['w:tc'] ?? [];
-        const cells = Array.isArray(tcRaw) ? tcRaw : tcRaw ? [tcRaw] : [];
-        for (const tc of cells) {
-          const text = getAllCellText(tc).trim();
-          if (text) allCellTexts.push(text);
-        }
+    // 1. Read all header files referenced in the rels
+    const relsXml = zip.readAsText('word/_rels/document.xml.rels');
+    if (relsXml) {
+      const rels = await parseStringPromise(relsXml);
+      const relList: any[] = Array.isArray(rels?.Relationships?.Relationship)
+        ? rels.Relationships.Relationship
+        : rels?.Relationships?.Relationship
+        ? [rels.Relationships.Relationship]
+        : [];
+      for (const rel of relList) {
+        const type: string = rel?.$?.Type ?? '';
+        if (!type.endsWith('/header')) continue;
+        const target: string = rel?.$?.Target ?? '';
+        const path = target.startsWith('word/') ? target : `word/${target}`;
+        const xml = zip.readAsText(path);
+        if (!xml) continue;
+        try {
+          const parsed = await parseStringPromise(xml);
+          const rootKey = Object.keys(parsed || {}).find(
+            (k) => k === 'w:hdr' || k.endsWith(':hdr') || k === 'hdr',
+          );
+          const hdrRaw = rootKey ? parsed[rootKey] : undefined;
+          const hdr = Array.isArray(hdrRaw) ? hdrRaw[0] : hdrRaw;
+          if (hdr && typeof hdr === 'object') {
+            allCellTexts.push(...collectCellTextsFromBody(hdr, 5));
+          }
+        } catch { /* skip malformed header */ }
       }
     }
+
+    // 2. Also scan the document body (some SOPs embed the header table in the body)
+    const docXml = zip.readAsText('word/document.xml');
+    if (docXml) {
+      try {
+        const parsed = await parseStringPromise(docXml);
+        const docKey = Object.keys(parsed || {}).find(
+          (k) => k === 'w:document' || k.endsWith(':document') || k === 'document',
+        );
+        const docObj = docKey
+          ? Array.isArray(parsed[docKey]) ? parsed[docKey][0] : parsed[docKey]
+          : parsed;
+        const bodyKey = Object.keys(docObj || {}).find(
+          (k) => k === 'w:body' || k.endsWith(':body') || k === 'body',
+        );
+        const bodyRaw = bodyKey ? docObj[bodyKey] : undefined;
+        const body = Array.isArray(bodyRaw) ? bodyRaw[0] : bodyRaw;
+        if (body && typeof body === 'object') {
+          allCellTexts.push(...collectCellTextsFromBody(body, 3));
+        }
+      } catch { /* skip */ }
+    }
+
+    if (allCellTexts.length === 0) return EMPTY_HEADER_DATA;
+
+    const result: SOPHeaderTableData = { ...EMPTY_HEADER_DATA };
 
     const SOP_ID_RE = /\b([A-Z]{2,6}\d{1,4}-\d{1,4})\b/i;
     const DATE_RE = /([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/;

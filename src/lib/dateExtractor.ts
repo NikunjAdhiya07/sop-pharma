@@ -13,7 +13,7 @@ interface ExtractedDates {
 /**
  * Parse date from various formats commonly found in SOPs
  */
-function parseSOPDate(dateStr: string): Date | null {
+export function parseSOPDate(dateStr: string): Date | null {
   if (!dateStr) return null;
   dateStr = dateStr.trim();
 
@@ -206,3 +206,33 @@ export function extractSOPIdentifier(content: string): string | null {
   return null;
 }
 
+/**
+ * Extract dates from a document buffer, combining the cell-aware header-table
+ * parser (most reliable for SOPs with Word page headers) with the regex fallback.
+ * For DOCX files, header XML files are scanned so dates in page-header tables are found.
+ * Use this instead of calling extractDatesFromContent directly.
+ */
+export async function extractDatesFromBuffer(
+  buffer: Buffer,
+  fileType: 'pdf' | 'docx',
+  parsedContent: string,
+): Promise<ExtractedDates> {
+  const dates = extractDatesFromContent(parsedContent);
+
+  if (fileType === 'docx') {
+    try {
+      const { extractSOPHeaderTableData } = await import('./docxHeaderExtractor');
+      const headerData = await extractSOPHeaderTableData(buffer);
+      if (headerData.reviewDate && !dates.reviewDate) {
+        const d = parseSOPDate(headerData.reviewDate);
+        if (d) dates.reviewDate = d;
+      }
+      if (headerData.effDate && !dates.effectiveDate) {
+        const d = parseSOPDate(headerData.effDate);
+        if (d) dates.effectiveDate = d;
+      }
+    } catch { /* best-effort */ }
+  }
+
+  return dates;
+}

@@ -177,8 +177,8 @@ export async function POST(request: NextRequest) {
     // -----------------------------------------------
     // 7. Extract dates from new content
     // -----------------------------------------------
-    const { extractDatesFromContent } = await import('@/lib/dateExtractor');
-    const extractedDates = extractDatesFromContent(parsed.content);
+    const { extractDatesFromBuffer } = await import('@/lib/dateExtractor');
+    const extractedDates = await extractDatesFromBuffer(buffer, fileType, parsed.content);
 
     // -----------------------------------------------
     // 8. Update the live SOP with new version info

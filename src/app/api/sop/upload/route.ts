@@ -189,8 +189,8 @@ export async function POST(request: NextRequest) {
 
     // Extract dates and metadata from content
     console.log('📅 Extracting dates from document...');
-    const { extractDatesFromContent } = await import('@/lib/dateExtractor');
-    const extractedDates = extractDatesFromContent(parsed.content);
+    const { extractDatesFromBuffer } = await import('@/lib/dateExtractor');
+    const extractedDates = await extractDatesFromBuffer(buffer, fileType, parsed.content);
     console.log('✅ Dates extracted:', extractedDates);
 
     // --- OVERWRITE: Archive old MCQ bank before replacing the SOP ---
