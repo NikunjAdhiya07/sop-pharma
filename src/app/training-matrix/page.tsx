@@ -2,6 +2,10 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+
+function stripVersion(code: string): string {
+  return String(code || '').toUpperCase().replace(/-\d+$/, '').trim();
+}
 import {
   ArrowLeft,
   Upload,
@@ -145,7 +149,7 @@ interface OverviewData {
   sopCodesByDept: Record<Dept, string[]>;
   sopMonthMapByDept: Record<Dept, Record<string, string>>;
   monthCountsByDept: Record<Dept, Record<string, number>>;
-  sopStatusByCode: Record<string, { expired: boolean; targetDate: string | null; totalQuestions: number; approvedCount: number }>;
+  sopStatusByCode: Record<string, { expired: boolean; targetDate: string | null; totalQuestions: number; approvedCount: number; title?: string }>;
 }
 
 type ActiveDept = 'All' | Dept;
@@ -972,7 +976,10 @@ function SopDetailsInline({
                                   : ''
                         }`}
                       >
-                        <td className="px-3 py-2 font-mono font-bold text-gray-900">{r?.sopCode}</td>
+                        <td className="px-3 py-2 font-mono font-bold text-gray-900">
+                          {r?.sopCode}
+                          {r?.title && <span className="ml-2 font-sans text-[10px] font-normal text-gray-500">{r.title}</span>}
+                        </td>
                         <td className="px-3 py-2 text-gray-800">
                           <div className="font-semibold">{r?.title || '—'}</div>
                           {(db?.location || db?.trainer) && (
@@ -1134,12 +1141,17 @@ export default function TrainingMatrixPage() {
   const [deptMonthGroups, setDeptMonthGroups] = useState<any[]>([]);
   const [empCapsules, setEmpCapsules] = useState<any[]>([]);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (forceRefresh = false) => {
     setLoading(true);
     try {
-      // Let the API route cache for a short TTL to avoid re-running expensive
-      // DB + dashboard SOP resolution logic on every hard reload.
-      const res = await fetch('/api/training-matrix/overview?refresh=1', { cache: 'no-store' });
+      // Only bypass the 60s server cache when the user explicitly refreshes or
+      // after an upload. On normal page load, serve from the overview cache so
+      // we don't needlessly invalidate the dashboard-SOPs cache (which would
+      // cause the dashboard to show a loading spinner on next visit).
+      const url = forceRefresh
+        ? '/api/training-matrix/overview?refresh=1'
+        : '/api/training-matrix/overview';
+      const res = await fetch(url, { cache: 'no-store' });
       const json = await res.json();
       if (json.success) setData(json as OverviewData);
     } catch (e) {
@@ -1383,7 +1395,7 @@ export default function TrainingMatrixPage() {
       setGroupBy('department');
       setActiveMonth('All');
       setSearch('');
-      setActiveDept(opts.dept);
+      setActiveDept(opts.dbDept && opts.dbDept !== 'All' ? opts.dbDept as ActiveDept : opts.dept);
 
       if (data && !opts.lang) {
         let codes: string[] = [];
@@ -1452,7 +1464,7 @@ export default function TrainingMatrixPage() {
         setCapsuleSopFilter({
           title: opts.title,
           dept: opts.dept,
-          sopCodes: new Set(codes.map((c) => String(c).trim().toUpperCase())),
+          sopCodes: new Set(codes.map((c) => stripVersion(c))),
         });
         return;
       }
@@ -1498,7 +1510,7 @@ export default function TrainingMatrixPage() {
     const titleMap = new Map<string, string>();
     for (const sopList of Object.values((data.totalCard as any)?.dbSopsByDept || {})) {
       for (const s of sopList as Array<{ sopCode: string; title: string }>) {
-        if (s.sopCode) titleMap.set(s.sopCode.toUpperCase(), s.title || '');
+        if (s.sopCode) titleMap.set(stripVersion(s.sopCode).toUpperCase(), s.title || '');
       }
     }
 
@@ -1524,8 +1536,8 @@ export default function TrainingMatrixPage() {
 
     for (const dept of depts) {
       const employees = data.perDept?.[dept]?.employees || [];
-      const excelCodes = data.sopCodesByDept?.[dept] || [];
-      const dbCodes = ((data.totalCard as any)?.dbSopsByDept?.[dept] || []).map((x: any) => x.sopCode);
+      const excelCodes = (data.sopCodesByDept?.[dept] || []).map((c: string) => stripVersion(c));
+      const dbCodes = ((data.totalCard as any)?.dbSopsByDept?.[dept] || []).map((x: any) => stripVersion(x.sopCode));
       const baseCodes = Array.from(new Set([...excelCodes, ...dbCodes]));
       const sopCodes = capsuleSopFilter
         ? baseCodes.filter((c) => capsuleSopFilter.sopCodes.has(String(c).toUpperCase()))
@@ -1572,7 +1584,11 @@ export default function TrainingMatrixPage() {
           const status = data.sopStatusByCode?.[sopCode];
           return {
             sopCode,
-            title: titleMap.get(sopCode.toUpperCase()) || '',
+            title: (() => {
+              const upper = sopCode.toUpperCase();
+              const t = titleMap.get(upper) || (data.sopStatusByCode?.[sopCode] as any)?.title || (data.sopStatusByCode?.[upper] as any)?.title || '';
+              return t.toUpperCase() === upper ? '' : t;
+            })(),
             month: monthMap[sopCode] || '',
             trainer: trainerMap[sopCode] || '',
             completed: stat.completed,
@@ -2281,18 +2297,29 @@ export default function TrainingMatrixPage() {
               </span>
             )}
             <div className="flex-shrink-0 mt-0.5">
-              <span className="inline-flex items-center justify-center rounded-xl px-3 py-2 bg-white/70 border border-white/70 shadow-sm">
-                <span className="font-mono text-[12px] font-black text-gray-900">{sop.sopCode}</span>
-              </span>
+              <div className="inline-flex flex-col">
+                <span className="inline-flex items-center gap-2 rounded-xl px-3 py-2 bg-white/70 border border-white/70 shadow-sm max-w-[280px]">
+                  <span className="font-mono text-[12px] font-black text-gray-900 flex-shrink-0">{sop.sopCode}</span>
+                  {sop.title && (
+                    <>
+                      <span className="text-gray-300 text-[10px] flex-shrink-0">|</span>
+                      <span className="font-sans text-[10px] font-semibold text-gray-600 truncate" title={sop.title}>{sop.title}</span>
+                    </>
+                  )}
+                </span>
+              </div>
             </div>
             <div className="min-w-0">
-              {sop.title && (
-                <div className="text-[10px] text-gray-500 font-medium truncate mb-0.5" title={sop.title}>
-                  {sop.title}
-                </div>
-              )}
               <div className="flex items-center gap-2 flex-wrap mb-0.5">
                 <span className="text-[11px] font-black text-gray-900">{dept}</span>
+                {sop.title && (
+                  <span
+                    className="text-[10px] font-semibold text-gray-700 truncate max-w-[280px]"
+                    title={sop.title}
+                  >
+                    {sop.title}
+                  </span>
+                )}
                 {!!sop.month && (
                   <span
                     className={`text-[10px] font-black rounded-full px-2 py-0.5 border ${
@@ -2590,11 +2617,11 @@ export default function TrainingMatrixPage() {
       // groupBy: department (default) or sop
       if (groupBy === 'sop') {
         // Flatten across depts, group by sop code
-        const map = new Map<string, { sopCode: string; month: string; items: Array<{ dept: string; accent: string; completed: number; pending: number; totalApplicable: number; completionPct: number; pendingEmployees: string[] }> }>();
+        const map = new Map<string, { sopCode: string; title: string; month: string; items: Array<{ dept: string; accent: string; completed: number; pending: number; totalApplicable: number; completionPct: number; pendingEmployees: string[] }> }>();
         for (const g of sopWiseGroups) {
           const accent = DEPT_ACCENT[(g.department as Dept) || 'Total'] || '#a855f7';
           for (const s of g.sops) {
-            if (!map.has(s.sopCode)) map.set(s.sopCode, { sopCode: s.sopCode, month: s.month, items: [] });
+            if (!map.has(s.sopCode)) map.set(s.sopCode, { sopCode: s.sopCode, title: s.title || '', month: s.month, items: [] });
             map.get(s.sopCode)!.items.push({ dept: g.department, accent, ...s, pendingEmployees: s.pendingEmployees });
           }
         }
@@ -2606,7 +2633,7 @@ export default function TrainingMatrixPage() {
                 <div className="px-4 py-3 bg-gray-50 border-b flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs font-extrabold px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-100">
-                      {s.sopCode}
+                      {s.sopCode} {s.title && <span className="ml-2 font-sans font-bold text-purple-900 opacity-60">{s.title}</span>}
                     </span>
                     {!!s.month && <span className="text-[10px] font-semibold text-gray-500">{s.month}</span>}
                   </div>
@@ -2621,6 +2648,7 @@ export default function TrainingMatrixPage() {
                       sr={idx + 1}
                       sop={{
                         sopCode: s.sopCode,
+                        title: s.title || '',
                         month: s.month,
                         trainer: (it as any).trainer || '',
                         completed: it.completed,
@@ -2672,6 +2700,7 @@ export default function TrainingMatrixPage() {
                         sr={globalSr}
                         sop={{
                           sopCode: s.sopCode,
+                          title: (s as any).title || '',
                           month: s.month,
                           trainer: (s as any).trainer || '',
                           completed: s.completed,
@@ -3006,7 +3035,7 @@ export default function TrainingMatrixPage() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={fetchData}
+              onClick={() => fetchData(true)}
               disabled={loading}
               className="flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
             >
@@ -3139,7 +3168,7 @@ export default function TrainingMatrixPage() {
         <UploadModal
           onClose={() => setShowUpload(false)}
           onSuccess={() => {
-            fetchData();
+            fetchData(true);
           }}
         />
       )}

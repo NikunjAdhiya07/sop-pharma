@@ -19,21 +19,11 @@ export async function GET(request: NextRequest) {
     const hasMCQs = searchParams.get('hasMCQs');
     const skipSync = searchParams.get('skipSync') === 'true';
 
-    // Trigger sync check
-    if (!id && !skipSync) {
-      const count = await SOPLibrary.countDocuments();
-      if (count === 0) {
-        console.log('📚 SOP Library is empty, triggering initial sync...');
-        await performSOPLibrarySync();
-      } else {
-        performSOPLibrarySync().catch(err => console.error('Auto-sync error:', err));
-      }
-    }
-
     // If ID is provided, fetch single entry
     if (id) {
       const sopLibrary = await SOPLibrary.findById(id)
-        .populate('mcqBankId', 'totalQuestions difficultyDistribution mcqs')
+        .populate('mcqBankId', 'totalQuestions difficultyDistribution') // Exclude mcqs!
+        .populate('sopId', 'reviewDate expiryDate version')
         .lean() as any;
 
       if (!sopLibrary) {
@@ -43,16 +33,10 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      // Fix stale totalMCQs
-      if (sopLibrary.mcqBankId && Array.isArray(sopLibrary.mcqBankId.mcqs)) {
-        const actualCount = sopLibrary.mcqBankId.mcqs.length;
-        sopLibrary.metadata = sopLibrary.metadata || {};
-        sopLibrary.metadata.totalMCQs = actualCount;
-        sopLibrary.mcqBankId.totalQuestions = actualCount;
-        delete sopLibrary.mcqBankId.mcqs;
-      } else if (!sopLibrary.mcqBankId) {
-        sopLibrary.metadata = sopLibrary.metadata || {};
-        sopLibrary.metadata.totalMCQs = 0;
+      // Use stored totalMCQs
+      sopLibrary.metadata = sopLibrary.metadata || {};
+      if (sopLibrary.metadata.totalMCQs === undefined) {
+        sopLibrary.metadata.totalMCQs = sopLibrary.mcqBankId?.totalQuestions || 0;
       }
 
       return NextResponse.json({
@@ -102,25 +86,13 @@ export async function GET(request: NextRequest) {
       query['completionStatus.hasMCQs'] = true;
     }
 
+    // Optimize population: Do NOT fetch the 'mcqs' array as it can be very large
+    // Use the stored metadata.totalMCQs or only select what's needed
     const sopLibraries = await SOPLibrary.find(query)
-      .populate('mcqBankId', 'totalQuestions difficultyDistribution mcqs')
+      .populate('mcqBankId', 'totalQuestions difficultyDistribution') // Exclude mcqs!
       .populate('sopId', 'reviewDate expiryDate version')
       .sort({ department: 1, sopIdentifier: 1 })
       .lean();
-
-    // Fix stale totalMCQs by computing from actual mcqs array
-    for (const sop of sopLibraries as any[]) {
-      if (sop.mcqBankId && Array.isArray(sop.mcqBankId.mcqs)) {
-        const actualCount = sop.mcqBankId.mcqs.length;
-        sop.metadata = sop.metadata || {};
-        sop.metadata.totalMCQs = actualCount;
-        sop.mcqBankId.totalQuestions = actualCount;
-        delete sop.mcqBankId.mcqs;
-      } else if (!sop.mcqBankId) {
-        sop.metadata = sop.metadata || {};
-        sop.metadata.totalMCQs = 0;
-      }
-    }
 
     // Organize by department
     const organized = organizeFolderStructure(sopLibraries as any[]);

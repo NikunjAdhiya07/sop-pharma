@@ -25,18 +25,6 @@ export async function GET(request: NextRequest) {
   try {
     await dbConnect();
 
-    // Check if we have any library entries
-    const count = await SOPLibrary.countDocuments();
-    
-    // If empty, trigger a blocking sync to ensure data is there
-    if (count === 0) {
-      console.log('📚 SOP Library is empty, triggering initial sync...');
-      await performSOPLibrarySync();
-    } else {
-      // Otherwise trigger a background sync to keep things fresh
-      performSOPLibrarySync().catch(err => console.error('Auto-sync error:', err));
-    }
-
     // Get department filter from query params
     const { searchParams } = new URL(request.url);
     const departmentFilter = searchParams.get('department');
@@ -46,30 +34,12 @@ export async function GET(request: NextRequest) {
 
     // Fetch all SOP libraries (no filter by department field - we'll organize by subcategory code)
     const allSopLibraries = await SOPLibrary.find({})
-      .populate('mcqBankId')
+      .populate('mcqBankId', 'totalQuestions difficultyDistribution') // Exclude mcqs!
       .populate({
          path: 'sopId',
          select: 'reviewDate expiryDate version'
       })
       .lean();
-
-    // Fetch Master SOP Repository data for cross-referencing (this is the source of truth for SOP Monitoring)
-    const masterRepoData = await MasterSOPRepository.find({}, {
-      sopIdentifier: 1,
-      'metadata.reviewDate': 1,
-      'metadata.expiryDate': 1,
-      'metadata.version': 1
-    }).lean();
-
-    // Create lookup map for master repo data by identifier
-    const masterRepoMap = new Map<string, any>();
-    masterRepoData.forEach((item: any) => {
-      if (item.sopIdentifier) {
-        masterRepoMap.set(item.sopIdentifier.toUpperCase(), item);
-      }
-    });
-
-    console.log(`📚 Cross-referencing with ${masterRepoData.length} Master SOP Repository entries`);
 
     // Filter out annexures, temp files, and invalid identifiers
     const sopLibraries = allSopLibraries.filter((sop: any) => {
@@ -88,29 +58,22 @@ export async function GET(request: NextRequest) {
       return true;
     });
 
-    // Enhance each SOP with master repo data and fix stale MCQ counts
+    // Use the populated data directly. No need to fetch MasterSOPRepository separately
+    // as SOPLibrary sync should handle the source of truth if configured correctly.
+    // For now, we rely on the populated sopId.
     sopLibraries.forEach((sop: any) => {
-      const masterData = masterRepoMap.get(sop.sopIdentifier?.toUpperCase());
-      if (masterData?.metadata) {
+      if (sop.sopId) {
         sop.masterRepoData = {
-          reviewDate: masterData.metadata.reviewDate,
-          expiryDate: masterData.metadata.expiryDate,
-          version: masterData.metadata.version
+          reviewDate: sop.sopId.reviewDate,
+          expiryDate: sop.sopId.expiryDate,
+          version: sop.sopId.version
         };
       }
 
-      // Fix stale totalMCQs using actual mcqs array from populated mcqBankId
-      if (sop.mcqBankId && Array.isArray(sop.mcqBankId.mcqs)) {
-        const actualCount = sop.mcqBankId.mcqs.length;
-        sop.metadata = sop.metadata || {};
-        sop.metadata.totalMCQs = actualCount;
-        sop.completionStatus = sop.completionStatus || {};
-        sop.completionStatus.hasMCQs = actualCount > 0;
-      } else if (!sop.mcqBankId) {
-        sop.metadata = sop.metadata || {};
-        sop.metadata.totalMCQs = 0;
-        sop.completionStatus = sop.completionStatus || {};
-        sop.completionStatus.hasMCQs = false;
+      // If we don't have mcqBankId populated, or totalMCQs is missing, ensure it's at least 0
+      if (!sop.metadata) sop.metadata = {};
+      if (sop.metadata.totalMCQs === undefined) {
+        sop.metadata.totalMCQs = sop.mcqBankId?.totalQuestions || 0;
       }
     });
 

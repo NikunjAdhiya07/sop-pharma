@@ -128,6 +128,8 @@ export async function performSOPLibrarySync() {
             folderPath: sop.folderPath,
             parentFolder: sop.parentFolder,
             subfolderLevel: sop.subfolderLevel,
+            expiryDate: sop.expiryDate,
+            lastReviewDate: sop.reviewDate || sop.lastReviewedAt || new Date(),
           };
 
           if (mcqBank) {
@@ -161,7 +163,8 @@ export async function performSOPLibrarySync() {
               videos: [],
               slides: [],
               sopDocuments: [],
-              expiryDate: oneYearFromNow,
+              expiryDate: sop.expiryDate || oneYearFromNow,
+              lastReviewDate: sop.reviewDate || sop.lastReviewedAt || new Date(),
               folderPath: sop.folderPath,
               parentFolder: sop.parentFolder,
               subfolderLevel: sop.subfolderLevel,

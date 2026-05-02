@@ -21,7 +21,7 @@ const CACHE_TTL_MS = 60_000;
 function getCacheKey(req: NextRequest) {
   // Keep it simple: one cache for the whole overview payload.
   // If later this route becomes user-specific, include user/session key here.
-  return 'training-matrix-overview:v10';
+  return 'training-matrix-overview:v11';
 }
 
 function getCached(req: NextRequest): any | null {
@@ -267,6 +267,23 @@ export async function GET(req: NextRequest) {
       meta.expired = expired;
     }
 
+    // Fallback: SOPLibrary `sopName` — fill in any SOPs still missing a title
+    // Query by base codes (no version suffix) since SOPLibrary often stores bare codes.
+    const libNameDocs = await SOPLibrary.find(
+      { sopIdentifier: { $in: Array.from(dbBaseSet) }, sopName: { $exists: true, $ne: '' } },
+      { sopIdentifier: 1, sopName: 1 }
+    ).lean();
+
+    for (const doc of libNameDocs as any[]) {
+      const id = String(doc?.sopIdentifier || '');
+      const base = stripVersion(id);
+      if (!base || !dbBaseMeta.has(base)) continue;
+      const meta = dbBaseMeta.get(base)!;
+      if (!meta.title && doc.sopName) {
+        meta.title = String(doc.sopName).trim();
+      }
+    }
+
     // Debug: count how many SOPs have a date
     const withDate = [...dbBaseMeta.values()].filter((m) => m.targetDate).length;
     const withoutDate = [...dbBaseMeta.values()].filter((m) => !m.targetDate).length;
@@ -437,15 +454,20 @@ export async function GET(req: NextRequest) {
       sopMonthMapAll[dept] = snapshot.sopMonthMap || {};
       monthCountsByDept[dept] = snapshot.monthCounts || {};
 
-      // IMPORTANT: "Found in DB" must be department-scoped, otherwise it can exceed
-      // the department's own DB SOP count (Excel sheet may contain SOPs that exist in DB
-      // but are mapped to other departments).
-      const dbDeptSet = dbDeptSets[dept] || new Set<string>();
-      const foundInDb = codes.filter((c) => dbDeptSet.has(c));
+      const obsoleteSetAll = new Set<string>();
+      for (const d of DEPT_CANONICAL) {
+        if (obsoleteByDept[d]) {
+          for (const c of obsoleteByDept[d]) obsoleteSetAll.add(c);
+        }
+      }
 
-      // Found in obsolete: exists in DB but only as obsolete SOP record for this dept
-      const obsoleteSet = obsoleteByDept[dept] || new Set<string>();
-      const foundObsolete = codes.filter((c) => obsoleteSet.has(c) && !dbDeptSet.has(c));
+      // IMPORTANT: "Found in DB" should include ALL SOPs from this Excel upload that
+      // exist in the DB (any department). Previously this was restricted to only
+      // those matching the current department, which broke splits in the UI.
+      const foundInDb = codes.filter((c) => dbBaseSet.has(c));
+
+      // Found in obsolete: exists in DB but only as obsolete SOP record
+      const foundObsolete = codes.filter((c) => obsoleteSetAll.has(c) && !dbBaseSet.has(c));
       const missingFromExcel = [...dbBaseSet].filter((c) => {
         const meta = dbBaseMeta.get(c);
         if (!meta) return false;
@@ -736,7 +758,7 @@ export async function GET(req: NextRequest) {
       trainersMissingList: totalTrainersMissingList,
     };
 
-    const sopStatusByCode: Record<string, { expired: boolean; targetDate: string | null; totalQuestions: number; approvedCount: number }> = {};
+    const sopStatusByCode: Record<string, { expired: boolean; targetDate: string | null; totalQuestions: number; approvedCount: number; title: string }> = {};
     for (const [code, meta] of dbBaseMeta.entries()) {
       const mcqStat = mcqStatMap.get(code);
       sopStatusByCode[code] = {
@@ -744,6 +766,7 @@ export async function GET(req: NextRequest) {
         targetDate: meta.targetDate || null,
         totalQuestions: mcqStat?.totalQuestions || 0,
         approvedCount: mcqStat?.approvedCount || 0,
+        title: meta.title || '',
       };
     }
 
