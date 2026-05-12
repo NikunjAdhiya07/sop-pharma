@@ -1,5 +1,7 @@
 'use client';
 
+import { useAuthGuard } from '@/hooks/useAuthGuard';
+
 import { useState } from 'react';
 import { Upload, Loader2, CheckCircle, AlertCircle, FileText, Calendar } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
@@ -19,6 +21,7 @@ interface ProcessedFile {
 }
 
 export default function UpdateDatesFromDOCXPage() {
+  useAuthGuard({ allowedRoles: ['admin', 'qa-head'] });
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [processing, setProcessing] = useState(false);
   const [results, setResults] = useState<ProcessedFile[]>([]);

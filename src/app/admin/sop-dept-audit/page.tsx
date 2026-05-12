@@ -1,5 +1,7 @@
 'use client';
 
+import { useAuthGuard } from '@/hooks/useAuthGuard';
+
 import { useEffect, useMemo, useState } from 'react';
 import PageHeader from '@/components/PageHeader';
 import { ChevronDown, ChevronUp, ClipboardList, RefreshCw, Search, ShieldAlert } from 'lucide-react';
@@ -119,6 +121,7 @@ function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
 }
 
 export default function SopDeptAuditPage() {
+  useAuthGuard({ allowedRoles: ['admin', 'qa-head'] });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [data, setData] = useState<AuditData | null>(null);

@@ -1,4 +1,6 @@
 'use client';
+
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { useState, useEffect, useCallback } from 'react';
 import {
   Calendar, Users, CheckCircle2, Clock, AlertTriangle,
@@ -60,6 +62,7 @@ const getDeptColor = (dept: string) => DEPT_COLORS[dept] ?? 'from-slate-600 to-s
 
 /* ─── Main Page ─────────────────────────── */
 export default function SOPSchedulerPage() {
+  useAuthGuard();
   const [events, setEvents]         = useState<ExamEvent[]>([]);
   const [stats, setStats]           = useState<Stats>({ totalExams:0,scheduled:0,pending:0,completed:0,passed:0,failed:0,retests:0,passRate:0 });
   const [loading, setLoading]       = useState(true);

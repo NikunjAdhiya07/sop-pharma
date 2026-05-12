@@ -3,6 +3,7 @@ import connectDB from '@/lib/mongodb';
 import MCQBank from '@/models/MCQBank';
 import SOP from '@/models/SOP';
 import { generateMCQsFromSOP } from '@/lib/gemini';
+import { invalidateMcqCaches } from '@/lib/mcqCacheInvalidate';
 import mongoose from 'mongoose';
 
 /**
@@ -143,6 +144,8 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`✅ ${bank.sopIdentifier}: ${currentCount} → ${newTotal} questions`);
+
+    void invalidateMcqCaches();
 
     return NextResponse.json({
       success: true,

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import FindingCard from '../../components/FindingCard';
 import {
   Layers, List as ListIcon, PieChart, ChevronRight, ChevronDown,
@@ -342,6 +343,7 @@ function SummaryPanel({
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function ComplianceReportDetail() {
+  useAuthGuard();
   const router = useRouter();
   const params = useParams();
   const reportId = params.id as string;

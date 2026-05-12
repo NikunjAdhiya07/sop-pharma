@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { User, CheckCircle, XCircle, Clock, Calendar } from 'lucide-react';
 import { useParams } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import PageHeader from '@/components/PageHeader';
 
 interface TraineeResult {
@@ -19,6 +20,7 @@ interface TraineeResult {
 }
 
 export default function TrainerSOPDetail() {
+  useAuthGuard({ allowedRoles: ['admin', 'trainer', 'qa-head'] });
   const { sopId } = useParams();
   const [trainees, setTrainees] = useState<TraineeResult[]>([]);
   const [loading, setLoading] = useState(true);

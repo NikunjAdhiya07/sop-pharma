@@ -3,6 +3,7 @@ import connectDB from '@/lib/mongodb';
 import MCQBank from '@/models/MCQBank';
 import ArchivedMCQBank from '@/models/ArchivedMCQBank';
 import mongoose from 'mongoose';
+import { invalidateMcqCaches } from '@/lib/mcqCacheInvalidate';
 
 export async function POST(request: NextRequest) {
   try {
@@ -85,6 +86,8 @@ export async function POST(request: NextRequest) {
     } catch (sopErr) {
       console.warn('Could not reset SOP stats after archiving:', sopErr);
     }
+
+    void invalidateMcqCaches();
 
     return NextResponse.json({
       success: true,

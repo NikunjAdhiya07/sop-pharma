@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import PageHeader from '@/components/PageHeader';
 import SOPTreeView from '@/components/SOPTreeView';
 import { Search, FolderTree, FileText, Download, Eye, Loader2, ArrowLeft, Grid, List, History, X, ChevronDown, ChevronRight } from 'lucide-react';
@@ -41,6 +42,7 @@ interface MasterSOP {
 }
 
 export default function MasterSOPPage() {
+  useAuthGuard();
   const router = useRouter();
   
   // State

@@ -19,6 +19,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 
 interface OptionVariant {
   text: string;
@@ -69,6 +70,7 @@ interface RecycledQuestion {
 }
 
 export default function MCQReviewPage() {
+  useAuthGuard();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'review' | 'recycle'>('review');
   const [reviews, setReviews] = useState<Review[]>([]);

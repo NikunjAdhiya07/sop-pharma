@@ -5,6 +5,8 @@ import User from '@/models/User';
 import { buildMCQTreeStructure, getTreeAsArray } from '@/lib/mcqTreeBuilder';
 import { filterPrimaryRegistryRows } from '@/lib/registryPrimaryRows';
 import { getDashboardRegistryPayload } from '@/lib/dashboardRegistrySource';
+import { getRedis, REDIS_TTL } from '@/lib/redis';
+import { getMcqTreeVersion } from '@/lib/mcqCacheInvalidate';
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,6 +15,20 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const username = searchParams.get('username');
     const includeObsolete = searchParams.get('includeObsolete') === '1';
+    const forceFresh = searchParams.get('refresh') === '1';
+
+    // Cache key scoped to user + global version (version bump = instant invalidation for all users)
+    const treeVersion = await getMcqTreeVersion();
+    const cacheKey = `mcq-tree:v${treeVersion}:${username || '_all'}:obsolete=${includeObsolete}`;
+    if (!forceFresh) {
+      const redis = getRedis();
+      if (redis) {
+        try {
+          const cached = await redis.get(cacheKey);
+          if (cached) return NextResponse.json(cached);
+        } catch { /* fall through */ }
+      }
+    }
 
     let allowedDepartments: string[] = [];
     let isAdmin = false;
@@ -128,6 +144,12 @@ export async function GET(request: NextRequest) {
         isRestricted,
       }
     };
+
+    // Store in Redis (best-effort)
+    const redis = getRedis();
+    if (redis) {
+      try { await redis.set(cacheKey, responseData, { ex: REDIS_TTL.FIVE_MIN }); } catch { /* ignore */ }
+    }
 
     return NextResponse.json(responseData, {
       headers: {

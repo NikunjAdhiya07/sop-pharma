@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { 
   History, 
   ArrowLeft, 
@@ -53,6 +54,7 @@ interface AuditLog {
 }
 
 export default function AuditLogsPage() {
+  useAuthGuard();
   const router = useRouter();
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);

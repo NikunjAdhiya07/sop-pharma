@@ -1,5 +1,7 @@
 'use client';
 
+import { useAuthGuard } from '@/hooks/useAuthGuard';
+
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import {
@@ -741,6 +743,7 @@ function EmpView() {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function TrainingMatrixEnhanced() {
+  useAuthGuard();
   const [tab, setTab] = useState<'dept' | 'employee'>('dept');
 
   return (

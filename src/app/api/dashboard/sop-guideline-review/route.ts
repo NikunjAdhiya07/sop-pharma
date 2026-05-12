@@ -193,7 +193,7 @@ export async function POST(request: NextRequest) {
     }
 
     const genAI = new GoogleGenerativeAI(geminiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
     // ── Batch analysis (same as analyze-v4) ──────────────────────────
     const findings: any[] = [];
@@ -226,43 +226,48 @@ export async function POST(request: NextRequest) {
       }
 
       for (const subBatch of subBatches) {
-        try {
-          const prompt      = buildBatchPrompt(sopData, subBatch);
-          const result      = await model.generateContent(prompt);
-          const batchResult = parseBatchResponse(result.response.text(), subBatch.length);
-
-          subBatch.forEach(({ guideline, clause }, i) => {
-            const ai = batchResult[i];
-            if (!ai || typeof ai !== 'object') {
-              findings.push(failedFinding(guideline, clause));
-              return;
-            }
-            findings.push({
-              guidelineId:        guideline._id?.toString() ?? '',
-              guidelineName:      guideline.name,
-              folderName:         guideline.folderName,
-              pdfName:            guideline.pdfName || '',
-              clauseNumber:       clause.clauseNumber,
-              clauseTitle:        clause.clauseTitle,
-              clauseText:         clause.clauseText,
-              complianceLevel:    normLevel(ai.complianceLevel),
-              matchConfidence:    Number(ai.matchConfidence) || 0,
-              issueType:          ai.issueType          || 'not-applicable',
-              issueSeverity:      ai.issueSeverity      || 'minor',
-              sopSectionAffected: String(ai.sopSectionAffected || 'N/A'),
-              mismatchExplanation:String(ai.mismatchExplanation || ''),
-              highlightedIssue:   String(ai.highlightedIssue   || ''),
-              sopTextSnippet:     String(ai.sopTextSnippet      || ''),
-              guidelineRequirement:String(ai.guidelineRequirement || clause.clauseTitle || ''),
-              suggestedAction:    String(ai.suggestedAction    || ''),
-              suggestedText:      String(ai.suggestedText      || ''),
-              estimatedEffort:    ai.estimatedEffort || 'medium',
-              priority:           Number(ai.priority) || 3,
-            });
-          });
-        } catch {
-          subBatch.forEach(({ guideline, clause }) => findings.push(failedFinding(guideline, clause)));
+        let batchResult: any[] | null = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const prompt = buildBatchPrompt(sopData, subBatch);
+            const result = await model.generateContent(prompt);
+            batchResult  = parseBatchResponse(result.response.text(), subBatch.length);
+            break;
+          } catch (batchErr) {
+            console.error(`[sop-guideline-review] batch error (attempt ${attempt + 1}):`, batchErr);
+            if (attempt === 0) await new Promise(r => setTimeout(r, 1500));
+          }
         }
+
+        subBatch.forEach(({ guideline, clause }, i) => {
+          const ai = batchResult?.[i];
+          if (!ai || typeof ai !== 'object') {
+            findings.push(failedFinding(guideline, clause));
+            return;
+          }
+          findings.push({
+            guidelineId:        guideline._id?.toString() ?? '',
+            guidelineName:      guideline.name,
+            folderName:         guideline.folderName,
+            pdfName:            guideline.pdfName || '',
+            clauseNumber:       clause.clauseNumber,
+            clauseTitle:        clause.clauseTitle,
+            clauseText:         clause.clauseText,
+            complianceLevel:    normLevel(ai.complianceLevel),
+            matchConfidence:    Number(ai.matchConfidence) || 0,
+            issueType:          ai.issueType          || 'not-applicable',
+            issueSeverity:      ai.issueSeverity      || 'minor',
+            sopSectionAffected: String(ai.sopSectionAffected || 'N/A'),
+            mismatchExplanation:String(ai.mismatchExplanation || ''),
+            highlightedIssue:   String(ai.highlightedIssue   || ''),
+            sopTextSnippet:     String(ai.sopTextSnippet      || ''),
+            guidelineRequirement:String(ai.guidelineRequirement || clause.clauseTitle || ''),
+            suggestedAction:    String(ai.suggestedAction    || ''),
+            suggestedText:      String(ai.suggestedText      || ''),
+            estimatedEffort:    ai.estimatedEffort || 'medium',
+            priority:           Number(ai.priority) || 3,
+          });
+        });
         if (subBatches.indexOf(subBatch) < subBatches.length - 1) await new Promise(r => setTimeout(r, 200));
       }
 
@@ -350,7 +355,7 @@ export async function GET(request: NextRequest) {
       // ── Source 1: Dashboard wizard results (SOPGuidelineResult)
       const wizardResults = await SOPGuidelineResult
         .find({})
-        .select('sopNo sopName overallScore clausesAnalyzed guidelineDocumentsUsed runAt findings')
+        .select('sopNo sopName overallScore clausesAnalyzed guidelineDocumentsUsed guidelineIds runAt findings')
         .sort({ runAt: -1 })
         .lean();
 
@@ -363,6 +368,7 @@ export async function GET(request: NextRequest) {
           overallScore: r.overallScore ?? 0,
           clausesAnalyzed: r.clausesAnalyzed ?? 0,
           guidelineDocumentsUsed: r.guidelineDocumentsUsed ?? 0,
+          guidelineIds: Array.isArray(r.guidelineIds) ? r.guidelineIds : [],
           runAt: r.runAt,
           findings: Array.isArray(r.findings) ? r.findings : [],
           source: 'dashboard-wizard',
@@ -509,9 +515,9 @@ function failedFinding(guideline: any, clause: any) {
     guidelineId: guideline._id?.toString() ?? '',
     guidelineName: guideline.name, folderName: guideline.folderName, pdfName: guideline.pdfName || '',
     clauseNumber: clause.clauseNumber, clauseTitle: clause.clauseTitle, clauseText: clause.clauseText,
-    complianceLevel: 'analysis-failed', matchConfidence: 0, issueType: 'not-applicable',
+    complianceLevel: 'non-compliant', matchConfidence: 0, issueType: 'missing-clause',
     issueSeverity: 'informational', sopSectionAffected: 'N/A',
-    mismatchExplanation: 'Analysis failed — batch may have been too large. Please re-run.', highlightedIssue: '',
+    mismatchExplanation: 'Analysis failed — could not evaluate this clause. Please re-run.', highlightedIssue: '',
     sopTextSnippet: '',
     // Use title (not full clause text) so the UI shows a concise label
     guidelineRequirement: clause.clauseTitle || clause.clauseNumber || 'Unknown clause',

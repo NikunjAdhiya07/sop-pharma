@@ -11,6 +11,6 @@ export const dynamic = 'force-dynamic';
  * the next GET /api/dashboard/sops re-fetches fresh data from MongoDB.
  */
 export async function POST() {
-  invalidateDashboardSopsCache();
+  await invalidateDashboardSopsCache();
   return NextResponse.json({ success: true, message: 'Dashboard cache invalidated' });
 }

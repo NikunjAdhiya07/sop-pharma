@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { 
   CheckCircle2, AlertCircle, ChevronRight, 
   ArrowLeft, BrainCircuit, Timer, Award,
@@ -26,6 +27,7 @@ interface Session {
 }
 
 export default function TestExecutionPage() {
+  useAuthGuard();
   const { sessionId } = useParams();
   const router = useRouter();
   

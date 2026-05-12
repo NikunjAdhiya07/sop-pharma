@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
 
     // Save updated SOP Library entry
     await sopLibrary.save();
-    invalidateDashboardSopsCache();
+    void invalidateDashboardSopsCache();
 
     return NextResponse.json({
       success: true,

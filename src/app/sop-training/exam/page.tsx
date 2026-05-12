@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import {
   ChevronLeft, Loader2, CheckCircle2, XCircle, AlertCircle,
   Award, RotateCcw, ChevronRight, Clock, Shield, BookOpenCheck,
@@ -451,6 +452,7 @@ function ExamInner() {
 // ─── Outer page (wraps in Suspense for useSearchParams) ───────────────────────
 
 export default function ExamPage() {
+  useAuthGuard();
   return (
     <Suspense fallback={
       <div className="min-h-screen bg-[#020617] flex items-center justify-center">

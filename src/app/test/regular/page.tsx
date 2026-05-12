@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { 
   RefreshCw, 
   ArrowLeft, 
@@ -28,6 +29,7 @@ interface MCQBank {
 }
 
 export default function RegularTestPage() {
+  useAuthGuard();
   const router = useRouter();
   const [basis, setBasis] = useState<'selection' | 'ai' | 'manual'>('selection');
   const [step, setStep] = useState<'selection' | 'difficulty' | 'criteria' | 'ready' | 'testing'>('selection');

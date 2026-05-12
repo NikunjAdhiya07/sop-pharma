@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { X, ChevronRight, ChevronLeft, Loader2, BookOpen, AlertCircle, Eye, ChevronDown, ChevronUp, Minus } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { X, ChevronRight, ChevronLeft, Loader2, BookOpen, AlertCircle, Eye, ChevronDown, ChevronUp, Minus, CheckCircle2, Clock, Terminal } from 'lucide-react';
 import { buildRealSopPickerOptions, type RegistrySopOption } from '@/lib/registrySopPickerOptions';
 
 type GuidelineSummary = {
@@ -23,6 +23,7 @@ type Props = {
   presetSop?: { _id: string; sopNo: string } | null;
   onResult?: (sopNo: string, sopName: string, result: any) => void;
   onAnalysisStart?: (sopNo: string) => void;
+  prefetchedGuidelines?: any[] | null;
 };
 
 // ── severity / status colour maps (same as compliance engine) ──────────────
@@ -41,6 +42,81 @@ const STATUS_STYLE: Record<string, { bg: string; text: string; label: string }> 
   'analysis-failed': { bg: 'bg-gray-200',    text: 'text-gray-500',    label: 'Failed' },
 };
 
+// ── Shared progress panel (used in both step-1 preset path and step-2) ──────
+function AnalysisProgressPanel({
+  elapsed,
+  logs,
+  logsEndRef,
+  onMinimize,
+}: {
+  elapsed: number;
+  logs: { time: number; text: string; done?: boolean }[];
+  logsEndRef: React.RefObject<HTMLDivElement | null>;
+  onMinimize?: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3">
+        <div className="flex items-center gap-3">
+          <Loader2 className="h-5 w-5 animate-spin text-indigo-600 shrink-0" />
+          <div>
+            <p className="text-sm font-bold text-indigo-900">AI analysis running…</p>
+            <p className="text-[11px] text-indigo-600">Typically 1–3 minutes depending on clause count</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 rounded-full bg-white border border-indigo-200 px-3 py-1 text-sm font-mono font-bold text-indigo-700 shadow-sm">
+          <Clock className="h-3.5 w-3.5" />
+          {String(Math.floor(elapsed / 60)).padStart(2, '0')}:{String(elapsed % 60).padStart(2, '0')}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-gray-200 bg-gray-950 overflow-hidden">
+        <div className="flex items-center gap-2 border-b border-gray-800 px-3 py-2">
+          <Terminal className="h-3.5 w-3.5 text-gray-400" />
+          <span className="text-[10px] font-mono font-semibold text-gray-400 uppercase tracking-wider">Analysis Log</span>
+          <span className="ml-auto text-[10px] font-mono text-gray-600">{logs.length} events</span>
+        </div>
+        <div className="max-h-64 overflow-y-auto px-3 py-2 space-y-1 font-mono text-[11px]">
+          {logs.map((log, i) => (
+            <div key={i} className="flex items-start gap-2">
+              <span className="shrink-0 text-gray-600 tabular-nums w-10 text-right">
+                +{String(Math.floor(log.time / 60)).padStart(2,'0')}:{String(log.time % 60).padStart(2,'0')}
+              </span>
+              {log.done
+                ? <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0 mt-0.5" />
+                : <span className="text-indigo-400 shrink-0">›</span>
+              }
+              <span className={log.done ? 'text-emerald-400' : 'text-gray-200'}>{log.text}</span>
+            </div>
+          ))}
+          <div className="flex items-center gap-2">
+            <span className="w-10" />
+            <span className="text-indigo-400">›</span>
+            <span className="inline-block w-1.5 h-3 bg-indigo-400 animate-pulse" />
+          </div>
+          <div ref={logsEndRef} />
+        </div>
+      </div>
+
+      {onMinimize && (
+        <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+          <p className="text-[11px] text-amber-800">
+            You can close this panel — analysis continues in the background
+          </p>
+          <button
+            type="button"
+            onClick={onMinimize}
+            className="ml-3 shrink-0 inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-200 transition-colors"
+          >
+            <Minus className="h-3 w-3" />
+            Minimize
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function GuidelinesComplianceWizard({
   open,
   minimized,
@@ -50,6 +126,7 @@ export default function GuidelinesComplianceWizard({
   presetSop,
   onResult,
   onAnalysisStart,
+  prefetchedGuidelines,
 }: Props) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [guidelines, setGuidelines] = useState<GuidelineSummary[]>([]);
@@ -73,6 +150,38 @@ export default function GuidelinesComplianceWizard({
     clausesAnalyzed: number;
   } | null>(null);
 
+  // ── Progress tracking ────────────────────────────────────────────────────
+  const [analysisLogs, setAnalysisLogs] = useState<{ time: number; text: string; done?: boolean }[]>([]);
+  const [analysisElapsed, setAnalysisElapsed] = useState(0);
+  const analysisStartRef = useRef<number | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const logsEndRef = useRef<HTMLDivElement | null>(null);
+
+  const pushLog = (text: string, done = false) => {
+    const time = analysisStartRef.current ? Math.floor((Date.now() - analysisStartRef.current) / 1000) : 0;
+    setAnalysisLogs((prev) => [...prev, { time, text, done }]);
+  };
+
+  const startTimer = () => {
+    analysisStartRef.current = Date.now();
+    setAnalysisElapsed(0);
+    setAnalysisLogs([]);
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setAnalysisElapsed(Math.floor((Date.now() - (analysisStartRef.current ?? Date.now())) / 1000));
+    }, 1000);
+  };
+
+  const stopTimer = () => {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+  };
+
+  useEffect(() => () => stopTimer(), []);
+
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [analysisLogs]);
+
   const reset = useCallback(() => {
     setStep(1);
     setSelectedIds(new Set());
@@ -95,60 +204,48 @@ export default function GuidelinesComplianceWizard({
   // Load guideline list with client-side caching
   useEffect(() => {
     if (!open) return;
+
+    // If prefetched data is already available, use it instantly
+    if (prefetchedGuidelines) {
+      setGuidelines(prefetchedGuidelines);
+      setGuidelinesLoading(false);
+      return;
+    }
+
+    // Fallback: fetch directly (first open before dashboard prefetch completed)
     let cancelled = false;
     (async () => {
       setGuidelinesLoading(true);
       setGuidelinesError(null);
       try {
-        // Check localStorage cache first (5 min TTL)
         const cacheKey = 'guidelines_list_cache';
-        const cached = localStorage.getItem(cacheKey);
-        if (cached) {
-          try {
-            const { data, timestamp } = JSON.parse(cached);
-            const age = Date.now() - timestamp;
-            if (age < 5 * 60 * 1000) { // 5 minutes
-              if (!cancelled) setGuidelines(Array.isArray(data) ? data : []);
-              if (!cancelled) setGuidelinesLoading(false);
+        try {
+          const raw = localStorage.getItem(cacheKey);
+          if (raw) {
+            const { data, timestamp } = JSON.parse(raw);
+            if (Date.now() - timestamp < 5 * 60 * 1000 && Array.isArray(data)) {
+              if (!cancelled) { setGuidelines(data); setGuidelinesLoading(false); }
               return;
             }
-          } catch (e) {
-            // Invalid cache, ignore
           }
-        }
+        } catch { /* ignore */ }
 
-        // Fetch fresh data with cache control header and timeout
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
-
-        let j: any;
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
         try {
-          const res = await fetch('/api/guidelines/upload?summary=true', {
-            headers: { 'Cache-Control': 'max-age=300' }, // 5 min browser cache
-            signal: controller.signal,
-          });
+          const res = await fetch('/api/guidelines/upload?summary=true', { signal: controller.signal });
           clearTimeout(timeoutId);
-
-          j = await res.json().catch(() => ({}));
+          const j = await res.json().catch(() => ({}));
           if (!res.ok || !j.success) throw new Error(j.error || `Failed to load guidelines (${res.status})`);
+          const list = Array.isArray(j.guidelines) ? (j.guidelines as GuidelineSummary[]) : [];
+          if (!cancelled) {
+            try { localStorage.setItem(cacheKey, JSON.stringify({ data: list, timestamp: Date.now() })); } catch { /* quota */ }
+            setGuidelines(list);
+          }
         } catch (fetchErr) {
           clearTimeout(timeoutId);
-          if ((fetchErr as any)?.name === 'AbortError') {
-            throw new Error('Guidelines load timed out after 60 seconds. Server may be slow.');
-          }
+          if ((fetchErr as any)?.name === 'AbortError') throw new Error('Guidelines load timed out. Server may be slow.');
           throw fetchErr;
-        }
-
-        const guidelines = Array.isArray(j.guidelines) ? (j.guidelines as GuidelineSummary[]) : [];
-
-        // Cache the result in localStorage
-        if (!cancelled) {
-          try {
-            localStorage.setItem(cacheKey, JSON.stringify({ data: guidelines, timestamp: Date.now() }));
-          } catch (e) {
-            // Quota exceeded, ignore
-          }
-          setGuidelines(guidelines);
         }
       } catch (e) {
         if (!cancelled) setGuidelinesError((e as Error).message || 'Could not load guidelines');
@@ -157,7 +254,7 @@ export default function GuidelinesComplianceWizard({
       }
     })();
     return () => { cancelled = true; };
-  }, [open]);
+  }, [open, prefetchedGuidelines]);
 
   // Auto-select preset SOP
   useEffect(() => {
@@ -224,12 +321,34 @@ export default function GuidelinesComplianceWizard({
   // ── Run review (now calls batch clause analysis) ─────────────────────────
   const runReview = async () => {
     if (!selectedSopId || selectedIds.size === 0) return;
-    const sopNo = sopOptions.find((o) => o._id === selectedSopId)?.sopNo ?? '';
+    // Prefer presetSop.sopNo directly (avoids missing it if row is filtered out of sopOptions)
+    const sopNo = presetSop?.sopNo || (sopOptions.find((o) => o._id === selectedSopId)?.sopNo ?? '');
     onAnalysisStart?.(sopNo);
+    startTimer();
     setReviewLoading(true);
     setReviewError(null);
     setReviewFindings([]);
     setReviewMeta(null);
+
+    pushLog(`Analysis started for ${sopNo}`);
+    pushLog(`Selected ${selectedIds.size} guideline document(s)`);
+
+    // Emit phase logs on a schedule so the user sees progress
+    const phaseTimeouts: ReturnType<typeof setTimeout>[] = [];
+    const scheduleLog = (ms: number, text: string) => {
+      phaseTimeouts.push(setTimeout(() => pushLog(text), ms));
+    };
+    scheduleLog(2000,  'Connecting to database…');
+    scheduleLog(5000,  `Fetching SOP content for ${sopNo}…`);
+    scheduleLog(10000, 'Loading guideline clauses…');
+    scheduleLog(18000, 'Sending clauses to AI for batch analysis…');
+    scheduleLog(35000, 'Processing AI responses (batch 1)…');
+    scheduleLog(60000, 'Processing AI responses (batch 2)…');
+    scheduleLog(90000, 'Processing AI responses (batch 3)…');
+    scheduleLog(120000,'Still running — large document set, please wait…');
+    scheduleLog(150000,'Processing AI responses (batch 4)…');
+    scheduleLog(180000,'Almost done — saving results…');
+
     try {
       const res = await fetch('/api/dashboard/sop-guideline-review', {
         method: 'POST',
@@ -240,6 +359,7 @@ export default function GuidelinesComplianceWizard({
           guidelineIds: [...selectedIds],
         }),
       });
+      phaseTimeouts.forEach(clearTimeout);
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.success) {
         throw new Error(j.userMessage || j.error || `Review failed (${res.status})`);
@@ -251,23 +371,21 @@ export default function GuidelinesComplianceWizard({
         clausesAnalyzed: j.clausesAnalyzed ?? findings.length,
       };
 
-      // Log findings for debugging
-      console.log('[GuidelinesComplianceWizard] Review complete:', {
-        foundingsCount: findings.length,
-        meta,
-        clausesAnalyzed: j.clausesAnalyzed,
-        rawResponse: j,
-      });
+      pushLog(`Analysis complete — ${findings.length} findings across ${meta.clausesAnalyzed} clauses`, true);
+      stopTimer();
 
       setReviewFindings(findings);
       setReviewMeta(meta);
       setStep(3);
-      if (onResult && selectedSopId) {
+      if (onResult && sopNo) {
         const sopOpt = sopOptions.find((o) => o._id === selectedSopId);
-        if (sopOpt) onResult(sopOpt.sopNo, sopOpt.displayName, { findings, ...meta });
+        const displayName = sopOpt?.displayName ?? presetSop?.sopNo ?? sopNo;
+        onResult(sopNo, displayName, { findings, ...meta });
       }
     } catch (e) {
-      console.error('[GuidelinesComplianceWizard] Review error:', e);
+      phaseTimeouts.forEach(clearTimeout);
+      stopTimer();
+      pushLog(`Error: ${(e as Error).message || 'Review failed'}`);
       setReviewError((e as Error).message || 'Review failed');
     } finally {
       setReviewLoading(false);
@@ -324,8 +442,17 @@ export default function GuidelinesComplianceWizard({
         {/* ── Body ── */}
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
 
-          {/* Step 1 — Pick guidelines */}
-          {step === 1 && (
+          {/* Step 1 — Pick guidelines (or progress overlay when presetSop triggers immediate analysis) */}
+          {step === 1 && reviewLoading && (
+            <AnalysisProgressPanel
+              elapsed={analysisElapsed}
+              logs={analysisLogs}
+              logsEndRef={logsEndRef}
+              onMinimize={onMinimize}
+            />
+          )}
+
+          {step === 1 && !reviewLoading && (
             <div className="space-y-3">
               <p className="text-xs text-gray-700">
                 Choose one or more guideline documents from your uploaded library (OCR-completed PDFs).
@@ -431,54 +558,66 @@ export default function GuidelinesComplianceWizard({
             </div>
           )}
 
-          {/* Step 2 — Pick SOP */}
+          {/* Step 2 — Pick SOP / Analysis progress */}
           {step === 2 && (
             <div className="space-y-3">
-              <p className="text-xs text-gray-700">
-                Pick a primary registry SOP. The review analyzes the SOP clause-by-clause against the selected guidelines — SOPs without extracted text cannot be reviewed.
-              </p>
-              <input
-                type="search"
-                value={sopSearch}
-                onChange={(e) => setSopSearch(e.target.value)}
-                placeholder="Search by SOP no., title, department…"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30"
-              />
-              <div className="max-h-[min(52vh,440px)] overflow-y-auto rounded-lg border border-gray-200">
-                <table className="w-full text-left text-xs">
-                  <thead className="sticky top-0 bg-gray-100 text-[10px] font-bold uppercase text-gray-600">
-                    <tr>
-                      <th className="px-2 py-2"> </th>
-                      <th className="px-2 py-2">SOP No.</th>
-                      <th className="px-2 py-2">Title</th>
-                      <th className="px-2 py-2">Dept</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredSopOptions.map((o: RegistrySopOption) => (
-                      <tr key={o._id}
-                        className={`border-t border-gray-100 ${selectedSopId === o._id ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}>
-                        <td className="px-2 py-1.5">
-                          <input type="radio" name="sop-pick" checked={selectedSopId === o._id}
-                            onChange={() => setSelectedSopId(o._id)}
-                            className="text-indigo-600 focus:ring-indigo-500" />
-                        </td>
-                        <td className="px-2 py-1.5 font-mono font-semibold text-gray-900">{o.sopNo}</td>
-                        <td className="max-w-[200px] px-2 py-1.5 text-gray-800">{o.displayName}</td>
-                        <td className="px-2 py-1.5 text-gray-600">{o.department}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {filteredSopOptions.length === 0 && (
-                  <p className="px-3 py-6 text-center text-sm text-gray-500">No matching SOPs.</p>
-                )}
-              </div>
-              {reviewError && (
-                <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
-                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                  {reviewError}
-                </div>
+              {reviewLoading ? (
+                <AnalysisProgressPanel
+                  elapsed={analysisElapsed}
+                  logs={analysisLogs}
+                  logsEndRef={logsEndRef}
+                  onMinimize={onMinimize}
+                />
+              ) : (
+                /* ── SOP picker ── */
+                <>
+                  <p className="text-xs text-gray-700">
+                    Pick a primary registry SOP. The review analyzes the SOP clause-by-clause against the selected guidelines — SOPs without extracted text cannot be reviewed.
+                  </p>
+                  <input
+                    type="search"
+                    value={sopSearch}
+                    onChange={(e) => setSopSearch(e.target.value)}
+                    placeholder="Search by SOP no., title, department…"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30"
+                  />
+                  <div className="max-h-[min(52vh,440px)] overflow-y-auto rounded-lg border border-gray-200">
+                    <table className="w-full text-left text-xs">
+                      <thead className="sticky top-0 bg-gray-100 text-[10px] font-bold uppercase text-gray-600">
+                        <tr>
+                          <th className="px-2 py-2"> </th>
+                          <th className="px-2 py-2">SOP No.</th>
+                          <th className="px-2 py-2">Title</th>
+                          <th className="px-2 py-2">Dept</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredSopOptions.map((o: RegistrySopOption) => (
+                          <tr key={o._id}
+                            className={`border-t border-gray-100 ${selectedSopId === o._id ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}>
+                            <td className="px-2 py-1.5">
+                              <input type="radio" name="sop-pick" checked={selectedSopId === o._id}
+                                onChange={() => setSelectedSopId(o._id)}
+                                className="text-indigo-600 focus:ring-indigo-500" />
+                            </td>
+                            <td className="px-2 py-1.5 font-mono font-semibold text-gray-900">{o.sopNo}</td>
+                            <td className="max-w-[200px] px-2 py-1.5 text-gray-800">{o.displayName}</td>
+                            <td className="px-2 py-1.5 text-gray-600">{o.department}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {filteredSopOptions.length === 0 && (
+                      <p className="px-3 py-6 text-center text-sm text-gray-500">No matching SOPs.</p>
+                    )}
+                  </div>
+                  {reviewError && (
+                    <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                      {reviewError}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -595,7 +734,7 @@ export default function GuidelinesComplianceWizard({
         {/* ── Footer ── */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 bg-gray-50 px-4 py-3">
           <div className="flex gap-2">
-            {step > 1 && step < 3 && !presetSop && (
+            {step > 1 && step < 3 && !presetSop && !reviewLoading && (
               <button
                 type="button"
                 onClick={() => { setReviewError(null); setStep((s) => (s === 2 ? 1 : 2) as 1 | 2 | 3); }}
@@ -615,31 +754,22 @@ export default function GuidelinesComplianceWizard({
                 New review
               </button>
             )}
-            {step === 2 && reviewLoading && onMinimize && (
-              <button
-                type="button"
-                onClick={onMinimize}
-                className="inline-flex items-center gap-1 rounded-lg border border-indigo-300 bg-indigo-100 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-200 transition-colors"
-              >
-                Minimize (running)
-              </button>
-            )}
           </div>
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={reviewLoading ? onMinimize : onClose}
               className="rounded-lg px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-200/80"
             >
-              Close
+              {reviewLoading ? 'Close (keeps running)' : 'Close'}
             </button>
-            {step === 1 && (
+            {step === 1 && !reviewLoading && (
               <button
                 type="button"
                 disabled={selectedIds.size === 0 || guidelinesLoading}
                 onClick={() => {
                   if (presetSop?._id && selectedSopId) {
-                    runReview(); // jump straight to analysis when SOP is preset
+                    runReview();
                   } else {
                     setStep(2);
                   }
@@ -650,15 +780,14 @@ export default function GuidelinesComplianceWizard({
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
             )}
-            {step === 2 && (
+            {step === 2 && !reviewLoading && (
               <button
                 type="button"
-                disabled={!selectedSopId || reviewLoading}
+                disabled={!selectedSopId}
                 onClick={runReview}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {reviewLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {reviewLoading ? 'Analyzing…' : 'Run compliance check'}
+                Run compliance check
               </button>
             )}
           </div>

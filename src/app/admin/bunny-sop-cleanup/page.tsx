@@ -1,5 +1,7 @@
 'use client';
 
+import { useAuthGuard } from '@/hooks/useAuthGuard';
+
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
@@ -65,6 +67,7 @@ function Banner({ ok, msg }: { ok: boolean; msg: string }) {
 }
 
 export default function BunnySopCleanupPage() {
+  useAuthGuard({ allowedRoles: ['admin', 'qa-head'] });
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

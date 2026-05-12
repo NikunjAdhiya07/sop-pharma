@@ -27,6 +27,9 @@ import {
   Trash2,
   SlidersHorizontal,
   RefreshCw,
+  CheckCircle2,
+  Clock,
+  Loader2,
 } from "lucide-react";
 
 
@@ -137,6 +140,15 @@ export default function DashboardPageClient() {
   const [reviewingInBackground, setReviewingInBackground] = useState<
     Set<string>
   >(new Set());
+  // start timestamps keyed by sopNo
+  const [analysisStartTimes, setAnalysisStartTimes] = useState<Record<string, number>>({});
+  // elapsed seconds keyed by sopNo (updated by interval)
+  const [analysisElapsedMap, setAnalysisElapsedMap] = useState<Record<string, number>>({});
+  // completion toasts: { sopNo, findingsCount, at }
+  const [completionToasts, setCompletionToasts] = useState<{ sopNo: string; findingsCount: number; at: number }[]>([]);
+
+  // Pre-fetched guidelines list (loaded once on mount so wizard opens instantly)
+  const [prefetchedGuidelines, setPrefetchedGuidelines] = useState<any[] | null>(null);
 
   // Obsolete SOPs filter (shows in main registry table)
   const [filterObsolete, setFilterObsolete] = useState(false);
@@ -197,6 +209,13 @@ export default function DashboardPageClient() {
         next.delete(sopNo);
         return next;
       });
+      // Show completion toast
+      const findingsCount = Array.isArray(result.findings) ? result.findings.length : 0;
+      setCompletionToasts((prev) => [...prev, { sopNo, findingsCount, at: Date.now() }]);
+      // Auto-dismiss toast after 8 seconds
+      setTimeout(() => {
+        setCompletionToasts((prev) => prev.filter((t) => t.sopNo !== sopNo));
+      }, 8000);
       // Auto-open the full viewer after a new run
       setShowGuidelinesLibrary(false);
       setWizardMinimized(false);
@@ -207,6 +226,52 @@ export default function DashboardPageClient() {
   );
 
   const sopRegistryRef = useRef<HTMLDivElement | null>(null);
+
+  // ── Tick elapsed timers for background analyses ──────────────────────────
+  useEffect(() => {
+    if (reviewingInBackground.size === 0) return;
+    const id = setInterval(() => {
+      const now = Date.now();
+      setAnalysisElapsedMap((prev) => {
+        const next = { ...prev };
+        for (const sopNo of reviewingInBackground) {
+          const start = analysisStartTimes[sopNo];
+          if (start) next[sopNo] = Math.floor((now - start) / 1000);
+        }
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [reviewingInBackground, analysisStartTimes]);
+
+  // ── Pre-fetch guidelines on mount so wizard opens instantly ─────────────
+  useEffect(() => {
+    const CACHE_KEY = 'guidelines_list_cache';
+    // Serve from localStorage first (5 min TTL)
+    try {
+      const raw = localStorage.getItem(CACHE_KEY);
+      if (raw) {
+        const { data, timestamp } = JSON.parse(raw);
+        if (Date.now() - timestamp < 5 * 60 * 1000 && Array.isArray(data)) {
+          setPrefetchedGuidelines(data);
+          return; // still refresh in background below
+        }
+      }
+    } catch { /* ignore */ }
+
+    // Fetch from server
+    fetch('/api/guidelines/upload?summary=true')
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.success && Array.isArray(j.guidelines)) {
+          setPrefetchedGuidelines(j.guidelines);
+          try {
+            localStorage.setItem(CACHE_KEY, JSON.stringify({ data: j.guidelines, timestamp: Date.now() }));
+          } catch { /* quota */ }
+        }
+      })
+      .catch(() => { /* non-fatal */ });
+  }, []);
 
   // ── Load persisted compliance results on mount (shuttle pre-load) ────────────
   const COMPLIANCE_CACHE_KEY = 'dashboard_compliance_cache';
@@ -229,7 +294,14 @@ export default function DashboardPageClient() {
         }
         if (Date.now() - cachedAt < COMPLIANCE_CACHE_TTL && cachedData && hasAnyFindings) {
           setComplianceCache(cachedData);
-          // Still refresh in background after 1s delay so UI shows instantly
+          // If cache is very fresh (< 2 min), skip background refresh (avoids refetch on navigation)
+          const SKIP_REFRESH_TTL = 2 * 60 * 1000;
+          if (Date.now() - cachedAt < SKIP_REFRESH_TTL) {
+            console.log('📦 Dashboard compliance: fresh cache — skipping background refresh');
+            setLoading(false);
+            return () => { cancelled = true; };
+          }
+          // Cache is valid but not super fresh — refresh in background after 1s
           setTimeout(() => {
             if (cancelled) return;
             fetch('/api/dashboard/sop-guideline-review?listAll=true', { cache: 'no-store' })
@@ -372,58 +444,53 @@ export default function DashboardPageClient() {
     }
 
     // --- Multi-tier client-side cache (sessionStorage → localStorage → network) ---
-    // Tier 1: sessionStorage (5 min TTL) — fastest, survives page refresh
-    // Tier 2: localStorage (24 hour TTL) — survives browser close, but stale data
-    // Tier 3: Network fetch — always refreshed in background
-
-    const tryLoadSessionCache = (): boolean => {
-      try {
-        const raw = sessionStorage.getItem(SESSION_KEY);
-        if (!raw) return false;
-        const { data: cachedData, meta, cachedAt } = JSON.parse(raw);
-        if (Date.now() - cachedAt > SESSION_TTL_MS) return false;
-        console.log('📦 Loaded from sessionStorage (< 5min)');
-        setData(cachedData ?? []);
-        setDashboardMeta(meta ?? null);
-        setLoading(false);
-        return true;
-      } catch {
-        return false;
-      }
-    };
-
-    const tryLoadLocalStorageCache = (): boolean => {
-      try {
-        const raw = localStorage.getItem(LOCAL_KEY);
-        if (!raw) return false;
-        const { data: cachedData, meta, cachedAt } = JSON.parse(raw);
-        if (Date.now() - cachedAt > LOCAL_TTL_MS) return false;
-        console.log('💾 Loaded from localStorage (< 24h) - will refresh in background');
-        setData(cachedData ?? []);
-        setDashboardMeta(meta ?? null);
-        setLoading(false);
-        return true;
-      } catch {
-        return false;
-      }
-    };
+    // Tier 1: sessionStorage (5 min TTL) — freshest, skip network when valid
+    // Tier 2: localStorage (24 hour TTL) — stale but shown instantly, then refreshed
+    // Tier 3: Network fetch — when no cache is valid
 
     /** Bypass all caches (see /api/dashboard/sops?refresh=1). */
     const forceFresh =
       refreshKey > 0 || searchParams.get("refresh") === "1";
 
-    let hadCache = false;
+    // ── Tier 1: sessionStorage (freshest — skip network entirely if valid) ──
     if (!forceFresh) {
-      // Try sessionStorage first (freshest)
-      hadCache = tryLoadSessionCache();
-      // If no session cache, try localStorage (stale but better than spinner)
-      if (!hadCache) hadCache = tryLoadLocalStorageCache();
+      try {
+        const raw = sessionStorage.getItem(SESSION_KEY);
+        if (raw) {
+          const { data: cachedData, meta, cachedAt } = JSON.parse(raw);
+          if (Date.now() - cachedAt <= SESSION_TTL_MS) {
+            console.log('📦 Dashboard: fresh sessionStorage cache — skipping network');
+            setData(cachedData ?? []);
+            setDashboardMeta(meta ?? null);
+            setLoading(false);
+            return; // ← Cache is fresh, no need to refetch
+          }
+        }
+      } catch { /* ignore */ }
     }
 
+    // ── Tier 2: localStorage (stale data shown instantly, then background refresh) ──
+    let hadStaleCache = false;
+    if (!forceFresh) {
+      try {
+        const raw = localStorage.getItem(LOCAL_KEY);
+        if (raw) {
+          const { data: cachedData, meta, cachedAt } = JSON.parse(raw);
+          if (Date.now() - cachedAt <= LOCAL_TTL_MS) {
+            console.log('💾 Dashboard: localStorage cache — showing stale, will refresh');
+            setData(cachedData ?? []);
+            setDashboardMeta(meta ?? null);
+            setLoading(false);
+            hadStaleCache = true;
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    // ── Tier 3: Network fetch ──
     const fetchData = async () => {
       // Only show the full-page spinner when there is no cached data to display.
-      // If hadCache is true, data is already on screen — fetch silently in background.
-      if (!hadCache) setLoading(true);
+      if (!hadStaleCache) setLoading(true);
       try {
         const sopRes = await fetch(
           `/api/dashboard/sops${forceFresh ? "?refresh=1" : ""}`,
@@ -444,25 +511,21 @@ export default function DashboardPageClient() {
           // Persist fresh result to both caches
           const cachePayload = JSON.stringify({ data: rawData, meta: sopsJ.metadata ?? null, cachedAt: Date.now() });
           try {
-            // Tier 1: sessionStorage (5 min, fastest)
             sessionStorage.setItem(SESSION_KEY, cachePayload);
-            console.log('✅ Cached to sessionStorage');
           } catch { /* quota exceeded — ignore */ }
           try {
-            // Tier 2: localStorage (24 hour, survives browser close)
             localStorage.setItem(LOCAL_KEY, cachePayload);
-            console.log('✅ Cached to localStorage (24h backup)');
           } catch { /* quota exceeded — ignore */ }
         }
       } catch (e) {
         console.error("Failed to fetch", e);
       } finally {
-        // Always clear loading when the fetch is done (covers both paths).
         setLoading(false);
       }
     };
     fetchData();
-  }, [router, refreshKey, searchParams]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 
   const handleLogout = () => {
     localStorage.removeItem("user");
@@ -2385,25 +2448,72 @@ export default function DashboardPageClient() {
           </div>
         </div>
       )}
-      {/* ── Floating Resume Button for Minimized Wizard ── */}
-      {wizardMinimized && showGuidelinesLibrary && (
-        <div className="fixed bottom-6 right-6 z-[99] flex flex-col items-end gap-2">
+      {/* ── Floating status chips + completion toasts ── */}
+      <div className="fixed bottom-6 right-6 z-[99] flex flex-col items-end gap-2 pointer-events-none">
+        {/* Completion toasts */}
+        {completionToasts.map((toast) => (
+          <div
+            key={toast.sopNo}
+            className="pointer-events-auto flex items-center gap-3 rounded-xl border border-emerald-200 bg-white px-4 py-3 shadow-xl animate-in slide-in-from-right-4"
+          >
+            <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
+            <div className="text-sm">
+              <p className="font-bold text-gray-900">Analysis complete</p>
+              <p className="text-xs text-gray-500">
+                <span className="font-semibold text-gray-700">{toast.sopNo}</span> · {toast.findingsCount} findings
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCompletionToasts((prev) => prev.filter((t) => t.sopNo !== toast.sopNo))}
+              className="ml-2 rounded p-1 text-gray-400 hover:text-gray-600"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+
+        {/* In-progress chips */}
+        {[...reviewingInBackground].map((sopNo) => {
+          const elapsed = analysisElapsedMap[sopNo] ?? 0;
+          return (
+            <div
+              key={sopNo}
+              className="pointer-events-auto flex items-center gap-2.5 rounded-xl border border-indigo-200 bg-white px-3 py-2 shadow-lg"
+            >
+              <Loader2 className="h-4 w-4 animate-spin text-indigo-600 shrink-0" />
+              <div className="text-xs">
+                <p className="font-semibold text-gray-800">Analyzing <span className="text-indigo-700">{sopNo}</span></p>
+                <p className="text-gray-400 flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  {String(Math.floor(elapsed / 60)).padStart(2,'0')}:{String(elapsed % 60).padStart(2,'0')}
+                </p>
+              </div>
+              {wizardMinimized && showGuidelinesLibrary && (
+                <button
+                  type="button"
+                  onClick={() => setWizardMinimized(false)}
+                  className="ml-1 rounded border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-100"
+                >
+                  View
+                </button>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Resume button when wizard is minimized and nothing is running */}
+        {wizardMinimized && showGuidelinesLibrary && reviewingInBackground.size === 0 && (
           <button
             type="button"
             onClick={() => setWizardMinimized(false)}
-            className="inline-flex items-center gap-2 rounded-full bg-indigo-600 text-white px-4 py-2 shadow-lg hover:bg-indigo-700 transition-all font-semibold text-sm"
-            title="Resume guideline analysis"
+            className="pointer-events-auto inline-flex items-center gap-2 rounded-full bg-indigo-600 text-white px-4 py-2 shadow-lg hover:bg-indigo-700 transition-all font-semibold text-sm"
           >
             <Sparkles className="h-4 w-4" />
             Resume Analysis
           </button>
-          {[...reviewingInBackground].map((sopNo) => (
-            <div key={sopNo} className="text-xs text-gray-600 bg-white px-3 py-1.5 rounded-full shadow-sm border border-gray-200">
-              Analyzing <span className="font-semibold">{sopNo}</span>…
-            </div>
-          ))}
-        </div>
-      )}
+        )}
+      </div>
       <SupersededVersionsPanel
         open={showSuperseded}
         onClose={() => setShowSuperseded(false)}
@@ -2510,10 +2620,12 @@ export default function DashboardPageClient() {
         }}
         onMinimize={() => setWizardMinimized(true)}
         registryRows={data}
+        prefetchedGuidelines={prefetchedGuidelines}
         presetSop={guidelinesWizardPreset}
         onResult={handleComplianceResult}
         onAnalysisStart={(sopNo) => {
           setReviewingInBackground((prev) => new Set(prev).add(sopNo));
+          setAnalysisStartTimes((prev) => ({ ...prev, [sopNo]: Date.now() }));
         }}
       />
       {viewingComplianceSopNo && complianceCache[viewingComplianceSopNo] && (

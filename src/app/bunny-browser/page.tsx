@@ -1,5 +1,7 @@
 'use client';
 
+import { useAuthGuard } from '@/hooks/useAuthGuard';
+
 import { useState, useEffect, useMemo } from 'react';
 import {
   FileText,
@@ -45,6 +47,7 @@ function getFolderFromPath(path: string) {
 }
 
 export default function BunnyBrowserPage() {
+  useAuthGuard();
   const [files, setFiles] = useState<BunnyFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

@@ -220,7 +220,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (results.length > 0) invalidateDashboardSopsCache();
+    if (results.length > 0) void invalidateDashboardSopsCache();
     return NextResponse.json({
       success: true,
       uploaded: results.length,

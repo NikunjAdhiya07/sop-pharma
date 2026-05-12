@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { 
   Upload, 
   FileText, 
@@ -54,6 +55,7 @@ interface PreviewState {
 }
 
 export default function FilesManagerPage() {
+  useAuthGuard();
   const router = useRouter();
   const [files, setFiles] = useState<FileItem[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);

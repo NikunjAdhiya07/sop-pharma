@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import PageHeader from '@/components/PageHeader';
 import SOPLibraryTreeView from '@/components/SOPLibraryTreeView';
 import FolderUploadModal from '@/components/FolderUploadModal';
@@ -93,7 +94,7 @@ interface SOPLibrary {
 }
 
 export default function SOPLibraryPage() {
-
+  useAuthGuard();
 
   const router = useRouter();
   const [sopLibraries, setSopLibraries] = useState<SOPLibrary[]>([]);

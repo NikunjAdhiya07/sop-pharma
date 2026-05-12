@@ -14,6 +14,7 @@ import {
   Filter,
   Clock,
   ExternalLink,
+  PlusCircle,
 } from 'lucide-react';
 
 export interface StoredComplianceResult {
@@ -23,8 +24,9 @@ export interface StoredComplianceResult {
   overallScore: number;
   clausesAnalyzed: number;
   guidelineDocumentsUsed: number;
+  guidelineIds?: string[];
   runAt?: string;
-  source?: 'dashboard-wizard' | 'compliance-section'; // where this result came from
+  source?: 'dashboard-wizard' | 'compliance-section';
 }
 
 interface Props {
@@ -263,11 +265,29 @@ export default function ComplianceFullViewer({
 }: Props) {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterSeverity, setFilterSeverity] = useState<string>('all');
+  const [newGuidelines, setNewGuidelines] = useState<{ _id: string; name: string; folderName: string }[]>([]);
 
   useEffect(() => {
     setFilterStatus(initialFilterStatus);
     setFilterSeverity(initialFilterSeverity);
   }, [initialFilterSeverity, initialFilterStatus, result.sopNo, result.runAt]);
+
+  // Detect guidelines added after this result was run
+  useEffect(() => {
+    if (!result.guidelineIds || result.guidelineIds.length === 0) {
+      setNewGuidelines([]);
+      return;
+    }
+    const checkedIds = new Set(result.guidelineIds);
+    fetch('/api/guidelines/upload?summary=true')
+      .then(r => r.json())
+      .then(data => {
+        const allGuidelines: { _id: string; name: string; folderName: string }[] =
+          Array.isArray(data.guidelines) ? data.guidelines : [];
+        setNewGuidelines(allGuidelines.filter(g => g._id && !checkedIds.has(String(g._id))));
+      })
+      .catch(() => {});
+  }, [result.guidelineIds]);
 
   const scoreColor = getScoreColor(result.overallScore);
 
@@ -480,6 +500,29 @@ export default function ComplianceFullViewer({
           </span>
         </div>
       </div>
+
+      {/* ── New guidelines banner ────────────────────────────────────── */}
+      {newGuidelines.length > 0 && (
+        <div className="flex items-start gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2.5">
+          <PlusCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-amber-800">
+              {newGuidelines.length} new guideline{newGuidelines.length > 1 ? 's' : ''} added since this report was run
+            </p>
+            <p className="text-[10px] text-amber-700 mt-0.5 truncate">
+              {newGuidelines.slice(0, 3).map(g => g.folderName || g.name).join(', ')}
+              {newGuidelines.length > 3 && ` +${newGuidelines.length - 3} more`}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onRerun}
+            className="shrink-0 px-2.5 py-1 rounded-md bg-amber-600 text-white text-[10px] font-bold hover:bg-amber-700 transition-colors whitespace-nowrap"
+          >
+            Re-run with all
+          </button>
+        </div>
+      )}
 
       {/* ── Findings list ─────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto px-6 py-6 bg-gray-50">

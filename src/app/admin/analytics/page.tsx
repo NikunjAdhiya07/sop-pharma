@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import PageHeader from '@/components/PageHeader';
 import {
   TrendingUp,
@@ -84,6 +85,7 @@ interface AnalyticsData {
 }
 
 export default function AdminAnalyticsDashboard() {
+  useAuthGuard();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

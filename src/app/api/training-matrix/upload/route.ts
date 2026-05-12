@@ -3,6 +3,7 @@ import connectDB from '@/lib/mongodb';
 import TrainingMatrixUpload from '@/models/TrainingMatrixUpload';
 import TrainingMatrixRecord from '@/models/TrainingMatrixRecord';
 import MatrixEntry from '@/models/MatrixEntry';
+import Employee from '@/models/Employee';
 import { parseTrainingMatrixFile } from '@/lib/trainingMatrixParser';
 import {
   parseTrainingMatrixMonthAware,
@@ -145,6 +146,24 @@ export async function POST(request: NextRequest) {
 
         if (recordOps.length)      await TrainingMatrixRecord.bulkWrite(recordOps,      { ordered: false });
         if (matrixEntryOps.length) await MatrixEntry.bulkWrite(matrixEntryOps,          { ordered: false });
+
+        // Sync employees into the Employee master — upsert by (name, department)
+        // so re-uploads never create duplicates and designation stays current.
+        if (parsed.employees.length) {
+          const empOps = parsed.employees
+            .filter((e) => e.name?.trim())
+            .map((e) => ({
+              updateOne: {
+                filter: { name: e.name.trim(), department: dept },
+                update: {
+                  $set:         { designation: e.designation?.trim() || '', isActive: true },
+                  $setOnInsert: { name: e.name.trim(), department: dept },
+                },
+                upsert: true,
+              },
+            }));
+          if (empOps.length) await Employee.bulkWrite(empOps, { ordered: false });
+        }
 
         await TrainingMatrixUpload.findByIdAndUpdate(upload._id, { recordsImported: imported });
 

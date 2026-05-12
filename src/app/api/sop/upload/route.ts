@@ -449,7 +449,7 @@ export async function POST(request: NextRequest) {
     };
 
     console.log('🎉 Upload successful!', response);
-    invalidateDashboardSopsCache();
+    void invalidateDashboardSopsCache();
     return NextResponse.json(response, { status: 201 });
 
   } catch (error) {

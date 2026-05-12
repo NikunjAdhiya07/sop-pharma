@@ -4,6 +4,9 @@ import connectDB from '@/lib/mongodb';
 import { sopFamilyKeyFromIdentifier, normalizeSopIdentifierKey } from '@/lib/sopIdentifierNormalize';
 import { filterPrimaryRegistryRows } from '@/lib/registryPrimaryRows';
 import { getDashboardRegistryPayload } from '@/lib/dashboardRegistrySource';
+import { getRedis, REDIS_TTL } from '@/lib/redis';
+
+const DEPT_STATS_CACHE_KEY = 'mcq-dept-stats:v1';
 
 /**
  * GET /api/mcq-bank/dept-stats
@@ -69,6 +72,15 @@ function resolveDept(identifier: string, storedDept?: string | null): string {
 
 export async function GET() {
   try {
+    // Redis cache check
+    const redis = getRedis();
+    if (redis) {
+      try {
+        const cached = await redis.get(DEPT_STATS_CACHE_KEY);
+        if (cached) return NextResponse.json(cached);
+      } catch { /* fall through */ }
+    }
+
     await connectDB();
 
     const db = mongoose.connection.db;
@@ -402,15 +414,18 @@ export async function GET() {
       },
     );
 
-    return NextResponse.json(
-      {
-        success: true,
-        departments: result,
-        overall,
-        obsolete: { total: obsoleteSOPs.length, byDept: obsoleteByDept },
-      },
-      { headers: { 'Cache-Control': 'no-store' } },
-    );
+    const responseBody = {
+      success: true,
+      departments: result,
+      overall,
+      obsolete: { total: obsoleteSOPs.length, byDept: obsoleteByDept },
+    };
+
+    if (redis) {
+      try { await redis.set(DEPT_STATS_CACHE_KEY, responseBody, { ex: REDIS_TTL.FIVE_MIN }); } catch { /* ignore */ }
+    }
+
+    return NextResponse.json(responseBody);
   } catch (error) {
     console.error('[dept-stats] Error:', error);
     return NextResponse.json(

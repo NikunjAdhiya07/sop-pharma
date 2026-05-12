@@ -1,5 +1,7 @@
 'use client';
 
+import { useAuthGuard } from '@/hooks/useAuthGuard';
+
 import { useState, useEffect } from 'react';
 import { Upload, FileText, CheckCircle2, Loader2, AlertCircle, RefreshCw, CalendarClock, XCircle, Languages } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
@@ -37,6 +39,7 @@ function detectLangFromFilename(name: string): 'English' | 'Gujarati' {
 }
 
 export default function BulkSOPRestorePage() {
+  useAuthGuard({ allowedRoles: ['admin', 'qa-head'] });
   const [sops, setSops] = useState<SOP[]>([]);
   const [loadingSOPs, setLoadingSOPs] = useState(true);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);

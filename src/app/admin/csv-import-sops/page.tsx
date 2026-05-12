@@ -1,10 +1,13 @@
 'use client';
 
+import { useAuthGuard } from '@/hooks/useAuthGuard';
+
 import { useState } from 'react';
 import { Upload, Download, Loader2, CheckCircle, AlertCircle, FileSpreadsheet } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 
 export default function CSVImportPage() {
+  useAuthGuard({ allowedRoles: ['admin', 'qa-head'] });
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<any>(null);

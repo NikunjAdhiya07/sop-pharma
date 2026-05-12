@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import mongoose from 'mongoose';
+import { invalidateMcqCaches } from '@/lib/mcqCacheInvalidate';
 
 export async function POST(request: NextRequest) {
   try {
@@ -73,6 +74,8 @@ export async function POST(request: NextRequest) {
 
     const updatedMcq = updatedBank.mcqs[questionIndex];
     console.log(`[StatusUpdate] Verified Q${questionIndex}: isChecked=${updatedMcq?.isChecked}, isReviewed=${updatedMcq?.isReviewed}`);
+
+    void invalidateMcqCaches();
 
     return NextResponse.json({
       success: true,

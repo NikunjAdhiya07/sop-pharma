@@ -1,6 +1,7 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { useEffect, useState, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, FileText, AlertCircle, ExternalLink, Maximize2, Minimize2, RefreshCw } from 'lucide-react';
@@ -269,6 +270,7 @@ function ViewWordContent() {
 }
 
 export default function ViewWordPage() {
+  useAuthGuard();
   return (
     <Suspense
       fallback={

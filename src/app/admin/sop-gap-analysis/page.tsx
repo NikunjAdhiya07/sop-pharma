@@ -1,5 +1,7 @@
 'use client';
 
+import { useAuthGuard } from '@/hooks/useAuthGuard';
+
 import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
@@ -214,6 +216,7 @@ type FilterMode =
   | 'incomplete';
 
 export default function SopGapAnalysisPage() {
+  useAuthGuard({ allowedRoles: ['admin', 'qa-head'] });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [data, setData] = useState<GapAnalysisResponse | null>(null);

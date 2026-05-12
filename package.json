@@ -20,6 +20,7 @@
     "@types/adm-zip": "^0.5.7",
     "@types/uuid": "^10.0.0",
     "@types/xml2js": "^0.4.14",
+    "@upstash/redis": "^1.38.0",
     "adm-zip": "^0.5.16",
     "bcryptjs": "^3.0.3",
     "date-fns": "^4.1.0",

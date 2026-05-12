@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import FindingCard from './components/FindingCard';
 import { CheckSquare, Square, Sparkles, X, Copy, BookOpen, FileText, Layers, CheckCircle } from 'lucide-react';
 import { cleanSOPName } from '@/lib/sopLibraryHelper';
@@ -274,6 +275,7 @@ function ConsolidatedSectionCard({ sec }: { sec: {
 }
 
 export default function ComplianceEnginePage() {
+  useAuthGuard();
   const router = useRouter();
 
   // Workflow State

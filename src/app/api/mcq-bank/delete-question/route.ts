@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import MCQBank from '@/models/MCQBank';
 import EliminatedQuestion from '@/models/EliminatedQuestion';
+import { invalidateMcqCaches } from '@/lib/mcqCacheInvalidate';
 
 export async function DELETE(request: NextRequest) {
   try {
@@ -110,6 +111,8 @@ export async function DELETE(request: NextRequest) {
     };
 
     await bank.save();
+
+    void invalidateMcqCaches();
 
     return NextResponse.json({
       success: true,

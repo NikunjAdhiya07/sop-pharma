@@ -51,7 +51,7 @@ export async function POST() {
     );
 
     // Bust cached dashboard data so next fetch reflects cleared state
-    invalidateDashboardSopsCache();
+    void invalidateDashboardSopsCache();
 
     const totalCleared =
       sopRes.modifiedCount +

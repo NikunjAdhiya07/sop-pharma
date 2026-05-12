@@ -1,8 +1,11 @@
 'use client';
 
+import { useAuthGuard } from '@/hooks/useAuthGuard';
+
 import { useState } from 'react';
 
 export default function DebugExtractPage() {
+  useAuthGuard();
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<any>(null);
 

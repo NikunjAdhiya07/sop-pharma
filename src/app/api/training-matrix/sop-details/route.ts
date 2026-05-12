@@ -195,7 +195,7 @@ export async function GET(req: NextRequest) {
 
     // Dashboard registry rows (DB truth) + family-unique filter (same as overview)
     const origin = req.nextUrl.origin;
-    const dashReq = new NextRequest(new URL('/api/dashboard/sops?refresh=1', origin));
+    const dashReq = new NextRequest(new URL('/api/dashboard/sops', origin));
     const dashRes = await getDashboardSops(dashReq as any);
     const dashboard = (await dashRes.json()) as { success: boolean; data?: any[] };
     const registryRows = Array.isArray(dashboard?.data) ? dashboard.data : [];
@@ -299,12 +299,13 @@ export async function GET(req: NextRequest) {
     };
 
     const codes = listForType(type);
+    console.log(`[SOP Details API] Called with dept=${deptRaw}, type=${type}, lang=${lang}. Initial codes length: ${codes.length}`);
     const codesFiltered = (() => {
       if (!lang) return codes;
       if (type === 'excel' || type === 'obsolete') return codes;
       return codes.filter((sopCode) => {
         const reg = registryByBase.get(sopCode);
-        const rawLang = String((reg as any)?.rawRow?.language || '').trim().toLowerCase();
+        const rawLang = String((reg as any)?.language || '').trim().toLowerCase();
         const isDual = !!reg?.isDualLanguage || (!!reg?.englishVersion && !!reg?.gujaratiVersion);
         if (isDual) return true;
         if (lang === 'GUJ') return rawLang === 'gujarati';
@@ -428,6 +429,7 @@ export async function GET(req: NextRequest) {
       };
     });
 
+    console.log(`[SOP Details API] Returning ${rows.length} rows for lang=${lang}`);
     return NextResponse.json({
       success: true,
       dept,

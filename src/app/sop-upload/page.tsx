@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { Upload, FileText, AlertCircle, CheckCircle2, Loader2, Library, FolderOpen, Archive, X, Trash2, Eye, Download, RotateCcw } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 import { fileKindFromStoredPath, fileKindToLabel } from '@/lib/filePathFileKind';
@@ -51,6 +52,7 @@ function getVersionNum(sopNo: string): number | null {
 // ── component ─────────────────────────────────────────────────────────────────
 
 export default function SOPUploadPage() {
+  useAuthGuard();
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [sopName, setSopName] = useState('');

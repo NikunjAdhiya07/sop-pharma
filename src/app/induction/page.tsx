@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { PlayCircle, FileText, CheckCircle, Lock, MonitorPlay, BookOpen } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 import SecureVideoPlayer from '@/components/SecureVideoPlayer';
 import SecureSOPViewer from '@/components/SecureSOPViewer';
 
 export default function InductionDashboard() {
+  useAuthGuard();
   const [activeTab, setActiveTab] = useState<'videos' | 'sops'>('videos');
   const [selectedResource, setSelectedResource] = useState<any>(null);
   const [progress, setProgress] = useState({ videos: 0, sops: 0, total: 0 });

@@ -8,6 +8,8 @@ import SOP from '@/models/SOP';
 import TrainingMatrix from '@/models/TrainingMatrix';
 import User from '@/models/User';
 import MCQBank from '@/models/MCQBank';
+import SOPLibrary from '@/models/SOPLibrary';
+import { getRedis, REDIS_TTL } from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,33 +17,57 @@ const DEPT_CANONICAL = ['QA','QC','Microbiology','Production','Store','Engineeri
 
 type LangKey = 'ENG' | 'GUJ';
 
-type OverviewCacheEntry = { ts: number; payload: any };
-const CACHE_TTL_MS = 60_000;
+const CACHE_KEY = 'training-matrix-overview:v19';
+// In-memory fallback TTL (used when Redis is not configured)
+const MEMORY_CACHE_TTL_MS = 5 * 60 * 1000;
 
-function getCacheKey(req: NextRequest) {
-  // Keep it simple: one cache for the whole overview payload.
-  // If later this route becomes user-specific, include user/session key here.
-  return 'training-matrix-overview:v11';
+type MemoryCacheEntry = { ts: number; payload: any };
+
+function getMemoryCached(): any | null {
+  const store = (globalThis as any).__tm_overview_cache as MemoryCacheEntry | undefined;
+  if (!store) return null;
+  if (Date.now() - store.ts > MEMORY_CACHE_TTL_MS) return null;
+  return store.payload;
 }
 
-function getCached(req: NextRequest): any | null {
-  const key = getCacheKey(req);
-  const store = (globalThis as any).__tm_overview_cache as Record<string, OverviewCacheEntry> | undefined;
-  const entry = store?.[key];
-  if (!entry) return null;
-  if (Date.now() - entry.ts > CACHE_TTL_MS) return null;
-  return entry.payload;
+function setMemoryCached(payload: any) {
+  (globalThis as any).__tm_overview_cache = { ts: Date.now(), payload } satisfies MemoryCacheEntry;
 }
 
-function setCached(req: NextRequest, payload: any) {
-  const key = getCacheKey(req);
-  const g = globalThis as any;
-  if (!g.__tm_overview_cache) g.__tm_overview_cache = {};
-  g.__tm_overview_cache[key] = { ts: Date.now(), payload } satisfies OverviewCacheEntry;
+async function getCached(): Promise<any | null> {
+  const redis = getRedis();
+  if (redis) {
+    try {
+      return await redis.get(CACHE_KEY);
+    } catch {
+      // Redis unavailable — fall through to memory cache
+    }
+  }
+  return getMemoryCached();
+}
+
+async function setCached(payload: any) {
+  const redis = getRedis();
+  if (redis) {
+    try {
+      await redis.set(CACHE_KEY, payload, { ex: REDIS_TTL.FIVE_MIN });
+      return;
+    } catch {
+      // Redis unavailable — fall through to memory cache
+    }
+  }
+  setMemoryCached(payload);
+}
+
+async function invalidateTrainingMatrixCache() {
+  const redis = getRedis();
+  if (redis) {
+    try { await redis.del(CACHE_KEY); } catch { /* best effort */ }
+  }
+  (globalThis as any).__tm_overview_cache = null;
 }
 
 function withCacheHeaders(res: NextResponse) {
-  // Helps both browser and any proxy cache; also reduces repeated "version checks" on reload.
   res.headers.set('Cache-Control', 'public, max-age=60, s-maxage=60, stale-while-revalidate=300');
   return res;
 }
@@ -91,22 +117,66 @@ export async function GET(req: NextRequest) {
     const sp = req.nextUrl.searchParams;
     const forceFresh = sp.get('refresh') === '1';
     if (!forceFresh) {
-      const cached = getCached(req);
+      const cached = await getCached();
       if (cached) return withCacheHeaders(NextResponse.json(cached));
     }
 
     await connectDB();
 
-    // 0. Build trainer maps using the same sources as the Dashboard:
-    //    a) TrainingMatrix entries with trainerName (SOP-specific)
-    //    b) Users with role=trainer or isTrainerEligible (department-level)
-    //    c) Hardcoded fallback (same as dashboard)
-    const [tmTrainerEntries, allUsers] = await Promise.all([
+    // Build dashReq before parallel fetch
+    const origin = req.nextUrl.origin;
+    const dashUrl = new URL('/api/dashboard/sops', origin);
+    // IMPORTANT: don't bypass caches unless explicitly requested.
+    if (forceFresh) dashUrl.searchParams.set('refresh', '1');
+    const dashReq = new NextRequest(dashUrl);
+
+    // Tier 1: Run all independent DB queries + dashboard call in parallel
+    const [tmTrainerEntries, allUsers, uploads, dashRes, sopDateDocsRaw, obsoleteDocs, mcqAggResults] = await Promise.all([
       TrainingMatrix.find({ trainerName: { $exists: true, $nin: [null, ''] } })
         .select('sopIdentifier department trainerName')
         .lean(),
       User.find({}).lean(),
+      TrainingMatrixUpload.find({
+        fileType: 'main',
+        snapshot: { $exists: true, $ne: null },
+      })
+        .sort({ uploadedAt: -1 })
+        .lean(),
+      getDashboardSops(dashReq as any),
+      SOP.find(
+        { reviewDate: { $exists: true, $ne: null }, isObsolete: { $ne: true } },
+        { identifier: 1, reviewDate: 1, uploadedAt: 1 }
+      )
+        .sort({ uploadedAt: -1 })
+        .lean(),
+      SOP.find({ isObsolete: true })
+        .select('identifier name department obsoleteAt obsoleteReason version')
+        .lean(),
+      MCQBank.aggregate([
+        { $match: { isObsolete: { $ne: true } } },
+        {
+          $project: {
+            sopIdentifier: 1,
+            language: 1,
+            totalQuestions: 1,
+            approvedCount: {
+              $size: {
+                $filter: {
+                  input: { $ifNull: ['$mcqs', []] },
+                  as: 'm',
+                  cond: { $eq: ['$$m.isChecked', true] },
+                },
+              },
+            },
+          },
+        },
+      ]),
     ]);
+
+    // 0. Build trainer maps using the same sources as the Dashboard:
+    //    a) TrainingMatrix entries with trainerName (SOP-specific)
+    //    b) Users with role=trainer or isTrainerEligible (department-level)
+    //    c) Hardcoded fallback (same as dashboard)
 
     // sopCode (upper) → trainerName(s)
     const sopTrainerMap = new Map<string, Set<string>>();
@@ -146,13 +216,6 @@ export async function GET(req: NextRequest) {
     };
 
     // 1. Pull the latest upload per department (with snapshot)
-    const uploads = await TrainingMatrixUpload.find({
-      fileType: 'main',
-      snapshot: { $exists: true, $ne: null },
-    })
-      .sort({ uploadedAt: -1 })
-      .lean();
-
     const latestByDept = new Map<string, any>();
     for (const up of uploads) {
       const dept = canonDept(up.department);
@@ -164,19 +227,13 @@ export async function GET(req: NextRequest) {
     // directly, then apply the same one-row-per-family filter the Dashboard uses.
     // Each remaining row becomes a base SOP code via `stripVersion(sopNo)` — the same
     // format Excel uploads use (e.g. "QA001", no revision suffix).
-    const origin = req.nextUrl.origin;
-    const dashUrl = new URL('/api/dashboard/sops', origin);
-    // IMPORTANT: don't bypass caches unless explicitly requested.
-    if (forceFresh) dashUrl.searchParams.set('refresh', '1');
-    const dashReq = new NextRequest(dashUrl);
-    const dashRes = await getDashboardSops(dashReq as any);
     const dashboard = (await dashRes.json()) as { success: boolean; data?: any[] };
     const registryRows = Array.isArray(dashboard?.data) ? dashboard.data : [];
     const familyUniqueRows = filterPrimaryRegistryRowsUniqueByFamily(registryRows);
 
     // Build base metadata from registry rows (titles, dept, language)
     const dbBaseSet = new Set<string>();
-    const dbBaseMeta = new Map<string, { title: string; department: string; departmentCode: string; expired?: boolean; targetDate?: string | null; latestIdentifier?: string }>();
+    const dbBaseMeta = new Map<string, { title: string; department: string; departmentCode: string; expired?: boolean; targetDate?: string | null; latestIdentifier?: string; isDualLanguage?: boolean; gujaratiName?: string }>();
     const dbBaseLangs = new Map<string, Set<LangKey>>();
     for (const row of familyUniqueRows as any[]) {
       const sopNo = String(row?.sopNo || row?.identifier || '').trim();
@@ -192,6 +249,8 @@ export async function GET(req: NextRequest) {
           expired: false,
           targetDate: null,
           latestIdentifier: sopNo,
+          isDualLanguage: !!row?.isDualLanguage || (!!row?.englishVersion && !!row?.gujaratiVersion),
+          gujaratiName: String(row?.gujaratiName || '')
         });
       }
 
@@ -219,15 +278,23 @@ export async function GET(req: NextRequest) {
       .map(m => m.latestIdentifier)
       .filter(Boolean);
 
-    // Primary source: SOP collection `reviewDate` field.
+    // Tier 2: SOPLibrary queries depend on latestIdentifiers/dbBaseSet (derived from dashboard response)
+    const [libDateDocs, libNameDocs] = await Promise.all([
+      SOPLibrary.find(
+        { sopIdentifier: { $in: latestIdentifiers }, expiryDate: { $exists: true, $ne: null } },
+        { sopIdentifier: 1, expiryDate: 1 }
+      ).lean(),
+      SOPLibrary.find(
+        { sopIdentifier: { $in: Array.from(dbBaseSet) }, sopName: { $exists: true, $ne: '' } },
+        { sopIdentifier: 1, sopName: 1, gujaratiName: 1, language: 1, isDualLanguage: 1 }
+      ).lean(),
+    ]);
+
+    // Primary source: SOP collection `reviewDate` field (fetched in Tier 1 above).
     // Sort newest-first so that when multiple records share the same identifier (duplicate
     // uploads), the most recently uploaded SOP's review date wins.
-    const sopDateDocs = await SOP.find(
-      { identifier: { $in: latestIdentifiers }, reviewDate: { $exists: true, $ne: null }, isObsolete: { $ne: true } },
-      { identifier: 1, reviewDate: 1, uploadedAt: 1 }
-    )
-      .sort({ uploadedAt: -1 })
-      .lean();
+    // The processing loop skips any doc whose base is not in dbBaseMeta, so no pre-filter needed.
+    const sopDateDocs = sopDateDocsRaw as any[];
 
     for (const doc of sopDateDocs as any[]) {
       const id = String(doc?.identifier || '');
@@ -246,12 +313,6 @@ export async function GET(req: NextRequest) {
     }
 
     // Fallback: SOPLibrary `expiryDate` — fill in any SOPs still missing a date
-    const SOPLibrary = (await import('@/models/SOPLibrary')).default;
-    const libDateDocs = await SOPLibrary.find(
-      { sopIdentifier: { $in: latestIdentifiers }, expiryDate: { $exists: true, $ne: null } },
-      { sopIdentifier: 1, expiryDate: 1 }
-    ).lean();
-
     for (const doc of libDateDocs as any[]) {
       const id = String(doc?.sopIdentifier || '');
       const base = stripVersion(id);
@@ -269,11 +330,6 @@ export async function GET(req: NextRequest) {
 
     // Fallback: SOPLibrary `sopName` — fill in any SOPs still missing a title
     // Query by base codes (no version suffix) since SOPLibrary often stores bare codes.
-    const libNameDocs = await SOPLibrary.find(
-      { sopIdentifier: { $in: Array.from(dbBaseSet) }, sopName: { $exists: true, $ne: '' } },
-      { sopIdentifier: 1, sopName: 1 }
-    ).lean();
-
     for (const doc of libNameDocs as any[]) {
       const id = String(doc?.sopIdentifier || '');
       const base = stripVersion(id);
@@ -282,6 +338,14 @@ export async function GET(req: NextRequest) {
       if (!meta.title && doc.sopName) {
         meta.title = String(doc.sopName).trim();
       }
+      if (!meta.gujaratiName && doc.gujaratiName) {
+        meta.gujaratiName = String(doc.gujaratiName).trim();
+      }
+      if (doc.isDualLanguage) {
+        meta.isDualLanguage = true;
+      } else if (String(doc.language || '').toLowerCase() === 'dual') {
+        meta.isDualLanguage = true;
+      }
     }
 
     // Debug: count how many SOPs have a date
@@ -289,30 +353,15 @@ export async function GET(req: NextRequest) {
     const withoutDate = [...dbBaseMeta.values()].filter((m) => !m.targetDate).length;
     console.log(`[TM Overview] SOP dates: ${withDate} with date, ${withoutDate} without date, sopDateDocs(reviewDate): ${sopDateDocs.length}, libDateDocs(expiryDate): ${libDateDocs.length}`);
 
-    // ── MCQ stats: per-SOP identifier → { totalQuestions, approvedCount } ──────
-    // Use aggregation to count total MCQs and approved MCQs per sopIdentifier.
-    const mcqAggResults = await MCQBank.aggregate([
-      { $match: { isObsolete: { $ne: true } } },
-      {
-        $project: {
-          sopIdentifier: 1,
-          totalQuestions: 1,
-          approvedCount: {
-            $size: {
-              $filter: {
-                input: { $ifNull: ['$mcqs', []] },
-                as: 'm',
-                cond: { $eq: ['$$m.isChecked', true] },
-              },
-            },
-          },
-        },
-      },
-    ]);
+    // ── MCQ stats: per-SOP identifier + language → { totalQuestions, approvedCount } ──
+    // (mcqAggResults fetched in Tier 1 above)
 
-    // Build map: baseSopCode → { totalQuestions, approvedCount }
-    // A SOP may have multiple MCQBank entries (e.g. English + Gujarati); sum them.
-    const mcqStatMap = new Map<string, { totalQuestions: number; approvedCount: number }>();
+    type LangStat = { totalQuestions: number; approvedCount: number };
+    // baseSopCode → combined stats (English + Gujarati summed)
+    const mcqStatMap = new Map<string, LangStat>();
+    // baseSopCode → per-language stats ('English' | 'Gujarati' | 'Other')
+    const mcqLangStatMap = new Map<string, { eng: LangStat; guj: LangStat }>();
+
     for (const doc of mcqAggResults as any[]) {
       const id = String(doc?.sopIdentifier || '').trim();
       if (!id) continue;
@@ -320,12 +369,26 @@ export async function GET(req: NextRequest) {
       if (!base) continue;
       const tq: number = doc?.totalQuestions || 0;
       const approved: number = doc?.approvedCount || 0;
+      const lang: string = String(doc?.language || 'English').trim();
+
+      // Combined map (existing behaviour)
       const existing = mcqStatMap.get(base);
       if (existing) {
         existing.totalQuestions += tq;
         existing.approvedCount += approved;
       } else {
         mcqStatMap.set(base, { totalQuestions: tq, approvedCount: approved });
+      }
+
+      // Per-language map
+      if (!mcqLangStatMap.has(base)) mcqLangStatMap.set(base, { eng: { totalQuestions: 0, approvedCount: 0 }, guj: { totalQuestions: 0, approvedCount: 0 } });
+      const langEntry = mcqLangStatMap.get(base)!;
+      if (lang === 'Gujarati') {
+        langEntry.guj.totalQuestions += tq;
+        langEntry.guj.approvedCount += approved;
+      } else {
+        langEntry.eng.totalQuestions += tq;
+        langEntry.eng.approvedCount += approved;
       }
     }
 
@@ -361,9 +424,7 @@ export async function GET(req: NextRequest) {
 
     // 2b. Obsolete SOPs: these may not appear in primary registry rows but are still "in DB".
     // We treat them separately so UI can show "Found (obsolete)" explicitly.
-    const obsoleteDocs = await SOP.find({ isObsolete: true })
-      .select('identifier name department obsoleteAt obsoleteReason version')
-      .lean();
+    // (obsoleteDocs fetched in Tier 1 above)
 
     const obsoleteByDept: Record<string, Set<string>> = {};
     for (const d of DEPT_CANONICAL) obsoleteByDept[d] = new Set<string>();
@@ -382,7 +443,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Build department-wise SOP list (base SOPs) from DB
-    const dbSopsByDept: Record<string, Array<{ sopCode: string; title: string }>> = {};
+    const dbSopsByDept: Record<string, Array<{ sopCode: string; title: string; isDualLanguage: boolean; gujaratiName: string }>> = {};
     const dbSopCountsByDept: Record<string, number> = {};
     for (const d of DEPT_CANONICAL) {
       dbSopsByDept[d] = [];
@@ -393,7 +454,12 @@ export async function GET(req: NextRequest) {
       const meta = dbBaseMeta.get(sopCode);
       const dept = resolveDeptForBaseSop(sopCode, meta);
       if (!DEPT_CANONICAL.includes(dept)) continue;
-      dbSopsByDept[dept].push({ sopCode, title: meta?.title || '' });
+      dbSopsByDept[dept].push({ 
+        sopCode, 
+        title: meta?.title || '',
+        isDualLanguage: meta?.isDualLanguage || false,
+        gujaratiName: meta?.gujaratiName || ''
+      });
     }
     for (const d of DEPT_CANONICAL) {
       dbSopsByDept[d].sort((a, b) => a.sopCode.localeCompare(b.sopCode));
@@ -413,6 +479,22 @@ export async function GET(req: NextRequest) {
     const sopMonthMapAll: Record<string, Record<string, string>> = {};
     const sopCodesByDept: Record<string, string[]> = {};
     const monthCountsByDept: Record<string, Record<string, number>> = {};
+
+    // Pre-pass: for every department that has an upload, collect the unique SOP codes.
+    // Then build sopCodeToDeptCount: sopCode -> how many distinct departments contain it.
+    // This is the correct "repetition" definition: count of departments sharing the same SOP.
+    const sopCodeToDeptCount = new Map<string, number>();
+    for (const dept of DEPT_CANONICAL) {
+      const up = latestByDept.get(dept);
+      if (!up?.snapshot) continue;
+      const snap = up.snapshot as { sopCodes: string[] };
+      const uniqueCodes = Array.from(
+        new Set((snap.sopCodes || []).map((c) => String(c).toUpperCase().replace(/-\d+$/, '').trim()).filter(Boolean))
+      );
+      for (const c of uniqueCodes) {
+        sopCodeToDeptCount.set(c, (sopCodeToDeptCount.get(c) || 0) + 1);
+      }
+    }
 
     for (const dept of DEPT_CANONICAL) {
       const up = latestByDept.get(dept);
@@ -474,22 +556,14 @@ export async function GET(req: NextRequest) {
         return resolveDeptForBaseSop(c, meta) === dept && !codes.includes(c);
       });
 
-      // Repetitive SOP categorisation — count how many employees have each SOP ticked (assigned)
-      const tickCountBySop = new Map<string, number>();
-      for (const emp of (snapshot.employees || [])) {
-        for (const [rawCode, ticked] of Object.entries(emp.training || {})) {
-          if (!ticked) continue;
-          const c = String(rawCode).toUpperCase().replace(/-\d+$/, '').trim();
-          if (!c) continue;
-          tickCountBySop.set(c, (tickCountBySop.get(c) || 0) + 1);
-        }
-      }
+      // Repetitive SOP categorisation — count how many distinct DEPARTMENTS contain each SOP code.
+      // "count" here is the number of department uploads that include this SOP code (not employee rows).
       type RepeatItem = { sopCode: string; title: string; department: string; count: number };
       const repeat3PlusList: RepeatItem[] = [];
       const repeat2List: RepeatItem[] = [];
       const repeat1List: RepeatItem[] = [];
       for (const c of codes) {
-        const count = tickCountBySop.get(c) || 0;
+        const count = sopCodeToDeptCount.get(c) || 1; // always >= 1 (this dept itself)
         const meta = dbBaseMeta.get(c);
         const item: RepeatItem = { sopCode: c, title: meta?.title || '', department: dept, count };
         if (count >= 3) repeat3PlusList.push(item);
@@ -532,22 +606,32 @@ export async function GET(req: NextRequest) {
         }
       }
 
+      // Lang breakdown: base on this dept's DB SOPs (matches the dashboard's source of truth),
+      // NOT on foundInDb (which includes cross-dept SOPs from the Excel and inflates the count).
+      const deptDbCodes = (dbSopsByDept[dept] || []).map((x) => x.sopCode);
+      const excelCodesSet = new Set(codes); // Excel codes for this dept's upload
+
       const langKeys = new Set<LangKey>();
-      for (const c of foundInDb) {
-        const ls = dbBaseLangs.get(c);
-        (ls && ls.size > 0 ? Array.from(ls) : (['ENG'] as LangKey[])).forEach((k) => langKeys.add(k));
-      }
-      for (const c of missingFromExcel) {
+      for (const c of deptDbCodes) {
         const ls = dbBaseLangs.get(c);
         (ls && ls.size > 0 ? Array.from(ls) : (['ENG'] as LangKey[])).forEach((k) => langKeys.add(k));
       }
       const langBreakdown = Array.from(langKeys)
         .sort((a, b) => (a === b ? 0 : a === 'ENG' ? -1 : 1))
         .map((k) => {
-          const found = foundInDb.filter((c) => (dbBaseLangs.get(c) || new Set<LangKey>(['ENG'])).has(k)).length;
-          const missing = missingFromExcel.filter((c) => (dbBaseLangs.get(c) || new Set<LangKey>(['ENG'])).has(k)).length;
+          const found = deptDbCodes.filter((c) => excelCodesSet.has(c) && (dbBaseLangs.get(c) || new Set<LangKey>(['ENG'])).has(k)).length;
+          const missing = deptDbCodes.filter((c) => !excelCodesSet.has(c) && (dbBaseLangs.get(c) || new Set<LangKey>(['ENG'])).has(k)).length;
           return { key: k, label: k, found, missing };
         });
+
+      // Pre-compute per-language SOP code lists for instant client-side filtering.
+      // Uses the same deptDbCodes base so counts match the dashboard exactly.
+      const langSopListByKey: Record<string, string[]> = {};
+      for (const k of langKeys) {
+        langSopListByKey[k] = deptDbCodes
+          .filter((c) => (dbBaseLangs.get(c) || new Set<LangKey>(['ENG'])).has(k))
+          .sort((a, b) => a.localeCompare(b));
+      }
 
       const trainersAssignedList = foundInDb.filter((c) => dbBaseHasTrainer.get(c));
       const trainersMissingListRows = foundInDb
@@ -562,25 +646,73 @@ export async function GET(req: NextRequest) {
       
       let expiredCount = 0;
       let okayCount = 0;
+      let dueSoon60Count = 0;
+      const dueSoon60List: string[] = [];
+      const sixtyDaysMs = 60 * 24 * 3600 * 1000;
       for (const c of foundInDb) {
         const meta = dbBaseMeta.get(c);
         if (!meta?.targetDate) continue; // no date set — excluded from both counts
-        if (meta.expired) expiredCount++;
-        else okayCount++;
+        if (meta.expired) {
+          expiredCount++;
+        } else {
+          okayCount++;
+          const t = new Date(meta.targetDate).getTime();
+          if (t - today.getTime() <= sixtyDaysMs) {
+            dueSoon60Count++;
+            dueSoon60List.push(c);
+          }
+        }
+      }
+
+      // MCQ review status for the due-soon SOPs
+      let dueSoon60McqReviewed = 0;
+      let dueSoon60McqPartial = 0;
+      let dueSoon60McqNotReviewed = 0;
+      const dueSoon60McqReviewedList: string[] = [];
+      const dueSoon60McqPartialList: string[] = [];
+      const dueSoon60McqNotReviewedList: string[] = [];
+      for (const c of dueSoon60List) {
+        const mcqStat = mcqStatMap.get(c);
+        const tq = mcqStat?.totalQuestions ?? 0;
+        const approved = mcqStat?.approvedCount ?? 0;
+        if (tq > 0 && approved >= tq) { dueSoon60McqReviewed++; dueSoon60McqReviewedList.push(c); }
+        else if (approved > 0) { dueSoon60McqPartial++; dueSoon60McqPartialList.push(c); }
+        else { dueSoon60McqNotReviewed++; dueSoon60McqNotReviewedList.push(c); }
       }
 
       // MCQ counts for this dept (scoped to Excel SOPs found in DB)
-      let mcqCreatedCount = 0;    // SOPs with >= 100 MCQs
-      let mcqNotCreatedCount = 0; // SOPs with < 100 MCQs (including zero)
-      let mcqAllApprovedCount = 0;    // SOPs where all MCQs are approved
-      let mcqPartiallyApprovedCount = 0; // SOPs with some but not all MCQs approved
-      let mcqNotApprovedCount = 0;    // SOPs with 0 approved MCQs
-      
+      let mcqCreatedCount = 0;
+      let mcqNotCreatedCount = 0;
+      let mcqAllApprovedCount = 0;
+      let mcqPartiallyApprovedCount = 0;
+      let mcqNotApprovedCount = 0;
+      // Per-language MCQ counts
+      let mcqEngCreatedCount = 0;
+      let mcqEngNotCreatedCount = 0;
+      let mcqEngAllApprovedCount = 0;
+      let mcqEngPartiallyApprovedCount = 0;
+      let mcqEngNotApprovedCount = 0;
+      let mcqGujCreatedCount = 0;
+      let mcqGujNotCreatedCount = 0;
+      let mcqGujAllApprovedCount = 0;
+      let mcqGujPartiallyApprovedCount = 0;
+      let mcqGujNotApprovedCount = 0;
+
       const mcqCreatedList: string[] = [];
       const mcqNotCreatedList: string[] = [];
       const mcqAllApprovedList: string[] = [];
       const mcqPartiallyApprovedList: string[] = [];
       const mcqNotApprovedList: string[] = [];
+      const mcqEngCreatedList: string[] = [];
+      const mcqEngNotCreatedList: string[] = [];
+      const mcqEngAllApprovedList: string[] = [];
+      const mcqEngPartiallyApprovedList: string[] = [];
+      const mcqEngNotApprovedList: string[] = [];
+      const mcqGujCreatedList: string[] = [];
+      const mcqGujNotCreatedList: string[] = [];
+      const mcqGujAllApprovedList: string[] = [];
+      const mcqGujPartiallyApprovedList: string[] = [];
+      const mcqGujNotApprovedList: string[] = [];
 
       for (const sopCode of foundInDb) {
         const mcqStat = mcqStatMap.get(sopCode);
@@ -609,6 +741,31 @@ export async function GET(req: NextRequest) {
           mcqNotApprovedCount++;
           mcqNotApprovedList.push(sopCode);
         }
+
+        // Per-language breakdown
+        const langStat = mcqLangStatMap.get(sopCode);
+        const engTq = langStat?.eng.totalQuestions ?? 0;
+        const engApproved = langStat?.eng.approvedCount ?? 0;
+        const gujTq = langStat?.guj.totalQuestions ?? 0;
+        const gujApproved = langStat?.guj.approvedCount ?? 0;
+
+        // ENG: count SOPs that have at least one English MCQ bank entry (engTq > 0)
+        if (engTq > 0) {
+          if (engTq >= 100) { mcqEngCreatedCount++; mcqEngCreatedList.push(sopCode); }
+          else { mcqEngNotCreatedCount++; mcqEngNotCreatedList.push(sopCode); }
+          if (engApproved >= engTq) { mcqEngAllApprovedCount++; mcqEngAllApprovedList.push(sopCode); }
+          else if (engApproved > 0) { mcqEngPartiallyApprovedCount++; mcqEngPartiallyApprovedList.push(sopCode); }
+          else { mcqEngNotApprovedCount++; mcqEngNotApprovedList.push(sopCode); }
+        }
+
+        // GUJ: only count SOPs that actually have a Gujarati MCQ bank entry
+        if (gujTq > 0) {
+          if (gujTq >= 100) { mcqGujCreatedCount++; mcqGujCreatedList.push(sopCode); }
+          else { mcqGujNotCreatedCount++; mcqGujNotCreatedList.push(sopCode); }
+          if (gujApproved >= gujTq) { mcqGujAllApprovedCount++; mcqGujAllApprovedList.push(sopCode); }
+          else if (gujApproved > 0) { mcqGujPartiallyApprovedCount++; mcqGujPartiallyApprovedList.push(sopCode); }
+          else { mcqGujNotApprovedCount++; mcqGujNotApprovedList.push(sopCode); }
+        }
       }
 
       const employees = (snapshot.employees || []).map((e) => ({
@@ -629,6 +786,7 @@ export async function GET(req: NextRequest) {
         foundObsolete: foundObsolete.length,
         missingFromExcel: missingFromExcel.length,
         langBreakdown,
+        langSopListByKey,
         excelDeptSplit: {
           total: codes.length,
           foundByDept: excelDeptSplitFoundByDept,
@@ -640,11 +798,29 @@ export async function GET(req: NextRequest) {
         trainersMissing,
         expiredCount,
         okayCount,
+        dueSoon60Count,
+        dueSoon60List,
+        dueSoon60McqReviewed,
+        dueSoon60McqPartial,
+        dueSoon60McqNotReviewed,
+        dueSoon60McqReviewedList,
+        dueSoon60McqPartialList,
+        dueSoon60McqNotReviewedList,
         mcqCreatedCount,
         mcqNotCreatedCount,
         mcqAllApprovedCount,
         mcqPartiallyApprovedCount,
         mcqNotApprovedCount,
+        mcqEngCreatedCount,
+        mcqEngNotCreatedCount,
+        mcqEngAllApprovedCount,
+        mcqEngPartiallyApprovedCount,
+        mcqEngNotApprovedCount,
+        mcqGujCreatedCount,
+        mcqGujNotCreatedCount,
+        mcqGujAllApprovedCount,
+        mcqGujPartiallyApprovedCount,
+        mcqGujNotApprovedCount,
         employeeCount: employees.length,
         fullyTrained,
         incomplete,
@@ -659,6 +835,16 @@ export async function GET(req: NextRequest) {
         mcqAllApprovedList,
         mcqPartiallyApprovedList,
         mcqNotApprovedList,
+        mcqEngCreatedList,
+        mcqEngNotCreatedList,
+        mcqEngAllApprovedList,
+        mcqEngPartiallyApprovedList,
+        mcqEngNotApprovedList,
+        mcqGujCreatedList,
+        mcqGujNotCreatedList,
+        mcqGujAllApprovedList,
+        mcqGujPartiallyApprovedList,
+        mcqGujNotApprovedList,
         employees,
         fileUrl: up.fileUrl || null,
         uploadedAt: up.uploadedAt,
@@ -690,6 +876,10 @@ export async function GET(req: NextRequest) {
     let totalTrainersMissing = 0;
     let totalSopOkayCount = 0;
     let totalSopExpiredCount = 0;
+    let totalDueSoon60Count = 0;
+    let totalDueSoon60McqReviewed = 0;
+    let totalDueSoon60McqPartial = 0;
+    let totalDueSoon60McqNotReviewed = 0;
     const totalTrainersMissingList: any[] = [];
     // MCQ totals across ALL DB SOPs (not dept-scoped by upload)
     let totalMcqCreated = 0;
@@ -697,11 +887,20 @@ export async function GET(req: NextRequest) {
     let totalMcqAllApproved = 0;
     let totalMcqPartiallyApproved = 0;
     let totalMcqNotApproved = 0;
+    let totalMcqEngCreated = 0;
+    let totalMcqEngNotCreated = 0;
+    let totalMcqEngAllApproved = 0;
+    let totalMcqEngPartiallyApproved = 0;
+    let totalMcqEngNotApproved = 0;
+    let totalMcqGujCreated = 0;
+    let totalMcqGujNotCreated = 0;
+    let totalMcqGujAllApproved = 0;
+    let totalMcqGujPartiallyApproved = 0;
+    let totalMcqGujNotApproved = 0;
     for (const base of dbBaseSet) {
       const mcqStat = mcqStatMap.get(base);
       const tq = mcqStat?.totalQuestions ?? 0;
       if (tq >= 100) totalMcqCreated++; else totalMcqNotCreated++;
-      
       const approved = mcqStat?.approvedCount ?? 0;
       if (tq > 0) {
         if (approved >= tq) totalMcqAllApproved++;
@@ -710,6 +909,28 @@ export async function GET(req: NextRequest) {
       } else {
         totalMcqNotApproved++;
       }
+
+      const langStat = mcqLangStatMap.get(base);
+      const engTq = langStat?.eng.totalQuestions ?? 0;
+      const engApproved = langStat?.eng.approvedCount ?? 0;
+      const gujTq = langStat?.guj.totalQuestions ?? 0;
+      const gujApproved = langStat?.guj.approvedCount ?? 0;
+
+      // ENG: only count SOPs that have at least one English MCQ bank entry
+      if (engTq > 0) {
+        if (engTq >= 100) totalMcqEngCreated++; else totalMcqEngNotCreated++;
+        if (engApproved >= engTq) totalMcqEngAllApproved++;
+        else if (engApproved > 0) totalMcqEngPartiallyApproved++;
+        else totalMcqEngNotApproved++;
+      }
+
+      // GUJ: only count SOPs that actually have a Gujarati MCQ bank entry
+      if (gujTq > 0) {
+        if (gujTq >= 100) totalMcqGujCreated++; else totalMcqGujNotCreated++;
+        if (gujApproved >= gujTq) totalMcqGujAllApproved++;
+        else if (gujApproved > 0) totalMcqGujPartiallyApproved++;
+        else totalMcqGujNotApproved++;
+      }
     }
     for (const dept of DEPT_CANONICAL) {
       if (perDept[dept].uploaded) {
@@ -717,6 +938,10 @@ export async function GET(req: NextRequest) {
         totalTrainersMissing += perDept[dept].trainersMissing || 0;
         totalSopOkayCount += perDept[dept].okayCount || 0;
         totalSopExpiredCount += perDept[dept].expiredCount || 0;
+        totalDueSoon60Count += perDept[dept].dueSoon60Count || 0;
+        totalDueSoon60McqReviewed += perDept[dept].dueSoon60McqReviewed || 0;
+        totalDueSoon60McqPartial += perDept[dept].dueSoon60McqPartial || 0;
+        totalDueSoon60McqNotReviewed += perDept[dept].dueSoon60McqNotReviewed || 0;
       }
       totalTrainersMissingList.push(...perDept[dept].trainersMissingList);
     }
@@ -744,11 +969,25 @@ export async function GET(req: NextRequest) {
       trainersMissing: totalTrainersMissing,
       okayCount: totalSopOkayCount,
       expiredCount: totalSopExpiredCount,
+      dueSoon60Count: totalDueSoon60Count,
+      dueSoon60McqReviewed: totalDueSoon60McqReviewed,
+      dueSoon60McqPartial: totalDueSoon60McqPartial,
+      dueSoon60McqNotReviewed: totalDueSoon60McqNotReviewed,
       mcqCreatedCount: totalMcqCreated,
       mcqNotCreatedCount: totalMcqNotCreated,
       mcqAllApprovedCount: totalMcqAllApproved,
       mcqPartiallyApprovedCount: totalMcqPartiallyApproved,
       mcqNotApprovedCount: totalMcqNotApproved,
+      mcqEngCreatedCount: totalMcqEngCreated,
+      mcqEngNotCreatedCount: totalMcqEngNotCreated,
+      mcqEngAllApprovedCount: totalMcqEngAllApproved,
+      mcqEngPartiallyApprovedCount: totalMcqEngPartiallyApproved,
+      mcqEngNotApprovedCount: totalMcqEngNotApproved,
+      mcqGujCreatedCount: totalMcqGujCreated,
+      mcqGujNotCreatedCount: totalMcqGujNotCreated,
+      mcqGujAllApprovedCount: totalMcqGujAllApproved,
+      mcqGujPartiallyApprovedCount: totalMcqGujPartiallyApproved,
+      mcqGujNotApprovedCount: totalMcqGujNotApproved,
       employeeCount: totalEmployees,
       fullyTrained: totalFullyTrained,
       incomplete: totalIncomplete,
@@ -758,14 +997,19 @@ export async function GET(req: NextRequest) {
       trainersMissingList: totalTrainersMissingList,
     };
 
-    const sopStatusByCode: Record<string, { expired: boolean; targetDate: string | null; totalQuestions: number; approvedCount: number; title: string }> = {};
+    const sopStatusByCode: Record<string, { expired: boolean; targetDate: string | null; totalQuestions: number; approvedCount: number; engTotalQuestions?: number; engApprovedCount?: number; gujTotalQuestions?: number; gujApprovedCount?: number; title: string }> = {};
     for (const [code, meta] of dbBaseMeta.entries()) {
       const mcqStat = mcqStatMap.get(code);
+      const langStat = mcqLangStatMap.get(code);
       sopStatusByCode[code] = {
         expired: !!meta.expired,
         targetDate: meta.targetDate || null,
         totalQuestions: mcqStat?.totalQuestions || 0,
         approvedCount: mcqStat?.approvedCount || 0,
+        engTotalQuestions: langStat?.eng.totalQuestions || 0,
+        engApprovedCount: langStat?.eng.approvedCount || 0,
+        gujTotalQuestions: langStat?.guj.totalQuestions || 0,
+        gujApprovedCount: langStat?.guj.approvedCount || 0,
         title: meta.title || '',
       };
     }
@@ -782,7 +1026,7 @@ export async function GET(req: NextRequest) {
       sopStatusByCode,
     };
 
-    if (!forceFresh) setCached(req, payload);
+    if (!forceFresh) await setCached(payload);
     return withCacheHeaders(NextResponse.json(payload));
   } catch (error: any) {
     console.error('training-matrix overview error:', error);

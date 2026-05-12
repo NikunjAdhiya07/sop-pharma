@@ -189,13 +189,7 @@ function versionArtifactsForRow(
     const list = map.get(key);
     if (list?.length) merged = mergeVersionArtifactEntries(merged, list);
   }
-  // Log when no artifacts found (helpful for debugging)
-  if (merged.length === 0 && process.env.NODE_ENV !== 'production') {
-    console.warn(
-      `[SOP_LOOKUP] No version artifacts found for "${idUpper}" (${lang}). ` +
-      `Tried: ${expandSopIdentifierVariants(idUpper).map((v) => versionArtifactsLookupKey(v) + '::' + lang).join(', ')}`
-    );
-  }
+  // Artifacts missing is normal for SOPs without uploaded files; no log needed.
   return merged;
 }
 
@@ -1272,10 +1266,10 @@ export async function GET(request: NextRequest) {
       request.nextUrl.searchParams.get('refresh') === '1' ||
       request.nextUrl.searchParams.get('nocache') === '1';
     if (skipCache) {
-      invalidateDashboardSopsCache();
+      await invalidateDashboardSopsCache();
     } else {
-      // Serve from in-memory cache if still warm (avoids full DB round-trip on every page load).
-      const cached = getDashboardSopsCache();
+      // Serve from cache if still warm (avoids full DB round-trip on every page load).
+      const cached = await getDashboardSopsCache();
       if (cached) {
         return NextResponse.json(cached.payload);
       }
@@ -2735,7 +2729,7 @@ export async function GET(request: NextRequest) {
     };
 
     // Store in server-side cache so subsequent requests within the TTL are instant.
-    setDashboardSopsCache(responsePayload);
+    await setDashboardSopsCache(responsePayload);
 
     try {
       const response = NextResponse.json(responsePayload);

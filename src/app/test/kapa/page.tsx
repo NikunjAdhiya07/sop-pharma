@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { 
   AlertTriangle, 
   ArrowLeft, 
@@ -27,6 +28,7 @@ interface MCQBank {
 }
 
 export default function KapaTestPage() {
+  useAuthGuard();
   const router = useRouter();
   const [basis, setBasis] = useState<'selection' | 'ai' | 'manual'>('selection');
   const [step, setStep] = useState<'selection' | 'criteria' | 'testing'>('selection');

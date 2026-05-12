@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import mongoose from 'mongoose';
+import { invalidateMcqCaches } from '@/lib/mcqCacheInvalidate';
 
 /**
  * POST /api/mcq-bank/edit-question
@@ -91,6 +92,8 @@ export async function POST(request: NextRequest) {
     const updatedMcq = updatedBank?.mcqs?.[questionIndex];
 
     console.log(`[EditQuestion] Bank: ${bankId}, Q${questionIndex} edited successfully`);
+
+    void invalidateMcqCaches();
 
     return NextResponse.json({
       success: true,

@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import {
   useState,
   useEffect,
@@ -176,6 +177,7 @@ function clientQuestionSimilarity(
 // ─────────────────────────────────────────────────────────────────────────────
 
 function MCQBankContent() {
+  useAuthGuard();
   const router = useRouter();
   const searchParams = useSearchParams();
   const sopIdFromUrl = searchParams.get("sopId");
@@ -792,7 +794,30 @@ function MCQBankContent() {
     }
   }, [searchFromUrl]);
 
-  const fetchMCQBanks = async () => {
+  const fetchMCQBanks = async (forceRefresh = false) => {
+    const MCQ_BANK_SESSION_KEY = 'mcq_bank_list_cache';
+    const MCQ_BANK_SESSION_TTL = 5 * 60 * 1000; // 5 minutes
+
+    // Tier 1: sessionStorage — skip network if fresh cache exists
+    if (!forceRefresh && typeof window !== 'undefined') {
+      try {
+        const raw = sessionStorage.getItem(MCQ_BANK_SESSION_KEY);
+        if (raw) {
+          const { banks, pagination: pag, cachedAt, cachedPage } = JSON.parse(raw);
+          if (Date.now() - cachedAt <= MCQ_BANK_SESSION_TTL && cachedPage === currentPage) {
+            console.log('📦 MCQBank: fresh sessionStorage cache — skipping network');
+            setMcqBanks(banks);
+            if (pag) {
+              setTotalPages(pag.totalPages);
+              setTotalBanks(pag.total);
+            }
+            setLoading(false);
+            return;
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
     try {
       // Fetch MCQ banks with summary mode to avoid timeouts but allow client-side filtering
       const response = await fetch(
@@ -806,6 +831,15 @@ function MCQBankContent() {
           setTotalPages(data.pagination.totalPages);
           setTotalBanks(data.pagination.total);
         }
+        // Cache to sessionStorage
+        try {
+          sessionStorage.setItem(MCQ_BANK_SESSION_KEY, JSON.stringify({
+            banks: data.mcqBanks,
+            pagination: data.pagination ?? null,
+            cachedAt: Date.now(),
+            cachedPage: currentPage,
+          }));
+        } catch { /* quota — ignore */ }
       }
     } catch (error) {
       console.error("Error fetching MCQ banks:", error);
@@ -1818,7 +1852,7 @@ function MCQBankContent() {
 
       if (data.success) {
         alert("MCQ Bank deleted successfully");
-        await fetchMCQBanks(); // Refresh list
+        await fetchMCQBanks(true); // Refresh list after delete
       } else {
         alert("Failed to delete MCQ Bank: " + (data.details || data.error));
       }
@@ -3031,7 +3065,7 @@ function MCQBankContent() {
 
                                 // Step 2: Close the modal
                                 setSelectedMCQBank(null); setSelectedMCQBanks(null);
-                                await fetchMCQBanks();
+                                await fetchMCQBanks(true);
 
                                 alert(
                                   `✅ Content fixed! (${reextractData.newLength} chars extracted)\n` +
@@ -3054,7 +3088,7 @@ function MCQBankContent() {
 
                                 if (genData.success) {
                                   alert(`✅ Regenerated ${genData.total} questions for ${selectedMCQBank.sopIdentifier}!\n\nAll answers are now correct.`);
-                                  await fetchMCQBanks();
+                                  await fetchMCQBanks(true);
                                   if (viewMode === 'tree') fetchTreeData(true);
                                 } else {
                                   alert(`❌ Generation failed: ${genData.error}\n\nBank was deleted. You can try clicking "Generate 100 MCQs" from the table view.`);

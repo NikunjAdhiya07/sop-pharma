@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { 
-  Users, BookOpen, Calendar, Filter, 
+import { useAuthGuard } from '@/hooks/useAuthGuard';
+import {
+  Users, BookOpen, Calendar, Filter,
   CheckCircle2, Clock, AlertCircle, PlayCircle,
   BarChart3, FileText, Search, RefreshCw, ChevronRight,
   TrendingUp, Activity, UserCheck, CheckSquare, Loader2
@@ -31,6 +32,7 @@ const formatMonthStr = (m: string) => {
 };
 
 export default function TrainingDashboard() {
+  useAuthGuard();
   const [data, setData] = useState<TrainingRecord[]>([]);
   const [filters, setFilters] = useState({
     departments: [],

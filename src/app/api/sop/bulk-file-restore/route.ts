@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
 
     await existingSOP.save();
 
-    invalidateDashboardSopsCache();
+    void invalidateDashboardSopsCache();
 
     const dateSource = manualReviewDate ? 'manual' : extractedDates.reviewDate ? 'extracted' : 'not-found';
 

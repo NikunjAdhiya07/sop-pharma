@@ -1,5 +1,7 @@
 'use client';
 
+import { useAuthGuard } from '@/hooks/useAuthGuard';
+
 import { useState, useEffect, useCallback } from 'react';
 import {
   Award, Users, BookOpen, CheckCircle2, Clock, XCircle, AlertTriangle,
@@ -39,6 +41,7 @@ interface Stats {
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export default function TrainerDashboard() {
+  useAuthGuard({ allowedRoles: ['admin', 'trainer', 'qa-head'] });
   // Trainer identity (read from localStorage, same as rest of app)
   const [trainerName, setTrainerName] = useState<string>('');
   const [records, setRecords] = useState<MatrixRecord[]>([]);

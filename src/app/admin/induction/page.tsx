@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { CheckCircle, Clock, User, ArrowRight, ShieldCheck, Mail } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import PageHeader from '@/components/PageHeader';
 
 interface InductionUser {
@@ -19,6 +20,7 @@ interface InductionUser {
 }
 
 export default function AdminInductionPage() {
+  useAuthGuard({ allowedRoles: ['admin'] });
   const [users, setUsers] = useState<InductionUser[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();

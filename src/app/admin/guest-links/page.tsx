@@ -1,10 +1,13 @@
 'use client';
 
+import { useAuthGuard } from '@/hooks/useAuthGuard';
+
 import { useState, useEffect } from 'react';
 import { Share2, Calendar, Clipboard, User, Check, AlertCircle, Loader2 } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 
 export default function GuestLinksPage() {
+  useAuthGuard({ allowedRoles: ['admin', 'qa-head'] });
   const [loading, setLoading] = useState(false);
   const [generatedLink, setGeneratedLink] = useState('');
   const [token, setToken] = useState('');

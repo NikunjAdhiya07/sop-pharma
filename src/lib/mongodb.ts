@@ -30,7 +30,7 @@ async function connectDB(): Promise<typeof mongoose> {
     const opts = {
       bufferCommands: false,
       serverSelectionTimeoutMS: 10000, // 10s — fail fast, retry handles the rest
-      socketTimeoutMS: 60000,          // 1 min for slow queries
+      socketTimeoutMS: 330000,         // 5.5 min — must exceed maxDuration (300s) on long AI routes
       connectTimeoutMS: 10000,         // 10s TCP connect
       maxPoolSize: 10,                 // Reuse connections across serverless invocations
       minPoolSize: 1,

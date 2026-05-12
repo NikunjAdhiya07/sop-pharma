@@ -1,5 +1,7 @@
 'use client';
 
+import { useAuthGuard } from '@/hooks/useAuthGuard';
+
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import {
@@ -105,6 +107,7 @@ function SourceBadge({ source }: { source: BunnySyncRow['source'] }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function BunnySyncClient() {
+  useAuthGuard({ allowedRoles: ['admin', 'qa-head'] });
   const [scanStatus, setScanStatus] = useState<ScanStatus>('idle');
   const [result, setResult] = useState<ScanResult | null>(null);
   const [error, setError] = useState<string | null>(null);

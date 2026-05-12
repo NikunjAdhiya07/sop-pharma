@@ -1188,26 +1188,21 @@ export default function SOPTable({
                                 }
                               }}
                               disabled={isRunning}
-                              className={`relative shrink-0 rounded-full p-1 transition-colors ${
+                              className={`relative shrink-0 rounded px-1.5 py-0.5 transition-colors font-bold tabular-nums text-[11px] leading-none ${
                                 isRunning
                                   ? 'text-indigo-700 bg-indigo-50 animate-pulse'
                                   : hasResult
-                                  ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100'
-                                  : 'text-orange-600 bg-orange-50 hover:bg-orange-100'
+                                  ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
+                                  : 'text-gray-500 bg-gray-100 hover:bg-orange-50 hover:text-orange-600'
                               }`}
                             >
                               {isRunning ? (
                                 <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : hasResult ? (
+                                guidelineCount
                               ) : (
-                                <Sparkles className="h-3.5 w-3.5" />
+                                <span className="text-gray-400">—</span>
                               )}
-                              {hasResult ? (
-                                <span
-                                  className="absolute -top-1 -right-1 min-w-[14px] rounded-full border border-white bg-emerald-600 px-0.5 py-[0.5px] text-center text-[7px] font-black leading-none text-white tabular-nums"
-                                  title={`Total guideline findings: ${guidelineCount}`}>
-                                  {guidelineCount}
-                                </span>
-                              ) : null}
                             </button>
                           );
                         })()}

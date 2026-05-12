@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import PageHeader from '@/components/PageHeader';
 import { 
   AlertTriangle, 
@@ -49,6 +50,7 @@ type ViewType = 'needsReviewThisWeek' | 'expiringNext30Days' | 'expired' | 'miss
 type SortField = 'identifier' | 'name' | 'expiryDate' | 'reviewDate' | 'department' | 'owner' | 'priority' | 'processArea';
 
 export default function SOPMonitoringPage() {
+  useAuthGuard();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);

@@ -1,6 +1,7 @@
 'use client';
 
 import { useSearchParams, useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import DocxPreviewClient, { type DocxViewerPreference } from '../components/DocxPreviewClient';
@@ -86,6 +87,7 @@ function ViewDocContent() {
 }
 
 export default function ViewDocPage() {
+  useAuthGuard();
   return (
     <Suspense
       fallback={

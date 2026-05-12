@@ -1,5 +1,7 @@
 'use client';
 
+import { useAuthGuard } from '@/hooks/useAuthGuard';
+
 import { useState, useEffect } from 'react';
 import { 
   Trash2, 
@@ -39,6 +41,7 @@ interface EliminatedQuestion {
 }
 
 export default function EliminatedQuestionsPage() {
+  useAuthGuard({ allowedRoles: ['admin', 'qa-head'] });
   const [eliminated, setEliminated] = useState<EliminatedQuestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<Record<string, number>>({});

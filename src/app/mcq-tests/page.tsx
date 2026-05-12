@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import {
   BookOpen,
   Trophy,
@@ -42,6 +43,7 @@ interface MCQBank {
 }
 
 export default function MCQTestsPage() {
+  useAuthGuard();
   const router = useRouter();
   const [mcqBanks, setMcqBanks] = useState<MCQBank[]>([]);
   const [loading, setLoading] = useState(true);

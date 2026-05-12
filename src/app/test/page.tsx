@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { 
   UserSquare2, 
   GraduationCap, 
@@ -78,6 +79,7 @@ const testTypes = [
 ];
 
 export default function TestHubPage() {
+  useAuthGuard();
   const router = useRouter();
 
   return (

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 
 interface ApplicableFinding {
   _id: string;
@@ -359,6 +360,7 @@ function ApplicableFindingsContent() {
 }
 
 export default function ApplicableFindingsPage() {
+  useAuthGuard();
   return (
     <Suspense fallback={
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">

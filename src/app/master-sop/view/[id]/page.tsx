@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import PageHeader from '@/components/PageHeader';
 import DocxPreviewClient from '@/app/dashboard/components/DocxPreviewClient';
 import { ArrowLeft, FileText, Loader2, Download, Calendar, Hash } from 'lucide-react';
@@ -29,6 +30,7 @@ interface MasterSOP {
 }
 
 export default function ViewDocumentPage() {
+  useAuthGuard();
   const router = useRouter();
   const params = useParams();
   const sopId = params.id as string;

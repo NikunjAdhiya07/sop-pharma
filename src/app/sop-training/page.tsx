@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import {
   Upload, RefreshCw, BarChart3, Users,
   Loader2, Search, Calendar, Building2, GraduationCap,
@@ -70,6 +71,7 @@ function fmtMonth(m: number, y: number) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function SOPTrainingPage() {
+  useAuthGuard();
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [showUpload, setShowUpload] = useState(false);
   const [loading, setLoading] = useState(false);

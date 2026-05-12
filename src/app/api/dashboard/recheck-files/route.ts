@@ -214,7 +214,7 @@ export async function POST() {
       dbCleared += supPdfRes.modifiedCount;
 
       // Bust server-side dashboard cache
-      invalidateDashboardSopsCache();
+      void invalidateDashboardSopsCache();
     }
 
     return Response.json({

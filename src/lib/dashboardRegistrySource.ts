@@ -16,7 +16,7 @@ type DashboardPayload = {
  * - If cache is missing/stale, compute by invoking the dashboard route handler directly.
  */
 export async function getDashboardRegistryPayload(originUrl: string): Promise<DashboardPayload> {
-  const cached = getDashboardSopsCache();
+  const cached = await getDashboardSopsCache();
   if (cached && cached.payload) return cached.payload as DashboardPayload;
 
   // Compute on-demand (nocache ensures the route doesn't return an empty cache entry)

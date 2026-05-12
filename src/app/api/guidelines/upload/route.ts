@@ -308,12 +308,12 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // For summary, we still want clauses but we limit the number of guidelines
-    // to prevent massive payload sizes that cause timeouts
     const limit = isSummary ? 2000 : 50;
 
     let guidelines = await SOPGuideline.find(query)
-      .select('name folderName pdfName guidelineType category createdAt clauses.clauseNumber clauses.clauseTitle') // Don't fetch clauseText for summary to SAVE MASSIVE SPACE
+      .select(isSummary
+        ? 'name folderName pdfName guidelineType category createdAt'
+        : 'name folderName pdfName guidelineType category createdAt clauses.clauseNumber clauses.clauseTitle')
       .sort({ createdAt: -1 })
       .limit(limit)
       .maxTimeMS(25000)
@@ -321,34 +321,11 @@ export async function GET(request: NextRequest) {
 
     console.log(`✅ Found ${guidelines.length} guidelines for this query`);
 
-    // Calculate total clause count efficiently from the results (if they have clauses selected)
-    // For global total, use aggregate with increased timeout and allowDiskUse
-    let globalTotalClauses = 0;
-    if (isSummary) {
-      try {
-        const globalCount = await SOPGuideline.aggregate([
-          { $match: query },
-          { $project: { count: { $size: { $ifNull: ["$clauses", []] } } } },
-          { $group: { _id: null, total: { $sum: "$count" } } }
-        ])
-          .allowDiskUse(true)
-          .option({ maxTimeMS: 30000 }); // Increased from 5s to 30s
-
-        if (globalCount.length > 0) {
-          globalTotalClauses = globalCount[0].total;
-        }
-      } catch (e) {
-        console.error('Quietly failed to get global clause count:', e);
-        // Fallback: calculate from fetched results
-        globalTotalClauses = guidelines.reduce((sum, g) => sum + (g.clauses?.length ?? 0), 0);
-      }
-    }
-
     // Skip heavy stats for summary mode to save time
     if (isSummary) {
       const responseData = {
         guidelines,
-        totalClauses: globalTotalClauses,
+        totalClauses: 0,
       };
 
       // Cache the summary for future requests (only when no filters)

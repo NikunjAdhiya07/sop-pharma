@@ -2,10 +2,12 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import PageHeader from '@/components/PageHeader';
 import { Upload, CheckCircle2, AlertTriangle, Loader2, FileText, Calendar, Database, Zap } from 'lucide-react';
 
 export default function SOPComplianceSyncPage() {
+  useAuthGuard();
   const router = useRouter();
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<{

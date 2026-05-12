@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      invalidateDashboardSopsCache();
+      void invalidateDashboardSopsCache();
 
       await send({ type: 'done', total: bunnySops.length, fixed, skipped, failed });
     } catch (err: any) {

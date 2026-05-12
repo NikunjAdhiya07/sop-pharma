@@ -6,11 +6,22 @@ import User from '@/models/User';
 import SOPLibrary from '@/models/SOPLibrary';
 import SOPGuideline from '@/models/SOPGuideline';
 import { Notification } from '@/models/Notification';
+import { getRedis, REDIS_TTL } from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';
 
+const DASHBOARD_STATS_CACHE_KEY = 'dashboard-stats:v1';
+
 export async function GET() {
   try {
+    const redis = getRedis();
+    if (redis) {
+      try {
+        const cached = await redis.get(DASHBOARD_STATS_CACHE_KEY);
+        if (cached) return NextResponse.json(cached);
+      } catch { /* fall through */ }
+    }
+
     await connectDB();
 
     // ── PARALLEL AGGREGATIONS ──────────────────────────────────────────────────
@@ -294,7 +305,7 @@ export async function GET() {
       }
     })();
 
-    return NextResponse.json({
+    const responseBody = {
       success: true,
       stats: {
         totalSOPs: totalSOPsDistinct,
@@ -313,7 +324,13 @@ export async function GET() {
           hard: difficulty.hard,
         },
       }
-    });
+    };
+
+    if (redis) {
+      try { await redis.set(DASHBOARD_STATS_CACHE_KEY, responseBody, { ex: REDIS_TTL.FIVE_MIN }); } catch { /* ignore */ }
+    }
+
+    return NextResponse.json(responseBody);
 
   } catch (error) {
     console.error('Error fetching dashboard stats:', error);

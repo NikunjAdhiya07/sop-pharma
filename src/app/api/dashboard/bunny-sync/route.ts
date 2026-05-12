@@ -343,7 +343,7 @@ export async function POST() {
       );
       dbCleared += supPdfRes.modifiedCount;
 
-      invalidateDashboardSopsCache();
+      void invalidateDashboardSopsCache();
     }
 
     return Response.json({

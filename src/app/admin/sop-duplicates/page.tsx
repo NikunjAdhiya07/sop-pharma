@@ -1,5 +1,7 @@
 'use client';
 
+import { useAuthGuard } from '@/hooks/useAuthGuard';
+
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Loader2, RefreshCw, Trash2, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
@@ -37,6 +39,7 @@ function fmt(dateStr: string | null) {
 }
 
 export default function SopDuplicatesPage() {
+  useAuthGuard({ allowedRoles: ['admin', 'qa-head'] });
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

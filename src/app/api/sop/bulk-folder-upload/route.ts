@@ -566,7 +566,7 @@ export async function POST(request: NextRequest) {
 
         // Invalidate server-side dashboard cache after successful uploads
         try {
-          invalidateDashboardSopsCache();
+          void invalidateDashboardSopsCache();
           console.log('✅ Dashboard server cache invalidated after bulk upload');
         } catch (revalidateError) {
           console.warn('⚠️ Failed to invalidate dashboard cache:', revalidateError);

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { 
   Search, ArrowLeft, Loader2, Trash2, FolderOpen,
   ChevronDown, ChevronRight, User, Calendar, AlertCircle
@@ -32,6 +33,7 @@ interface GroupedBySOP {
 }
 
 export default function RecycledQuestionsPage() {
+  useAuthGuard();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [groupedBySOP, setGroupedBySOP] = useState<GroupedBySOP[]>([]);

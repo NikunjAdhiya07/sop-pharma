@@ -1,10 +1,13 @@
 "use client";
 
+import { useAuthGuard } from '@/hooks/useAuthGuard';
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, KeyRound, Loader2, Save, Shield } from "lucide-react";
 
 export default function ObsoletePasswordAdminPage() {
+  useAuthGuard({ allowedRoles: ["admin"] });
   const [loading, setLoading] = useState(true);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [settingsPassword, setSettingsPassword] = useState("");

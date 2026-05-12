@@ -1,5 +1,7 @@
 'use client';
 
+import { useAuthGuard } from '@/hooks/useAuthGuard';
+
 import { useState, useEffect } from 'react';
 import { Loader2, Save, Search, Filter, Calendar } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
@@ -17,6 +19,7 @@ interface SOP {
 }
 
 export default function BulkEditSOPsPage() {
+  useAuthGuard({ allowedRoles: ['admin', 'qa-head'] });
   const [sops, setSOPs] = useState<SOP[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

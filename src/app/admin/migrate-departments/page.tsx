@@ -1,9 +1,12 @@
 'use client';
 
+import { useAuthGuard } from '@/hooks/useAuthGuard';
+
 import { useState } from 'react';
 import { Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 
 export default function MigrateDepartmentsPage() {
+  useAuthGuard({ allowedRoles: ['admin', 'qa-head'] });
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState('');

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { 
   UserSquare2, 
   ArrowLeft, 
@@ -24,6 +25,7 @@ interface MCQBank {
 }
 
 export default function InterviewTestPage() {
+  useAuthGuard();
   const router = useRouter();
   const [basis, setBasis] = useState<'selection' | 'ai' | 'manual'>('selection');
   const [step, setStep] = useState<'selection' | 'difficulty' | 'criteria' | 'ready' | 'testing'>('selection');

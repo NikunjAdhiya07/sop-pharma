@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Invalidate server-side dashboard cache so the next load reflects the change immediately.
-    invalidateDashboardSopsCache();
+    void invalidateDashboardSopsCache();
 
     return NextResponse.json({
       success: true,

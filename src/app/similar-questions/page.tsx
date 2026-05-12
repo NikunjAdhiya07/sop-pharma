@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import {
   Search, Filter, ArrowLeft, Loader2, CheckCircle2, XCircle,
   GitMerge, Trash2, Eye, FileText, AlertTriangle, FolderOpen,
@@ -61,6 +62,7 @@ interface GroupedBySOP {
 }
 
 export default function SimilarQuestionsPage() {
+  useAuthGuard();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [similarQuestions, setSimilarQuestions] = useState<SimilarQuestion[]>([]);

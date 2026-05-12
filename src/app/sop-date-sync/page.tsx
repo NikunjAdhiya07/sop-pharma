@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import PageHeader from '@/components/PageHeader';
 import { 
   Upload, 
@@ -60,6 +61,7 @@ interface SyncedSOP {
 }
 
 export default function SOPDateSyncPage() {
+  useAuthGuard();
   const router = useRouter();
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
