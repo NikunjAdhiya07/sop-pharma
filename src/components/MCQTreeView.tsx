@@ -1493,14 +1493,14 @@ export default function MCQTreeView({
           </div>
         );
 
-        const handleGenerationClick = (filter: 'completed' | 'target' | 'zero') => {
+        const buildAllDepartmentsFakeDept = (): typeof tree[0] => {
           const allSubcats = tree.flatMap(dept =>
             dept.subcategories.map(sub => ({
               ...sub,
               name: `[${dept.name}] ${sub.name}`,
             }))
           );
-          const fakeDept: typeof tree[0] = {
+          return {
             type: "department",
             name: "All Departments",
             icon: "🌐",
@@ -1511,9 +1511,18 @@ export default function MCQTreeView({
             similarCount: overall.similarCount,
             subcategories: allSubcats,
           };
+        };
+
+        const handleGenerationClick = (filter: 'completed' | 'target' | 'zero') => {
           setApprovalFilter(filter);
           setSOPViewMode('table');
-          setFullScreenDept(fakeDept);
+          setFullScreenDept(buildAllDepartmentsFakeDept());
+        };
+
+        const handleOverallRowClick = (filter: 'approved' | 'partial' | 'pending' | 'similar') => {
+          setApprovalFilter(filter);
+          setSOPViewMode('table');
+          setFullScreenDept(buildAllDepartmentsFakeDept());
         };
 
         return (
@@ -1545,6 +1554,8 @@ export default function MCQTreeView({
                 totalSopGuj={overall.totalSopGuj}
                 remainingEng={overall.remainingEng}
                 remainingGuj={overall.remainingGuj}
+                onOpen={() => { setApprovalFilter('all'); setFullScreenDept(buildAllDepartmentsFakeDept()); }}
+                onRowClick={handleOverallRowClick}
                 onRemainingClick={() => {
                   setRemainingPanel({ dept: 'All Departments', sops: overallRemainingSOPs });
                 }}

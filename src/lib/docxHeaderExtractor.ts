@@ -719,6 +719,8 @@ export interface SOPHeaderTableData {
   effDate: string | null;
   /** Raw date string from "REVIEW DT." cell, e.g. "22/07/2024" */
   reviewDate: string | null;
+  /** Raw date string from "EXPIRY DATE" / "VALID TILL" cell, e.g. "22/07/2026" */
+  expiryDate: string | null;
   subject: string | null;
   department: string | null;
   area: string | null;
@@ -728,6 +730,7 @@ const EMPTY_HEADER_DATA: SOPHeaderTableData = {
   sopNo: null,
   effDate: null,
   reviewDate: null,
+  expiryDate: null,
   subject: null,
   department: null,
   area: null,
@@ -909,6 +912,41 @@ export async function extractSOPHeaderTableData(buffer: Buffer): Promise<SOPHead
           if (!result.reviewDate) {
             const nm = next.match(/^([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/);
             if (nm) result.reviewDate = nm[1];
+          }
+        }
+      }
+
+      // ── EXPIRY DATE ──────────────────────────────────────────────────────────
+      // Match "EXPIRY DATE", "DATE OF EXPIRY", "VALID TILL/UPTO/UNTIL", "EXP. DATE"
+      if (
+        !result.expiryDate &&
+        (
+          /(?:^|\b)(?:expir(?:y|ation)|exp\.?|valid\s*(?:till|upto|up\s*to|until)|date\s*of\s*expir(?:y|ation))\s*(?:date|dt)?\.?/i.test(norm)
+        )
+      ) {
+        const inlineExp = norm.match(
+          /(?:expir(?:y|ation)|exp\.?|valid\s*(?:till|upto|up\s*to|until)|date\s*of\s*expir(?:y|ation))\s*(?:date|dt)?\.?\s*[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/i,
+        );
+        if (inlineExp) {
+          result.expiryDate = inlineExp[1];
+        } else {
+          const li = lines.findIndex((l) =>
+            /(?:expir(?:y|ation)|exp\.?|valid\s*(?:till|upto|up\s*to|until)|date\s*of\s*expir(?:y|ation))\s*(?:date|dt)?/i.test(l),
+          );
+          if (li >= 0) {
+            const sameLine = lines[li].match(
+              /(?:expir(?:y|ation)|exp\.?|valid\s*(?:till|upto|up\s*to|until)|date\s*of\s*expir(?:y|ation))\s*(?:date|dt)?\.?\s*[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/i,
+            );
+            if (sameLine) {
+              result.expiryDate = sameLine[1];
+            } else if (li + 1 < lines.length) {
+              const dm = lines[li + 1].match(DATE_RE);
+              if (dm) result.expiryDate = dm[1];
+            }
+          }
+          if (!result.expiryDate) {
+            const nm = next.match(/^([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/);
+            if (nm) result.expiryDate = nm[1];
           }
         }
       }

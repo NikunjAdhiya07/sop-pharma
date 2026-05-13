@@ -62,6 +62,7 @@ import {
 import { filterPrimaryRegistryRowsUniqueByFamily } from "@/lib/registryPrimaryRows";
 import {
   classifySopVersionCapsule,
+  classifySopVersionPerLangFormat,
   type SopVersionFilterSegment,
 } from "@/lib/sopVersionCapsuleClassify";
 import { normalizeSopIdentifierKey } from "@/lib/sopIdentifierNormalize";
@@ -877,9 +878,42 @@ export default function DashboardPageClient() {
         filterVersionStatus === "allTwov"
           ? "allTwoFound"
           : "notFound";
-      result = result.filter(
-        (d: any) => classifySopVersionCapsule(d) === tier,
-      );
+      // When a format and/or language is co-active, use the per-language/format
+      // classifier so the registry list mirrors the capsule sub-row counts.
+      const fmt: "docx" | "pdf" | null =
+        filterFileType === "DOCX" ? "docx" : filterFileType === "PDF" ? "pdf" : null;
+      const lang: "EN" | "GJ" | null =
+        filterLanguage === "ENG" ? "EN" : filterLanguage === "GUJ" ? "GJ" : null;
+
+      if (fmt && lang) {
+        result = result.filter(
+          (d: any) =>
+            classifySopVersionPerLangFormat(d, { lang, format: fmt }) === tier,
+        );
+      } else if (fmt) {
+        // DOCX or PDF only — EN must match; GJ only counts when in scope.
+        result = result.filter((d: any) => {
+          const en = classifySopVersionPerLangFormat(d, { lang: "EN", format: fmt });
+          const gj = classifySopVersionPerLangFormat(d, { lang: "GJ", format: fmt });
+          // Row matches if any in-scope language hits the tier.
+          if (en === tier) return true;
+          if (gj === tier) return true;
+          return false;
+        });
+      } else if (lang) {
+        // Language only — classify against that language across both formats.
+        result = result.filter((d: any) => {
+          const docx = classifySopVersionPerLangFormat(d, { lang, format: "docx" });
+          const pdf = classifySopVersionPerLangFormat(d, { lang, format: "pdf" });
+          if (docx === tier) return true;
+          if (pdf === tier) return true;
+          return false;
+        });
+      } else {
+        result = result.filter(
+          (d: any) => classifySopVersionCapsule(d) === tier,
+        );
+      }
     }
 
     // Filter Expiry alerts
@@ -1240,15 +1274,31 @@ export default function DashboardPageClient() {
   );
 
   const applyCapsuleVersionSegment = useCallback(
-    (dept: string, segment: SopVersionFilterSegment, lang?: "ENG" | "GUJ") => {
+    (
+      dept: string,
+      segment: SopVersionFilterSegment,
+      lang?: "ENG" | "GUJ",
+      format?: "docx" | "pdf",
+    ) => {
       setFilterDept(dept);
       setFilterDualLang(false);
       setFilterExpiry("all");
       setFilterMedia("all");
-      setFilterFileType("all");
+      // Scope by file format when the click came from a DOCX/PDF version sub-row;
+      // otherwise leave the format filter unset (matches the row-level "Versions" capsule).
+      setFilterFileType(format === "docx" ? "DOCX" : format === "pdf" ? "PDF" : "all");
       setFilterLanguage(lang ?? "all");
       setFilterVersionStatus(segment);
-      setSortConfig({ key: "sopNo", direction: "asc" });
+      // Green (allTwov) sorts highest-found first; red (notFoundv) sorts lowest-found first.
+      // Use sopNo for stable secondary ordering when no count column applies.
+      const direction = segment === "allTwov" ? "desc" : "asc";
+      const sortKey =
+        format === "docx"
+          ? "rowDocxCount"
+          : format === "pdf"
+            ? "rowPdfCount"
+            : "sopNo";
+      setSortConfig({ key: sortKey, direction: sortKey === "sopNo" ? "asc" : direction });
       requestAnimationFrame(() => {
         sopRegistryRef.current?.scrollIntoView({
           behavior: "smooth",

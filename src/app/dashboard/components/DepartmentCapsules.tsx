@@ -12,6 +12,7 @@ import { isStandardRegistrySopNumber, isArtifactOnlyRegistryRow } from "@/lib/re
 import { CAPSULE_DEPARTMENTS } from "@/lib/capsuleDepartments";
 import {
   classifySopVersionCapsule,
+  classifySopVersionPerLangFormat,
   type SopVersionFilterSegment,
 } from "@/lib/sopVersionCapsuleClassify";
 
@@ -171,7 +172,7 @@ function foldRegistryRowIntoCapsuleAcc(
   const isDualPdf = expectedPdfSlotsForRow(row) >= 2;
 
   const langPairs: Array<{
-    code: string;
+    code: "EN" | "GJ";
     docxFound: boolean;
     pdfFound: boolean;
     expectDocx: boolean;
@@ -184,7 +185,6 @@ function foldRegistryRowIntoCapsuleAcc(
       expectDocx: true,
       expectPdf: true,
     },
-    // Always add GJ to ensure consistent EN/GJ layout in capsules, even if no Gujarati data
     {
       code: "GJ",
       docxFound: slots.gujDocx,
@@ -195,7 +195,7 @@ function foldRegistryRowIntoCapsuleAcc(
   ];
 
   for (const lp of langPairs) {
-    // DOCX per-language
+    // DOCX per-language: file presence
     if (lp.expectDocx) {
       if (!s.langDocx.has(lp.code)) {
         s.langDocx.set(lp.code, { found: 0, missing: 0 });
@@ -204,16 +204,23 @@ function foldRegistryRowIntoCapsuleAcc(
       if (lp.docxFound) ld.found++;
       else ld.missing++;
 
-      // DOCX versions per-language
-      if (!s.langDocxVersion.has(lp.code)) {
-        s.langDocxVersion.set(lp.code, { allTwoFound: 0, notFound: 0 });
+      // DOCX versions per-language — classify against THIS language's artifact list,
+      // checking docxPath specifically. Returns null when not in scope.
+      const dvt = classifySopVersionPerLangFormat(row, {
+        lang: lp.code,
+        format: "docx",
+      });
+      if (dvt !== null) {
+        if (!s.langDocxVersion.has(lp.code)) {
+          s.langDocxVersion.set(lp.code, { allTwoFound: 0, notFound: 0 });
+        }
+        const ldv = s.langDocxVersion.get(lp.code)!;
+        if (dvt === "allTwoFound") ldv.allTwoFound++;
+        else ldv.notFound++;
       }
-      const ldv = s.langDocxVersion.get(lp.code)!;
-      if (vt === "allTwoFound") ldv.allTwoFound++;
-      else ldv.notFound++;
     }
 
-    // PDF per-language
+    // PDF per-language: file presence
     if (lp.expectPdf) {
       if (!s.langPdf.has(lp.code)) {
         s.langPdf.set(lp.code, { found: 0, missing: 0 });
@@ -222,25 +229,35 @@ function foldRegistryRowIntoCapsuleAcc(
       if (lp.pdfFound) lp2.found++;
       else lp2.missing++;
 
-      // PDF versions per-language
-      if (!s.langPdfVersion.has(lp.code)) {
-        s.langPdfVersion.set(lp.code, { allTwoFound: 0, notFound: 0 });
+      // PDF versions per-language — pdfPath in the matching language artifact list.
+      const pvt = classifySopVersionPerLangFormat(row, {
+        lang: lp.code,
+        format: "pdf",
+      });
+      if (pvt !== null) {
+        if (!s.langPdfVersion.has(lp.code)) {
+          s.langPdfVersion.set(lp.code, { allTwoFound: 0, notFound: 0 });
+        }
+        const lpv = s.langPdfVersion.get(lp.code)!;
+        if (pvt === "allTwoFound") lpv.allTwoFound++;
+        else lpv.notFound++;
       }
-      const lpv = s.langPdfVersion.get(lp.code)!;
-      if (vt === "allTwoFound") lpv.allTwoFound++;
-      else lpv.notFound++;
     }
   }
 
-  // Aggregate version counts by file type
-  if (nDocxFiles > 0) {
-    if (vt === "allTwoFound") s.docxVersionAllTwoFound++;
-    else s.docxVersionNotFound++;
-  }
+  // Aggregate format-scoped version counts (sum of per-language buckets to stay consistent)
+  const enDocxVt = classifySopVersionPerLangFormat(row, { lang: "EN", format: "docx" });
+  const gjDocxVt = classifySopVersionPerLangFormat(row, { lang: "GJ", format: "docx" });
+  const enPdfVt = classifySopVersionPerLangFormat(row, { lang: "EN", format: "pdf" });
+  const gjPdfVt = classifySopVersionPerLangFormat(row, { lang: "GJ", format: "pdf" });
 
-  if (nPdfFiles > 0) {
-    if (vt === "allTwoFound") s.pdfVersionAllTwoFound++;
-    else s.pdfVersionNotFound++;
+  for (const t of [enDocxVt, gjDocxVt]) {
+    if (t === "allTwoFound") s.docxVersionAllTwoFound++;
+    else if (t === "notFound") s.docxVersionNotFound++;
+  }
+  for (const t of [enPdfVt, gjPdfVt]) {
+    if (t === "allTwoFound") s.pdfVersionAllTwoFound++;
+    else if (t === "notFound") s.pdfVersionNotFound++;
   }
 }
 
@@ -585,12 +602,14 @@ function CompactLanguageVersionPairRow({
   onRedClick,
   filterSnapshot,
   deptScope,
+  format,
 }: {
   langVersionDataMap: Map<string, { allTwoFound: number; notFound: number; filter: "ENG" | "GUJ" }>;
   onGreenClick?: (lang: "ENG" | "GUJ") => void;
   onRedClick?: (lang: "ENG" | "GUJ") => void;
   filterSnapshot?: CapsuleFilterSnapshot;
   deptScope?: string;
+  format?: "docx" | "pdf";
 }) {
   const langs = sortLangCodes([...langVersionDataMap.keys()]);
 
@@ -599,15 +618,17 @@ function CompactLanguageVersionPairRow({
       {langs.map((lang) => {
         const data = langVersionDataMap.get(lang)!;
         const langFilter = data.filter;
-        const highlightGreen = filterSnapshot && deptScope
-          ? filterSnapshot.filterDept === deptScope &&
-            filterSnapshot.filterVersionStatus === "allTwov" &&
-            filterSnapshot.filterLanguage === langFilter
+        const highlightGreen = filterSnapshot && deptScope && format
+          ? capsuleVersionSegmentMatches(deptScope, "allTwov", filterSnapshot, {
+              requireFormat: format,
+              requireLanguage: langFilter,
+            })
           : false;
-        const highlightRed = filterSnapshot && deptScope
-          ? filterSnapshot.filterDept === deptScope &&
-            filterSnapshot.filterVersionStatus === "notFoundv" &&
-            filterSnapshot.filterLanguage === langFilter
+        const highlightRed = filterSnapshot && deptScope && format
+          ? capsuleVersionSegmentMatches(deptScope, "notFoundv", filterSnapshot, {
+              requireFormat: format,
+              requireLanguage: langFilter,
+            })
           : false;
         return (
           <CompactVersionPairForLang
@@ -799,23 +820,47 @@ export type CapsuleFilterSnapshot = {
   filterLanguage: "all" | "ENG" | "GUJ" | "BOTH";
   filterMedia: string;
   filterVersionStatus: "all" | SopVersionFilterSegment;
+  /** Optional file-format scope for the active version filter ("docx" or "pdf"). */
+  filterVersionFormat?: "all" | "docx" | "pdf";
 };
+
+export type CapsuleVersionFormat = "any" | "docx" | "pdf";
 
 function capsuleVersionSegmentMatches(
   deptScope: string,
   segment: SopVersionFilterSegment,
   f: CapsuleFilterSnapshot,
+  opts?: {
+    /** When matching the row-level "Versions" capsule, require no format scope active. */
+    requireAnyFormat?: boolean;
+    /** When matching a format-scoped sub-row, require this format scope active. */
+    requireFormat?: "docx" | "pdf";
+    /** When matching a language sub-cell, require this language to be active. */
+    requireLanguage?: "ENG" | "GUJ";
+  },
 ): boolean {
   if (f.filterDept !== deptScope) return false;
-  if (
-    f.filterDualLang ||
-    f.filterExpiry !== "all" ||
-    f.filterLanguage !== "all" ||
-    f.filterFileType !== "all" ||
-    f.filterMedia !== "all"
-  )
+  if (f.filterDualLang || f.filterExpiry !== "all" || f.filterMedia !== "all")
     return false;
-  return f.filterVersionStatus === segment;
+  if (f.filterVersionStatus !== segment) return false;
+
+  if (opts?.requireFormat) {
+    const want = opts.requireFormat === "docx" ? "DOCX" : "PDF";
+    if (f.filterFileType !== want) return false;
+  } else if (opts?.requireAnyFormat) {
+    if (f.filterFileType !== "all") return false;
+  } else {
+    // Default (legacy callers): only match when no format/language scope is active.
+    if (f.filterFileType !== "all") return false;
+    if (f.filterLanguage !== "all") return false;
+  }
+
+  if (opts?.requireLanguage) {
+    if (f.filterLanguage !== opts.requireLanguage) return false;
+  } else if (!opts?.requireFormat) {
+    if (f.filterLanguage !== "all") return false;
+  }
+  return true;
 }
 
 function capsuleAvailMissMatches(
@@ -991,6 +1036,7 @@ function DepartmentCapsuleCard({
     dept: string,
     segment: SopVersionFilterSegment,
     lang?: "ENG" | "GUJ",
+    format?: "docx" | "pdf",
   ) => void;
   filterSnapshot: CapsuleFilterSnapshot;
   variant?: "department" | "grand";
@@ -1309,15 +1355,17 @@ function DepartmentCapsuleCard({
             deptForFilter,
             "allTwov",
             filterSnapshot,
+            { requireAnyFormat: true },
           )}
           highlightRed={capsuleVersionSegmentMatches(
             deptForFilter,
             "notFoundv",
             filterSnapshot,
+            { requireAnyFormat: true },
           )}
           filterRowActive={
-            capsuleVersionSegmentMatches(deptForFilter, "allTwov", filterSnapshot) ||
-            capsuleVersionSegmentMatches(deptForFilter, "notFoundv", filterSnapshot)
+            capsuleVersionSegmentMatches(deptForFilter, "allTwov", filterSnapshot, { requireAnyFormat: true }) ||
+            capsuleVersionSegmentMatches(deptForFilter, "notFoundv", filterSnapshot, { requireAnyFormat: true })
           }
           titleSummary={
             isGrand
@@ -1325,7 +1373,7 @@ function DepartmentCapsuleCard({
               : `Version in ${scopeHint} · green = All Two Found, red = Not Found`
           }
         />
-        {/* DOCX Versions Sub-section (EN and GUJ side-by-side) — always show */}
+        {/* DOCX Versions Sub-section (EN and GUJ side-by-side) — DOCX-scoped per-language */}
         <div className="mt-0.5 flex w-full min-h-[20px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
           <span className="text-gray-400 font-medium">DOCX</span>
           <CompactLanguageVersionPairRow
@@ -1339,13 +1387,14 @@ function DepartmentCapsuleCard({
                 },
               ])
             )}
-            onGreenClick={(langFilter) => applyCapsuleVersionSegment(deptForFilter, "allTwov", langFilter)}
-            onRedClick={(langFilter) => applyCapsuleVersionSegment(deptForFilter, "notFoundv", langFilter)}
+            onGreenClick={(langFilter) => applyCapsuleVersionSegment(deptForFilter, "allTwov", langFilter, "docx")}
+            onRedClick={(langFilter) => applyCapsuleVersionSegment(deptForFilter, "notFoundv", langFilter, "docx")}
             filterSnapshot={filterSnapshot}
             deptScope={deptForFilter}
+            format="docx"
           />
         </div>
-        {/* PDF Versions Sub-section (EN and GUJ side-by-side) — always show */}
+        {/* PDF Versions Sub-section (EN and GUJ side-by-side) — PDF-scoped per-language */}
         <div className="mt-0.5 flex w-full min-h-[20px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
           <span className="text-gray-400 font-medium">PDF</span>
           <CompactLanguageVersionPairRow
@@ -1359,10 +1408,11 @@ function DepartmentCapsuleCard({
                 },
               ])
             )}
-            onGreenClick={(langFilter) => applyCapsuleVersionSegment(deptForFilter, "allTwov", langFilter)}
-            onRedClick={(langFilter) => applyCapsuleVersionSegment(deptForFilter, "notFoundv", langFilter)}
+            onGreenClick={(langFilter) => applyCapsuleVersionSegment(deptForFilter, "allTwov", langFilter, "pdf")}
+            onRedClick={(langFilter) => applyCapsuleVersionSegment(deptForFilter, "notFoundv", langFilter, "pdf")}
             filterSnapshot={filterSnapshot}
             deptScope={deptForFilter}
+            format="pdf"
           />
         </div>
 
@@ -1495,6 +1545,7 @@ export default function DepartmentCapsules({
     dept: string,
     segment: SopVersionFilterSegment,
     lang?: "ENG" | "GUJ",
+    format?: "docx" | "pdf",
   ) => void;
   filterSnapshot: CapsuleFilterSnapshot;
 }) {
