@@ -109,13 +109,18 @@ export function extractDatesFromContent(content: string): ExtractedDates {
       new RegExp(`next\\s*review[.:\\s]+${dateRegex}`, 'i'),
       new RegExp(`review\\s*due[.:\\s]+${dateRegex}`, 'i'),
       new RegExp(`date\\s*of\\s*review[.:\\s]+${dateRegex}`, 'i'),
-      new RegExp(`expir(?:y|ation)\.?\\s*date[.:\\s]+${dateRegex}`, 'i'),
     ],
     expiry: [
+      // Inline forms — label and date on same line
       new RegExp(`expir(?:y|ation)\.?\\s*date[.:\\s]+${dateRegex}`, 'i'),
-      new RegExp(`expiry\\s+date\.?\\s+${dateRegex}`, 'i'),
-      new RegExp(`valid\\s*until[.:\\s]+${dateRegex}`, 'i'),
-      new RegExp(`valid\\s+until\\s+${dateRegex}`, 'i'),
+      new RegExp(`date\\s*of\\s*expir(?:y|ation)[.:\\s]+${dateRegex}`, 'i'),
+      new RegExp(`expires?\\s*(?:on)?[.:\\s]+${dateRegex}`, 'i'),
+      // Table split — label in one cell, value in next (newline between)
+      new RegExp(`expir(?:y|ation)\\s+date\.?\\s+${dateRegex}`, 'i'),
+      new RegExp(`expir(?:y|ation)\\s+dt\.?\\s+${dateRegex}`, 'i'),
+      new RegExp(`exp\.?\\s*(?:date|dt)\.?[.:\\s]+${dateRegex}`, 'i'),
+      // Valid Till / Valid Upto / Valid Until (common SOP labels)
+      new RegExp(`valid\\s*(?:till|upto|up\\s*to|until)[.:\\s]+${dateRegex}`, 'i'),
     ],
     version: [
       /version[:\s]+([0-9]+\.?[0-9]*)/i,
@@ -231,7 +236,18 @@ export async function extractDatesFromBuffer(
         const d = parseSOPDate(headerData.effDate);
         if (d) dates.effectiveDate = d;
       }
+      if (headerData.expiryDate && !dates.expiryDate) {
+        const d = parseSOPDate(headerData.expiryDate);
+        if (d) dates.expiryDate = d;
+      }
     } catch { /* best-effort */ }
+  }
+
+  // Final fallback: many SOPs have only a review date in the header table.
+  // The expiry date is conventionally the review date (the review IS the expiry of validity).
+  // Only fall back when no explicit expiry label was found — keeps real expiry dates intact.
+  if (!dates.expiryDate && dates.reviewDate) {
+    dates.expiryDate = dates.reviewDate;
   }
 
   return dates;
