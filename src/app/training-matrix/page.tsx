@@ -129,6 +129,7 @@ interface TotalCardData {
   dbSopCount: number;
   dbSopsByDept: Record<string, Array<{ sopCode: string; title: string }>>;
   dbSopCountsByDept: Record<string, number>;
+  langBreakdown?: Array<{ key: string; label: string; found: number; missing: number }>;
   excelSopCount: number;
   missingSopCount: number;
   trainersAssigned: number;
@@ -184,11 +185,11 @@ interface OverviewData {
   sopCodesByDept: Record<Dept, string[]>;
   sopMonthMapByDept: Record<Dept, Record<string, string>>;
   monthCountsByDept: Record<Dept, Record<string, number>>;
-  sopStatusByCode: Record<string, { 
-    expired: boolean; 
-    targetDate: string | null; 
-    totalQuestions: number; 
-    approvedCount: number; 
+  sopStatusByCode: Record<string, {
+    expired: boolean;
+    targetDate: string | null;
+    totalQuestions: number;
+    approvedCount: number;
     engTotalQuestions?: number;
     engApprovedCount?: number;
     gujTotalQuestions?: number;
@@ -674,17 +675,35 @@ function RowD({
   value,
   color,
   onClick,
+  tooltip,
 }: {
   label: string;
   value: React.ReactNode;
   color: 'green' | 'red' | 'amber';
   onClick?: () => void;
+  tooltip?: string;
 }) {
   const colorClass =
     color === 'green' ? 'text-emerald-600' : color === 'red' ? 'text-red-600' : 'text-amber-600';
   return (
     <div className="flex items-center justify-between pl-2">
-      <span className="text-[9px] text-gray-400">{label}</span>
+      <span className="flex items-center gap-0.5 text-[9px] text-gray-400">
+        {label}
+        {tooltip && (
+          <span className="group/tip relative inline-flex items-center">
+            <svg
+              className="h-2.5 w-2.5 cursor-default text-gray-300 transition-colors group-hover/tip:text-gray-500"
+              viewBox="0 0 16 16"
+              fill="currentColor"
+            >
+              <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm.75 10.5h-1.5v-5h1.5v5zm0-6.5h-1.5V3.5h1.5V5z" />
+            </svg>
+            <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1 w-40 -translate-x-1/2 rounded bg-gray-800 px-2 py-1.5 text-[9px] leading-tight text-white opacity-0 transition-opacity group-hover/tip:opacity-100">
+              {tooltip}
+            </span>
+          </span>
+        )}
+      </span>
       <button
         type="button"
         onClick={onClick}
@@ -692,6 +711,39 @@ function RowD({
       >
         {value}
       </button>
+    </div>
+  );
+}
+
+function RepetitiveSopsRow({
+  items,
+}: {
+  items: Array<{ label: string; value: React.ReactNode; color: 'red' | 'amber' | 'green'; tooltip?: string; onClick?: () => void }>;
+}) {
+  return (
+    <div className="flex items-center justify-between pl-2">
+      {items.map(({ label, value, color, tooltip, onClick }) => {
+        const colorClass = color === 'red' ? 'text-red-600' : color === 'amber' ? 'text-amber-600' : 'text-emerald-600';
+        return (
+          <span key={label} className="flex items-center gap-1">
+            <span className="group/rtip relative cursor-default text-[9px] text-gray-400">
+              {label}
+              {tooltip && (
+                <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1 w-40 -translate-x-1/2 rounded bg-gray-800 px-2 py-1.5 text-[9px] leading-tight text-white opacity-0 transition-opacity group-hover/rtip:opacity-100">
+                  {tooltip}
+                </span>
+              )}
+            </span>
+            <button
+              type="button"
+              onClick={onClick}
+              className={`text-[10px] font-semibold ${colorClass} ${onClick ? 'hover:underline' : ''}`}
+            >
+              {value}
+            </button>
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -782,7 +834,7 @@ function CardShell({
 }) {
   return (
     <div
-      className="rounded-[12px] bg-white px-3 py-2.5 shadow-[0_1px_4px_rgba(0,0,0,0.07)] transition-shadow hover:shadow-[0_4px_12px_rgba(0,0,0,0.1)] flex-1 min-w-0"
+      className="rounded-[12px] bg-white px-3 py-2.5 shadow-[0_1px_4px_rgba(0,0,0,0.07)] transition-shadow hover:shadow-[0_4px_12px_rgba(0,0,0,0.1)] flex-1 min-w-[140px]"
       style={{ border: `1.5px solid ${accent}` }}
     >
       <div className="mb-2 flex items-center gap-1">
@@ -1035,17 +1087,16 @@ function SopDetailsInline({
                   return (
                     <Fragment key={key}>
                       <tr
-                        className={`border-b border-gray-50 hover:bg-gray-50 ${
-                          isFound
-                            ? 'bg-emerald-50/40'
-                            : isFoundObsolete
-                              ? 'bg-purple-50/50'
-                              : isDbOnly
-                                ? 'bg-amber-50/40'
-                                : isExcelOnly
-                                  ? 'bg-red-50/30'
-                                  : ''
-                        }`}
+                        className={`border-b border-gray-50 hover:bg-gray-50 ${isFound
+                          ? 'bg-emerald-50/40'
+                          : isFoundObsolete
+                            ? 'bg-purple-50/50'
+                            : isDbOnly
+                              ? 'bg-amber-50/40'
+                              : isExcelOnly
+                                ? 'bg-red-50/30'
+                                : ''
+                          }`}
                       >
                         <td className="px-3 py-2 font-mono font-bold text-gray-900">
                           {r?.sopCode}
@@ -1165,17 +1216,17 @@ function AssignSOPModal({
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
 
-  const [department, setDepartment]     = useState(defaultDept || 'QA');
-  const [sopSearch, setSopSearch]       = useState('');
-  const [sopOptions, setSopOptions]     = useState<SopOption[]>([]);
-  const [selectedSop, setSelectedSop]   = useState<SopOption | null>(null);
-  const [month, setMonth]               = useState(currentMonth);
-  const [year, setYear]                 = useState(currentYear);
+  const [department, setDepartment] = useState(defaultDept || 'QA');
+  const [sopSearch, setSopSearch] = useState('');
+  const [sopOptions, setSopOptions] = useState<SopOption[]>([]);
+  const [selectedSop, setSelectedSop] = useState<SopOption | null>(null);
+  const [month, setMonth] = useState(currentMonth);
+  const [year, setYear] = useState(currentYear);
   const [designations, setDesignations] = useState('');
-  const [loading, setLoading]           = useState(false);
-  const [searching, setSearching]       = useState(false);
-  const [error, setError]               = useState('');
-  const [success, setSuccess]           = useState('');
+  const [loading, setLoading] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   useEffect(() => {
     if (!sopSearch.trim()) { setSopOptions([]); return; }
@@ -1494,7 +1545,7 @@ function RemoveSOPModal({
   onSuccess: () => void;
 }) {
   const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState('');
+  const [error, setError] = useState('');
 
   const handleRemove = async () => {
     setLoading(true);
@@ -1548,10 +1599,10 @@ function RemoveSOPModal({
 // Status badge colour helper
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
-    pending:      'bg-amber-100 text-amber-700',
-    completed:    'bg-green-100 text-green-700',
+    pending: 'bg-amber-100 text-amber-700',
+    completed: 'bg-green-100 text-green-700',
     not_required: 'bg-gray-100 text-gray-500',
-    na:           'bg-gray-100 text-gray-400',
+    na: 'bg-gray-100 text-gray-400',
   };
   const label: Record<string, string> = {
     pending: 'Pending', completed: 'Completed', not_required: 'Not Required', na: 'N/A',
@@ -1580,7 +1631,7 @@ function AssignSOPDataForm({
   onSuccess: () => void;
 }) {
   const currentMonth = uploadContext?.month ?? new Date().getMonth() + 1;
-  const currentYear  = uploadContext?.year  ?? new Date().getFullYear();
+  const currentYear = uploadContext?.year ?? new Date().getFullYear();
 
   // Each row: employee name + designation + training status
   const [rows, setRows] = useState<Array<{ name: string; designation: string; trainingStatus: string }>>(
@@ -1589,9 +1640,9 @@ function AssignSOPDataForm({
       : [{ name: '', designation: '', trainingStatus: 'pending' }],
   );
   const [month, setMonth] = useState(currentMonth);
-  const [year, setYear]   = useState(currentYear);
+  const [year, setYear] = useState(currentYear);
   const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState('');
+  const [error, setError] = useState('');
 
   const addRow = () => setRows((r) => [...r, { name: '', designation: '', trainingStatus: 'pending' }]);
   const removeRow = (i: number) => setRows((r) => r.filter((_, idx) => idx !== i));
@@ -1609,11 +1660,11 @@ function AssignSOPDataForm({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           department: dept,
-          sopId:      sop._id,
+          sopId: sop._id,
           month,
           year,
-          employees:  validRows,
-          createdBy:  'admin',
+          employees: validRows,
+          createdBy: 'admin',
         }),
       });
       const json = await res.json();
@@ -1697,77 +1748,77 @@ function AssignSOPDataForm({
             const isNewMode = row.name === '__new__' || (existingEmployees.length === 0);
             const displayName = row.name === '__new__' ? '' : row.name;
             return (
-            <div key={i} className="grid grid-cols-[2fr_1.5fr_1.5fr_1.5fr_auto] items-center gap-2">
-              {existingEmployees.length > 0 && !isNewMode ? (
+              <div key={i} className="grid grid-cols-[2fr_1.5fr_1.5fr_1.5fr_auto] items-center gap-2">
+                {existingEmployees.length > 0 && !isNewMode ? (
+                  <select
+                    value={row.name}
+                    onChange={(e) => {
+                      if (e.target.value === '__new__') {
+                        // Switch to free-text mode; clear name + designation
+                        updateRow(i, 'name', '__new__');
+                        updateRow(i, 'designation', '');
+                      } else {
+                        const emp = existingEmployees.find((x) => x.name === e.target.value);
+                        updateRow(i, 'name', e.target.value);
+                        if (emp) updateRow(i, 'designation', emp.designation);
+                      }
+                    }}
+                    className={inputCls}
+                  >
+                    <option value="">— select —</option>
+                    {existingEmployees.map((e) => (
+                      <option key={e.name} value={e.name}>{e.name}</option>
+                    ))}
+                    <option disabled>──────────</option>
+                    <option value="__new__">＋ New employee…</option>
+                  </select>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <input
+                      value={displayName}
+                      onChange={(e) => updateRow(i, 'name', e.target.value)}
+                      placeholder="Enter employee name"
+                      autoFocus={row.name === '__new__'}
+                      className={`flex-1 ${inputCls}`}
+                    />
+                    {existingEmployees.length > 0 && (
+                      <button
+                        type="button"
+                        title="Back to dropdown"
+                        onClick={() => { updateRow(i, 'name', ''); updateRow(i, 'designation', ''); }}
+                        className="shrink-0 rounded p-1 text-gray-300 hover:text-gray-600"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                )}
+                <input
+                  value={row.designation}
+                  onChange={(e) => updateRow(i, 'designation', e.target.value)}
+                  placeholder="Designation"
+                  className={inputCls}
+                />
                 <select
-                  value={row.name}
-                  onChange={(e) => {
-                    if (e.target.value === '__new__') {
-                      // Switch to free-text mode; clear name + designation
-                      updateRow(i, 'name', '__new__');
-                      updateRow(i, 'designation', '');
-                    } else {
-                      const emp = existingEmployees.find((x) => x.name === e.target.value);
-                      updateRow(i, 'name', e.target.value);
-                      if (emp) updateRow(i, 'designation', emp.designation);
-                    }
-                  }}
+                  value={row.trainingStatus}
+                  onChange={(e) => updateRow(i, 'trainingStatus', e.target.value)}
                   className={inputCls}
                 >
-                  <option value="">— select —</option>
-                  {existingEmployees.map((e) => (
-                    <option key={e.name} value={e.name}>{e.name}</option>
-                  ))}
-                  <option disabled>──────────</option>
-                  <option value="__new__">＋ New employee…</option>
+                  <option value="pending">Pending (√)</option>
+                  <option value="completed">Completed (✓)</option>
+                  <option value="not_required">Not Required (X)</option>
+                  <option value="na">N/A</option>
                 </select>
-              ) : (
-                <div className="flex items-center gap-1">
-                  <input
-                    value={displayName}
-                    onChange={(e) => updateRow(i, 'name', e.target.value)}
-                    placeholder="Enter employee name"
-                    autoFocus={row.name === '__new__'}
-                    className={`flex-1 ${inputCls}`}
-                  />
-                  {existingEmployees.length > 0 && (
-                    <button
-                      type="button"
-                      title="Back to dropdown"
-                      onClick={() => { updateRow(i, 'name', ''); updateRow(i, 'designation', ''); }}
-                      className="shrink-0 rounded p-1 text-gray-300 hover:text-gray-600"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  )}
-                </div>
-              )}
-              <input
-                value={row.designation}
-                onChange={(e) => updateRow(i, 'designation', e.target.value)}
-                placeholder="Designation"
-                className={inputCls}
-              />
-              <select
-                value={row.trainingStatus}
-                onChange={(e) => updateRow(i, 'trainingStatus', e.target.value)}
-                className={inputCls}
-              >
-                <option value="pending">Pending (√)</option>
-                <option value="completed">Completed (✓)</option>
-                <option value="not_required">Not Required (X)</option>
-                <option value="na">N/A</option>
-              </select>
-              <StatusBadge status={row.trainingStatus || 'pending'} />
-              <button
-                onClick={() => removeRow(i)}
-                disabled={rows.length === 1}
-                className="rounded p-1 text-gray-300 hover:text-red-500 disabled:opacity-30"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          );
+                <StatusBadge status={row.trainingStatus || 'pending'} />
+                <button
+                  onClick={() => removeRow(i)}
+                  disabled={rows.length === 1}
+                  className="rounded p-1 text-gray-300 hover:text-red-500 disabled:opacity-30"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            );
           })}
         </div>
 
@@ -1800,22 +1851,22 @@ function ManageMatrixSOPsModal({
   onClose: () => void;
   onRefresh: () => void;
 }) {
-  const [dept, setDept]         = useState(defaultDept || 'QA');
-  const [search, setSearch]     = useState('');
+  const [dept, setDept] = useState(defaultDept || 'QA');
+  const [search, setSearch] = useState('');
   const [unassigned, setUnassigned] = useState<any[]>([]);
   const [existingEmployees, setExistingEmployees] = useState<Array<{ name: string; designation: string }>>([]);
   const [uploadContext, setUploadContext] = useState<{ month: number; year: number; monthName: string } | null>(null);
-  const [loading, setLoading]   = useState(false);
+  const [loading, setLoading] = useState(false);
   // Step: 'list' | 'form'
-  const [step, setStep]         = useState<'list' | 'form'>('list');
+  const [step, setStep] = useState<'list' | 'form'>('list');
   const [selectedSop, setSelectedSop] = useState<any | null>(null);
-  const [saved, setSaved]       = useState<string[]>([]); // sopCodes successfully assigned this session
+  const [saved, setSaved] = useState<string[]>([]); // sopCodes successfully assigned this session
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const url = `/api/training-matrix/unassigned-sops?department=${encodeURIComponent(dept)}${search ? `&search=${encodeURIComponent(search)}` : ''}`;
-      const res  = await fetch(url);
+      const res = await fetch(url);
       const json = await res.json();
       setUnassigned(json.unassigned || []);
       setExistingEmployees(json.existingEmployees || []);
@@ -2054,38 +2105,44 @@ export default function TrainingMatrixPage() {
   const [empCapsules, setEmpCapsules] = useState<any[]>([]);
 
   const fetchData = useCallback(async (forceRefresh = false) => {
-    const SESSION_KEY = 'training_matrix_overview_cache';
-    const SESSION_TTL_MS = 5 * 60 * 1000;
+    const CACHE_KEY = 'training_matrix_overview_cache';
+    const FRESH_TTL_MS = 5 * 60 * 1000;
 
-    // Tier 1: sessionStorage — if fresh, skip network entirely (prevents refetch on navigation)
+    // Tier 1: localStorage — show any cached data immediately (even if stale), then revalidate.
+    // localStorage persists across reloads and new tabs, unlike sessionStorage.
+    let hasShownCached = false;
     if (!forceRefresh && typeof window !== 'undefined') {
       try {
-        const raw = sessionStorage.getItem(SESSION_KEY);
+        const raw = localStorage.getItem(CACHE_KEY);
         if (raw) {
           const { payload, cachedAt } = JSON.parse(raw);
-          if (Date.now() - cachedAt <= SESSION_TTL_MS && payload?.success) {
-            console.log('📦 TrainingMatrix: fresh sessionStorage cache — skipping network');
+          if (payload?.success) {
             setData(payload as OverviewData);
             setLoading(false);
-            return; // ← Cache is fresh, no need to refetch
+            hasShownCached = true;
+            if (Date.now() - cachedAt <= FRESH_TTL_MS) {
+              return; // Fresh — skip network entirely, Redis still warm server-side
+            }
+            // Stale — fall through to background revalidate without showing spinner
           }
         }
       } catch { /* ignore malformed cache */ }
     }
 
-    // Tier 2: Network fetch (no cache or cache expired)
-    setLoading(true);
+    // Tier 2: Network fetch. Only show spinner when there is nothing cached to display.
+    // On a cache miss the server will serve from Upstash Redis (5 min TTL) if warm.
+    if (!hasShownCached) setLoading(true);
     try {
       const url = forceRefresh
         ? '/api/training-matrix/overview?refresh=1'
         : '/api/training-matrix/overview';
-      const res = await fetch(url, { cache: 'no-store' });
+      const res = await fetch(url); // no cache: 'no-store' — let browser respect Cache-Control header
       const json = await res.json();
       if (json.success) {
         setData(json as OverviewData);
         try {
-          sessionStorage.setItem(SESSION_KEY, JSON.stringify({ payload: json, cachedAt: Date.now() }));
-        } catch { /* quota — ignore */ }
+          localStorage.setItem(CACHE_KEY, JSON.stringify({ payload: json, cachedAt: Date.now() }));
+        } catch { /* storage quota — ignore */ }
       }
     } catch (e) {
       console.error('Failed to load overview', e);
@@ -2428,6 +2485,9 @@ export default function TrainingMatrixPage() {
           dept: opts.dept,
           sopCodes: new Set(codes.map((c) => stripVersion(c))),
         });
+        setTimeout(() => {
+          tableSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 80);
         return;
       }
     },
@@ -2436,6 +2496,18 @@ export default function TrainingMatrixPage() {
 
   const clearCapsuleFilter = useCallback(() => {
     setCapsuleSopFilter(null);
+  }, []);
+
+  const filterAndScroll = useCallback((dept: ActiveDept) => {
+    setCapsuleSopFilter(null);
+    setViewMode('sop');
+    setGroupBy('department');
+    setActiveMonth('All');
+    setSearch('');
+    setActiveDept(dept);
+    setTimeout(() => {
+      tableSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
   }, []);
 
   const openEmployeeListPopup = useCallback(
@@ -2632,19 +2704,25 @@ export default function TrainingMatrixPage() {
   const renderTotalCard = (t: TotalCardData) => {
     const TotalIcon = DEPT_ICON.Total;
 
-    // Aggregate lang breakdown across all uploaded depts
-    const totalLangMap = new Map<string, { found: number; missing: number }>();
-    for (const dept of DEPARTMENTS) {
-      const deptData = data?.perDept?.[dept] as any;
-      if (!deptData?.uploaded) continue;
-      for (const lr of (deptData.langBreakdown || []) as Array<{ key: string; label: string; found: number; missing: number }>) {
-        const existing = totalLangMap.get(lr.key) || { found: 0, missing: 0 };
-        totalLangMap.set(lr.key, { found: existing.found + lr.found, missing: existing.missing + lr.missing });
+    // Prefer the authoritative global lang breakdown from the API (covers all DB SOPs regardless of dept).
+    // Fall back to aggregating per-dept breakdowns for backward-compat with cached responses.
+    const totalLangBreakdown = (() => {
+      if (t.langBreakdown && t.langBreakdown.length > 0) {
+        return t.langBreakdown.slice().sort((a, b) => (a.key === b.key ? 0 : a.key === 'ENG' ? -1 : 1));
       }
-    }
-    const totalLangBreakdown = Array.from(totalLangMap.entries())
-      .sort(([a], [b]) => (a === b ? 0 : a === 'ENG' ? -1 : 1))
-      .map(([key, v]) => ({ key, label: key, ...v }));
+      const map = new Map<string, { found: number; missing: number }>();
+      for (const dept of DEPARTMENTS) {
+        const deptData = data?.perDept?.[dept] as any;
+        if (!deptData?.uploaded) continue;
+        for (const lr of (deptData.langBreakdown || []) as Array<{ key: string; label: string; found: number; missing: number }>) {
+          const existing = map.get(lr.key) || { found: 0, missing: 0 };
+          map.set(lr.key, { found: existing.found + lr.found, missing: existing.missing + lr.missing });
+        }
+      }
+      return Array.from(map.entries())
+        .sort(([a], [b]) => (a === b ? 0 : a === 'ENG' ? -1 : 1))
+        .map(([key, v]) => ({ key, label: key, ...v }));
+    })();
 
     // Aggregate repetitive SOP counts across all uploaded depts
     // De-duplicate by sopCode since same SOP appears in multiple dept lists
@@ -2775,10 +2853,15 @@ export default function TrainingMatrixPage() {
           <>
             <Divider />
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-normal text-gray-500">Excel SOP Dept Split</span>
-              <span className="text-[11px] font-bold text-gray-900 tabular-nums">{totalExcelDeptTotal}</span>
+              <span className="text-[10px] font-normal text-gray-500">Excel SOP </span>
+              <button
+                type="button"
+                onClick={() => filterAndScroll('All')}
+                className="text-[11px] font-bold text-gray-900 hover:underline tabular-nums"
+              >
+                {totalExcelDeptTotal}
+              </button>
             </div>
-            <SectionLabel>Found in Excel (DB Dept)</SectionLabel>
             <DeptStrip
               foundCounts={{
                 ...totalExcelDeptFoundByDept,
@@ -2836,23 +2919,12 @@ export default function TrainingMatrixPage() {
         />
         <Divider />
         <SectionLabel>Repetitive SOPs</SectionLabel>
-        <RowD
-          label="Repeat 3+"
-          value={totalRepeat3PlusList.length}
-          color="red"
-          onClick={() => applyRepeatFilter('All', '3+', totalRepeat3PlusList)}
-        />
-        <RowD
-          label="Repeat 2"
-          value={totalRepeat2List.length}
-          color="amber"
-          onClick={() => applyRepeatFilter('All', '2', totalRepeat2List)}
-        />
-        <RowD
-          label="Once"
-          value={totalRepeatOnceList.length}
-          color="green"
-          onClick={() => applyRepeatFilter('All', 'once', totalRepeatOnceList)}
+        <RepetitiveSopsRow
+          items={[
+            { label: '3+', value: totalRepeat3PlusList.length, color: 'red', tooltip: 'SOPs scheduled 3 or more times across departments', onClick: () => applyRepeatFilter('All', '3+', totalRepeat3PlusList) },
+            { label: '2×', value: totalRepeat2List.length, color: 'amber', tooltip: 'SOPs scheduled exactly 2 times across departments', onClick: () => applyRepeatFilter('All', '2', totalRepeat2List) },
+            { label: '1×', value: totalRepeatOnceList.length, color: 'green', tooltip: 'SOPs scheduled only once (no repetition across departments)', onClick: () => applyRepeatFilter('All', 'once', totalRepeatOnceList) },
+          ]}
         />
         <RowB
           label="MCQ (100+ created)"
@@ -2876,17 +2948,15 @@ export default function TrainingMatrixPage() {
           }
         />
         <div className="flex items-center justify-between pl-2">
-          <span className="text-[10px] text-gray-400">↳ ENG</span>
-          <span className="flex items-center gap-1.5">
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ ENG Created (100+)', status: 'mcq_eng_created' })} className="text-[11px] font-bold text-emerald-600 hover:underline">{t.mcqEngCreatedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ ENG Not Created (<100)', status: 'mcq_eng_not_created' })} className="text-[11px] font-bold text-red-600 hover:underline">{t.mcqEngNotCreatedCount ?? 0}</button>
+          <span className="flex items-center gap-1">
+            <span className="text-[9px] text-gray-400">ENG</span>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ ENG Created (100+)', status: 'mcq_eng_created' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{t.mcqEngCreatedCount ?? 0}</button>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ ENG Not Created (<100)', status: 'mcq_eng_not_created' })} className="text-[10px] font-bold text-red-600 hover:underline">{t.mcqEngNotCreatedCount ?? 0}</button>
           </span>
-        </div>
-        <div className="flex items-center justify-between pl-2">
-          <span className="text-[10px] text-gray-400">↳ GUJ</span>
-          <span className="flex items-center gap-1.5">
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ GUJ Created (100+)', status: 'mcq_guj_created' })} className="text-[11px] font-bold text-emerald-600 hover:underline">{t.mcqGujCreatedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ GUJ Not Created (<100)', status: 'mcq_guj_not_created' })} className="text-[11px] font-bold text-red-600 hover:underline">{t.mcqGujNotCreatedCount ?? 0}</button>
+          <span className="flex items-center gap-1">
+            <span className="text-[9px] text-gray-400">GUJ</span>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ GUJ Created (100+)', status: 'mcq_guj_created' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{t.mcqGujCreatedCount ?? 0}</button>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ GUJ Not Created (<100)', status: 'mcq_guj_not_created' })} className="text-[10px] font-bold text-red-600 hover:underline">{t.mcqGujNotCreatedCount ?? 0}</button>
           </span>
         </div>
         <RowC
@@ -2920,19 +2990,17 @@ export default function TrainingMatrixPage() {
           }
         />
         <div className="flex items-center justify-between pl-2">
-          <span className="text-[10px] text-gray-400">↳ ENG</span>
-          <span className="flex items-center gap-1.5">
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ ENG All Approved', status: 'mcq_eng_all_approved' })} className="text-[11px] font-bold text-emerald-600 hover:underline">{t.mcqEngAllApprovedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ ENG Partially Approved', status: 'mcq_eng_partially_approved' })} className="text-[11px] font-bold text-amber-500 hover:underline">{t.mcqEngPartiallyApprovedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ ENG Not Approved', status: 'mcq_eng_not_approved' })} className="text-[11px] font-bold text-red-600 hover:underline">{t.mcqEngNotApprovedCount ?? 0}</button>
+          <span className="flex items-center gap-1">
+            <span className="text-[9px] text-gray-400">ENG</span>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ ENG All Approved', status: 'mcq_eng_all_approved' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{t.mcqEngAllApprovedCount ?? 0}</button>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ ENG Partially Approved', status: 'mcq_eng_partially_approved' })} className="text-[10px] font-bold text-amber-500 hover:underline">{t.mcqEngPartiallyApprovedCount ?? 0}</button>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ ENG Not Approved', status: 'mcq_eng_not_approved' })} className="text-[10px] font-bold text-red-600 hover:underline">{t.mcqEngNotApprovedCount ?? 0}</button>
           </span>
-        </div>
-        <div className="flex items-center justify-between pl-2">
-          <span className="text-[10px] text-gray-400">↳ GUJ</span>
-          <span className="flex items-center gap-1.5">
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ GUJ All Approved', status: 'mcq_guj_all_approved' })} className="text-[11px] font-bold text-emerald-600 hover:underline">{t.mcqGujAllApprovedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ GUJ Partially Approved', status: 'mcq_guj_partially_approved' })} className="text-[11px] font-bold text-amber-500 hover:underline">{t.mcqGujPartiallyApprovedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ GUJ Not Approved', status: 'mcq_guj_not_approved' })} className="text-[11px] font-bold text-red-600 hover:underline">{t.mcqGujNotApprovedCount ?? 0}</button>
+          <span className="flex items-center gap-1">
+            <span className="text-[9px] text-gray-400">GUJ</span>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ GUJ All Approved', status: 'mcq_guj_all_approved' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{t.mcqGujAllApprovedCount ?? 0}</button>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ GUJ Partially Approved', status: 'mcq_guj_partially_approved' })} className="text-[10px] font-bold text-amber-500 hover:underline">{t.mcqGujPartiallyApprovedCount ?? 0}</button>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ GUJ Not Approved', status: 'mcq_guj_not_approved' })} className="text-[10px] font-bold text-red-600 hover:underline">{t.mcqGujNotApprovedCount ?? 0}</button>
           </span>
         </div>
         <RowB
@@ -2964,9 +3032,20 @@ export default function TrainingMatrixPage() {
               color="amber"
               onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in Next 60 Days', status: 'due_soon_60' })}
             />
-            <RowD label="└ Reviewed" value={t.dueSoon60McqReviewed ?? 0} color="green" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in 60 Days · Reviewed', status: 'due_soon_60_mcq_reviewed' })} />
-            <RowD label="└ Partially Reviewed" value={t.dueSoon60McqPartial ?? 0} color="amber" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in 60 Days · Partially Reviewed', status: 'due_soon_60_mcq_partial' })} />
-            <RowD label="└ Not Reviewed" value={t.dueSoon60McqNotReviewed ?? 0} color="red" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in 60 Days · Not Reviewed', status: 'due_soon_60_mcq_not_reviewed' })} />
+            <div className="flex items-center justify-between pl-2">
+              <span className="flex items-center gap-1">
+                <span className="text-[9px] text-gray-400">Rev</span>
+                <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in 60 Days · Reviewed', status: 'due_soon_60_mcq_reviewed' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{t.dueSoon60McqReviewed ?? 0}</button>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="text-[9px] text-gray-400">Part</span>
+                <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in 60 Days · Partially Reviewed', status: 'due_soon_60_mcq_partial' })} className="text-[10px] font-bold text-amber-500 hover:underline">{t.dueSoon60McqPartial ?? 0}</button>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="text-[9px] text-gray-400">Not</span>
+                <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in 60 Days · Not Reviewed', status: 'due_soon_60_mcq_not_reviewed' })} className="text-[10px] font-bold text-red-600 hover:underline">{t.dueSoon60McqNotReviewed ?? 0}</button>
+              </span>
+            </div>
           </>
         )}
         <Divider />
@@ -3108,10 +3187,15 @@ export default function TrainingMatrixPage() {
           <>
             <Divider />
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-normal text-gray-500">Excel SOP Dept Split</span>
-              <span className="text-[11px] font-bold text-gray-900 tabular-nums">{d.excelDeptSplit.total ?? 0}</span>
+              <span className="text-[10px] font-normal text-gray-500">Excel SOP</span>
+              <button
+                type="button"
+                onClick={() => filterAndScroll(dept)}
+                className="text-[11px] font-bold text-gray-900 hover:underline tabular-nums"
+              >
+                {d.excelDeptSplit.total ?? 0}
+              </button>
             </div>
-            <SectionLabel>Found in Excel (DB Dept)</SectionLabel>
             <DeptStrip
               foundCounts={{
                 ...(d.excelDeptSplit.foundByDept || {}),
@@ -3170,23 +3254,12 @@ export default function TrainingMatrixPage() {
         />
         <Divider />
         <SectionLabel>Repetitive SOPs</SectionLabel>
-        <RowD
-          label="Repeat 3+"
-          value={d.repeat3PlusCount ?? 0}
-          color="red"
-          onClick={() => applyRepeatFilter(dept, '3+', d.repeat3PlusList ?? [])}
-        />
-        <RowD
-          label="Repeat 2"
-          value={d.repeat2Count ?? 0}
-          color="amber"
-          onClick={() => applyRepeatFilter(dept, '2', d.repeat2List ?? [])}
-        />
-        <RowD
-          label="Once"
-          value={d.repeat1Count ?? 0}
-          color="green"
-          onClick={() => applyRepeatFilter(dept, 'once', d.repeat1List ?? [])}
+        <RepetitiveSopsRow
+          items={[
+            { label: '3+', value: d.repeat3PlusCount ?? 0, color: 'red', tooltip: 'SOPs scheduled 3 or more times across departments', onClick: () => applyRepeatFilter(dept, '3+', d.repeat3PlusList ?? []) },
+            { label: '2×', value: d.repeat2Count ?? 0, color: 'amber', tooltip: 'SOPs scheduled exactly 2 times across departments', onClick: () => applyRepeatFilter(dept, '2', d.repeat2List ?? []) },
+            { label: '1×', value: d.repeat1Count ?? 0, color: 'green', tooltip: 'SOPs scheduled only once (no repetition across departments)', onClick: () => applyRepeatFilter(dept, 'once', d.repeat1List ?? []) },
+          ]}
         />
         <RowB
           label="MCQ (100+ created)"
@@ -3210,17 +3283,15 @@ export default function TrainingMatrixPage() {
           }
         />
         <div className="flex items-center justify-between pl-2">
-          <span className="text-[10px] text-gray-400">↳ ENG</span>
-          <span className="flex items-center gap-1.5">
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ ENG Created (100+)`, status: 'mcq_eng_created' })} className="text-[11px] font-bold text-emerald-600 hover:underline">{d.mcqEngCreatedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ ENG Not Created (<100)`, status: 'mcq_eng_not_created' })} className="text-[11px] font-bold text-red-600 hover:underline">{d.mcqEngNotCreatedCount ?? 0}</button>
+          <span className="flex items-center gap-1">
+            <span className="text-[9px] text-gray-400">ENG</span>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ ENG Created (100+)`, status: 'mcq_eng_created' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{d.mcqEngCreatedCount ?? 0}</button>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ ENG Not Created (<100)`, status: 'mcq_eng_not_created' })} className="text-[10px] font-bold text-red-600 hover:underline">{d.mcqEngNotCreatedCount ?? 0}</button>
           </span>
-        </div>
-        <div className="flex items-center justify-between pl-2">
-          <span className="text-[10px] text-gray-400">↳ GUJ</span>
-          <span className="flex items-center gap-1.5">
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ GUJ Created (100+)`, status: 'mcq_guj_created' })} className="text-[11px] font-bold text-emerald-600 hover:underline">{d.mcqGujCreatedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ GUJ Not Created (<100)`, status: 'mcq_guj_not_created' })} className="text-[11px] font-bold text-red-600 hover:underline">{d.mcqGujNotCreatedCount ?? 0}</button>
+          <span className="flex items-center gap-1">
+            <span className="text-[9px] text-gray-400">GUJ</span>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ GUJ Created (100+)`, status: 'mcq_guj_created' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{d.mcqGujCreatedCount ?? 0}</button>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ GUJ Not Created (<100)`, status: 'mcq_guj_not_created' })} className="text-[10px] font-bold text-red-600 hover:underline">{d.mcqGujNotCreatedCount ?? 0}</button>
           </span>
         </div>
         <RowC
@@ -3254,19 +3325,17 @@ export default function TrainingMatrixPage() {
           }
         />
         <div className="flex items-center justify-between pl-2">
-          <span className="text-[10px] text-gray-400">↳ ENG</span>
-          <span className="flex items-center gap-1.5">
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ ENG All Approved`, status: 'mcq_eng_all_approved' })} className="text-[11px] font-bold text-emerald-600 hover:underline">{d.mcqEngAllApprovedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ ENG Partially Approved`, status: 'mcq_eng_partially_approved' })} className="text-[11px] font-bold text-amber-500 hover:underline">{d.mcqEngPartiallyApprovedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ ENG Not Approved`, status: 'mcq_eng_not_approved' })} className="text-[11px] font-bold text-red-600 hover:underline">{d.mcqEngNotApprovedCount ?? 0}</button>
+          <span className="flex items-center gap-1">
+            <span className="text-[9px] text-gray-400">ENG</span>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ ENG All Approved`, status: 'mcq_eng_all_approved' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{d.mcqEngAllApprovedCount ?? 0}</button>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ ENG Partially Approved`, status: 'mcq_eng_partially_approved' })} className="text-[10px] font-bold text-amber-500 hover:underline">{d.mcqEngPartiallyApprovedCount ?? 0}</button>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ ENG Not Approved`, status: 'mcq_eng_not_approved' })} className="text-[10px] font-bold text-red-600 hover:underline">{d.mcqEngNotApprovedCount ?? 0}</button>
           </span>
-        </div>
-        <div className="flex items-center justify-between pl-2">
-          <span className="text-[10px] text-gray-400">↳ GUJ</span>
-          <span className="flex items-center gap-1.5">
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ GUJ All Approved`, status: 'mcq_guj_all_approved' })} className="text-[11px] font-bold text-emerald-600 hover:underline">{d.mcqGujAllApprovedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ GUJ Partially Approved`, status: 'mcq_guj_partially_approved' })} className="text-[11px] font-bold text-amber-500 hover:underline">{d.mcqGujPartiallyApprovedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ GUJ Not Approved`, status: 'mcq_guj_not_approved' })} className="text-[11px] font-bold text-red-600 hover:underline">{d.mcqGujNotApprovedCount ?? 0}</button>
+          <span className="flex items-center gap-1">
+            <span className="text-[9px] text-gray-400">GUJ</span>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ GUJ All Approved`, status: 'mcq_guj_all_approved' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{d.mcqGujAllApprovedCount ?? 0}</button>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ GUJ Partially Approved`, status: 'mcq_guj_partially_approved' })} className="text-[10px] font-bold text-amber-500 hover:underline">{d.mcqGujPartiallyApprovedCount ?? 0}</button>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ GUJ Not Approved`, status: 'mcq_guj_not_approved' })} className="text-[10px] font-bold text-red-600 hover:underline">{d.mcqGujNotApprovedCount ?? 0}</button>
           </span>
         </div>
         <RowB
@@ -3298,9 +3367,20 @@ export default function TrainingMatrixPage() {
               color="amber"
               onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in Next 60 Days`, status: 'due_soon_60' })}
             />
-            <RowD label="└ Reviewed" value={d.dueSoon60McqReviewed ?? 0} color="green" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in 60 Days · Reviewed`, status: 'due_soon_60_mcq_reviewed' })} />
-            <RowD label="└ Partially Reviewed" value={d.dueSoon60McqPartial ?? 0} color="amber" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in 60 Days · Partially Reviewed`, status: 'due_soon_60_mcq_partial' })} />
-            <RowD label="└ Not Reviewed" value={d.dueSoon60McqNotReviewed ?? 0} color="red" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in 60 Days · Not Reviewed`, status: 'due_soon_60_mcq_not_reviewed' })} />
+            <div className="flex items-center justify-between pl-2">
+              <span className="flex items-center gap-1">
+                <span className="text-[9px] text-gray-400">Rev</span>
+                <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in 60 Days · Reviewed`, status: 'due_soon_60_mcq_reviewed' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{d.dueSoon60McqReviewed ?? 0}</button>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="text-[9px] text-gray-400">Part</span>
+                <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in 60 Days · Partially Reviewed`, status: 'due_soon_60_mcq_partial' })} className="text-[10px] font-bold text-amber-500 hover:underline">{d.dueSoon60McqPartial ?? 0}</button>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="text-[9px] text-gray-400">Not</span>
+                <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in 60 Days · Not Reviewed`, status: 'due_soon_60_mcq_not_reviewed' })} className="text-[10px] font-bold text-red-600 hover:underline">{d.dueSoon60McqNotReviewed ?? 0}</button>
+              </span>
+            </div>
           </>
         )}
         {/* (no extra Assigned/Missing rows; shown inline above) */}
@@ -3539,9 +3619,8 @@ export default function TrainingMatrixPage() {
                 <span className="text-[11px] font-black text-gray-900">{dept}</span>
                 {!!sop.month && (
                   <span
-                    className={`text-[10px] font-black rounded-full px-2 py-0.5 border ${
-                      isActiveMonth ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white/60 text-gray-600 border-white/60'
-                    }`}
+                    className={`text-[10px] font-black rounded-full px-2 py-0.5 border ${isActiveMonth ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white/60 text-gray-600 border-white/60'
+                      }`}
                     title={isActiveMonth ? 'Exam scheduled in selected month' : 'Scheduled month'}
                   >
                     {sop.month}
@@ -3549,11 +3628,10 @@ export default function TrainingMatrixPage() {
                 )}
                 {sop.targetDate ? (
                   <span
-                    className={`inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2.5 py-0.5 border ${
-                      sop.expired
-                        ? 'bg-red-100 text-red-700 border-red-300'
-                        : 'bg-emerald-100 text-emerald-700 border-emerald-300'
-                    }`}
+                    className={`inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2.5 py-0.5 border ${sop.expired
+                      ? 'bg-red-100 text-red-700 border-red-300'
+                      : 'bg-emerald-100 text-emerald-700 border-emerald-300'
+                      }`}
                     title={sop.expired ? 'This SOP has expired' : 'This SOP is valid'}
                   >
                     <span className="text-[9px]">{sop.expired ? '⚠' : '✓'}</span>
@@ -3620,15 +3698,14 @@ export default function TrainingMatrixPage() {
                   target="_blank"
                   rel="noreferrer"
                   onClick={(e) => e.stopPropagation()}
-                  className={`inline-flex items-center justify-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold border transition hover:opacity-80 min-w-[130px] ${
-                    (sop.isDualLanguage ? (sop.mcqEngTotal ?? 0) : sop.mcqTotal) > 0
-                      ? (sop.isDualLanguage ? (sop.mcqEngApproved ?? 0) : (sop.mcqApproved ?? 0)) === (sop.isDualLanguage ? (sop.mcqEngTotal ?? 0) : sop.mcqTotal)
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                        : (sop.isDualLanguage ? (sop.mcqEngApproved ?? 0) : (sop.mcqApproved ?? 0)) > 0
-                          ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-                          : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
-                      : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
-                  }`}
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold border transition hover:opacity-80 min-w-[130px] ${(sop.isDualLanguage ? (sop.mcqEngTotal ?? 0) : sop.mcqTotal) > 0
+                    ? (sop.isDualLanguage ? (sop.mcqEngApproved ?? 0) : (sop.mcqApproved ?? 0)) === (sop.isDualLanguage ? (sop.mcqEngTotal ?? 0) : sop.mcqTotal)
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                      : (sop.isDualLanguage ? (sop.mcqEngApproved ?? 0) : (sop.mcqApproved ?? 0)) > 0
+                        ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                        : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+                    : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                    }`}
                   title="Click to view MCQ Bank details"
                 >
                   <span>{sop.isDualLanguage ? 'ENG MCQs' : 'MCQs'}: {sop.isDualLanguage ? (sop.mcqEngTotal ?? 0) : sop.mcqTotal}</span>
@@ -3644,15 +3721,14 @@ export default function TrainingMatrixPage() {
                     target="_blank"
                     rel="noreferrer"
                     onClick={(e) => e.stopPropagation()}
-                    className={`inline-flex items-center justify-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold border transition hover:opacity-80 min-w-[130px] ${
-                      (sop.mcqGujTotal ?? 0) > 0
-                        ? (sop.mcqGujApproved ?? 0) === (sop.mcqGujTotal ?? 0)
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                          : (sop.mcqGujApproved ?? 0) > 0
-                            ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-                            : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
-                        : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
-                    }`}
+                    className={`inline-flex items-center justify-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold border transition hover:opacity-80 min-w-[130px] ${(sop.mcqGujTotal ?? 0) > 0
+                      ? (sop.mcqGujApproved ?? 0) === (sop.mcqGujTotal ?? 0)
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                        : (sop.mcqGujApproved ?? 0) > 0
+                          ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                          : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+                      : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                      }`}
                     title="Click to view MCQ Bank details"
                   >
                     <span>GUJ MCQs: {sop.mcqGujTotal ?? 0}</span>
@@ -3787,9 +3863,8 @@ export default function TrainingMatrixPage() {
                         </span>
                       )}
                       {dm.targetDate ? (
-                        <span className={`inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2.5 py-0.5 border ${
-                          dm.expired ? 'bg-red-100 text-red-700 border-red-300' : 'bg-emerald-100 text-emerald-700 border-emerald-300'
-                        }`}>
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2.5 py-0.5 border ${dm.expired ? 'bg-red-100 text-red-700 border-red-300' : 'bg-emerald-100 text-emerald-700 border-emerald-300'
+                          }`}>
                           <span className="text-[9px]">{dm.expired ? '⚠' : '✓'}</span>
                           Expiry: <span className="font-black">{new Date(dm.targetDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
                         </span>
@@ -3799,11 +3874,10 @@ export default function TrainingMatrixPage() {
                         </span>
                       )}
                       {dm.completionPct !== undefined && (
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                          dm.completionPct >= 80 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : dm.completionPct >= 50 ? 'bg-amber-50 text-amber-700 border-amber-200'
-                              : 'bg-red-50 text-red-700 border-red-200'
-                        }`}>{dm.completionPct}%</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${dm.completionPct >= 80 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : dm.completionPct >= 50 ? 'bg-amber-50 text-amber-700 border-amber-200'
+                            : 'bg-red-50 text-red-700 border-red-200'
+                          }`}>{dm.completionPct}%</span>
                       )}
                       {dm.inExcelDepts && dm.inExcelDepts.length > 0 && (
                         <span className="inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2 py-0.5 border bg-indigo-50 text-indigo-700 border-indigo-200">
@@ -3827,15 +3901,14 @@ export default function TrainingMatrixPage() {
                           target="_blank"
                           rel="noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold border hover:opacity-80 ${
-                            (dm.isDualLanguage ? (dm.mcqEngTotal ?? 0) : dm.mcqTotal) > 0
-                              ? (dm.isDualLanguage ? (dm.mcqEngApproved ?? 0) : (dm.mcqApproved ?? 0)) === (dm.isDualLanguage ? (dm.mcqEngTotal ?? 0) : dm.mcqTotal)
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : (dm.isDualLanguage ? (dm.mcqEngApproved ?? 0) : (dm.mcqApproved ?? 0)) > 0
-                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                  : 'bg-red-50 text-red-700 border-red-200'
-                              : 'bg-gray-50 text-gray-600 border-gray-200'
-                          }`}
+                          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold border hover:opacity-80 ${(dm.isDualLanguage ? (dm.mcqEngTotal ?? 0) : dm.mcqTotal) > 0
+                            ? (dm.isDualLanguage ? (dm.mcqEngApproved ?? 0) : (dm.mcqApproved ?? 0)) === (dm.isDualLanguage ? (dm.mcqEngTotal ?? 0) : dm.mcqTotal)
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : (dm.isDualLanguage ? (dm.mcqEngApproved ?? 0) : (dm.mcqApproved ?? 0)) > 0
+                                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                : 'bg-red-50 text-red-700 border-red-200'
+                            : 'bg-gray-50 text-gray-600 border-gray-200'
+                            }`}
                         >
                           {dm.isDualLanguage ? 'ENG MCQs' : 'MCQs'}: {dm.isDualLanguage ? (dm.mcqEngTotal ?? 0) : dm.mcqTotal}
                           {(dm.isDualLanguage ? (dm.mcqEngTotal ?? 0) : dm.mcqTotal ?? 0) > 0 && (
@@ -3851,13 +3924,12 @@ export default function TrainingMatrixPage() {
                           target="_blank"
                           rel="noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold border hover:opacity-80 ${
-                            (dm.mcqGujTotal ?? 0) > 0
-                              ? (dm.mcqGujApproved ?? 0) === (dm.mcqGujTotal ?? 0) ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : (dm.mcqGujApproved ?? 0) > 0 ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                  : 'bg-red-50 text-red-700 border-red-200'
-                              : 'bg-gray-50 text-gray-600 border-gray-200'
-                          }`}
+                          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold border hover:opacity-80 ${(dm.mcqGujTotal ?? 0) > 0
+                            ? (dm.mcqGujApproved ?? 0) === (dm.mcqGujTotal ?? 0) ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : (dm.mcqGujApproved ?? 0) > 0 ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                : 'bg-red-50 text-red-700 border-red-200'
+                            : 'bg-gray-50 text-gray-600 border-gray-200'
+                            }`}
                         >
                           GUJ MCQs: {dm.mcqGujTotal ?? 0}
                           {(dm.mcqGujTotal ?? 0) > 0 && (
@@ -4032,11 +4104,10 @@ export default function TrainingMatrixPage() {
                     <button
                       type="button"
                       onClick={() => toggleFilter('pending')}
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition select-none ${
-                        empModalFilter === 'pending'
-                          ? 'bg-red-500 border-red-500 text-white shadow-sm'
-                          : 'bg-gray-100 border-gray-200 text-gray-500 hover:border-red-300 hover:text-red-600'
-                      }`}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition select-none ${empModalFilter === 'pending'
+                        ? 'bg-red-500 border-red-500 text-white shadow-sm'
+                        : 'bg-gray-100 border-gray-200 text-gray-500 hover:border-red-300 hover:text-red-600'
+                        }`}
                     >
                       <span className={`h-2 w-2 rounded-full ${empModalFilter === 'pending' ? 'bg-white' : 'bg-gray-400'}`} />
                       Pending: {totalPending}
@@ -4044,11 +4115,10 @@ export default function TrainingMatrixPage() {
                     <button
                       type="button"
                       onClick={() => toggleFilter('completed')}
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition select-none ${
-                        empModalFilter === 'completed'
-                          ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm'
-                          : 'bg-gray-100 border-gray-200 text-gray-500 hover:border-emerald-300 hover:text-emerald-600'
-                      }`}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition select-none ${empModalFilter === 'completed'
+                        ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm'
+                        : 'bg-gray-100 border-gray-200 text-gray-500 hover:border-emerald-300 hover:text-emerald-600'
+                        }`}
                     >
                       <span className={`h-2 w-2 rounded-full ${empModalFilter === 'completed' ? 'bg-white' : 'bg-gray-400'}`} />
                       Completed: {totalCompleted}
@@ -4252,7 +4322,7 @@ export default function TrainingMatrixPage() {
               const activeFilter = detailModal.employeeListFilter || 'all';
               const visibleRows = activeFilter === 'full' ? allRows.filter((r) => r.fullyTrained)
                 : activeFilter === 'incomplete' ? allRows.filter((r) => !r.fullyTrained)
-                : allRows;
+                  : allRows;
               return (
                 <div className="rounded-xl border border-gray-200 overflow-hidden">
                   <div className="px-4 py-2.5 bg-gray-50 flex items-center justify-between">
@@ -4263,11 +4333,10 @@ export default function TrainingMatrixPage() {
                           key={f}
                           type="button"
                           onClick={() => setDetailModal({ ...detailModal, employeeListFilter: f })}
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold border transition ${
-                            activeFilter === f
-                              ? 'bg-purple-600 text-white border-purple-600'
-                              : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                          }`}
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold border transition ${activeFilter === f
+                            ? 'bg-purple-600 text-white border-purple-600'
+                            : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                            }`}
                         >
                           {f === 'all' ? 'All' : f === 'full' ? '100% Trained' : 'Incomplete'}
                         </button>
@@ -4353,19 +4422,19 @@ export default function TrainingMatrixPage() {
       // groupBy: department (default) or sop
       if (groupBy === 'sop') {
         // Flatten across depts, group by sop code
-        const map = new Map<string, { 
-          sopCode: string; 
-          title: string; 
-          month: string; 
+        const map = new Map<string, {
+          sopCode: string;
+          title: string;
+          month: string;
           isDualLanguage?: boolean;
           gujaratiName?: string;
-          items: Array<{ 
-            dept: string; 
-            accent: string; 
-            completed: number; 
-            pending: number; 
-            totalApplicable: number; 
-            completionPct: number; 
+          items: Array<{
+            dept: string;
+            accent: string;
+            completed: number;
+            pending: number;
+            totalApplicable: number;
+            completionPct: number;
             pendingEmployees: string[];
             completedEmployees?: string[];
             targetDate?: string | null;
@@ -4376,7 +4445,7 @@ export default function TrainingMatrixPage() {
             mcqEngApproved?: number;
             mcqGujTotal?: number;
             mcqGujApproved?: number;
-          }> 
+          }>
         }>();
         for (const g of sopWiseGroups) {
           const accent = DEPT_ACCENT[(g.department as Dept) || 'Total'] || '#a855f7';
@@ -4835,7 +4904,7 @@ export default function TrainingMatrixPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1400px] px-5 py-5">
+      <main className="mx-auto max-w-[1600px] px-5 py-5">
         {/* Cards row */}
         <section className="mb-5">
           {loading && !data ? (
@@ -4848,7 +4917,7 @@ export default function TrainingMatrixPage() {
               ))}
             </div>
           ) : data ? (
-            <div className="flex gap-2">
+            <div className="flex gap-2 overflow-x-auto pb-2">
               {renderTotalCard(data.totalCard)}
               {DEPARTMENTS.map((dept) => <Fragment key={dept}>{renderDeptCard(dept, data.perDept[dept])}</Fragment>)}
             </div>
@@ -4983,16 +5052,16 @@ export default function TrainingMatrixPage() {
                 { key: 'department', label: 'Department', width: '160px' },
               ]
               : missingModal.kind === 'repeat-sop'
-              ? [
-                { key: 'sopCode', label: 'SOP Code', width: '140px' },
-                { key: 'count', label: 'Times in Excel', width: '120px' },
-                { key: 'title', label: 'SOP Title' },
-              ]
-              : [
-                { key: 'sopCode', label: 'SOP Code', width: '140px' },
-                { key: 'month', label: 'Scheduled Month', width: '160px' },
-                { key: 'department', label: 'Department', width: '160px' },
-              ]
+                ? [
+                  { key: 'sopCode', label: 'SOP Code', width: '140px' },
+                  { key: 'count', label: 'Times in Excel', width: '120px' },
+                  { key: 'title', label: 'SOP Title' },
+                ]
+                : [
+                  { key: 'sopCode', label: 'SOP Code', width: '140px' },
+                  { key: 'month', label: 'Scheduled Month', width: '160px' },
+                  { key: 'department', label: 'Department', width: '160px' },
+                ]
           }
           rows={missingModal.rows}
           onClose={() => setMissingModal(null)}

@@ -10,6 +10,7 @@ import User from '@/models/User';
 import MCQBank from '@/models/MCQBank';
 import SOPLibrary from '@/models/SOPLibrary';
 import { getRedis, REDIS_TTL } from '@/lib/redis';
+import { expectedDocxSlotsForRow, scanRowLanguageFileSlots } from '@/lib/registryRowDocCounts';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +18,7 @@ const DEPT_CANONICAL = ['QA','QC','Microbiology','Production','Store','Engineeri
 
 type LangKey = 'ENG' | 'GUJ';
 
-const CACHE_KEY = 'training-matrix-overview:v19';
+const CACHE_KEY = 'training-matrix-overview:v22';
 // In-memory fallback TTL (used when Redis is not configured)
 const MEMORY_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -256,16 +257,26 @@ export async function GET(req: NextRequest) {
 
       if (!dbBaseLangs.has(base)) dbBaseLangs.set(base, new Set<LangKey>());
       const langs = dbBaseLangs.get(base)!;
+      // Match DepartmentCapsules "w/ EN" / "w/ GU" (scanRowLanguageFileSlots + expected DOCX slots)
+      const langSlots = scanRowLanguageFileSlots(row);
+      const isBilingual = expectedDocxSlotsForRow(row) >= 2;
       const rawLang = String(row?.language || '').trim().toLowerCase();
-      const isDual = !!row?.isDualLanguage || (!!row?.englishVersion && !!row?.gujaratiVersion);
-      if (isDual) {
-        langs.add('ENG');
-        langs.add('GUJ');
-      } else if (rawLang === 'gujarati') {
-        langs.add('GUJ');
-      } else {
-        langs.add('ENG');
-      }
+      const hasEng =
+        !!row.englishVersion ||
+        langSlots.engDocx ||
+        langSlots.engPdf ||
+        isBilingual ||
+        rawLang !== 'gujarati';
+      const hasGuj =
+        !!row.gujaratiVersion ||
+        langSlots.gujDocx ||
+        langSlots.gujPdf ||
+        row?.isDualLanguage === true ||
+        isBilingual ||
+        rawLang === 'gujarati';
+      if (hasEng) langs.add('ENG');
+      if (hasGuj) langs.add('GUJ');
+      if (langs.size === 0) langs.add('ENG');
     }
 
     // Fetch actual expiry/review dates directly from the SOP model
@@ -345,6 +356,12 @@ export async function GET(req: NextRequest) {
         meta.isDualLanguage = true;
       } else if (String(doc.language || '').toLowerCase() === 'dual') {
         meta.isDualLanguage = true;
+      }
+      // Sync dbBaseLangs when SOPLibrary reveals a SOP is dual-language
+      if (meta.isDualLanguage) {
+        if (!dbBaseLangs.has(base)) dbBaseLangs.set(base, new Set<LangKey>());
+        dbBaseLangs.get(base)!.add('ENG');
+        dbBaseLangs.get(base)!.add('GUJ');
       }
     }
 
@@ -543,10 +560,10 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // IMPORTANT: "Found in DB" should include ALL SOPs from this Excel upload that
-      // exist in the DB (any department). Previously this was restricted to only
-      // those matching the current department, which broke splits in the UI.
-      const foundInDb = codes.filter((c) => dbBaseSet.has(c));
+      // "Found in Excel": DB SOPs belonging to this dept that ARE present in the Excel upload.
+      // Direction is DB → Excel so that foundInDb + missingFromExcel == total DB SOPs for this dept.
+      const codesSet = new Set(codes);
+      const foundInDb = (dbSopsByDept[dept] || []).map((x) => x.sopCode).filter((c) => codesSet.has(c));
 
       // Found in obsolete: exists in DB but only as obsolete SOP record
       const foundObsolete = codes.filter((c) => obsoleteSetAll.has(c) && !dbBaseSet.has(c));
@@ -606,8 +623,7 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Lang breakdown: base on this dept's DB SOPs (matches the dashboard's source of truth),
-      // NOT on foundInDb (which includes cross-dept SOPs from the Excel and inflates the count).
+      // Lang breakdown: base on this dept's DB SOPs (matches the dashboard's source of truth).
       const deptDbCodes = (dbSopsByDept[dept] || []).map((x) => x.sopCode);
       const excelCodesSet = new Set(codes); // Excel codes for this dept's upload
 
@@ -871,6 +887,7 @@ export async function GET(req: NextRequest) {
 
     // 4. Total card
     const dbSopsAll = [...dbBaseSet];
+    const foundInAllExcel = dbSopsAll.filter((c) => allExcelCodes.has(c));
     const missingFromAllExcel = dbSopsAll.filter((c) => !allExcelCodes.has(c));
     let totalTrainersAssigned = 0;
     let totalTrainersMissing = 0;
@@ -959,11 +976,27 @@ export async function GET(req: NextRequest) {
       department: canonDept(dbBaseMeta.get(c)?.department || ''),
     }));
 
+    // Global lang breakdown — computed from ALL dbBaseSet SOPs regardless of dept,
+    // so SOPs with an unresolved dept are not missed.
+    const globalLangMap = new Map<LangKey, { found: number; missing: number }>();
+    for (const sopCode of dbBaseSet) {
+      const langs = dbBaseLangs.get(sopCode) || new Set<LangKey>(['ENG']);
+      for (const k of langs) {
+        if (!globalLangMap.has(k)) globalLangMap.set(k, { found: 0, missing: 0 });
+        const entry = globalLangMap.get(k)!;
+        if (allExcelCodes.has(sopCode)) entry.found++; else entry.missing++;
+      }
+    }
+    const totalLangBreakdown = Array.from(globalLangMap.entries())
+      .sort(([a], [b]) => (a === b ? 0 : a === 'ENG' ? -1 : 1))
+      .map(([key, v]) => ({ key, label: key, found: v.found, missing: v.missing }));
+
     const totalCard = {
       dbSopCount,
       dbSopsByDept,
       dbSopCountsByDept,
-      excelSopCount: allExcelCodes.size,
+      langBreakdown: totalLangBreakdown,
+      excelSopCount: foundInAllExcel.length,
       missingSopCount: missingFromAllExcel.length,
       trainersAssigned: totalTrainersAssigned,
       trainersMissing: totalTrainersMissing,
