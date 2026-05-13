@@ -26,7 +26,7 @@ import {
   Pencil,
 } from "lucide-react";
 import SOPPipelineStatus from "@/components/SOPPipelineStatus";
-import { useState, Fragment, useEffect, useRef, type ReactNode } from "react";
+import { useState, Fragment, useEffect, useRef, useMemo, type ReactNode } from "react";
 import {
   fileKindFromStoredPath,
   fileKindToLabel,
@@ -45,10 +45,12 @@ const DEPT_ALL = "All";
 
 export default function SOPTable({
   data,
+  filterOptionsSource,
   sortConfig,
   onSort,
   onRowClick,
   filterDeptFromParent,
+  onDepartmentFilterChange,
   onOpenGuidelineWizard,
   complianceCache,
   reviewingInBackground,
@@ -59,6 +61,7 @@ export default function SOPTable({
   onRemoveObsolete,
   removingObsoleteId,
   fileAvailability,
+  resetFiltersTrigger,
 }: any) {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
@@ -100,6 +103,19 @@ export default function SOPTable({
     presentations: "",
     expiryStatus: "",
   });
+
+  useEffect(() => {
+    if (resetFiltersTrigger) {
+      setFilters({
+        department: "",
+        language: "",
+        fileType: "",
+        videos: "",
+        presentations: "",
+        expiryStatus: "",
+      });
+    }
+  }, [resetFiltersTrigger]);
 
   useEffect(() => {
     if (filterDeptFromParent === undefined) return;
@@ -356,7 +372,7 @@ export default function SOPTable({
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(ev) => ev.stopPropagation()}
-                    className="text-purple-600 hover:underline">
+                    className="text-green-600 hover:underline">
                     DOCX
                   </a>
                 ) : null}
@@ -369,7 +385,7 @@ export default function SOPTable({
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(ev) => ev.stopPropagation()}
-                    className="text-blue-600 hover:underline">
+                    className="text-green-600 hover:underline">
                     PDF
                   </a>
                 ) : null}
@@ -577,7 +593,7 @@ export default function SOPTable({
           ? buildPdfDownloadHref(doc.path, row.sopNo, langParam)
           : null;
       const isWord = isWordType(doc.type);
-      const linkColor = isWord ? "text-purple-600" : "text-blue-600";
+      const linkColor = "text-green-600";
       const fileLinkClass = `font-bold text-[9px] ${linkColor} hover:underline whitespace-nowrap shrink-0`;
 
       // If a recheck has been run and this specific path is confirmed missing in Bunny CDN
@@ -788,9 +804,36 @@ export default function SOPTable({
     return /[\u0A80-\u0AFF]/.test(cleaned) ? cleaned : "";
   };
 
-  const uniqueDepartments = Array.from(
-    new Set([
-      ...data.map((r: any) => r.department),
+  // Precompute the filter-relevant string for each row ONCE per data array.
+  // Both the row-filter pass and (when no separate source is provided) the
+  // dropdown unique-value sets share this cache, so we don't re-scan
+  // sopFile/sopDocuments paths or build Dates on every sort click.
+  const rowFilterKeys = useMemo(() => {
+    return data.map((row: any) => ({
+      department: row.department || "",
+      language: getRawLanguage(row),
+      fileType: getRawFileTypes(row),
+      videos: getRawVideos(row),
+      presentations: getRawPresentations(row),
+      expiryStatus: getRawExpiryStatus(row),
+    }));
+  }, [data]);
+
+  // Dropdown options should reflect the FULL dataset (so selecting a department
+  // doesn't shrink the department dropdown to just that department). Source from
+  // `filterOptionsSource` when provided, else fall back to the (already-filtered)
+  // `data`.
+  const optionsSource: any[] = filterOptionsSource ?? data;
+
+  const {
+    uniqueDepartments,
+    uniqueLanguages,
+    uniqueFileTypes,
+    uniqueVideos,
+    uniquePresentations,
+    uniqueExpiryStatus,
+  } = useMemo(() => {
+    const depts = new Set<string>([
       "Engineering and Maintenance",
       "Microbiology",
       "Personnel",
@@ -798,47 +841,60 @@ export default function SOPTable({
       "QA",
       "QC",
       "Store",
-    ]),
-  )
-    .filter(Boolean)
-    .sort();
-  const uniqueLanguages = Array.from(new Set(data.map(getRawLanguage)))
-    .filter(Boolean)
-    .sort();
-  const uniqueFileTypes = Array.from(new Set(data.map(getRawFileTypes)))
-    .filter(Boolean)
-    .sort();
-  const uniqueVideos = Array.from(new Set(data.map(getRawVideos)))
-    .filter(Boolean)
-    .sort();
-  const uniquePresentations = Array.from(new Set(data.map(getRawPresentations)))
-    .filter(Boolean)
-    .sort();
-  const uniqueExpiryStatus = Array.from(new Set(data.map(getRawExpiryStatus)))
-    .filter(Boolean)
-    .sort();
+    ]);
+    const langs = new Set<string>();
+    const files = new Set<string>();
+    const vids = new Set<string>();
+    const pres = new Set<string>();
+    const exp = new Set<string>();
 
-  const displayedData = data.filter((row: any) => {
-    if (filters.department && row.department !== filters.department)
-      return false;
-    if (filters.language && getRawLanguage(row) !== filters.language)
-      return false;
-    if (filters.fileType && getRawFileTypes(row) !== filters.fileType)
-      return false;
-    if (filters.videos && getRawVideos(row) !== filters.videos) return false;
-    if (
-      filters.presentations &&
-      getRawPresentations(row) !== filters.presentations
-    )
-      return false;
-    if (
-      filters.expiryStatus &&
-      getRawExpiryStatus(row) !== filters.expiryStatus
-    )
-      return false;
-    return true;
-  });
+    for (const row of optionsSource) {
+      const d = row.department || "";
+      if (d) depts.add(d);
+      const l = getRawLanguage(row);
+      if (l) langs.add(l);
+      const f = getRawFileTypes(row);
+      if (f) files.add(f);
+      const v = getRawVideos(row);
+      if (v) vids.add(v);
+      const p = getRawPresentations(row);
+      if (p) pres.add(p);
+      const e = getRawExpiryStatus(row);
+      if (e) exp.add(e);
+    }
 
+    return {
+      uniqueDepartments: Array.from(depts).filter(Boolean).sort(),
+      uniqueLanguages: Array.from(langs).filter(Boolean).sort(),
+      uniqueFileTypes: Array.from(files).filter(Boolean).sort(),
+      uniqueVideos: Array.from(vids).filter(Boolean).sort(),
+      uniquePresentations: Array.from(pres).filter(Boolean).sort(),
+      uniqueExpiryStatus: Array.from(exp).filter(Boolean).sort(),
+    };
+  }, [optionsSource]);
+
+  const displayedData = useMemo(() => {
+    const noFilters =
+      !filters.department &&
+      !filters.language &&
+      !filters.fileType &&
+      !filters.videos &&
+      !filters.presentations &&
+      !filters.expiryStatus;
+    if (noFilters) return data;
+    return data.filter((row: any, i: number) => {
+      const k = rowFilterKeys[i];
+      if (filters.department && k.department !== filters.department) return false;
+      if (filters.language && k.language !== filters.language) return false;
+      if (filters.fileType && k.fileType !== filters.fileType) return false;
+      if (filters.videos && k.videos !== filters.videos) return false;
+      if (filters.presentations && k.presentations !== filters.presentations)
+        return false;
+      if (filters.expiryStatus && k.expiryStatus !== filters.expiryStatus)
+        return false;
+      return true;
+    });
+  }, [data, rowFilterKeys, filters]);
 
   const thBase =
     "px-1 py-0.5 align-top text-[9px] font-bold text-gray-600 uppercase tracking-wide whitespace-normal break-words";
@@ -924,9 +980,13 @@ export default function SOPTable({
                   <select
                     className={selBase}
                     value={filters.department}
-                    onChange={(e) =>
-                      setFilters({ ...filters, department: e.target.value })
-                    }>
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setFilters({ ...filters, department: next });
+                      // Keep the parent's filterDept in sync so the upstream
+                      // filter pipeline doesn't pre-narrow rows behind us.
+                      onDepartmentFilterChange?.(next ? next : DEPT_ALL);
+                    }}>
                     <option value="">All</option>
                     {uniqueDepartments.map((v: any) => (
                       <option key={v} value={v}>

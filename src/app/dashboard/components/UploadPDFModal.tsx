@@ -12,6 +12,7 @@ interface UploadPDFModalProps {
 export default function UploadPDFModal({ isOpen, onClose, onSuccess }: UploadPDFModalProps) {
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [result, setResult] = useState<{
     uploaded: number;
@@ -130,40 +131,62 @@ export default function UploadPDFModal({ isOpen, onClose, onSuccess }: UploadPDF
     }
     setUploading(true);
     setResult(null);
+    setProgress({ current: 0, total: files.length });
+
+    // Aggregate results across all individual uploads
+    let totalUploaded = 0;
+    let totalFailed = 0;
+    let totalMatched = 0;
+    let totalUnmatched = 0;
+    const allResults: Array<{ fileName: string; sopIdentifier: string; sopName: string; department: string; matched: boolean }> = [];
+    const allErrors: Array<{ fileName: string; error: string }> = [];
+    let lastStorage = 'local';
+
     try {
-      const formData = new FormData();
-      files.forEach((f) => {
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const formData = new FormData();
         formData.append('files', f);
         formData.append('paths', f.webkitRelativePath || f.name);
-      });
-      const res = await fetch('/api/sop/upload-pdf-batch', {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Upload failed');
+
+        try {
+          const res = await fetch('/api/sop/upload-pdf-batch', {
+            method: 'POST',
+            body: formData,
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Upload failed');
+          totalUploaded += data.uploaded ?? 0;
+          totalFailed += data.failed ?? 0;
+          totalMatched += data.matched ?? 0;
+          totalUnmatched += data.unmatched ?? 0;
+          if (data.results) allResults.push(...data.results);
+          if (data.errors) allErrors.push(...data.errors);
+          if (data.storage) lastStorage = data.storage;
+        } catch (fileErr) {
+          totalFailed += 1;
+          allErrors.push({
+            fileName: f.name,
+            error: fileErr instanceof Error ? fileErr.message : 'Upload failed',
+          });
+        }
+
+        setProgress({ current: i + 1, total: files.length });
+      }
+
       setResult({
-        uploaded: data.uploaded ?? 0,
-        failed: data.failed ?? 0,
-        matched: data.matched ?? 0,
-        unmatched: data.unmatched ?? 0,
-        results: data.results ?? [],
-        errors: data.errors ?? [],
-        storage: data.storage ?? 'local',
+        uploaded: totalUploaded,
+        failed: totalFailed,
+        matched: totalMatched,
+        unmatched: totalUnmatched,
+        results: allResults,
+        errors: allErrors,
+        storage: lastStorage,
       });
-      if (data.uploaded > 0) onSuccess();
-    } catch (err) {
-      setResult({
-        uploaded: 0,
-        failed: files.length,
-        matched: 0,
-        unmatched: 0,
-        results: [],
-        errors: [{ fileName: '', error: err instanceof Error ? err.message : 'Upload failed' }],
-        storage: 'local',
-      });
+      if (totalUploaded > 0) onSuccess();
     } finally {
       setUploading(false);
+      setProgress(null);
     }
   };
 
@@ -370,6 +393,31 @@ export default function UploadPDFModal({ isOpen, onClose, onSuccess }: UploadPDF
             )}
           </div>
 
+          {/* Progress bar — shown only while uploading */}
+          {uploading && progress && (
+            <div className="px-4 pt-3 pb-1">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] font-medium text-gray-600">
+                  Uploading files…
+                </span>
+                <span className="text-[11px] font-semibold text-red-600">
+                  {progress.current} / {progress.total}
+                </span>
+              </div>
+              <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-red-500 rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${Math.round((progress.current / progress.total) * 100)}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-gray-400 mt-0.5 truncate">
+                {progress.current < progress.total
+                  ? `Processing: ${files[progress.current]?.name ?? ''}`
+                  : 'Finishing up…'}
+              </p>
+            </div>
+          )}
+
           <div className="flex justify-end gap-2 border-t border-gray-200 px-4 py-3 mt-auto">
             <button
               type="button"
@@ -388,7 +436,9 @@ export default function UploadPDFModal({ isOpen, onClose, onSuccess }: UploadPDF
               ) : (
                 <Upload className="h-3.5 w-3.5" />
               )}
-              {uploading ? 'Uploading…' : `Upload PDFs (${files.length})`}
+              {uploading
+                ? `Uploading… (${progress?.current ?? 0}/${progress?.total ?? files.length})`
+                : `Upload PDFs (${files.length})`}
             </button>
           </div>
         </form>
