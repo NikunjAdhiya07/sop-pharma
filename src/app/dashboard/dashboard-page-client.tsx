@@ -57,6 +57,7 @@ import {
   countRowDocxPdfForCapsules,
   expectedDocxSlotsForRow,
   expectedPdfSlotsForRow,
+  scanRowLanguageFileSlots,
 } from "@/lib/registryRowDocCounts";
 import { filterPrimaryRegistryRowsUniqueByFamily } from "@/lib/registryPrimaryRows";
 import {
@@ -183,6 +184,7 @@ export default function DashboardPageClient() {
     status: 'all' | 'compliant' | 'partial' | 'non-compliant' | 'not-applicable';
     severity: 'all' | 'critical' | 'major' | 'minor' | 'informational';
   }>({ status: 'all', severity: 'all' });
+  const [resetFiltersTrigger, setResetFiltersTrigger] = useState(0);
 
   const handleComplianceResult = useCallback(
     (sopNo: string, sopName: string, result: any) => {
@@ -676,6 +678,25 @@ export default function DashboardPageClient() {
   };
 
   const handleSort = (key: any) => {
+    // Department header cycles through departments one at a time (each click
+    // shows all SOPs of the next department; final click returns to "All").
+    if (key === "department") {
+      const cycle = [
+        "All",
+        "QA",
+        "QC",
+        "Microbiology",
+        "Production",
+        "Engineering and Maintenance",
+        "Personnel",
+        "Store",
+      ];
+      const i = cycle.indexOf(filterDept);
+      const next = cycle[(i === -1 ? 0 : i + 1) % cycle.length];
+      setFilterDept(next);
+      setSortConfig({ key: "sopNo", direction: "asc" });
+      return;
+    }
     let direction = "asc";
     if (sortConfig.key === key && sortConfig.direction === "asc")
       direction = "desc";
@@ -812,38 +833,29 @@ export default function DashboardPageClient() {
       });
     }
 
-    // Filter Language
-    if (filterLanguage === "ENG")
-      result = result.filter(
-        (d: any) =>
-          d.englishVersion ||
-          (Array.isArray(d.sopDocuments) &&
-            d.sopDocuments.some(
-              (doc: any) => (doc.language || "English") !== "Gujarati",
-            )),
+    // Filter Language — must align with DepartmentCapsules' "w/ EN" / "w/ GU" counters:
+    // both consider version strings, isDualLanguage, and file-slot detection (incl. path-based Gujarati).
+    const rowHasEng = (d: any): boolean => {
+      const slots = scanRowLanguageFileSlots(d);
+      const bilingual = expectedDocxSlotsForRow(d) >= 2;
+      return !!d.englishVersion || slots.engDocx || slots.engPdf || bilingual;
+    };
+    const rowHasGuj = (d: any): boolean => {
+      const slots = scanRowLanguageFileSlots(d);
+      const bilingual = expectedDocxSlotsForRow(d) >= 2;
+      return (
+        !!d.gujaratiVersion ||
+        slots.gujDocx ||
+        slots.gujPdf ||
+        d.isDualLanguage === true ||
+        bilingual
       );
-    else if (filterLanguage === "GUJ")
-      result = result.filter(
-        (d: any) =>
-          d.gujaratiVersion ||
-          (Array.isArray(d.sopDocuments) &&
-            d.sopDocuments.some((doc: any) => doc.language === "Gujarati")),
-      );
+    };
+    if (filterLanguage === "ENG") result = result.filter(rowHasEng);
+    else if (filterLanguage === "GUJ") result = result.filter(rowHasGuj);
     else if (filterLanguage === "BOTH")
       result = result.filter(
-        (d: any) => {
-          const hasEn =
-            d.englishVersion ||
-            (Array.isArray(d.sopDocuments) &&
-              d.sopDocuments.some(
-                (doc: any) => (doc.language || "English") !== "Gujarati",
-              ));
-          const hasGu =
-            d.gujaratiVersion ||
-            (Array.isArray(d.sopDocuments) &&
-              d.sopDocuments.some((doc: any) => doc.language === "Gujarati"));
-          return d.isDualLanguage || (hasEn && hasGu);
-        },
+        (d: any) => d.isDualLanguage || (rowHasEng(d) && rowHasGuj(d)),
       );
 
     // Filter Media
@@ -956,193 +968,149 @@ export default function DashboardPageClient() {
       });
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
-    /** Parse SOP No into three comparable parts: letter prefix, doc number, revision */
-    const parseSop = (s: string) => {
-      const norm = normalizeSopIdentifierKey(String(s || "").toUpperCase());
-      const m = norm.match(/^([A-Z]{1,6})(\d+)-(\d+)$/);
-      if (m)
-        return {
-          prefix: m[1],
-          doc: parseInt(m[2], 10),
-          rev: parseInt(m[3], 10),
-        };
-      return { prefix: norm, doc: 0, rev: 0 };
-    };
+    // ── Decorate-sort-undecorate ──────────────────────────────────────────────
+    // Compute each row's sort key + stable tie-break key once, then sort by the
+    // precomputed values. Avoids O(N log N) regex/object-scan calls per click.
+    const dir = sortConfig.direction === "asc" ? 1 : -1;
+    const key = sortConfig.key;
 
-    /** Compare two SOP Nos numerically (prefix → doc num → revision). Returns -1/0/1 */
-    const cmpSopNo = (a: string, b: string): number => {
-      const pa = parseSop(a),
-        pb = parseSop(b);
+    // Tie-break: SOP No parts cached once per row (prefix string + numeric doc/rev).
+    type SopParts = { prefix: string; doc: number; rev: number };
+    const cmpParts = (pa: SopParts, pb: SopParts): number => {
       if (pa.prefix !== pb.prefix) return pa.prefix < pb.prefix ? -1 : 1;
       if (pa.doc !== pb.doc) return pa.doc - pb.doc;
       return pa.rev - pb.rev;
     };
 
-    /** Stable tie-break: always sort by SOP No numerically ascending */
-    const tieBreak = (a: any, b: any): number =>
-      cmpSopNo(String(a.sopNo || ""), String(b.sopNo || ""));
-
-    result.sort((a: any, b: any) => {
-      const dir = sortConfig.direction === "asc" ? 1 : -1;
-      let cmp = 0;
-
-      switch (sortConfig.key) {
-        case "sopNo": {
-          cmp = cmpSopNo(String(a.sopNo || ""), String(b.sopNo || ""));
-          return cmp !== 0 ? cmp * dir : 0;
-        }
-
+    const computePrimaryKey = (r: any): number | string => {
+      switch (key) {
+        case "sopNo":
+          return 0; // primary handled via tie-break parts
         case "version": {
-          // Use the display revision extracted from SOP No (e.g. QAGE01-11 → 11)
-          // Rows with 0 versions come first in ascending order
-          const toDisplayRev = (r: any) => {
-            const sopNo = String(r.sopNo || "");
-            const m = sopNo.match(/-0*(\d+)$/);
-            if (m) return parseInt(m[1], 10);
-            const raw = r.version;
-            if (raw == null || raw === "—") return -1;
-            const n = parseInt(String(raw).replace(/[^\d]/g, ""), 10);
-            return isNaN(n) ? -1 : n;
-          };
-          cmp = toDisplayRev(a) - toDisplayRev(b);
-          if (cmp !== 0) return cmp * dir;
-          // Within same version, sort SOP No ascending
-          return cmpSopNo(String(a.sopNo || ""), String(b.sopNo || ""));
+          const sopNo = String(r.sopNo || "");
+          const m = sopNo.match(/-0*(\d+)$/);
+          if (m) return parseInt(m[1], 10);
+          const raw = r.version;
+          if (raw == null || raw === "—") return -1;
+          const n = parseInt(String(raw).replace(/[^\d]/g, ""), 10);
+          return isNaN(n) ? -1 : n;
         }
-
-        case "department": {
-          const da = (a.department || "").toLowerCase();
-          const db = (b.department || "").toLowerCase();
-          cmp = da < db ? -1 : da > db ? 1 : 0;
-          if (cmp !== 0) return cmp * dir;
-          // Within same dept, sort SOP No ascending always
-          return cmpSopNo(String(a.sopNo || ""), String(b.sopNo || ""));
-        }
-
-        case "sopName": {
-          const na = (a.englishName || a.sopName || "").toLowerCase();
-          const nb = (b.englishName || b.sopName || "").toLowerCase();
-          cmp = na < nb ? -1 : na > nb ? 1 : 0;
-          break;
-        }
-
-        case "location": {
-          const la = (a.location || "").toLowerCase();
-          const lb = (b.location || "").toLowerCase();
-          // Empty locations go to end regardless of direction
-          if (!la && lb) return 1;
-          if (la && !lb) return -1;
-          cmp = la < lb ? -1 : la > lb ? 1 : 0;
-          break;
-        }
-
-        case "expiryDate": {
-          const ta = a.expiryDate ? new Date(a.expiryDate).getTime() : Infinity;
-          const tb = b.expiryDate ? new Date(b.expiryDate).getTime() : Infinity;
-          cmp = ta - tb;
-          break;
-        }
-
-        case "language": {
-          const rank = (r: any) =>
-            r.isDualLanguage ? 0 : r.gujaratiVersion ? 1 : 2;
-          cmp = rank(a) - rank(b);
-          break;
-        }
-
-        case "priorVersionCount": {
-          const count = (r: any) =>
-            (Array.isArray(r.versionArtifacts)
-              ? r.versionArtifacts.length
-              : 0) +
+        case "department":
+          return (r.department || "").toLowerCase();
+        case "sopName":
+          return (r.englishName || r.sopName || "").toLowerCase();
+        case "location":
+          return (r.location || "").toLowerCase();
+        case "expiryDate":
+          return r.expiryDate ? new Date(r.expiryDate).getTime() : Infinity;
+        case "language":
+          return r.isDualLanguage ? 0 : r.gujaratiVersion ? 1 : 2;
+        case "priorVersionCount":
+          return (
+            (Array.isArray(r.versionArtifacts) ? r.versionArtifacts.length : 0) +
             (Array.isArray(r.versionArtifactsGujarati)
               ? r.versionArtifactsGujarati.length
-              : 0);
-          cmp = count(a) - count(b);
-          break;
-        }
-
-        case "videos": {
-          cmp =
-            (a.mediaStatus?.videoCount ?? (a.mediaStatus?.videos ? 1 : 0)) -
-            (b.mediaStatus?.videoCount ?? (b.mediaStatus?.videos ? 1 : 0));
-          break;
-        }
-
-        case "slides": {
-          cmp =
-            (a.mediaStatus?.slideCount ?? (a.mediaStatus?.slides ? 1 : 0)) -
-            (b.mediaStatus?.slideCount ?? (b.mediaStatus?.slides ? 1 : 0));
-          break;
-        }
-
+              : 0)
+          );
+        case "videos":
+          return r.mediaStatus?.videoCount ?? (r.mediaStatus?.videos ? 1 : 0);
+        case "slides":
+          return r.mediaStatus?.slideCount ?? (r.mediaStatus?.slides ? 1 : 0);
         case "fileType": {
-          const rank = (r: any) => {
-            const c = countRowDocxPdfForCapsules(r);
-            return c.docx * 2 + c.pdf;
-          };
-          cmp = rank(a) - rank(b);
-          break;
+          const c = countRowDocxPdfForCapsules(r);
+          return c.docx * 2 + c.pdf;
         }
-
-        /** Capsule green/red: distinct DOCX paths per row (matches Files column). */
-        case "rowDocxCount": {
-          cmp =
-            countRowDocxPdfForCapsules(a).docx - countRowDocxPdfForCapsules(b).docx;
-          break;
-        }
-
-        case "rowPdfCount": {
-          cmp = countRowDocxPdfForCapsules(a).pdf - countRowDocxPdfForCapsules(b).pdf;
-          break;
-        }
-
+        case "rowDocxCount":
+          return countRowDocxPdfForCapsules(r).docx;
+        case "rowPdfCount":
+          return countRowDocxPdfForCapsules(r).pdf;
         case "guidelineScore": {
-          const summarizeFindings = (row: any) => {
-            const findings = complianceCache[String(row.sopNo)]?.findings ?? [];
-            const nonCompliant = findings.filter(
-              (f: any) => f?.complianceLevel === "non-compliant",
-            ).length;
-            const partial = findings.filter(
-              (f: any) => f?.complianceLevel === "partial",
-            ).length;
-            const informational = findings.filter(
-              (f: any) =>
-                String(f?.issueSeverity || "").toLowerCase() ===
-                "informational",
-            ).length;
-            const score = complianceCache[String(row.sopNo)]?.overallScore ?? -1;
-            const weighted = nonCompliant * 1000 + partial * 100 + informational;
-            return { weighted, score, total: findings.length };
-          };
-          const aStats = summarizeFindings(a);
-          const bStats = summarizeFindings(b);
-          cmp = aStats.weighted - bStats.weighted;
-          if (cmp !== 0) break;
-          cmp = aStats.total - bStats.total;
-          if (cmp !== 0) break;
-          cmp = aStats.score - bStats.score;
-          break;
+          const findings = complianceCache[String(r.sopNo)]?.findings ?? [];
+          let nonCompliant = 0;
+          let partial = 0;
+          let informational = 0;
+          for (const f of findings) {
+            if (f?.complianceLevel === "non-compliant") nonCompliant++;
+            else if (f?.complianceLevel === "partial") partial++;
+            if (String(f?.issueSeverity || "").toLowerCase() === "informational")
+              informational++;
+          }
+          return nonCompliant * 1000 + partial * 100 + informational;
         }
+        default:
+          return String(r[key] ?? "").toLowerCase();
+      }
+    };
 
-        default: {
-          const va = a[sortConfig.key];
-          const vb = b[sortConfig.key];
-          cmp =
-            String(va ?? "").toLowerCase() < String(vb ?? "").toLowerCase()
-              ? -1
-              : String(va ?? "").toLowerCase() > String(vb ?? "").toLowerCase()
-                ? 1
-                : 0;
-        }
+    // Secondary keys (used only when primary is equal) — currently only
+    // guidelineScore has a multi-level breakdown.
+    const computeSecondaryKeys = (r: any): { total: number; score: number } | null => {
+      if (key !== "guidelineScore") return null;
+      const cache = complianceCache[String(r.sopNo)];
+      const total = Array.isArray(cache?.findings) ? cache.findings.length : 0;
+      const score = cache?.overallScore ?? -1;
+      return { total, score };
+    };
+
+    // Decorate
+    const decorated = result.map((row: any, idx: number) => {
+      const sopNoStr = String(row.sopNo || "");
+      const norm = normalizeSopIdentifierKey(sopNoStr.toUpperCase());
+      const m = norm.match(/^([A-Z]{1,6})(\d+)-(\d+)$/);
+      const parts: SopParts = m
+        ? { prefix: m[1], doc: parseInt(m[2], 10), rev: parseInt(m[3], 10) }
+        : { prefix: norm, doc: 0, rev: 0 };
+      return {
+        row,
+        idx,
+        parts,
+        primary: computePrimaryKey(row),
+        secondary: computeSecondaryKeys(row),
+      };
+    });
+
+    const locationSentinel = key === "location";
+
+    decorated.sort((a: typeof decorated[number], b: typeof decorated[number]) => {
+      let cmp = 0;
+
+      if (key === "sopNo") {
+        cmp = cmpParts(a.parts, b.parts);
+        return cmp !== 0 ? cmp * dir : a.idx - b.idx;
+      }
+
+      const pa = a.primary;
+      const pb = b.primary;
+
+      if (locationSentinel) {
+        // Empty locations always go to end, regardless of direction
+        const ea = pa === "";
+        const eb = pb === "";
+        if (ea && !eb) return 1;
+        if (!ea && eb) return -1;
+      }
+
+      if (typeof pa === "number" && typeof pb === "number") {
+        cmp = pa - pb;
+      } else {
+        cmp = pa < pb ? -1 : pa > pb ? 1 : 0;
+      }
+
+      if (cmp === 0 && a.secondary && b.secondary) {
+        cmp = a.secondary.total - b.secondary.total;
+        if (cmp === 0) cmp = a.secondary.score - b.secondary.score;
       }
 
       if (cmp !== 0) return cmp * dir;
-      return tieBreak(a, b);
+
+      // Stable tie-break: SOP No ascending (department/version preserve this
+      // even when the primary direction is desc, matching prior behavior).
+      cmp = cmpParts(a.parts, b.parts);
+      if (cmp !== 0) return cmp;
+      return a.idx - b.idx;
     });
 
-    return result;
+    return decorated.map((d) => d.row);
   }, [
     effectiveData,
     search,
@@ -1438,6 +1406,7 @@ export default function DashboardPageClient() {
   }
 
   const handleClearFilters = () => {
+    setResetFiltersTrigger(prev => prev + 1);
     setFilterDept("All");
     setFilterMedia("all");
     setFilterExpiry("all");
@@ -1766,19 +1735,7 @@ export default function DashboardPageClient() {
               title="Clear search and all filters (default view)">
               Reset
             </button>
-            <button
-              type="button"
-              onClick={() => void openObsoleteDetails()}
-              className="shrink-0 rounded border border-rose-300 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700 shadow-sm transition-colors hover:bg-rose-100 hover:border-rose-400"
-              title="View obsolete SOP details (same as Dashboard obsolete list)"
-            >
-              <Archive className="h-3 w-3" /> Obsolete details
-              {obsoleteList.length > 0 ? (
-                <span className="ml-1 rounded-full bg-rose-200 px-1 py-px text-[9px] font-bold tabular-nums text-rose-900">
-                  {obsoleteList.length}
-                </span>
-              ) : null}
-            </button>
+
             <button
               type="button"
               onClick={async () => {
@@ -1800,93 +1757,57 @@ export default function DashboardPageClient() {
               title="Download list of SOPs missing DOCX files">
               <Download className="h-3 w-3" /> Export Missing DOCX
             </button>
-            <button
-              type="button"
-              onClick={() => void handleRecheckFiles()}
-              disabled={recheckingFiles}
-              className="shrink-0 flex items-center gap-1 rounded border border-blue-300 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 shadow-sm transition-colors hover:bg-blue-100 hover:border-blue-400 disabled:opacity-60 disabled:cursor-not-allowed"
-              title="Re-scan Bunny CDN and refresh file availability (DOCX / PDF found / not found)">
-              <RefreshCw className={`h-3 w-3 ${recheckingFiles ? "animate-spin" : ""}`} />
-              {recheckingFiles ? "Rechecking…" : "Recheck Files"}
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleClearAllFileLinks()}
-              disabled={clearingFileLinks}
-              className="shrink-0 flex items-center gap-1 rounded border border-red-300 bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700 shadow-sm transition-colors hover:bg-red-100 hover:border-red-400 disabled:opacity-60 disabled:cursor-not-allowed"
-              title="Clear all file URLs from DB (use after manually deleting files from Bunny)">
-              <Trash2 className={`h-3 w-3 ${clearingFileLinks ? "animate-spin" : ""}`} />
-              {clearingFileLinks ? "Clearing…" : "Clear File Links"}
-            </button>
-            {/* Search & Filter icons */}
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setRegistrySearchOpen((v) => !v);
-                  if (registrySearchOpen) setSearch("");
-                }}
-                className={`shrink-0 rounded border p-0.5 transition-colors ${
-                  search || registrySearchOpen
-                    ? "border-purple-400 bg-purple-50 text-purple-700"
-                    : "border-gray-300 bg-white text-gray-500 hover:border-purple-300 hover:text-purple-600"
-                }`}
-                title="Search SOPs">
-                <Search className="h-3.5 w-3.5" />
-              </button>
+
+            {/* Search & Filter */}
+            <div className="flex items-center gap-1.5">
+              <select
+                value={searchField}
+                onChange={(e) =>
+                  setSearchField(
+                    e.target.value as
+                      | "all"
+                      | "sopNo"
+                      | "sopName"
+                      | "department"
+                      | "location",
+                  )
+                }
+                className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 focus:border-purple-500 focus:outline-none shadow-sm">
+                <option value="all">All fields</option>
+                <option value="sopNo">SOP No</option>
+                <option value="sopName">SOP Name</option>
+                <option value="department">Department</option>
+                <option value="location">Location</option>
+              </select>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search SOPs..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-56 rounded border border-gray-300 bg-white py-1 pl-8 pr-7 text-xs text-gray-700 outline-none placeholder:text-gray-400 focus:border-purple-500 focus:ring-1 focus:ring-purple-500/20 shadow-sm"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => setFilterPanelOpen((v) => !v)}
-                className={`shrink-0 rounded border p-0.5 transition-colors ${
+                className={`shrink-0 rounded border px-2 py-1 transition-colors shadow-sm ${
                   filterPanelOpen || panelFilterLocation.length > 0 || panelFilterVersion.length > 0 || panelFilterLanguage.length > 0 || panelFilterDateFrom || panelFilterDateTo
                     ? "border-purple-400 bg-purple-50 text-purple-700"
-                    : "border-gray-300 bg-white text-gray-500 hover:border-purple-300 hover:text-purple-600"
+                    : "border-gray-300 bg-white text-gray-600 hover:border-purple-300 hover:text-purple-600"
                 }`}
                 title="Open filter panel">
-                <SlidersHorizontal className="h-3.5 w-3.5" />
+                <SlidersHorizontal className="h-4 w-4" />
               </button>
-              {registrySearchOpen && (
-                <>
-                  <select
-                    value={searchField}
-                    onChange={(e) =>
-                      setSearchField(
-                        e.target.value as
-                          | "all"
-                          | "sopNo"
-                          | "sopName"
-                          | "department"
-                          | "location",
-                      )
-                    }
-                    className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-gray-700 focus:border-purple-500 focus:outline-none">
-                    <option value="all">All fields</option>
-                    <option value="sopNo">SOP No</option>
-                    <option value="sopName">SOP Name</option>
-                    <option value="department">Department</option>
-                    <option value="location">Location</option>
-                  </select>
-                  <div className="relative">
-                    <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400" />
-                    <input
-                      autoFocus
-                      type="text"
-                      placeholder="Search..."
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      className="w-40 rounded border border-gray-300 bg-white py-0.5 pl-6 pr-2 text-[11px] text-gray-700 outline-none placeholder:text-gray-400 focus:border-purple-500 focus:ring-1 focus:ring-purple-500/20"
-                    />
-                    {search && (
-                      <button
-                        type="button"
-                        onClick={() => setSearch("")}
-                        className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                        <X className="h-2.5 w-2.5" />
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -2192,9 +2113,11 @@ export default function DashboardPageClient() {
           <div className="rounded-lg border border-gray-200 bg-gray-50 shadow-sm">
             <SOPTable
               data={filterObsolete ? obsoleteTableRows : filteredAndSortedData}
+              filterOptionsSource={filterObsolete ? obsoleteTableRows : primaryRegistryData}
               sortConfig={sortConfig}
               onSort={handleSort}
               filterDeptFromParent={filterDept}
+              onDepartmentFilterChange={(dept: string) => setFilterDept(dept)}
               complianceCache={complianceCache}
               reviewingInBackground={reviewingInBackground}
               onViewCompliance={(

@@ -137,8 +137,20 @@ function foldRegistryRowIntoCapsuleAcc(
   if (nDocxFiles < expDocx) s.missingDocxRows++;
   if (nPdfFiles < expPdf) s.missingPdfRows++;
 
-  if (row.englishVersion) s.eng++;
-  if (row.gujaratiVersion) s.guj++;
+  // Count rows that have each language present. Mirror the same signals the "Dual"
+  // capsule uses (isDualLanguage flag, version strings, or detected file slots) so the
+  // Dual / w/ EN / w/ GU counts reconcile — e.g. if Dual=46 then w/ GU should be >= 46.
+  const langSlots = scanRowLanguageFileSlots(row);
+  const isBilingual = expectedDocxSlotsForRow(row) >= 2;
+  const hasEng = !!row.englishVersion || langSlots.engDocx || langSlots.engPdf || isBilingual;
+  const hasGuj =
+    !!row.gujaratiVersion ||
+    langSlots.gujDocx ||
+    langSlots.gujPdf ||
+    row?.isDualLanguage === true ||
+    isBilingual;
+  if (hasEng) s.eng++;
+  if (hasGuj) s.guj++;
   if (row.mediaStatus?.videos) s.videos++;
   if (row.mediaStatus?.slides) s.slides++;
 
@@ -153,9 +165,9 @@ function foldRegistryRowIntoCapsuleAcc(
 
   if (!row.expiryDate) s.missingExpiry++;
 
-  // Per-language breakdown
-  const slots = scanRowLanguageFileSlots(row);
-  const isDualDocx = expectedDocxSlotsForRow(row) >= 2;
+  // Per-language breakdown (reuse the slot scan computed above)
+  const slots = langSlots;
+  const isDualDocx = isBilingual;
   const isDualPdf = expectedPdfSlotsForRow(row) >= 2;
 
   const langPairs: Array<{
