@@ -73,6 +73,13 @@ export default function SOPTable({
   const [obsoleteError, setObsoleteError] = useState("");
   const obsoleteInputRef = useRef<HTMLInputElement>(null);
 
+  // Delete confirm modal state
+  const [deleteTarget, setDeleteTarget] = useState<{ sopNo: string; sopName: string } | null>(null);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const deleteInputRef = useRef<HTMLInputElement>(null);
+
   // Edit modal state
   const [editTarget, setEditTarget] = useState<any | null>(null);
   const [editForm, setEditForm] = useState({
@@ -1527,6 +1534,19 @@ export default function SOPTable({
                               >
                                 <Printer className="h-2.5 w-2.5" />
                               </button>
+                              <button
+                                type="button"
+                                title="Delete this SOP"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeleteTarget({ sopNo: row.sopNo, sopName: row.englishName || row.sopName || "" });
+                                  setDeletePassword("");
+                                  setDeleteError("");
+                                }}
+                                className="shrink-0 rounded p-0.5 text-red-500 hover:bg-red-50 transition-colors"
+                              >
+                                <Trash2 className="h-2.5 w-2.5" />
+                              </button>
                             </>
                           )}
                         </div>
@@ -2100,6 +2120,62 @@ export default function SOPTable({
         </div>
       )}
 
+      {/* Delete confirmation modal */}
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => setDeleteTarget(null)}>
+          <div
+            className="mx-4 w-full max-w-sm rounded-xl border border-red-200 bg-white p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-100">
+                  <Trash2 className="h-4 w-4 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900">Delete SOP</h3>
+                  <p className="text-[10px] text-gray-500">This permanently deletes all revisions</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setDeleteTarget(null)} className="rounded p-0.5 text-gray-400 hover:text-gray-600">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="mb-3 rounded bg-red-50 border border-red-100 px-3 py-2 text-[11px] font-semibold text-red-900 leading-snug">
+              <span className="block font-bold text-red-800">{deleteTarget.sopNo}</span>
+              {deleteTarget.sopName}
+            </p>
+            <p className="mb-2 text-[10px] text-gray-600 leading-snug">
+              This will permanently delete all revisions of this SOP from the database. This action cannot be undone.
+              Enter the password to confirm.
+            </p>
+            <input
+              ref={deleteInputRef}
+              type="password"
+              placeholder="Enter password"
+              value={deletePassword}
+              onChange={(e) => { setDeletePassword(e.target.value); setDeleteError(""); }}
+              onKeyDown={(e) => { if (e.key === "Enter" && deletePassword && !deleteBusy) handleDeleteConfirm(); }}
+              className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-800 outline-none focus:border-red-400 focus:ring-1 focus:ring-red-300 mb-1"
+            />
+            {deleteError && <p className="text-[10px] text-red-600 font-semibold mb-2">{deleteError}</p>}
+            <div className="flex gap-2 mt-3">
+              <button type="button" onClick={() => setDeleteTarget(null)} className="flex-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!deletePassword || deleteBusy}
+                onClick={handleDeleteConfirm}
+                className="flex-1 rounded-md bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                {deleteBusy ? "Deleting…" : "Delete Permanently"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Obsolete confirmation modal */}
       {obsoleteTarget && (
         <div
@@ -2243,6 +2319,38 @@ export default function SOPTable({
       setEditError('Network error — please try again');
     } finally {
       setEditSaving(false);
+    }
+  }
+
+  async function handleDeleteConfirm() {
+    if (!deleteTarget || !deletePassword) return;
+    setDeleteBusy(true);
+    setDeleteError("");
+    try {
+      const user = (() => {
+        try { return JSON.parse(localStorage.getItem("user") || "{}"); } catch { return {}; }
+      })();
+      const res = await fetch("/api/dashboard/sops/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sopIdentifier: deleteTarget.sopNo,
+          password: deletePassword,
+          username: user?.username,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        setDeleteError(json.error || "Failed to delete SOP");
+        return;
+      }
+      setDeleteTarget(null);
+      setDeletePassword("");
+      onMarkObsolete?.(deleteTarget.sopNo);
+    } catch {
+      setDeleteError("Network error — please try again");
+    } finally {
+      setDeleteBusy(false);
     }
   }
 

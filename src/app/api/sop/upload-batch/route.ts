@@ -381,11 +381,55 @@ export async function POST(request: NextRequest) {
       // Don't fail the upload if cache revalidation fails
     }
 
+    // Deduplicate results by sopId. Multiple files (e.g. DOCX + PDF) for the same SOP
+    // identifier+language hit the same SOP document, so they should produce ONE MCQ pipeline,
+    // not one per file. Keep the last-seen entry (latest fileName).
+    const dedupedResults: typeof results = [];
+    const seenSopIds = new Set<string>();
+    for (let i = results.length - 1; i >= 0; i--) {
+      const r = results[i];
+      if (seenSopIds.has(r.sopId)) continue;
+      seenSopIds.add(r.sopId);
+      dedupedResults.unshift(r);
+    }
+    const duplicateCount = results.length - dedupedResults.length;
+    if (duplicateCount > 0) {
+      console.log(
+        `[upload-batch] Collapsed ${duplicateCount} multi-file entries into existing SOPs (same identifier+language)`
+      );
+    }
+
+    // Fire pipeline (MCQ generation → similarity → compliance) once per unique SOP.
+    if (dedupedResults.length > 0) {
+      const baseUrl =
+        process.env.NEXTAUTH_URL?.replace(/\/$/, '') ||
+        process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
+        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
+
+      for (const r of dedupedResults) {
+        fetch(`${baseUrl}/api/sop/pipeline/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sopId: r.sopId,
+            sopIdentifier: r.sopIdentifier,
+            sopName: r.sopName,
+            department: r.department,
+            language: r.language,
+          }),
+        }).catch((err) =>
+          console.error(`[upload-batch][PIPELINE] trigger failed for ${r.sopIdentifier}:`, err)
+        );
+      }
+      console.log(`[upload-batch][PIPELINE] Triggered for ${dedupedResults.length} SOP(s)`);
+    }
+
     return NextResponse.json({
       success: true,
-      uploaded: results.length,
+      uploaded: dedupedResults.length,
+      filesProcessed: results.length,
       failed: errors.length,
-      results,
+      results: dedupedResults,
       errors,
       storage: storeToBunny ? 'bunny' : 'local',
     });
