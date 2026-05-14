@@ -42,9 +42,12 @@ import SOPTable from "./components/SOPTable";
 import DepartmentStatsModal from "./components/DepartmentStatsModal";
 import UploadSOPModal, {
   type UploadSOPModalTab,
+  type UploadedSOPRef,
 } from "./components/UploadSOPModal";
 import UploadPDFModal from "./components/UploadPDFModal";
 import SOPFolderUploadModal from "./components/SOPFolderUploadModal";
+import PipelineProgressDock from "./components/PipelineProgressDock";
+import { usePipelineTracker } from "./hooks/usePipelineTracker";
 import SupersededVersionsPanel from "./components/SupersededVersionsPanel";
 import GuidelinesComplianceWizard from "./components/GuidelinesComplianceWizard";
 import GuidelinesResultPanel, {
@@ -81,6 +84,7 @@ export default function DashboardPageClient() {
   const [showSOPFolderUploadModal, setShowSOPFolderUploadModal] =
     useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const { tracked: trackedPipelines, trackUpload, trackMany, untrack } = usePipelineTracker();
   const [recheckingFiles, setRecheckingFiles] = useState(false);
   const [fileAvailability, setFileAvailability] = useState<Record<string, boolean> | null>(null);
   const [recheckSummary, setRecheckSummary] = useState<{ checked: number; found: number; notFound: number; dbCleared: number; notFoundPaths?: string[] } | null>(null);
@@ -679,25 +683,6 @@ export default function DashboardPageClient() {
   };
 
   const handleSort = (key: any) => {
-    // Department header cycles through departments one at a time (each click
-    // shows all SOPs of the next department; final click returns to "All").
-    if (key === "department") {
-      const cycle = [
-        "All",
-        "QA",
-        "QC",
-        "Microbiology",
-        "Production",
-        "Engineering and Maintenance",
-        "Personnel",
-        "Store",
-      ];
-      const i = cycle.indexOf(filterDept);
-      const next = cycle[(i === -1 ? 0 : i + 1) % cycle.length];
-      setFilterDept(next);
-      setSortConfig({ key: "sopNo", direction: "asc" });
-      return;
-    }
     let direction = "asc";
     if (sortConfig.key === key && sortConfig.direction === "asc")
       direction = "desc";
@@ -1073,14 +1058,22 @@ export default function DashboardPageClient() {
           return (r.location || "").toLowerCase();
         case "expiryDate":
           return r.expiryDate ? new Date(r.expiryDate).getTime() : Infinity;
-        case "language":
-          return r.isDualLanguage ? 0 : r.gujaratiVersion ? 1 : 2;
+        case "language": {
+          if (r.isDualLanguage) return "eng/guj";
+          if (r.gujaratiVersion || String(r.language || "").toLowerCase() === "gujarati") return "gujarati";
+          return "english";
+        }
         case "priorVersionCount":
           return (
             (Array.isArray(r.versionArtifacts) ? r.versionArtifacts.length : 0) +
             (Array.isArray(r.versionArtifactsGujarati)
               ? r.versionArtifactsGujarati.length
               : 0)
+          );
+        case "mediaStatus":
+          return (
+            (r.mediaStatus?.videoCount ?? (r.mediaStatus?.videos ? 1 : 0)) +
+            (r.mediaStatus?.slideCount ?? (r.mediaStatus?.slides ? 1 : 0))
           );
         case "videos":
           return r.mediaStatus?.videoCount ?? (r.mediaStatus?.videos ? 1 : 0);
@@ -2364,7 +2357,10 @@ export default function DashboardPageClient() {
         isOpen={showUploadModal}
         initialTab={uploadModalTab}
         onClose={() => setShowUploadModal(false)}
-        onSuccess={() => triggerRefresh()}
+        onSuccess={(uploaded: UploadedSOPRef[]) => {
+          triggerRefresh();
+          trackMany(uploaded);
+        }}
       />
       <UploadPDFModal
         isOpen={showPdfUploadModal}
@@ -2375,6 +2371,12 @@ export default function DashboardPageClient() {
         isOpen={showSOPFolderUploadModal}
         onClose={() => setShowSOPFolderUploadModal(false)}
         onSuccess={() => triggerRefresh()}
+      />
+      <PipelineProgressDock
+        tracked={trackedPipelines}
+        onComplete={() => triggerRefresh()}
+        onDismiss={(sopId) => untrack(sopId)}
+        onSiblingFound={(entry) => trackUpload(entry)}
       />
 
       {/* Migrate to Bunny modal */}

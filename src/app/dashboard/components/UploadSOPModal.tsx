@@ -5,10 +5,18 @@ import { X, Upload, FileText, Loader2, CheckCircle, AlertCircle, FolderOpen, Lan
 
 export type UploadSOPModalTab = 'english' | 'gujarati';
 
+export interface UploadedSOPRef {
+  sopId: string;
+  sopIdentifier: string;
+  sopName: string;
+  department: string;
+  language: 'English' | 'Gujarati';
+}
+
 interface UploadSOPModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (uploaded: UploadedSOPRef[]) => void;
   /** Which bulk section to show when the modal opens */
   initialTab?: UploadSOPModalTab;
 }
@@ -266,7 +274,18 @@ export default function UploadSOPModal({ isOpen, onClose, onSuccess, initialTab 
         errors: allErrors,
         storage: storageLabel,
       });
-      if (totalUploaded > 0) onSuccess();
+      if (totalUploaded > 0) {
+        const uploaded: UploadedSOPRef[] = allResults
+          .filter((r) => r.sopId && r.language)
+          .map((r) => ({
+            sopId: r.sopId,
+            sopIdentifier: r.sopIdentifier,
+            sopName: r.sopName,
+            department: r.department,
+            language: r.language as 'English' | 'Gujarati',
+          }));
+        onSuccess(uploaded);
+      }
     } catch (err) {
       setResult({
         uploaded: totalUploaded,
