@@ -816,48 +816,84 @@ export default function DashboardPageClient() {
       result = result.filter((d: any) => expectedDocxSlotsForRow(d) >= 2);
     }
 
-    // Filter File Type — same as capsules: is it fully/partially missing an expected language slot?
-    if (filterFileType === "DOCX") {
-      result = result.filter((d: any) => countRowDocxPdfForCapsules(d).docx > 0);
-    } else if (filterFileType === "NO_DOCX") {
-      // Missing if (Expected > Available)
+    // Filter File Type — Found vs Missing are MUTUALLY EXCLUSIVE per row:
+    //   • Main DOCX/PDF "Found"  = rows with ALL expected slots filled (dual rows
+    //     need both EN+GU). A half-covered dual row is NOT Found.
+    //   • Main DOCX/PDF "Missing"= rows missing ≥1 expected slot (includes
+    //     half-covered dual rows).
+    //   • When [EN]/[GJ] is co-active, found/missing apply to THAT language's slot only.
+    // (Note: the slot-level badge total can still be more than the row count returned
+    // here, because each row contributes 1–2 slots to the badge.)
+    // SKIP this filter when a version status filter is active — in that case the
+    // DOCX/PDF setting is just a format scope for the version classifier (the
+    // capsule version count uses only the classifier, not slot presence).
+    if (filterFileType === "DOCX" && filterVersionStatus === "all") {
       result = result.filter((d: any) => {
-        const avail = countRowDocxPdfForCapsules(d).docx;
-        return avail < expectedDocxSlotsForRow(d);
+        const slots = scanRowLanguageFileSlots(d);
+        if (filterLanguage === "ENG") return slots.engDocx;
+        if (filterLanguage === "GUJ") return slots.gujDocx;
+        return countRowDocxPdfForCapsules(d).docx >= expectedDocxSlotsForRow(d);
       });
-    } else if (filterFileType === "PDF") {
-      result = result.filter((d: any) => countRowDocxPdfForCapsules(d).pdf > 0);
-    } else if (filterFileType === "NO_PDF") {
+    } else if (filterFileType === "NO_DOCX" && filterVersionStatus === "all") {
       result = result.filter((d: any) => {
-        const avail = countRowDocxPdfForCapsules(d).pdf;
-        return avail < expectedPdfSlotsForRow(d);
+        const slots = scanRowLanguageFileSlots(d);
+        if (filterLanguage === "ENG") return !slots.engDocx;
+        if (filterLanguage === "GUJ") return !slots.gujDocx;
+        return countRowDocxPdfForCapsules(d).docx < expectedDocxSlotsForRow(d);
+      });
+    } else if (filterFileType === "PDF" && filterVersionStatus === "all") {
+      result = result.filter((d: any) => {
+        const slots = scanRowLanguageFileSlots(d);
+        if (filterLanguage === "ENG") return slots.engPdf;
+        if (filterLanguage === "GUJ") return slots.gujPdf;
+        return countRowDocxPdfForCapsules(d).pdf >= expectedPdfSlotsForRow(d);
+      });
+    } else if (filterFileType === "NO_PDF" && filterVersionStatus === "all") {
+      result = result.filter((d: any) => {
+        const slots = scanRowLanguageFileSlots(d);
+        if (filterLanguage === "ENG") return !slots.engPdf;
+        if (filterLanguage === "GUJ") return !slots.gujPdf;
+        return countRowDocxPdfForCapsules(d).pdf < expectedPdfSlotsForRow(d);
       });
     }
 
-    // Filter Language — must align with DepartmentCapsules' "w/ EN" / "w/ GU" counters:
-    // both consider version strings, isDualLanguage, and file-slot detection (incl. path-based Gujarati).
-    const rowHasEng = (d: any): boolean => {
+    // Filter Language — aligns with DepartmentCapsules' "w/ EN" / "w/ GU" counters.
+    // Overlap counting: a SOP is "English" if it's dual OR has any English signal
+    // OR its stored language isn't Gujarati; it is "Gujarati" if it's dual OR has
+    // any Gujarati signal OR its stored language is Gujarati. Dual rows match
+    // BOTH languages.
+    const rowHasEngSignal = (d: any): boolean => {
       const slots = scanRowLanguageFileSlots(d);
-      const bilingual = expectedDocxSlotsForRow(d) >= 2;
-      return !!d.englishVersion || slots.engDocx || slots.engPdf || bilingual;
+      return !!d.englishVersion || slots.engDocx || slots.engPdf;
     };
-    const rowHasGuj = (d: any): boolean => {
+    const rowHasGujSignal = (d: any): boolean => {
       const slots = scanRowLanguageFileSlots(d);
-      const bilingual = expectedDocxSlotsForRow(d) >= 2;
-      return (
-        !!d.gujaratiVersion ||
-        slots.gujDocx ||
-        slots.gujPdf ||
-        d.isDualLanguage === true ||
-        bilingual
-      );
+      return !!d.gujaratiVersion || slots.gujDocx || slots.gujPdf;
     };
-    if (filterLanguage === "ENG") result = result.filter(rowHasEng);
-    else if (filterLanguage === "GUJ") result = result.filter(rowHasGuj);
-    else if (filterLanguage === "BOTH")
-      result = result.filter(
-        (d: any) => d.isDualLanguage || (rowHasEng(d) && rowHasGuj(d)),
-      );
+    const rowIsDual = (d: any): boolean => expectedDocxSlotsForRow(d) >= 2;
+    const rowIsEng = (d: any): boolean => {
+      if (rowIsDual(d)) return true;
+      if (rowHasEngSignal(d)) return true;
+      const stored = String(d?.language || "").trim().toLowerCase();
+      return stored !== "gujarati" && !rowHasGujSignal(d);
+    };
+    const rowIsGuj = (d: any): boolean => {
+      if (rowIsDual(d)) return true;
+      if (rowHasGujSignal(d)) return true;
+      return String(d?.language || "").trim().toLowerCase() === "gujarati";
+    };
+    // Skip the broad language filter when a version-status filter is active —
+    // the version classifier already scopes by language (via expectedDocxSlotsForRow
+    // and the per-language artifact arrays), and applying both narrows the result
+    // count below the capsule's per-language version count.
+    if (filterVersionStatus === "all") {
+      if (filterLanguage === "ENG") result = result.filter(rowIsEng);
+      else if (filterLanguage === "GUJ") result = result.filter(rowIsGuj);
+      else if (filterLanguage === "BOTH")
+        result = result.filter(
+          (d: any) => d.isDualLanguage || (rowHasEngSignal(d) && rowHasGujSignal(d)),
+        );
+    }
 
     // Filter Media
     if (filterMedia === "video")

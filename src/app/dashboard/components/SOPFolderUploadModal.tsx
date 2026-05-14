@@ -497,19 +497,51 @@ export default function SOPFolderUploadModal({ isOpen, onClose, onSuccess }: SOP
               </p>
             )}
 
-            {uploadProgress && (
-              <div className="rounded border border-teal-200 bg-teal-50 px-2 py-1">
-                <p className="text-[10px] font-semibold text-teal-800">
-                  Uploading batches {uploadProgress.done}/{uploadProgress.total}
-                  {currentBatch ? ` (active ${currentBatch})` : ''}…
-                </p>
+            {uploadProgress && (() => {
+              const batchPct = uploadProgress.total > 0
+                ? Math.min(100, Math.round((uploadProgress.done / uploadProgress.total) * 100))
+                : 0;
+              return (
+              <div className="rounded border border-teal-200 bg-teal-50 px-2 py-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-semibold text-teal-800">
+                    Uploading batches {uploadProgress.done}/{uploadProgress.total}
+                    {currentBatch ? ` (active ${currentBatch})` : ''}…
+                  </p>
+                  <span className="text-[10px] font-bold text-teal-800">{batchPct}%</span>
+                </div>
+                <div className="mt-1 h-2 w-full rounded-full bg-teal-100 overflow-hidden">
+                  <div
+                    className="h-full bg-teal-600 transition-all duration-300 ease-out"
+                    style={{ width: `${batchPct}%` }}
+                  />
+                </div>
                 {uploadLive && (
                   <>
-                    <p className="mt-0.5 text-[10px] text-teal-900">
+                    {files.length > 0 && (
+                      <div className="mt-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-teal-900">
+                            Files sent: <strong>{uploadLive.totalFilesStarted}</strong>/{files.length}
+                          </span>
+                          <span className="text-[10px] font-semibold text-teal-800">
+                            {Math.min(100, Math.round((uploadLive.totalFilesStarted / files.length) * 100))}%
+                          </span>
+                        </div>
+                        <div className="mt-0.5 h-1.5 w-full rounded-full bg-teal-100 overflow-hidden">
+                          <div
+                            className="h-full bg-teal-500 transition-all duration-300 ease-out"
+                            style={{
+                              width: `${Math.min(100, Math.round((uploadLive.totalFilesStarted / files.length) * 100))}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    <p className="mt-1.5 text-[10px] text-teal-900">
                       Started: <strong>{uploadLive.started}</strong> · Completed:{" "}
                       <strong>{uploadLive.completed}</strong> · Active:{" "}
-                      <strong>{uploadLive.active}</strong> · Files sent:{" "}
-                      <strong>{uploadLive.totalFilesStarted}</strong>/{files.length}
+                      <strong>{uploadLive.active}</strong>
                     </p>
                     {Object.keys(activeBatchFiles).length > 0 && (
                       <div className="mt-1 rounded border border-teal-200 bg-white px-2 py-1">
@@ -530,7 +562,8 @@ export default function SOPFolderUploadModal({ isOpen, onClose, onSuccess }: SOP
                   </>
                 )}
               </div>
-            )}
+              );
+            })()}
 
             {result &&
               (() => {

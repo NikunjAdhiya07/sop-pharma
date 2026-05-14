@@ -48,11 +48,31 @@ export function scanRowLanguageFileSlots(row: any): RowLanguageFileSlots {
   let gujPdf = false;
 
   const docList = [...(row.sopFile ? [row.sopFile] : []), ...(row.sopDocuments || [])];
+
+  // Same dedup as the FILES table column: a doc tagged Gujarati whose path is
+  // already used by an English doc on this row is treated as English (the
+  // English copy "wins"). Without this dedup, a row with a single shared
+  // path stored twice (once tagged English, once Gujarati) would falsely
+  // satisfy both slots — which made the capsule Found filter return half-
+  // covered dual rows that the table clearly shows as "DOCX ✗" on the
+  // Gujarati side.
+  const engPaths = new Set<string>();
+  for (const d of docList) {
+    const p = (d.filePath || d.fileUrl || '').trim();
+    if (!p) continue;
+    if (attachmentLanguage(d, row) === 'English') {
+      engPaths.add(p.replace(/\\/g, '/').toLowerCase());
+    }
+  }
+
   for (const d of docList) {
     const p = (d.filePath || d.fileUrl || '').trim();
     if (!p) continue;
     const k = fileKindFromStoredPath(p, d.fileType);
-    const lang = attachmentLanguage(d, row);
+    let lang = attachmentLanguage(d, row);
+    if (lang === 'Gujarati' && engPaths.has(p.replace(/\\/g, '/').toLowerCase())) {
+      lang = 'English';
+    }
     if (k === 'docx' || k === 'doc') {
       if (lang === 'Gujarati') gujDocx = true;
       else engDocx = true;
@@ -65,9 +85,14 @@ export function scanRowLanguageFileSlots(row: any): RowLanguageFileSlots {
   return { engDocx, gujDocx, engPdf, gujPdf };
 }
 
-/** Expected DOCX language slots (1 = single-language row, 2 = EN+GU both need a DOCX). */
+/** Expected DOCX language slots (1 = single-language row, 2 = EN+GU both need a DOCX).
+ *  `gujaratiFileMissing` (set by the API when the registry has EN+GU rows but no
+ *  Gujarati file path) MUST also force 2 slots — otherwise dual rows whose
+ *  Gujarati upload is still pending would only require 1 DOCX, and the Found
+ *  filter would accept them despite the FILES column rendering "GUJ DOCX ✗". */
 export function expectedDocxSlotsForRow(row: any): number {
   if (row?.isDualLanguage === true) return 2;
+  if (row?.gujaratiFileMissing === true) return 2;
   if (row?.englishVersion && row?.gujaratiVersion) return 2;
   const s = scanRowLanguageFileSlots(row);
   if (s.engDocx && s.gujDocx) return 2;
@@ -77,6 +102,7 @@ export function expectedDocxSlotsForRow(row: any): number {
 /** Expected PDF language slots (independent of DOCX — bilingual PDF may be missing while DOCX exists). */
 export function expectedPdfSlotsForRow(row: any): number {
   if (row?.isDualLanguage === true) return 2;
+  if (row?.gujaratiFileMissing === true) return 2;
   if (row?.englishVersion && row?.gujaratiVersion) return 2;
   const s = scanRowLanguageFileSlots(row);
   if (s.engPdf && s.gujPdf) return 2;

@@ -22,11 +22,13 @@ function artifactHasFiles(e: { docxPath?: string; pdfPath?: string }): boolean {
 }
 
 /**
- * Classify a primary registry row for the Version capsule (mutually exclusive 3-bucket).
+ * Classify a primary registry row for the Version capsule (2 mutually exclusive buckets).
  *
- * Uses versionArtifacts / versionArtifactsGujarati (which hold actual file paths) as the
- * primary source of truth — matching exactly what the Prior Versions column renders.
- * Falls back to previousVersionsStatus only when no artifact arrays are present.
+ * Uses versionArtifacts / versionArtifactsGujarati (the actual file paths) as the sole
+ * source of truth — matching exactly what the Prior Versions column renders. We do NOT
+ * fall back to previousVersionsStatus, since that field flags slots as available when a
+ * legacy SOP identifier exists in any catalog (even without an uploaded file), which
+ * desynced the capsule counts from the visible Prior Versions DOCX/PDF/X markers.
  */
 export function classifySopVersionCapsule(row: any): SopVersionCapsuleTier {
   const currentVer = parseRevisionFromSopIdentifier(String(row?.sopNo || ""));
@@ -42,49 +44,30 @@ export function classifySopVersionCapsule(row: any): SopVersionCapsuleTier {
   const gjArtifacts: { version: number; docxPath?: string; pdfPath?: string }[] =
     Array.isArray(row?.versionArtifactsGujarati) ? row.versionArtifactsGujarati : [];
 
-  const hasArtifactData = enArtifacts.length > 0 || gjArtifacts.length > 0;
+  // "Found" must mean **a real file is attached for that prior version** — the same
+  // source the registry "Prior Versions" column uses to render DOCX/PDF links vs the
+  // red X. We never fall back to `previousVersionsStatus` here because that field
+  // marks slots available whenever a legacy SOP identifier exists in any catalog,
+  // even when no file artifact has been uploaded — which made the green bucket pull
+  // in rows whose Prior Versions column was clearly showing missing files.
+  let foundCount = 0;
+  for (let i = 1; i <= expectedSlots; i++) {
+    const prev = currentVer - i;
 
-  if (hasArtifactData) {
-    // For each expected prior version slot, check whether it has actual files.
-    // For dual-language rows: need files in BOTH ENG and GUJ to be "fully found".
-    // For single-language rows: need files in at least one language.
-    let foundCount = 0;
+    const enEntry = enArtifacts.find((e) => Number(e.version) === prev);
+    const gjEntry = gjArtifacts.find((e) => Number(e.version) === prev);
 
-    for (let i = 1; i <= expectedSlots; i++) {
-      const prev = currentVer - i;
+    const enHasFiles = !!(enEntry && artifactHasFiles(enEntry));
+    const gjHasFiles = !!(gjEntry && artifactHasFiles(gjEntry));
 
-      const enEntry = enArtifacts.find((e) => e.version === prev);
-      const gjEntry = gjArtifacts.find((e) => e.version === prev);
-
-      const enHasFiles = !!(enEntry && artifactHasFiles(enEntry));
-      const gjHasFiles = !!(gjEntry && artifactHasFiles(gjEntry));
-
-      if (isDual) {
-        // Dual-language: both ENG and GUJ must have files for the slot to be "found"
-        if (enHasFiles && gjHasFiles) foundCount++;
-      } else {
-        // Single-language: either language having files counts
-        if (enHasFiles || gjHasFiles) foundCount++;
-      }
+    if (isDual) {
+      if (enHasFiles && gjHasFiles) foundCount++;
+    } else {
+      if (enHasFiles || gjHasFiles) foundCount++;
     }
-
-    if (foundCount >= expectedSlots) return "allTwoFound";
-    return "notFound";
   }
 
-  // Fallback: no artifact arrays on this row — use previousVersionsStatus.
-  // This covers legacy rows that pre-date the artifact upload system.
-  const prev = Array.isArray(row?.previousVersionsStatus)
-    ? row.previousVersionsStatus
-    : [];
-
-  if (prev.length > 0) {
-    const top = prev.slice(0, expectedSlots);
-    const availableCount = top.filter((p: { available?: boolean }) => p.available).length;
-
-    if (availableCount >= expectedSlots) return "allTwoFound";
-  }
-
+  if (foundCount >= expectedSlots) return "allTwoFound";
   return "notFound";
 }
 
@@ -134,23 +117,15 @@ export function classifySopVersionPerLangFormat(
         ? row.versionArtifactsGujarati
         : [];
 
-  // No artifact data at all — fall back to row-level previousVersionsStatus (best-effort).
-  if (artifacts.length === 0) {
-    const prev = Array.isArray(row?.previousVersionsStatus)
-      ? row.previousVersionsStatus
-      : [];
-    if (prev.length === 0) return "notFound";
-    const top = prev.slice(0, expectedSlots);
-    const availableCount = top.filter(
-      (p: { available?: boolean }) => p.available,
-    ).length;
-    return availableCount >= expectedSlots ? "allTwoFound" : "notFound";
-  }
-
+  // "Found" = the requested format/language artifact has a real file path. We do not
+  // fall back to `previousVersionsStatus`: it can mark slots available purely because
+  // a prior identifier exists somewhere, which decoupled this classifier from the
+  // table's DOCX/PDF X-mark rendering and made green/red counts disagree with the
+  // visible Prior Versions column.
   let foundCount = 0;
   for (let i = 1; i <= expectedSlots; i++) {
     const prev = currentVer - i;
-    const entry = artifacts.find((e) => e.version === prev);
+    const entry = artifacts.find((e) => Number(e.version) === prev);
     if (!entry) continue;
     const hasFile =
       scope.format === "docx"
