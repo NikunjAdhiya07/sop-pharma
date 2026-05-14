@@ -25,6 +25,8 @@ type CapsuleAcc = {
   nearExpiry: number;
   docxSOPs: number;
   pdfSOPs: number;
+  docxFoundRows: number;
+  pdfFoundRows: number;
   expectedDocx: number;
   expectedPdf: number;
   docxFiles: number;
@@ -60,6 +62,8 @@ function emptyCapsuleAcc(): CapsuleAcc {
     nearExpiry: 0,
     docxSOPs: 0,
     pdfSOPs: 0,
+    docxFoundRows: 0,
+    pdfFoundRows: 0,
     expectedDocx: 0,
     expectedPdf: 0,
     docxFiles: 0,
@@ -136,7 +140,9 @@ function foldRegistryRowIntoCapsuleAcc(
   s.expectedPdf += expPdf;
 
   if (nDocxFiles < expDocx) s.missingDocxRows++;
+  else s.docxFoundRows++;
   if (nPdfFiles < expPdf) s.missingPdfRows++;
+  else s.pdfFoundRows++;
 
   // Total per-language SOP counts (overlap allowed): every SOP that is English
   // contributes to w/EN, every SOP that is Gujarati contributes to w/GU. A Dual
@@ -281,6 +287,8 @@ function accToDeptCapsuleStats(department: string, s: CapsuleAcc): DeptCapsuleSt
     nearExpiry: s.nearExpiry,
     docxSOPs: s.docxSOPs,
     pdfSOPs: s.pdfSOPs,
+    docxFoundRows: s.docxFoundRows,
+    pdfFoundRows: s.pdfFoundRows,
     expectedDocx: s.expectedDocx,
     expectedPdf: s.expectedPdf,
     docxFiles: s.docxFiles,
@@ -334,6 +342,8 @@ export interface DeptCapsuleStats {
   nearExpiry: number;
   docxSOPs: number;
   pdfSOPs: number;
+  docxFoundRows: number;
+  pdfFoundRows: number;
   expectedDocx: number;
   expectedPdf: number;
   docxFiles: number;
@@ -1199,8 +1209,8 @@ function DepartmentCapsuleCard({
         <CapsuleMetricAvailMissing
           label="DOCX"
           totalExpected={stat.expectedDocx}
-          available={stat.docxFiles}
-          missingCount={Math.max(0, stat.expectedDocx - stat.docxFiles)}
+          available={stat.docxFoundRows}
+          missingCount={stat.missingDocxRows}
           onFilterClick={() => apply("docx")}
           onAvailableClick={() =>
             applyCapsuleAvailMiss(deptForFilter, "docx", "available")
@@ -1269,8 +1279,8 @@ function DepartmentCapsuleCard({
         <CapsuleMetricAvailMissing
           label="PDF"
           totalExpected={stat.expectedPdf}
-          available={stat.pdfFiles}
-          missingCount={Math.max(0, stat.expectedPdf - stat.pdfFiles)}
+          available={stat.pdfFoundRows}
+          missingCount={stat.missingPdfRows}
           onFilterClick={() => apply("pdf")}
           onAvailableClick={() =>
             applyCapsuleAvailMiss(deptForFilter, "pdf", "available")
