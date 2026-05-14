@@ -2093,6 +2093,9 @@ export default function TrainingMatrixPage() {
   const [empModalFilter, setEmpModalFilter] = useState<'all' | 'pending' | 'completed'>('all');
   const [empModalSort, setEmpModalSort] = useState<{ field: 'code' | 'name' | 'month'; dir: 'asc' | 'desc' }>({ field: 'code', dir: 'asc' });
 
+  type SopRowSortField = 'sopCode' | 'title' | 'dept' | 'month' | 'expiry' | 'completionPct' | 'inExcel' | 'applicable' | 'trainer' | 'mcq' | 'due' | 'xna';
+  const [sopRowSort, setSopRowSort] = useState<{ field: SopRowSortField; dir: 'asc' | 'desc' }>({ field: 'sopCode', dir: 'asc' });
+
   const [missingModal, setMissingModal] = useState<null | {
     title: string;
     kind: 'sop' | 'trainer' | 'repeat-sop';
@@ -2426,6 +2429,9 @@ export default function TrainingMatrixPage() {
             dept: opts.dept,
             sopCodes: new Set(codes.map((c) => stripVersion(c))),
           });
+          setTimeout(() => {
+            tableSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 80);
           return;
         }
 
@@ -2436,6 +2442,47 @@ export default function TrainingMatrixPage() {
             const deptsForDb = opts.dept === 'All' ? Object.keys(dbByDept) : [opts.dept];
             const allDbCodes = deptsForDb.flatMap((d) => ((dbByDept[d] || []) as any[]).map((x: any) => stripVersion(x.sopCode)));
             codes = Array.from(new Set(allDbCodes));
+          } else if (opts.dept === 'All' && (
+            opts.status === 'mcq_created' || opts.status === 'mcq_not_created' ||
+            opts.status === 'mcq_all_approved' || opts.status === 'mcq_partially_approved' || opts.status === 'mcq_not_approved' ||
+            opts.status === 'mcq_eng_created' || opts.status === 'mcq_eng_not_created' ||
+            opts.status === 'mcq_eng_all_approved' || opts.status === 'mcq_eng_partially_approved' || opts.status === 'mcq_eng_not_approved' ||
+            opts.status === 'mcq_guj_created' || opts.status === 'mcq_guj_not_created' ||
+            opts.status === 'mcq_guj_all_approved' || opts.status === 'mcq_guj_partially_approved' || opts.status === 'mcq_guj_not_approved' ||
+            opts.status === 'expired' || opts.status === 'okay'
+          )) {
+            // Totals are computed over ALL DB SOPs (dbBaseSet) on the backend.
+            // Reproduce that here using sopStatusByCode so counts match exactly.
+            const status = opts.status;
+            const matched: string[] = [];
+            for (const [sopCode, s] of Object.entries(data.sopStatusByCode || {})) {
+              const tq = s.totalQuestions ?? 0;
+              const approved = s.approvedCount ?? 0;
+              const engTq = s.engTotalQuestions ?? 0;
+              const engApproved = s.engApprovedCount ?? 0;
+              const gujTq = s.gujTotalQuestions ?? 0;
+              const gujApproved = s.gujApprovedCount ?? 0;
+              let ok = false;
+              if (status === 'mcq_created') ok = tq >= 100;
+              else if (status === 'mcq_not_created') ok = tq < 100;
+              else if (status === 'mcq_all_approved') ok = tq > 0 && approved >= tq;
+              else if (status === 'mcq_partially_approved') ok = tq > 0 && approved > 0 && approved < tq;
+              else if (status === 'mcq_not_approved') ok = tq === 0 || approved === 0;
+              else if (status === 'mcq_eng_created') ok = engTq >= 100;
+              else if (status === 'mcq_eng_not_created') ok = engTq < 100;
+              else if (status === 'mcq_eng_all_approved') ok = engTq > 0 && engApproved >= engTq;
+              else if (status === 'mcq_eng_partially_approved') ok = engTq > 0 && engApproved > 0 && engApproved < engTq;
+              else if (status === 'mcq_eng_not_approved') ok = engTq === 0 || engApproved === 0;
+              else if (status === 'mcq_guj_created') ok = gujTq >= 100;
+              else if (status === 'mcq_guj_not_created') ok = gujTq < 100;
+              else if (status === 'mcq_guj_all_approved') ok = gujTq > 0 && gujApproved >= gujTq;
+              else if (status === 'mcq_guj_partially_approved') ok = gujTq > 0 && gujApproved > 0 && gujApproved < gujTq;
+              else if (status === 'mcq_guj_not_approved') ok = gujTq === 0 || gujApproved === 0;
+              else if (status === 'expired') ok = !!s.expired;
+              else if (status === 'okay') ok = !s.expired;
+              if (ok) matched.push(sopCode);
+            }
+            codes = matched;
           } else {
             // Use the exact pre-computed lists that match the backend counts
             for (const d of deptsToCheck) {
@@ -2556,7 +2603,7 @@ export default function TrainingMatrixPage() {
 
   // Applies a repeat-based filter directly to the SOP table (no modal)
   const applyRepeatFilter = useCallback(
-    (dept: ActiveDept, bucket: '3+' | '2' | 'once', list: Array<{ sopCode: string; count: number }>) => {
+    (dept: ActiveDept, bucket: '3+' | '2' | 'once' | 'all', list: Array<{ sopCode: string; count: number }>) => {
       if (!list?.length || !data) return;
       setViewMode('sop');
       setGroupBy('department');
@@ -2572,7 +2619,7 @@ export default function TrainingMatrixPage() {
         return { sopCode, count, depts };
       });
 
-      const label = bucket === '3+' ? 'Repeat 3+' : bucket === '2' ? 'Repeat 2' : 'Once';
+      const label = bucket === '3+' ? 'Repeat 3+' : bucket === '2' ? 'Repeat 2' : bucket === 'once' ? 'Once' : 'Repetitive SOPs';
       setCapsuleSopFilter({
         title: `${dept} · ${label} (${list.length} SOPs shared across departments)`,
         dept: 'All',
@@ -2665,6 +2712,7 @@ export default function TrainingMatrixPage() {
             mcqGujApproved: (status as any)?.gujApprovedCount || 0,
           };
         })
+        .filter((r) => activeMonth === 'All' || r.month === activeMonth)
         .filter((r) => {
           if (!term) return true;
           return r.sopCode.toLowerCase().includes(term) || r.pendingEmployees.length > 0 || r.completedEmployees.length > 0;
@@ -2704,10 +2752,11 @@ export default function TrainingMatrixPage() {
       const excelCodes = (data.sopCodesByDept?.[dept] || []).map((c: string) => stripVersion(c));
       const dbCodes = ((data.totalCard as any)?.dbSopsByDept?.[dept] || []).map((x: any) => stripVersion(x.sopCode));
       const baseCodes = Array.from(new Set([...excelCodes, ...dbCodes]));
-      const sopCodes = capsuleSopFilter
-        ? baseCodes.filter((c) => capsuleSopFilter.sopCodes.has(String(c).toUpperCase()))
-        : baseCodes;
       const monthMap = data.sopMonthMapByDept?.[dept] || {};
+      const sopCodes = (capsuleSopFilter
+        ? baseCodes.filter((c) => capsuleSopFilter.sopCodes.has(String(c).toUpperCase()))
+        : baseCodes
+      ).filter((c) => activeMonth === 'All' || monthMap[c] === activeMonth);
       const trainerMap: Record<string, string> = { ...globalTrainerMap, ...(data.perDept?.[dept]?.trainerBySopCode || {}) };
 
       const sopStats = new Map<string, {
@@ -2785,8 +2834,24 @@ export default function TrainingMatrixPage() {
       out.push({ department: dept, sops });
     }
 
+    // When a capsule filter is active, the same SOP can legitimately exist in
+    // multiple dept groups (cross-dept SOPs). Backend filter counts (e.g. "401
+    // MCQ created") count unique SOPs, so we dedupe here to keep rendered rows
+    // aligned with the displayed count.
+    if (capsuleSopFilter) {
+      const seen = new Set<string>();
+      for (const g of out) {
+        g.sops = g.sops.filter((s) => {
+          const key = s.sopCode.toUpperCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      }
+    }
+
     return out.filter((g) => g.sops.length > 0);
-  }, [data, activeDept, search, capsuleSopFilter]);
+  }, [data, activeDept, activeMonth, search, capsuleSopFilter]);
 
   const renderTotalCard = (t: TotalCardData) => {
     const TotalIcon = DEPT_ICON.Total;
@@ -3029,9 +3094,29 @@ export default function TrainingMatrixPage() {
         <div className="flex items-center justify-between">
           <SectionLabel>Repetitive SOPs</SectionLabel>
           <span className="flex items-center gap-1.5 tabular-nums">
-            <span className="text-[11px] font-bold text-emerald-600">{bucketSopSum}</span>
+            <button
+              type="button"
+              onClick={() =>
+                applyRepeatFilter('All', 'all', [
+                  ...totalRepeat3PlusList,
+                  ...totalRepeat2List,
+                  ...totalRepeatOnceList,
+                ])
+              }
+              className="text-[11px] font-bold text-emerald-600 hover:underline"
+              title="All Repetitive SOPs"
+            >
+              {bucketSopSum}
+            </button>
             <span className="text-[10px] text-gray-300 select-none">/</span>
-            <span className="text-[11px] font-bold text-red-600">{totalExcelDeptMissingSum}</span>
+            <button
+              type="button"
+              onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'missing', title: 'Total · Missing (DB but not in Excel)' })}
+              className="text-[11px] font-bold text-red-600 hover:underline"
+              title="Missing"
+            >
+              {totalExcelDeptMissingSum}
+            </button>
           </span>
         </div>
         <RepetitiveSopsRow
@@ -3191,6 +3276,9 @@ export default function TrainingMatrixPage() {
             setActiveMonth(m);
             setSearch('');
             clearCapsuleFilter();
+            setTimeout(() => {
+              tableSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 80);
           }}
         />
         <Divider />
@@ -3393,9 +3481,29 @@ export default function TrainingMatrixPage() {
               <div className="flex items-center justify-between">
                 <SectionLabel>Repetitive SOPs</SectionLabel>
                 <span className="flex items-center gap-1.5 tabular-nums">
-                  <span className="text-[11px] font-bold text-emerald-600">{bucketSopSum}</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      applyRepeatFilter(dept, 'all', [
+                        ...(d.repeat3PlusList ?? []),
+                        ...(d.repeat2List ?? []),
+                        ...(d.repeat1List ?? []),
+                      ])
+                    }
+                    className="text-[11px] font-bold text-emerald-600 hover:underline"
+                    title="All Repetitive SOPs"
+                  >
+                    {bucketSopSum}
+                  </button>
                   <span className="text-[10px] text-gray-300 select-none">/</span>
-                  <span className="text-[11px] font-bold text-red-600">{dMissingSum}</span>
+                  <button
+                    type="button"
+                    onClick={() => applySummaryCapsuleFilter({ dept, type: 'missing', title: `${dept} · Missing (DB but not in Excel)` })}
+                    className="text-[11px] font-bold text-red-600 hover:underline"
+                    title="Missing"
+                  >
+                    {dMissingSum}
+                  </button>
                 </span>
               </div>
               <RepetitiveSopsRow
@@ -3556,6 +3664,9 @@ export default function TrainingMatrixPage() {
             setActiveMonth(m);
             setSearch('');
             clearCapsuleFilter();
+            setTimeout(() => {
+              tableSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 80);
           }}
         />
       </CardShell>
@@ -3593,8 +3704,8 @@ export default function TrainingMatrixPage() {
               ? 'bg-violet-600 text-white'
               : 'bg-slate-600 text-white';
     return (
-      <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[10px] font-black shadow-sm ${cls}`}>
-        <span className="opacity-90">{label}</span>
+      <span className={`inline-flex items-center justify-between gap-2 rounded-full px-3 py-1 text-[10px] font-black shadow-sm w-[92px] flex-shrink-0 whitespace-nowrap ${cls}`}>
+        <span className="opacity-90 whitespace-nowrap">{label}</span>
         <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-black">{value}</span>
       </span>
     );
@@ -3639,7 +3750,7 @@ export default function TrainingMatrixPage() {
       >
         <div className="flex flex-col lg:flex-row lg:items-center gap-3 px-4 py-3">
           <div className="min-w-0 flex-1">{left}</div>
-          <div className="flex flex-wrap items-center justify-start lg:justify-end gap-2">{chips}</div>
+          <div className="flex flex-nowrap items-center justify-start lg:justify-end gap-2 flex-shrink-0">{chips}</div>
         </div>
         {bottom ? <div className="px-4 pb-3">{bottom}</div> : null}
       </div>
@@ -3741,37 +3852,31 @@ export default function TrainingMatrixPage() {
             )}
             <div className="flex-shrink-0 mt-0.5">
               <div className="inline-flex flex-col">
-                <span className="inline-flex items-center gap-2 rounded-xl px-3 py-2 bg-white/70 border border-white/70 shadow-sm max-w-[280px]">
-                  <span className="font-mono text-[12px] font-black text-gray-900 flex-shrink-0">{sop.sopCode}</span>
-                  {sop.title && (
-                    <>
-                      <span className="text-gray-300 text-[10px] flex-shrink-0">|</span>
-                      <div className="flex flex-col min-w-0">
-                        <span className="font-sans text-[10px] font-semibold text-gray-600 truncate max-w-[200px]" title={sop.title}>{sop.title}</span>
-                        {sop.isDualLanguage && sop.gujaratiName && (
-                          <span className="font-sans text-[10px] font-medium text-indigo-700 truncate max-w-[200px]" title={sop.gujaratiName}>{sop.gujaratiName}</span>
-                        )}
-                      </div>
-                    </>
-                  )}
+                <span className="inline-flex items-center gap-2 rounded-xl px-3 py-2 bg-white/70 border border-white/70 shadow-sm w-[280px]">
+                  <span className="font-mono text-[12px] font-black text-gray-900 flex-shrink-0 w-[58px]">{sop.sopCode}</span>
+                  <span className="text-gray-300 text-[10px] flex-shrink-0">|</span>
+                  <div className="flex flex-col min-w-0 flex-1">
+                    <span className="font-sans text-[10px] font-semibold text-gray-600 truncate" title={sop.title || ''}>{sop.title || ''}</span>
+                    {sop.isDualLanguage && sop.gujaratiName && (
+                      <span className="font-sans text-[10px] font-medium text-indigo-700 truncate" title={sop.gujaratiName}>{sop.gujaratiName}</span>
+                    )}
+                  </div>
                 </span>
               </div>
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                <span className="text-[11px] font-black text-gray-900">{dept}</span>
-                {!!sop.month && (
-                  <span
-                    className={`text-[10px] font-black rounded-full px-2 py-0.5 border ${isActiveMonth ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white/60 text-gray-600 border-white/60'
-                      }`}
-                    title={isActiveMonth ? 'Exam scheduled in selected month' : 'Scheduled month'}
-                  >
-                    {sop.month}
-                  </span>
-                )}
+              <div className="flex items-center gap-2 flex-nowrap mb-0.5">
+                <span className="text-[11px] font-black text-gray-900 w-[80px] flex-shrink-0">{dept}</span>
+                <span
+                  className={`text-[10px] font-black rounded-full px-2 py-0.5 border w-[80px] text-center flex-shrink-0 ${sop.month ? (isActiveMonth ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white/60 text-gray-600 border-white/60') : 'bg-transparent text-transparent border-transparent'
+                    }`}
+                  title={sop.month ? (isActiveMonth ? 'Exam scheduled in selected month' : 'Scheduled month') : ''}
+                >
+                  {sop.month || '—'}
+                </span>
                 {sop.targetDate ? (
                   <span
-                    className={`inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2.5 py-0.5 border ${sop.expired
+                    className={`inline-flex items-center justify-center gap-1 text-[10px] font-bold rounded-full px-2.5 py-0.5 border w-[150px] flex-shrink-0 ${sop.expired
                       ? 'bg-red-100 text-red-700 border-red-300'
                       : 'bg-emerald-100 text-emerald-700 border-emerald-300'
                       }`}
@@ -3783,14 +3888,13 @@ export default function TrainingMatrixPage() {
                   </span>
                 ) : (
                   <span
-                    className="inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2.5 py-0.5 border bg-gray-100 text-gray-500 border-gray-300"
+                    className="inline-flex items-center justify-center gap-1 text-[10px] font-bold rounded-full px-2.5 py-0.5 border bg-gray-100 text-gray-500 border-gray-300 w-[150px] flex-shrink-0"
                     title="No expiry/review date set for this SOP"
                   >
                     <span className="text-[9px]">—</span>
                     No date
                   </span>
                 )}
-                <ProgressPill pct={sop.completionPct} />
                 {(() => {
                   if (!data) return null;
                   const inExcelDepts = DEPARTMENTS.filter((d) =>
@@ -3807,7 +3911,7 @@ export default function TrainingMatrixPage() {
                           rows: inExcelDepts.map(d => ({ sopCode: sop.sopCode, department: d, title: sop.title || '' }))
                         });
                       }}
-                      className="inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2 py-0.5 border bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100 transition shadow-sm ml-1"
+                      className="inline-flex items-center justify-center gap-1 text-[10px] font-bold rounded-full px-2 py-0.5 border bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100 transition shadow-sm ml-1 w-[90px] flex-shrink-0"
                       title={`Click to see which departments have this SOP in their Excel`}
                     >
                       in excel: <span className="font-black bg-indigo-200 text-indigo-800 rounded-full px-1.5">{inExcelDepts.length}</span>
@@ -3815,16 +3919,16 @@ export default function TrainingMatrixPage() {
                   );
                 })()}
               </div>
-              <div className="mt-0.5 flex items-center gap-3 flex-wrap">
-                <span className="text-[10px] text-gray-500">
+              <div className="mt-0.5 flex items-center gap-3 flex-nowrap">
+                <span className="text-[10px] text-gray-500 w-[88px] flex-shrink-0">
                   Applicable: <span className="font-black text-gray-800">{sop.totalApplicable}</span>
                 </span>
                 {sop.trainer ? (
-                  <span className="text-[10px] font-semibold text-emerald-700">
+                  <span className="text-[10px] font-semibold text-emerald-700 truncate">
                     {sop.trainer}
                   </span>
                 ) : (
-                  <span className="text-[10px] font-semibold text-red-500">
+                  <span className="text-[10px] font-semibold text-red-500 truncate">
                     No Trainer
                   </span>
                 )}
@@ -3889,9 +3993,9 @@ export default function TrainingMatrixPage() {
           </>
         }
         bottom={
-          sop.pendingEmployees.length > 0 ? (
+          (sop.completedEmployees && sop.completedEmployees.length > 0) ? (
             <div className="flex flex-wrap gap-1.5">
-              {sop.pendingEmployees.slice(0, 12).map((n) => {
+              {[...sop.completedEmployees].sort((a, b) => a.localeCompare(b)).slice(0, 12).map((n) => {
                 const deptEmployees = data?.perDept?.[dept as Dept]?.employees || [];
                 const byName = new Map<string, { designation?: string }>();
                 for (const e of deptEmployees) byName.set(e.name, { designation: e.designation });
@@ -3925,9 +4029,9 @@ export default function TrainingMatrixPage() {
                   </button>
                 );
               })}
-              {sop.pendingEmployees.length > 12 ? (
+              {sop.completedEmployees && sop.completedEmployees.length > 12 ? (
                 <span className="text-[10px] font-semibold text-gray-500 px-1">
-                  +{sop.pendingEmployees.length - 12} more
+                  +{sop.completedEmployees.length - 12} more
                 </span>
               ) : null}
             </div>
@@ -4253,7 +4357,7 @@ export default function TrainingMatrixPage() {
                         }`}
                     >
                       <span className={`h-2 w-2 rounded-full ${empModalFilter === 'pending' ? 'bg-white' : 'bg-gray-400'}`} />
-                      Pending: {totalPending}
+                      Not Assigned: {totalPending}
                     </button>
                     <button
                       type="button"
@@ -4264,14 +4368,14 @@ export default function TrainingMatrixPage() {
                         }`}
                     >
                       <span className={`h-2 w-2 rounded-full ${empModalFilter === 'completed' ? 'bg-white' : 'bg-gray-400'}`} />
-                      Completed: {totalCompleted}
+                      Assigned: {totalCompleted}
                     </button>
                     <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${empModalFilter === 'all' && !q ? 'bg-gray-100 border-gray-200 text-gray-600' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
                       Total: {allSops.length}
                     </span>
                     {allSops.length > 0 && (
                       <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-50 border border-purple-200 px-3 py-1 text-xs font-bold text-purple-700">
-                        {Math.round((totalCompleted / allSops.length) * 100)}% Complete
+                        {Math.round((totalCompleted / allSops.length) * 100)}% Assigned
                       </span>
                     )}
                     {/* Search */}
@@ -4351,14 +4455,14 @@ export default function TrainingMatrixPage() {
                                 {showPendingHeader && (
                                   <tr>
                                     <td colSpan={6} className="px-3 py-1.5 bg-red-50 border-b border-red-100">
-                                      <span className="text-[10px] font-black uppercase tracking-wider text-red-500">Pending ({pendingCount})</span>
+                                      <span className="text-[10px] font-black uppercase tracking-wider text-red-500">Not Assigned ({pendingCount})</span>
                                     </td>
                                   </tr>
                                 )}
                                 {showCompletedHeader && (
                                   <tr>
                                     <td colSpan={6} className="px-3 py-1.5 bg-emerald-50 border-b border-emerald-100">
-                                      <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600">Completed ({displayRows.filter((x) => x.symbol === '√').length})</span>
+                                      <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600">Assigned ({displayRows.filter((x) => x.symbol === '√').length})</span>
                                     </td>
                                   </tr>
                                 )}
@@ -4367,12 +4471,12 @@ export default function TrainingMatrixPage() {
                                     {isPending ? (
                                       <span className="inline-flex items-center gap-1 rounded-full bg-red-100 border border-red-200 px-2 py-0.5 text-[10px] font-black text-red-700">
                                         <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-                                        Pending
+                                        Not Assigned
                                       </span>
                                     ) : (
                                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 border border-emerald-200 px-2 py-0.5 text-[10px] font-black text-emerald-700">
                                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                                        Completed
+                                        Assigned
                                       </span>
                                     )}
                                   </td>
@@ -4648,44 +4752,148 @@ export default function TrainingMatrixPage() {
       }
 
       // default groupBy department — flat list, no dept headers
+      const flatRows = sopWiseGroups.flatMap((g) => {
+        const accent = DEPT_ACCENT[(g.department as Dept) || 'Total'] || '#a855f7';
+        return g.sops.map((s: any) => ({ dept: g.department, accent, s }));
+      });
+
+      const inExcelCountFor = (code: string) => {
+        if (!data) return 0;
+        return DEPARTMENTS.filter((d) =>
+          (data.sopCodesByDept?.[d] || []).some((c: string) => c.toUpperCase() === code.toUpperCase())
+        ).length;
+      };
+
+      const dir = sopRowSort.dir === 'asc' ? 1 : -1;
+      const sortedRows = [...flatRows].sort((a, b) => {
+        const sa = a.s; const sb = b.s;
+        const cmpStr = (x: string, y: string) => x.localeCompare(y);
+        switch (sopRowSort.field) {
+          case 'sopCode': return dir * cmpStr(sa.sopCode || '', sb.sopCode || '');
+          case 'title': return dir * cmpStr((sa.title || '').toLowerCase(), (sb.title || '').toLowerCase());
+          case 'dept': return dir * cmpStr(a.dept || '', b.dept || '');
+          case 'month': return dir * cmpStr(sa.month || '', sb.month || '');
+          case 'expiry': {
+            const da = sa.targetDate ? new Date(sa.targetDate).getTime() : Number.POSITIVE_INFINITY;
+            const db = sb.targetDate ? new Date(sb.targetDate).getTime() : Number.POSITIVE_INFINITY;
+            return dir * (da - db);
+          }
+          case 'completionPct': return dir * ((sa.completionPct || 0) - (sb.completionPct || 0));
+          case 'inExcel': return dir * (inExcelCountFor(sa.sopCode) - inExcelCountFor(sb.sopCode));
+          case 'applicable': return dir * ((sa.totalApplicable || 0) - (sb.totalApplicable || 0));
+          case 'trainer': return dir * cmpStr((sa.trainer || '').toLowerCase(), (sb.trainer || '').toLowerCase());
+          case 'mcq': {
+            const av = sa.isDualLanguage ? (sa.mcqEngTotal ?? 0) : (sa.mcqTotal ?? 0);
+            const bv = sb.isDualLanguage ? (sb.mcqEngTotal ?? 0) : (sb.mcqTotal ?? 0);
+            return dir * (av - bv);
+          }
+          case 'due': return dir * ((sa.completed || 0) - (sb.completed || 0));
+          case 'xna': return dir * ((sa.pending || 0) - (sb.pending || 0));
+          default: return 0;
+        }
+      });
+
+      const toggleSort = (field: SopRowSortField) => {
+        setSopRowSort((cur) => cur.field === field ? { field, dir: cur.dir === 'asc' ? 'desc' : 'asc' } : { field, dir: 'asc' });
+      };
+      const SortBtn = ({ field, label, widthClass, align = 'center' }: { field: SopRowSortField; label: string; widthClass: string; align?: 'left' | 'center' | 'right' }) => {
+        const active = sopRowSort.field === field;
+        const arrow = active ? (sopRowSort.dir === 'asc' ? '▲' : '▼') : '⇅';
+        const justify = align === 'left' ? 'justify-start' : align === 'right' ? 'justify-end' : 'justify-center';
+        return (
+          <button
+            type="button"
+            onClick={() => toggleSort(field)}
+            className={`inline-flex items-center gap-1 ${justify} ${widthClass} flex-shrink-0 text-[10px] font-bold rounded-md px-2 py-1 border transition ${active ? 'bg-purple-100 text-purple-700 border-purple-300' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:text-gray-800'}`}
+            title={`Sort by ${label}`}
+          >
+            <span className="truncate">{label}</span>
+            <span className="opacity-60 text-[9px]">{arrow}</span>
+          </button>
+        );
+      };
+
       let globalSr = 0;
       return (
         <div className="space-y-3">
-          {sopWiseGroups.flatMap((g) => {
-            const accent = DEPT_ACCENT[(g.department as Dept) || 'Total'] || '#a855f7';
-            return g.sops.map((s) => {
-              globalSr += 1;
-              return (
-                <SopCard
-                  key={`${g.department}|${s.sopCode}`}
-                  dept={g.department}
-                  accent={accent}
-                  sr={globalSr}
-                  sop={{
-                    sopCode: s.sopCode,
-                    title: (s as any).title || '',
-                    isDualLanguage: (s as any).isDualLanguage,
-                    gujaratiName: (s as any).gujaratiName,
-                    month: s.month,
-                    trainer: (s as any).trainer || '',
-                    completed: s.completed,
-                    pending: s.pending,
-                    totalApplicable: s.totalApplicable,
-                    completionPct: s.completionPct,
-                    pendingEmployees: s.pendingEmployees,
-                    completedEmployees: (s as any).completedEmployees || [],
-                    targetDate: s.targetDate,
-                    expired: s.expired,
-                    mcqTotal: s.mcqTotal,
-                    mcqApproved: s.mcqApproved,
-                    mcqEngTotal: s.mcqEngTotal,
-                    mcqEngApproved: s.mcqEngApproved,
-                    mcqGujTotal: s.mcqGujTotal,
-                    mcqGujApproved: s.mcqGujApproved,
-                  }}
-                />
-              );
-            });
+          <div className="rounded-2xl border border-gray-200 bg-white/70 shadow-sm px-4 py-2">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] font-black uppercase tracking-wider text-gray-500">Sort by</span>
+              <button
+                type="button"
+                onClick={() => setSopRowSort({ field: 'sopCode', dir: 'asc' })}
+                disabled={sopRowSort.field === 'sopCode' && sopRowSort.dir === 'asc'}
+                className="ml-auto inline-flex items-center gap-1 text-[10px] font-bold rounded-md px-2 py-1 border bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:text-gray-800 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Reset sort to default (SOP code ascending)"
+              >
+                <RefreshCw className="h-3 w-3" />
+                Reset
+              </button>
+            </div>
+            <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start gap-3 min-w-0">
+                  <span className="flex-shrink-0 w-5" />
+                  <div className="flex-shrink-0">
+                    <div className="flex items-center gap-2 w-[280px]">
+                      <SortBtn field="sopCode" label="SOP" widthClass="w-[58px]" />
+                      <span className="text-gray-300 text-[10px] flex-shrink-0">|</span>
+                      <SortBtn field="title" label="SOP Name" widthClass="flex-1" align="left" />
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-nowrap">
+                      <SortBtn field="dept" label="Dept" widthClass="w-[80px]" />
+                      <SortBtn field="month" label="Month" widthClass="w-[80px]" />
+                      <SortBtn field="expiry" label="Expiry" widthClass="w-[150px]" />
+                      <SortBtn field="inExcel" label="In Excel" widthClass="w-[90px]" />
+                    </div>
+                    <div className="mt-1 flex items-center gap-3 flex-nowrap">
+                      <SortBtn field="applicable" label="Applicable" widthClass="w-[88px]" align="left" />
+                      <SortBtn field="trainer" label="Trainer" widthClass="w-[120px]" align="left" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-nowrap items-center justify-start lg:justify-end gap-2 flex-shrink-0">
+                <SortBtn field="mcq" label="MCQs" widthClass="min-w-[130px]" />
+                <SortBtn field="due" label="√ Due" widthClass="w-[92px]" />
+                <SortBtn field="xna" label="X/NA" widthClass="w-[92px]" />
+              </div>
+            </div>
+          </div>
+          {sortedRows.map(({ dept, accent, s }) => {
+            globalSr += 1;
+            return (
+              <SopCard
+                key={`${dept}|${s.sopCode}`}
+                dept={dept}
+                accent={accent}
+                sr={globalSr}
+                sop={{
+                  sopCode: s.sopCode,
+                  title: (s as any).title || '',
+                  isDualLanguage: (s as any).isDualLanguage,
+                  gujaratiName: (s as any).gujaratiName,
+                  month: s.month,
+                  trainer: (s as any).trainer || '',
+                  completed: s.completed,
+                  pending: s.pending,
+                  totalApplicable: s.totalApplicable,
+                  completionPct: s.completionPct,
+                  pendingEmployees: s.pendingEmployees,
+                  completedEmployees: (s as any).completedEmployees || [],
+                  targetDate: s.targetDate,
+                  expired: s.expired,
+                  mcqTotal: s.mcqTotal,
+                  mcqApproved: s.mcqApproved,
+                  mcqEngTotal: s.mcqEngTotal,
+                  mcqEngApproved: s.mcqEngApproved,
+                  mcqGujTotal: s.mcqGujTotal,
+                  mcqGujApproved: s.mcqGujApproved,
+                }}
+              />
+            );
           })}
         </div>
       );
@@ -5044,7 +5252,7 @@ export default function TrainingMatrixPage() {
               ))}
             </div>
           ) : data ? (
-            <div className="flex gap-2 overflow-x-auto pb-2">
+            <div className="flex gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
               {renderTotalCard(data.totalCard)}
               {DEPARTMENTS.map((dept) => <Fragment key={dept}>{renderDeptCard(dept, data.perDept[dept])}</Fragment>)}
             </div>
@@ -5120,7 +5328,7 @@ export default function TrainingMatrixPage() {
                 {capsuleSopFilter ? (
                   <div className="flex items-center gap-2">
                     <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-black text-purple-700 border border-purple-200">
-                      {capsuleSopFilter.sopCodes.size} SOPs
+                      {sopWiseGroups.reduce((n, g) => n + g.sops.length, 0)} SOPs
                     </span>
                     <span className="text-[11px] font-semibold text-gray-700 truncate max-w-xs" title={capsuleSopFilter.title}>
                       {capsuleSopFilter.title}
