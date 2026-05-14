@@ -18,7 +18,7 @@ const DEPT_CANONICAL = ['QA','QC','Microbiology','Production','Store','Engineeri
 
 type LangKey = 'ENG' | 'GUJ';
 
-const CACHE_KEY = 'training-matrix-overview:v22';
+const CACHE_KEY = 'training-matrix-overview:v37';
 // In-memory fallback TTL (used when Redis is not configured)
 const MEMORY_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -580,8 +580,12 @@ export async function GET(req: NextRequest) {
       const repeat2List: RepeatItem[] = [];
       const repeat1List: RepeatItem[] = [];
       for (const c of codes) {
-        const count = sopCodeToDeptCount.get(c) || 1; // always >= 1 (this dept itself)
+        if (!dbBaseSet.has(c)) continue; // only DB-matched codes
         const meta = dbBaseMeta.get(c);
+        // Only count each SOP in its OWNER dept's card so per-dept sums reconcile to the Total card.
+        const owner = resolveDeptForBaseSop(c, meta);
+        if (owner !== dept) continue;
+        const count = sopCodeToDeptCount.get(c) || 1;
         const item: RepeatItem = { sopCode: c, title: meta?.title || '', department: dept, count };
         if (count >= 3) repeat3PlusList.push(item);
         else if (count === 2) repeat2List.push(item);
@@ -659,15 +663,25 @@ export async function GET(req: NextRequest) {
         }));
       const trainersAssigned = trainersAssignedList.length;
       const trainersMissing = trainersMissingListRows.length;
+
+      // SOP-wise trainer counts: based on all DB SOPs for this dept (not just Excel-found)
+      const sopTrainersAssigned = deptDbCodes.filter((c) => dbBaseHasTrainer.get(c)).length;
+      const sopTrainersMissing = deptDbCodes.filter((c) => !dbBaseHasTrainer.get(c)).length;
+      const sopTrainersMissingList = deptDbCodes
+        .filter((c) => !dbBaseHasTrainer.get(c))
+        .map((c) => ({ sopCode: c, title: dbBaseMeta.get(c)?.title || '', department: dept }));
       
       let expiredCount = 0;
       let okayCount = 0;
       let dueSoon60Count = 0;
       const dueSoon60List: string[] = [];
       const sixtyDaysMs = 60 * 24 * 3600 * 1000;
-      for (const c of foundInDb) {
+      for (const c of deptDbCodes) {
         const meta = dbBaseMeta.get(c);
-        if (!meta?.targetDate) continue; // no date set — excluded from both counts
+        if (!meta?.targetDate) {
+          okayCount++; // no expiry date known — treat as okay
+          continue;
+        }
         if (meta.expired) {
           expiredCount++;
         } else {
@@ -730,6 +744,7 @@ export async function GET(req: NextRequest) {
       const mcqGujPartiallyApprovedList: string[] = [];
       const mcqGujNotApprovedList: string[] = [];
 
+      // Overall MCQ counts scoped to Excel SOPs found in DB (foundInDb)
       for (const sopCode of foundInDb) {
         const mcqStat = mcqStatMap.get(sopCode);
         const tq = mcqStat?.totalQuestions ?? 0;
@@ -757,30 +772,40 @@ export async function GET(req: NextRequest) {
           mcqNotApprovedCount++;
           mcqNotApprovedList.push(sopCode);
         }
+      }
 
-        // Per-language breakdown
+      // Per-language MCQ counts use the same SOP lists as langBreakdown/langSopListByKey,
+      // so ENG total == Lang(DB) ENG and GUJ total == Lang(DB) GUJ exactly.
+      const engSopList = langSopListByKey['ENG'] ?? deptDbCodes;
+      const gujSopList = langSopListByKey['GUJ'] ?? [];
+
+      for (const sopCode of engSopList) {
         const langStat = mcqLangStatMap.get(sopCode);
         const engTq = langStat?.eng.totalQuestions ?? 0;
         const engApproved = langStat?.eng.approvedCount ?? 0;
-        const gujTq = langStat?.guj.totalQuestions ?? 0;
-        const gujApproved = langStat?.guj.approvedCount ?? 0;
-
-        // ENG: count SOPs that have at least one English MCQ bank entry (engTq > 0)
+        if (engTq >= 100) { mcqEngCreatedCount++; mcqEngCreatedList.push(sopCode); }
+        else { mcqEngNotCreatedCount++; mcqEngNotCreatedList.push(sopCode); }
         if (engTq > 0) {
-          if (engTq >= 100) { mcqEngCreatedCount++; mcqEngCreatedList.push(sopCode); }
-          else { mcqEngNotCreatedCount++; mcqEngNotCreatedList.push(sopCode); }
           if (engApproved >= engTq) { mcqEngAllApprovedCount++; mcqEngAllApprovedList.push(sopCode); }
           else if (engApproved > 0) { mcqEngPartiallyApprovedCount++; mcqEngPartiallyApprovedList.push(sopCode); }
           else { mcqEngNotApprovedCount++; mcqEngNotApprovedList.push(sopCode); }
+        } else {
+          mcqEngNotApprovedCount++; mcqEngNotApprovedList.push(sopCode);
         }
+      }
 
-        // GUJ: only count SOPs that actually have a Gujarati MCQ bank entry
+      for (const sopCode of gujSopList) {
+        const langStat = mcqLangStatMap.get(sopCode);
+        const gujTq = langStat?.guj.totalQuestions ?? 0;
+        const gujApproved = langStat?.guj.approvedCount ?? 0;
+        if (gujTq >= 100) { mcqGujCreatedCount++; mcqGujCreatedList.push(sopCode); }
+        else { mcqGujNotCreatedCount++; mcqGujNotCreatedList.push(sopCode); }
         if (gujTq > 0) {
-          if (gujTq >= 100) { mcqGujCreatedCount++; mcqGujCreatedList.push(sopCode); }
-          else { mcqGujNotCreatedCount++; mcqGujNotCreatedList.push(sopCode); }
           if (gujApproved >= gujTq) { mcqGujAllApprovedCount++; mcqGujAllApprovedList.push(sopCode); }
           else if (gujApproved > 0) { mcqGujPartiallyApprovedCount++; mcqGujPartiallyApprovedList.push(sopCode); }
           else { mcqGujNotApprovedCount++; mcqGujNotApprovedList.push(sopCode); }
+        } else {
+          mcqGujNotApprovedCount++; mcqGujNotApprovedList.push(sopCode);
         }
       }
 
@@ -812,6 +837,9 @@ export async function GET(req: NextRequest) {
         },
         trainersAssigned,
         trainersMissing,
+        sopTrainersAssigned,
+        sopTrainersMissing,
+        sopTrainersMissingList,
         expiredCount,
         okayCount,
         dueSoon60Count,
@@ -885,12 +913,58 @@ export async function GET(req: NextRequest) {
       };
     }
 
+    // Diagnostic: reconcile Total Excel SOP vs Total repeat buckets
+    {
+      let totalDFoundSum = 0;
+      const allBucketSopCodes = new Map<string, number>(); // sopCode → count (deduped across depts)
+      const deptOccurrences = new Map<string, Set<string>>(); // sopCode → set of depts that contain it in Excel
+      for (const d of DEPT_CANONICAL) {
+        const pd = perDept[d];
+        if (!pd?.uploaded) continue;
+        const dFS = Object.values(pd.excelDeptSplit?.foundByDept || {}).reduce((a: number, b: any) => a + (b || 0), 0) + (pd.excelDeptSplit?.unknownFound ?? 0);
+        totalDFoundSum += dFS;
+        for (const list of [pd.repeat3PlusList, pd.repeat2List, pd.repeat1List]) {
+          for (const item of (list as any[]) || []) {
+            if (!allBucketSopCodes.has(item.sopCode)) allBucketSopCodes.set(item.sopCode, item.count);
+            if (!deptOccurrences.has(item.sopCode)) deptOccurrences.set(item.sopCode, new Set());
+            deptOccurrences.get(item.sopCode)!.add(d);
+          }
+        }
+      }
+      const weightedSum = Array.from(allBucketSopCodes.values()).reduce((a, b) => a + b, 0);
+      const occurrenceSum = Array.from(deptOccurrences.values()).reduce((a, s) => a + s.size, 0);
+      const mismatches: string[] = [];
+      for (const [code, count] of allBucketSopCodes.entries()) {
+        const occ = deptOccurrences.get(code)!.size;
+        if (occ !== count) mismatches.push(`${code}: sopCodeToDeptCount=${count}, actualOccurrences=${occ}`);
+      }
+      console.log(`[TM Overview/TOTAL] totalDFoundSum=${totalDFoundSum} weightedBucketSum=${weightedSum} actualOccurrenceSum=${occurrenceSum} uniqueBucketSops=${allBucketSopCodes.size}`);
+      if (mismatches.length) {
+        console.log(`[TM Overview/TOTAL] count mismatches (sopCodeToDeptCount vs actual dept occurrences):`, mismatches);
+      }
+    }
+
     // 4. Total card
+    // "Missing from Excel" at the total level must reconcile with the sum of per-dept
+    // missing counts: a SOP is missing if its OWNER department's Excel upload doesn't
+    // contain it. A SOP appearing in some other dept's Excel doesn't count as "found"
+    // for its owner — that mismatch is what the per-dept cards already report.
     const dbSopsAll = [...dbBaseSet];
-    const foundInAllExcel = dbSopsAll.filter((c) => allExcelCodes.has(c));
-    const missingFromAllExcel = dbSopsAll.filter((c) => !allExcelCodes.has(c));
+    const foundInAllExcel: string[] = [];
+    const missingFromAllExcel: string[] = [];
+    for (const c of dbSopsAll) {
+      const meta = dbBaseMeta.get(c);
+      const owner = resolveDeptForBaseSop(c, meta);
+      const ownerCodes = DEPT_CANONICAL.includes(owner) ? sopCodesByDept[owner] : undefined;
+      const ownerCodesSet = ownerCodes ? new Set(ownerCodes) : null;
+      if (ownerCodesSet && ownerCodesSet.has(c)) foundInAllExcel.push(c);
+      else missingFromAllExcel.push(c);
+    }
     let totalTrainersAssigned = 0;
     let totalTrainersMissing = 0;
+    let totalSopTrainersAssigned = 0;
+    let totalSopTrainersMissing = 0;
+    const totalSopTrainersMissingList: { sopCode: string; title: string; department: string }[] = [];
     let totalSopOkayCount = 0;
     let totalSopExpiredCount = 0;
     let totalDueSoon60Count = 0;
@@ -933,34 +1007,76 @@ export async function GET(req: NextRequest) {
       const gujTq = langStat?.guj.totalQuestions ?? 0;
       const gujApproved = langStat?.guj.approvedCount ?? 0;
 
-      // ENG: only count SOPs that have at least one English MCQ bank entry
+      // ENG: every SOP counts toward ENG total
+      if (engTq >= 100) totalMcqEngCreated++; else totalMcqEngNotCreated++;
       if (engTq > 0) {
-        if (engTq >= 100) totalMcqEngCreated++; else totalMcqEngNotCreated++;
         if (engApproved >= engTq) totalMcqEngAllApproved++;
         else if (engApproved > 0) totalMcqEngPartiallyApproved++;
         else totalMcqEngNotApproved++;
+      } else {
+        totalMcqEngNotApproved++;
       }
 
-      // GUJ: only count SOPs that actually have a Gujarati MCQ bank entry
-      if (gujTq > 0) {
+      // GUJ: use same default as globalLangMap (new Set(['ENG'])) so counts match Lang(DB) GUJ total
+      const baseHasGuj = (dbBaseLangs.get(base) || new Set<LangKey>(['ENG'])).has('GUJ');
+      if (baseHasGuj) {
         if (gujTq >= 100) totalMcqGujCreated++; else totalMcqGujNotCreated++;
-        if (gujApproved >= gujTq) totalMcqGujAllApproved++;
-        else if (gujApproved > 0) totalMcqGujPartiallyApproved++;
-        else totalMcqGujNotApproved++;
+        if (gujTq > 0) {
+          if (gujApproved >= gujTq) totalMcqGujAllApproved++;
+          else if (gujApproved > 0) totalMcqGujPartiallyApproved++;
+          else totalMcqGujNotApproved++;
+        } else {
+          totalMcqGujNotApproved++;
+        }
       }
     }
+    // Total expiry counts over ALL 427 DB SOPs (not just Excel-found)
+    const sixtyDaysMsTotal = 60 * 24 * 3600 * 1000;
+    for (const base of dbBaseSet) {
+      const meta = dbBaseMeta.get(base);
+      if (!meta?.targetDate) {
+        totalSopOkayCount++;
+        continue;
+      }
+      if (meta.expired) {
+        totalSopExpiredCount++;
+      } else {
+        totalSopOkayCount++;
+        const t = new Date(meta.targetDate).getTime();
+        if (t - today.getTime() <= sixtyDaysMsTotal) {
+          totalDueSoon60Count++;
+          // MCQ status for due-soon SOP
+          const mcqStat = mcqStatMap.get(base);
+          const tq = mcqStat?.totalQuestions ?? 0;
+          const approved = mcqStat?.approvedCount ?? 0;
+          if (tq > 0 && approved >= tq) totalDueSoon60McqReviewed++;
+          else if (approved > 0) totalDueSoon60McqPartial++;
+          else totalDueSoon60McqNotReviewed++;
+        }
+      }
+    }
+
     for (const dept of DEPT_CANONICAL) {
       if (perDept[dept].uploaded) {
         totalTrainersAssigned += perDept[dept].trainersAssigned || 0;
         totalTrainersMissing += perDept[dept].trainersMissing || 0;
-        totalSopOkayCount += perDept[dept].okayCount || 0;
-        totalSopExpiredCount += perDept[dept].expiredCount || 0;
-        totalDueSoon60Count += perDept[dept].dueSoon60Count || 0;
-        totalDueSoon60McqReviewed += perDept[dept].dueSoon60McqReviewed || 0;
-        totalDueSoon60McqPartial += perDept[dept].dueSoon60McqPartial || 0;
-        totalDueSoon60McqNotReviewed += perDept[dept].dueSoon60McqNotReviewed || 0;
       }
       totalTrainersMissingList.push(...perDept[dept].trainersMissingList);
+    }
+
+    // SOP-wise trainer totals: all 427 DB SOPs (uses full 3-tier trainer resolution)
+    for (const base of dbBaseSet) {
+      if (dbBaseHasTrainer.get(base)) {
+        totalSopTrainersAssigned++;
+      } else {
+        totalSopTrainersMissing++;
+        const meta = dbBaseMeta.get(base);
+        totalSopTrainersMissingList.push({
+          sopCode: base,
+          title: meta?.title || '',
+          department: canonDept(meta?.department || ''),
+        });
+      }
     }
 
     const totalEmployees = allExcelEmployees.length;
@@ -1000,6 +1116,9 @@ export async function GET(req: NextRequest) {
       missingSopCount: missingFromAllExcel.length,
       trainersAssigned: totalTrainersAssigned,
       trainersMissing: totalTrainersMissing,
+      sopTrainersAssigned: totalSopTrainersAssigned,
+      sopTrainersMissing: totalSopTrainersMissing,
+      sopTrainersMissingList: totalSopTrainersMissingList,
       okayCount: totalSopOkayCount,
       expiredCount: totalSopExpiredCount,
       dueSoon60Count: totalDueSoon60Count,

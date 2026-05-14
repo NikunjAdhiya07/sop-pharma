@@ -84,6 +84,9 @@ interface DeptCardData {
   };
   trainersAssigned: number;
   trainersMissing: number;
+  sopTrainersAssigned?: number;
+  sopTrainersMissing?: number;
+  sopTrainersMissingList?: Array<{ sopCode: string; title: string; department: string }>;
   okayCount: number;
   expiredCount: number;
   dueSoon60Count?: number;
@@ -134,6 +137,9 @@ interface TotalCardData {
   missingSopCount: number;
   trainersAssigned: number;
   trainersMissing: number;
+  sopTrainersAssigned?: number;
+  sopTrainersMissing?: number;
+  sopTrainersMissingList?: Array<{ sopCode: string; title: string; department: string }>;
   okayCount: number;
   expiredCount: number;
   dueSoon60Count?: number;
@@ -718,11 +724,11 @@ function RowD({
 function RepetitiveSopsRow({
   items,
 }: {
-  items: Array<{ label: string; value: React.ReactNode; color: 'red' | 'amber' | 'green'; tooltip?: string; onClick?: () => void }>;
+  items: Array<{ label: string; value: React.ReactNode; total?: number; color: 'red' | 'amber' | 'green'; tooltip?: string; onClick?: () => void }>;
 }) {
   return (
     <div className="flex items-center justify-between pl-2">
-      {items.map(({ label, value, color, tooltip, onClick }) => {
+      {items.map(({ label, value, total, color, tooltip, onClick }) => {
         const colorClass = color === 'red' ? 'text-red-600' : color === 'amber' ? 'text-amber-600' : 'text-emerald-600';
         return (
           <span key={label} className="flex items-center gap-1">
@@ -741,6 +747,15 @@ function RepetitiveSopsRow({
             >
               {value}
             </button>
+            {total !== undefined && (
+              <button
+                type="button"
+                onClick={onClick}
+                className={`text-[9px] font-bold text-gray-500 ${onClick ? 'hover:underline' : ''}`}
+              >
+                ({total})
+              </button>
+            )}
           </span>
         );
       })}
@@ -793,7 +808,7 @@ function DeptStrip({
     if (d === 'NA') return 'NA';
     return d; // QA, QC, Store
   };
-  const visible = order.filter((d) => (foundCounts?.[d] ?? 0) > 0 || (missingCounts?.[d] ?? 0) > 0);
+  const visible = order;
   return (
     <div className="grid grid-cols-4 gap-x-1 gap-y-0.5">
       {visible.map((d) => (
@@ -2386,7 +2401,7 @@ export default function TrainingMatrixPage() {
       title: string;
       lang?: string;
       trainer?: 'assigned' | 'missing';
-      status?: 'expired' | 'okay' | 'due_soon_60' | 'due_soon_60_mcq_reviewed' | 'due_soon_60_mcq_partial' | 'due_soon_60_mcq_not_reviewed' | 'mcq_created' | 'mcq_not_created' | 'mcq_all_approved' | 'mcq_partially_approved' | 'mcq_not_approved' | 'mcq_eng_created' | 'mcq_eng_not_created' | 'mcq_eng_all_approved' | 'mcq_eng_partially_approved' | 'mcq_eng_not_approved' | 'mcq_guj_created' | 'mcq_guj_not_created' | 'mcq_guj_all_approved' | 'mcq_guj_partially_approved' | 'mcq_guj_not_approved';
+      status?: 'all_db' | 'expired' | 'okay' | 'due_soon_60' | 'due_soon_60_mcq_reviewed' | 'due_soon_60_mcq_partial' | 'due_soon_60_mcq_not_reviewed' | 'mcq_created' | 'mcq_not_created' | 'mcq_all_approved' | 'mcq_partially_approved' | 'mcq_not_approved' | 'mcq_eng_created' | 'mcq_eng_not_created' | 'mcq_eng_all_approved' | 'mcq_eng_partially_approved' | 'mcq_eng_not_approved' | 'mcq_guj_created' | 'mcq_guj_not_created' | 'mcq_guj_all_approved' | 'mcq_guj_partially_approved' | 'mcq_guj_not_approved';
     }) => {
       setViewMode('sop');
       setGroupBy('department');
@@ -2415,33 +2430,41 @@ export default function TrainingMatrixPage() {
         }
 
         if (opts.status) {
-          // Use the exact pre-computed lists that match the backend counts
-          for (const d of deptsToCheck) {
-            const deptData = data.perDept?.[d] as any;
-            if (!deptData?.uploaded) continue;
-            let list: string[] = [];
-            if (opts.status === 'expired') list = deptData.expiredList || [];
-            else if (opts.status === 'okay') list = deptData.okayList || [];
-            else if (opts.status === 'due_soon_60') list = deptData.dueSoon60List || [];
-            else if (opts.status === 'due_soon_60_mcq_reviewed') list = deptData.dueSoon60McqReviewedList || [];
-            else if (opts.status === 'due_soon_60_mcq_partial') list = deptData.dueSoon60McqPartialList || [];
-            else if (opts.status === 'due_soon_60_mcq_not_reviewed') list = deptData.dueSoon60McqNotReviewedList || [];
-            else if (opts.status === 'mcq_created') list = deptData.mcqCreatedList || [];
-            else if (opts.status === 'mcq_not_created') list = deptData.mcqNotCreatedList || [];
-            else if (opts.status === 'mcq_all_approved') list = deptData.mcqAllApprovedList || [];
-            else if (opts.status === 'mcq_partially_approved') list = deptData.mcqPartiallyApprovedList || [];
-            else if (opts.status === 'mcq_not_approved') list = deptData.mcqNotApprovedList || [];
-            else if (opts.status === 'mcq_eng_created') list = deptData.mcqEngCreatedList || [];
-            else if (opts.status === 'mcq_eng_not_created') list = deptData.mcqEngNotCreatedList || [];
-            else if (opts.status === 'mcq_eng_all_approved') list = deptData.mcqEngAllApprovedList || [];
-            else if (opts.status === 'mcq_eng_partially_approved') list = deptData.mcqEngPartiallyApprovedList || [];
-            else if (opts.status === 'mcq_eng_not_approved') list = deptData.mcqEngNotApprovedList || [];
-            else if (opts.status === 'mcq_guj_created') list = deptData.mcqGujCreatedList || [];
-            else if (opts.status === 'mcq_guj_not_created') list = deptData.mcqGujNotCreatedList || [];
-            else if (opts.status === 'mcq_guj_all_approved') list = deptData.mcqGujAllApprovedList || [];
-            else if (opts.status === 'mcq_guj_partially_approved') list = deptData.mcqGujPartiallyApprovedList || [];
-            else if (opts.status === 'mcq_guj_not_approved') list = deptData.mcqGujNotApprovedList || [];
-            codes.push(...list);
+          // all_db: every DB SOP regardless of Excel upload, scoped by dept if not 'All'
+          if (opts.status === 'all_db') {
+            const dbByDept = (data.totalCard as any)?.dbSopsByDept || {};
+            const deptsForDb = opts.dept === 'All' ? Object.keys(dbByDept) : [opts.dept];
+            const allDbCodes = deptsForDb.flatMap((d) => ((dbByDept[d] || []) as any[]).map((x: any) => stripVersion(x.sopCode)));
+            codes = Array.from(new Set(allDbCodes));
+          } else {
+            // Use the exact pre-computed lists that match the backend counts
+            for (const d of deptsToCheck) {
+              const deptData = data.perDept?.[d] as any;
+              if (!deptData?.uploaded) continue;
+              let list: string[] = [];
+              if (opts.status === 'expired') list = deptData.expiredList || [];
+              else if (opts.status === 'okay') list = deptData.okayList || [];
+              else if (opts.status === 'due_soon_60') list = deptData.dueSoon60List || [];
+              else if (opts.status === 'due_soon_60_mcq_reviewed') list = deptData.dueSoon60McqReviewedList || [];
+              else if (opts.status === 'due_soon_60_mcq_partial') list = deptData.dueSoon60McqPartialList || [];
+              else if (opts.status === 'due_soon_60_mcq_not_reviewed') list = deptData.dueSoon60McqNotReviewedList || [];
+              else if (opts.status === 'mcq_created') list = deptData.mcqCreatedList || [];
+              else if (opts.status === 'mcq_not_created') list = deptData.mcqNotCreatedList || [];
+              else if (opts.status === 'mcq_all_approved') list = deptData.mcqAllApprovedList || [];
+              else if (opts.status === 'mcq_partially_approved') list = deptData.mcqPartiallyApprovedList || [];
+              else if (opts.status === 'mcq_not_approved') list = deptData.mcqNotApprovedList || [];
+              else if (opts.status === 'mcq_eng_created') list = deptData.mcqEngCreatedList || [];
+              else if (opts.status === 'mcq_eng_not_created') list = deptData.mcqEngNotCreatedList || [];
+              else if (opts.status === 'mcq_eng_all_approved') list = deptData.mcqEngAllApprovedList || [];
+              else if (opts.status === 'mcq_eng_partially_approved') list = deptData.mcqEngPartiallyApprovedList || [];
+              else if (opts.status === 'mcq_eng_not_approved') list = deptData.mcqEngNotApprovedList || [];
+              else if (opts.status === 'mcq_guj_created') list = deptData.mcqGujCreatedList || [];
+              else if (opts.status === 'mcq_guj_not_created') list = deptData.mcqGujNotCreatedList || [];
+              else if (opts.status === 'mcq_guj_all_approved') list = deptData.mcqGujAllApprovedList || [];
+              else if (opts.status === 'mcq_guj_partially_approved') list = deptData.mcqGujPartiallyApprovedList || [];
+              else if (opts.status === 'mcq_guj_not_approved') list = deptData.mcqGujNotApprovedList || [];
+              codes.push(...list);
+            }
           }
         } else if (opts.type === 'found' || opts.type === 'excel') {
           for (const d of deptsToCheck) {
@@ -2571,6 +2594,15 @@ export default function TrainingMatrixPage() {
     const term = search.trim().toLowerCase();
     const depts: Dept[] = activeDept === 'All' ? [...DEPARTMENTS] : [activeDept];
 
+    // Build a global trainer map across ALL depts so DB-only SOPs also show their trainer
+    const globalTrainerMap: Record<string, string> = {};
+    for (const d of DEPARTMENTS) {
+      const tb = (data.perDept?.[d] as any)?.trainerBySopCode || {};
+      for (const [code, name] of Object.entries(tb)) {
+        if (name && !globalTrainerMap[code]) globalTrainerMap[code] = name as string;
+      }
+    }
+
     // Build a title lookup from dbSopsByDept
     const titleMap = new Map<string, string>();
     const dualMap = new Map<string, { isDualLanguage: boolean; gujaratiName: string }>();
@@ -2584,6 +2616,61 @@ export default function TrainingMatrixPage() {
           }
         }
       }
+    }
+
+    // Repeat filter: build one deduplicated SOP per entry using its primary dept
+    if (capsuleSopFilter?.repeatMeta) {
+      const seen = new Set<string>();
+      const sops = capsuleSopFilter.repeatMeta
+        .filter(({ sopCode }) => {
+          const key = sopCode.toUpperCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .map(({ sopCode, depts: sopDepts }) => {
+          const primaryDept = (sopDepts[0] as Dept) || depts[0];
+          const monthMap = data.sopMonthMapByDept?.[primaryDept] || {};
+          const status = data.sopStatusByCode?.[sopCode];
+          const upper = sopCode.toUpperCase();
+          const dualInfo = dualMap.get(upper);
+          // Aggregate employee stats across all depts that share this SOP
+          let completed = 0, pending = 0;
+          const completedEmployees: string[] = [];
+          const pendingEmployees: string[] = [];
+          for (const d of sopDepts as Dept[]) {
+            for (const emp of data.perDept?.[d]?.employees || []) {
+              if (!(sopCode in (emp.training || {}))) continue;
+              if (emp.training[sopCode]) { completed++; completedEmployees.push(emp.name); }
+              else { pending++; pendingEmployees.push(emp.name); }
+            }
+          }
+          const totalApplicable = completed + pending;
+          const completionPct = totalApplicable ? Math.round((completed / totalApplicable) * 100) : 0;
+          return {
+            sopCode,
+            title: (() => { const t = titleMap.get(upper) || (status as any)?.title || ''; return t.toUpperCase() === upper ? '' : t; })(),
+            isDualLanguage: dualInfo?.isDualLanguage || false,
+            gujaratiName: dualInfo?.gujaratiName || '',
+            month: monthMap[sopCode] || '',
+            trainer: globalTrainerMap[sopCode] || (data.perDept?.[primaryDept]?.trainerBySopCode || {})[sopCode] || '',
+            completed, pending, totalApplicable, completionPct, pendingEmployees, completedEmployees,
+            targetDate: status?.targetDate || null,
+            expired: !!status?.expired,
+            mcqTotal: status?.totalQuestions || 0,
+            mcqApproved: status?.approvedCount || 0,
+            mcqEngTotal: (status as any)?.engTotalQuestions || 0,
+            mcqEngApproved: (status as any)?.engApprovedCount || 0,
+            mcqGujTotal: (status as any)?.gujTotalQuestions || 0,
+            mcqGujApproved: (status as any)?.gujApprovedCount || 0,
+          };
+        })
+        .filter((r) => {
+          if (!term) return true;
+          return r.sopCode.toLowerCase().includes(term) || r.pendingEmployees.length > 0 || r.completedEmployees.length > 0;
+        })
+        .sort((a, b) => a.sopCode.localeCompare(b.sopCode));
+      return sops.length > 0 ? [{ department: depts[0] || 'All', sops }] : [];
     }
 
     // dept → sopCode → { completed, pending, notRequired, employeesPending, employeesCompleted }
@@ -2621,7 +2708,7 @@ export default function TrainingMatrixPage() {
         ? baseCodes.filter((c) => capsuleSopFilter.sopCodes.has(String(c).toUpperCase()))
         : baseCodes;
       const monthMap = data.sopMonthMapByDept?.[dept] || {};
-      const trainerMap: Record<string, string> = data.perDept?.[dept]?.trainerBySopCode || {};
+      const trainerMap: Record<string, string> = { ...globalTrainerMap, ...(data.perDept?.[dept]?.trainerBySopCode || {}) };
 
       const sopStats = new Map<string, {
         completed: number;
@@ -2764,6 +2851,8 @@ export default function TrainingMatrixPage() {
         totalExcelDeptMissingByDept[d] = (totalExcelDeptMissingByDept[d] || 0) + (split.missingByDept?.[d] || 0);
       }
     }
+    const totalExcelDeptFoundSum = Object.values(totalExcelDeptFoundByDept).reduce((a, b) => a + b, 0) + totalExcelDeptUnknownFound;
+    const totalExcelDeptMissingSum = Object.values(totalExcelDeptMissingByDept).reduce((a, b) => a + b, 0) + totalExcelDeptUnknownMissing;
     const hasTotalExcelDeptSplit = totalExcelDeptTotal > 0;
 
     return (
@@ -2854,13 +2943,25 @@ export default function TrainingMatrixPage() {
             <Divider />
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-normal text-gray-500">Excel SOP </span>
-              <button
-                type="button"
-                onClick={() => filterAndScroll('All')}
-                className="text-[11px] font-bold text-gray-900 hover:underline tabular-nums"
-              >
-                {totalExcelDeptTotal}
-              </button>
+              <div className="flex items-center gap-1.5 tabular-nums">
+                <button
+                  type="button"
+                  onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Total · Found in Excel' })}
+                  className="text-[11px] font-bold text-emerald-600 hover:underline"
+                  title="Found"
+                >
+                  {totalExcelDeptFoundSum}
+                </button>
+                <span className="text-[10px] text-gray-300 select-none">/</span>
+                <button
+                  type="button"
+                  onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'missing', title: 'Total · Missing (DB but not in Excel)' })}
+                  className="text-[11px] font-bold text-red-600 hover:underline"
+                  title="Missing"
+                >
+                  {totalExcelDeptMissingSum}
+                </button>
+              </div>
             </div>
             <DeptStrip
               foundCounts={{
@@ -2897,35 +2998,52 @@ export default function TrainingMatrixPage() {
         )}
         <Divider />
         <RowB
-          label="Trainers"
-          green={t.trainersAssigned}
-          red={t.trainersMissing}
+          label="SOP wise Trainers"
+          green={t.sopTrainersAssigned ?? t.trainersAssigned}
+          red={t.sopTrainersMissing ?? t.trainersMissing}
           onClickGreen={() =>
             applySummaryCapsuleFilter({
               dept: 'All',
-              type: 'found',
-              title: 'Trainer assigned',
-              trainer: 'assigned',
+              type: 'db',
+              title: 'All SOPs · Trainer Assigned',
+              status: 'all_db',
             })
           }
           onClickRed={() =>
             applySummaryCapsuleFilter({
               dept: 'All',
-              type: 'found',
-              title: 'Trainer missing',
-              trainer: 'missing',
+              type: 'db',
+              title: 'All SOPs · Trainer Missing',
+              status: 'all_db',
             })
           }
         />
         <Divider />
-        <SectionLabel>Repetitive SOPs</SectionLabel>
+        {(() => {
+          const r3Total = totalRepeat3PlusList.reduce((s, i) => s + (i.count || 0), 0);
+          const r2Total = totalRepeat2List.reduce((s, i) => s + (i.count || 0), 0);
+          const r1Total = totalRepeatOnceList.reduce((s, i) => s + (i.count || 0), 0);
+          const bucketSopSum = totalRepeat3PlusList.length + totalRepeat2List.length + totalRepeatOnceList.length;
+          return (
+        <>
+        <div className="flex items-center justify-between">
+          <SectionLabel>Repetitive SOPs</SectionLabel>
+          <span className="flex items-center gap-1.5 tabular-nums">
+            <span className="text-[11px] font-bold text-emerald-600">{bucketSopSum}</span>
+            <span className="text-[10px] text-gray-300 select-none">/</span>
+            <span className="text-[11px] font-bold text-red-600">{totalExcelDeptMissingSum}</span>
+          </span>
+        </div>
         <RepetitiveSopsRow
           items={[
-            { label: '3+', value: totalRepeat3PlusList.length, color: 'red', tooltip: 'SOPs scheduled 3 or more times across departments', onClick: () => applyRepeatFilter('All', '3+', totalRepeat3PlusList) },
-            { label: '2×', value: totalRepeat2List.length, color: 'amber', tooltip: 'SOPs scheduled exactly 2 times across departments', onClick: () => applyRepeatFilter('All', '2', totalRepeat2List) },
-            { label: '1×', value: totalRepeatOnceList.length, color: 'green', tooltip: 'SOPs scheduled only once (no repetition across departments)', onClick: () => applyRepeatFilter('All', 'once', totalRepeatOnceList) },
+            { label: '3+', value: totalRepeat3PlusList.length, total: r3Total, color: 'red', tooltip: 'SOPs scheduled 3 or more times across departments', onClick: () => applyRepeatFilter('All', '3+', totalRepeat3PlusList) },
+            { label: '2×', value: totalRepeat2List.length, total: r2Total, color: 'amber', tooltip: 'SOPs scheduled exactly 2 times across departments', onClick: () => applyRepeatFilter('All', '2', totalRepeat2List) },
+            { label: '1×', value: totalRepeatOnceList.length, total: r1Total, color: 'green', tooltip: 'SOPs scheduled only once (no repetition across departments)', onClick: () => applyRepeatFilter('All', 'once', totalRepeatOnceList) },
           ]}
         />
+        </>
+          );
+        })()}
         <RowB
           label="MCQ (100+ created)"
           green={t.mcqCreatedCount}
@@ -3024,30 +3142,26 @@ export default function TrainingMatrixPage() {
             })
           }
         />
-        {(t.dueSoon60Count ?? 0) > 0 && (
-          <>
-            <RowD
-              label="Due in next 60 days"
-              value={t.dueSoon60Count ?? 0}
-              color="amber"
-              onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in Next 60 Days', status: 'due_soon_60' })}
-            />
-            <div className="flex items-center justify-between pl-2">
-              <span className="flex items-center gap-1">
-                <span className="text-[9px] text-gray-400">Rev</span>
-                <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in 60 Days · Reviewed', status: 'due_soon_60_mcq_reviewed' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{t.dueSoon60McqReviewed ?? 0}</button>
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="text-[9px] text-gray-400">Part</span>
-                <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in 60 Days · Partially Reviewed', status: 'due_soon_60_mcq_partial' })} className="text-[10px] font-bold text-amber-500 hover:underline">{t.dueSoon60McqPartial ?? 0}</button>
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="text-[9px] text-gray-400">Not</span>
-                <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in 60 Days · Not Reviewed', status: 'due_soon_60_mcq_not_reviewed' })} className="text-[10px] font-bold text-red-600 hover:underline">{t.dueSoon60McqNotReviewed ?? 0}</button>
-              </span>
-            </div>
-          </>
-        )}
+        <RowD
+          label="Due in next 60 days"
+          value={t.dueSoon60Count ?? 0}
+          color="amber"
+          onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in Next 60 Days', status: 'due_soon_60' })}
+        />
+        <div className="flex items-center justify-between pl-2">
+          <span className="flex items-center gap-1">
+            <span className="text-[9px] text-gray-400">Rev</span>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in 60 Days · Reviewed', status: 'due_soon_60_mcq_reviewed' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{t.dueSoon60McqReviewed ?? 0}</button>
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="text-[9px] text-gray-400">Part</span>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in 60 Days · Partially Reviewed', status: 'due_soon_60_mcq_partial' })} className="text-[10px] font-bold text-amber-500 hover:underline">{t.dueSoon60McqPartial ?? 0}</button>
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="text-[9px] text-gray-400">Not</span>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in 60 Days · Not Reviewed', status: 'due_soon_60_mcq_not_reviewed' })} className="text-[10px] font-bold text-red-600 hover:underline">{t.dueSoon60McqNotReviewed ?? 0}</button>
+          </span>
+        </div>
         <Divider />
         <RowA
           label="Employees"
@@ -3188,13 +3302,25 @@ export default function TrainingMatrixPage() {
             <Divider />
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-normal text-gray-500">Excel SOP</span>
-              <button
-                type="button"
-                onClick={() => filterAndScroll(dept)}
-                className="text-[11px] font-bold text-gray-900 hover:underline tabular-nums"
-              >
-                {d.excelDeptSplit.total ?? 0}
-              </button>
+              <div className="flex items-center gap-1.5 tabular-nums">
+                <button
+                  type="button"
+                  onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Found in Excel` })}
+                  className="text-[11px] font-bold text-emerald-600 hover:underline"
+                  title="Found"
+                >
+                  {Object.values(d.excelDeptSplit.foundByDept || {}).reduce((a: number, b: unknown) => a + (b as number), 0) + (d.excelDeptSplit.unknownFound ?? 0)}
+                </button>
+                <span className="text-[10px] text-gray-300 select-none">/</span>
+                <button
+                  type="button"
+                  onClick={() => applySummaryCapsuleFilter({ dept, type: 'missing', title: `${dept} · Missing (DB but not in Excel)` })}
+                  className="text-[11px] font-bold text-red-600 hover:underline"
+                  title="Missing"
+                >
+                  {Object.values(d.excelDeptSplit.missingByDept || {}).reduce((a: number, b: unknown) => a + (b as number), 0) + (d.excelDeptSplit.unknownMissing ?? 0)}
+                </button>
+              </div>
             </div>
             <DeptStrip
               foundCounts={{
@@ -3232,35 +3358,56 @@ export default function TrainingMatrixPage() {
 
         <Divider />
         <RowB
-          label="Trainers"
-          green={d.trainersAssigned}
-          red={d.trainersMissing}
+          label="SOP wise Trainers"
+          green={d.sopTrainersAssigned ?? d.trainersAssigned}
+          red={d.sopTrainersMissing ?? d.trainersMissing}
           onClickGreen={() =>
             applySummaryCapsuleFilter({
               dept,
-              type: 'found',
-              title: `${dept} · Trainer assigned`,
-              trainer: 'assigned',
+              type: 'db',
+              title: `${dept} · SOP wise Trainer assigned`,
+              status: 'all_db',
             })
           }
           onClickRed={() =>
             applySummaryCapsuleFilter({
               dept,
-              type: 'found',
-              title: `${dept} · Trainer missing`,
-              trainer: 'missing',
+              type: 'db',
+              title: `${dept} · SOP wise Trainer missing`,
+              status: 'all_db',
             })
           }
         />
         <Divider />
-        <SectionLabel>Repetitive SOPs</SectionLabel>
-        <RepetitiveSopsRow
-          items={[
-            { label: '3+', value: d.repeat3PlusCount ?? 0, color: 'red', tooltip: 'SOPs scheduled 3 or more times across departments', onClick: () => applyRepeatFilter(dept, '3+', d.repeat3PlusList ?? []) },
-            { label: '2×', value: d.repeat2Count ?? 0, color: 'amber', tooltip: 'SOPs scheduled exactly 2 times across departments', onClick: () => applyRepeatFilter(dept, '2', d.repeat2List ?? []) },
-            { label: '1×', value: d.repeat1Count ?? 0, color: 'green', tooltip: 'SOPs scheduled only once (no repetition across departments)', onClick: () => applyRepeatFilter(dept, 'once', d.repeat1List ?? []) },
-          ]}
-        />
+        {(() => {
+          const dMissingSum = Object.values(d.excelDeptSplit?.missingByDept || {}).reduce((a, b) => a + b, 0) + (d.excelDeptSplit?.unknownMissing ?? 0);
+          const r3Count = d.repeat3PlusCount ?? 0;
+          const r2Count = d.repeat2Count ?? 0;
+          const r1Count = d.repeat1Count ?? 0;
+          const dr3 = (d.repeat3PlusList ?? []).reduce((s, i) => s + (i.count || 0), 0);
+          const dr2 = (d.repeat2List ?? []).reduce((s, i) => s + (i.count || 0), 0);
+          const dr1 = (d.repeat1List ?? []).reduce((s, i) => s + (i.count || 0), 0);
+          const bucketSopSum = r3Count + r2Count + r1Count;
+          return (
+            <>
+              <div className="flex items-center justify-between">
+                <SectionLabel>Repetitive SOPs</SectionLabel>
+                <span className="flex items-center gap-1.5 tabular-nums">
+                  <span className="text-[11px] font-bold text-emerald-600">{bucketSopSum}</span>
+                  <span className="text-[10px] text-gray-300 select-none">/</span>
+                  <span className="text-[11px] font-bold text-red-600">{dMissingSum}</span>
+                </span>
+              </div>
+              <RepetitiveSopsRow
+                items={[
+                  { label: '3+', value: d.repeat3PlusCount ?? 0, total: dr3, color: 'red', tooltip: 'SOPs scheduled 3 or more times across departments', onClick: () => applyRepeatFilter(dept, '3+', d.repeat3PlusList ?? []) },
+                  { label: '2×', value: d.repeat2Count ?? 0, total: dr2, color: 'amber', tooltip: 'SOPs scheduled exactly 2 times across departments', onClick: () => applyRepeatFilter(dept, '2', d.repeat2List ?? []) },
+                  { label: '1×', value: d.repeat1Count ?? 0, total: dr1, color: 'green', tooltip: 'SOPs scheduled only once (no repetition across departments)', onClick: () => applyRepeatFilter(dept, 'once', d.repeat1List ?? []) },
+                ]}
+              />
+            </>
+          );
+        })()}
         <RowB
           label="MCQ (100+ created)"
           green={d.mcqCreatedCount ?? 0}
@@ -3359,30 +3506,26 @@ export default function TrainingMatrixPage() {
             })
           }
         />
-        {(d.dueSoon60Count ?? 0) > 0 && (
-          <>
-            <RowD
-              label="Due in next 60 days"
-              value={d.dueSoon60Count ?? 0}
-              color="amber"
-              onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in Next 60 Days`, status: 'due_soon_60' })}
-            />
-            <div className="flex items-center justify-between pl-2">
-              <span className="flex items-center gap-1">
-                <span className="text-[9px] text-gray-400">Rev</span>
-                <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in 60 Days · Reviewed`, status: 'due_soon_60_mcq_reviewed' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{d.dueSoon60McqReviewed ?? 0}</button>
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="text-[9px] text-gray-400">Part</span>
-                <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in 60 Days · Partially Reviewed`, status: 'due_soon_60_mcq_partial' })} className="text-[10px] font-bold text-amber-500 hover:underline">{d.dueSoon60McqPartial ?? 0}</button>
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="text-[9px] text-gray-400">Not</span>
-                <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in 60 Days · Not Reviewed`, status: 'due_soon_60_mcq_not_reviewed' })} className="text-[10px] font-bold text-red-600 hover:underline">{d.dueSoon60McqNotReviewed ?? 0}</button>
-              </span>
-            </div>
-          </>
-        )}
+        <RowD
+          label="Due in next 60 days"
+          value={d.dueSoon60Count ?? 0}
+          color="amber"
+          onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in Next 60 Days`, status: 'due_soon_60' })}
+        />
+        <div className="flex items-center justify-between pl-2">
+          <span className="flex items-center gap-1">
+            <span className="text-[9px] text-gray-400">Rev</span>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in 60 Days · Reviewed`, status: 'due_soon_60_mcq_reviewed' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{d.dueSoon60McqReviewed ?? 0}</button>
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="text-[9px] text-gray-400">Part</span>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in 60 Days · Partially Reviewed`, status: 'due_soon_60_mcq_partial' })} className="text-[10px] font-bold text-amber-500 hover:underline">{d.dueSoon60McqPartial ?? 0}</button>
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="text-[9px] text-gray-400">Not</span>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in 60 Days · Not Reviewed`, status: 'due_soon_60_mcq_not_reviewed' })} className="text-[10px] font-bold text-red-600 hover:underline">{d.dueSoon60McqNotReviewed ?? 0}</button>
+          </span>
+        </div>
         {/* (no extra Assigned/Missing rows; shown inline above) */}
         <Divider />
         <RowA
@@ -4504,61 +4647,45 @@ export default function TrainingMatrixPage() {
         );
       }
 
-      // default groupBy department
+      // default groupBy department — flat list, no dept headers
       let globalSr = 0;
       return (
-        <div className="space-y-8">
-          {sopWiseGroups.map((g) => {
+        <div className="space-y-3">
+          {sopWiseGroups.flatMap((g) => {
             const accent = DEPT_ACCENT[(g.department as Dept) || 'Total'] || '#a855f7';
-            return (
-              <div key={g.department}>
-                <div className="flex items-center gap-3 mb-4">
-                  <span
-                    className="text-white text-sm font-bold px-4 py-1.5 rounded-full shadow-sm whitespace-nowrap"
-                    style={{ background: accent }}
-                  >
-                    {g.department}
-                  </span>
-                  <div className="h-px flex-1 bg-gradient-to-r from-gray-200 to-transparent" />
-                  <span className="text-[11px] text-gray-400 whitespace-nowrap">{g.sops.length} SOPs</span>
-                </div>
-                <div className="space-y-3">
-                  {g.sops.map((s) => {
-                    globalSr += 1;
-                    return (
-                      <SopCard
-                        key={`${g.department}|${s.sopCode}`}
-                        dept={g.department}
-                        accent={accent}
-                        sr={globalSr}
-                        sop={{
-                          sopCode: s.sopCode,
-                          title: (s as any).title || '',
-                          isDualLanguage: (s as any).isDualLanguage,
-                          gujaratiName: (s as any).gujaratiName,
-                          month: s.month,
-                          trainer: (s as any).trainer || '',
-                          completed: s.completed,
-                          pending: s.pending,
-                          totalApplicable: s.totalApplicable,
-                          completionPct: s.completionPct,
-                          pendingEmployees: s.pendingEmployees,
-                          completedEmployees: (s as any).completedEmployees || [],
-                          targetDate: s.targetDate,
-                          expired: s.expired,
-                          mcqTotal: s.mcqTotal,
-                          mcqApproved: s.mcqApproved,
-                          mcqEngTotal: s.mcqEngTotal,
-                          mcqEngApproved: s.mcqEngApproved,
-                          mcqGujTotal: s.mcqGujTotal,
-                          mcqGujApproved: s.mcqGujApproved,
-                        }}
-                      />
-                    );
-                  })}
-                </div>
-              </div>
-            );
+            return g.sops.map((s) => {
+              globalSr += 1;
+              return (
+                <SopCard
+                  key={`${g.department}|${s.sopCode}`}
+                  dept={g.department}
+                  accent={accent}
+                  sr={globalSr}
+                  sop={{
+                    sopCode: s.sopCode,
+                    title: (s as any).title || '',
+                    isDualLanguage: (s as any).isDualLanguage,
+                    gujaratiName: (s as any).gujaratiName,
+                    month: s.month,
+                    trainer: (s as any).trainer || '',
+                    completed: s.completed,
+                    pending: s.pending,
+                    totalApplicable: s.totalApplicable,
+                    completionPct: s.completionPct,
+                    pendingEmployees: s.pendingEmployees,
+                    completedEmployees: (s as any).completedEmployees || [],
+                    targetDate: s.targetDate,
+                    expired: s.expired,
+                    mcqTotal: s.mcqTotal,
+                    mcqApproved: s.mcqApproved,
+                    mcqEngTotal: s.mcqEngTotal,
+                    mcqEngApproved: s.mcqEngApproved,
+                    mcqGujTotal: s.mcqGujTotal,
+                    mcqGujApproved: s.mcqGujApproved,
+                  }}
+                />
+              );
+            });
           })}
         </div>
       );
