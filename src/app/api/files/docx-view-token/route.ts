@@ -40,9 +40,25 @@ export async function GET(request: NextRequest) {
 
     let fileUrl: string | null = null;
 
-    const resolved = await resolveDocxPathForViewer(idTrim, lang, pathTrim || null);
-    if (resolved?.trim()) {
-      fileUrl = normalizeTokenPath(resolved);
+    /**
+     * Trust an explicit Word pathParam — the dashboard picks the correct file per language slot,
+     * and CDN basenames are often hash/timestamped so we can't second-guess by path text. Honour
+     * the caller's choice (same property the download flow relies on) and skip identifier-based
+     * resolution that may swap to the other language's file.
+     */
+    if (pathTrim) {
+      const k = fileKindFromStoredPath(pathTrim);
+      const isWord = k === 'docx' || k === 'doc';
+      if (isWord) {
+        fileUrl = normalizeTokenPath(pathTrim);
+      }
+    }
+
+    if (!fileUrl) {
+      const resolved = await resolveDocxPathForViewer(idTrim, lang, pathTrim || null);
+      if (resolved?.trim()) {
+        fileUrl = normalizeTokenPath(resolved);
+      }
     }
 
     if (!fileUrl && pathTrim) {

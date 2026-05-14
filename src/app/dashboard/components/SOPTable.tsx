@@ -508,10 +508,10 @@ export default function SOPTable({
       const isDual = Boolean(row.isDualLanguage) || Boolean(row.gujaratiFileMissing);
       const missingRow = (langLabel: string) => (
         <div className="grid grid-cols-[24px_58px_6px_50px] items-center gap-x-0.5 text-left leading-none min-h-[10px]">
-          {isDual && <span className="text-[8px] font-bold text-gray-500">{langLabel}</span>}
-          <span className="text-[8px] font-bold leading-none text-red-600" title="DOCX link cleared — file missing">DOCX ✗</span>
+          <span className="text-[8px] font-bold text-gray-500">{langLabel}</span>
+          <span className="text-[8px] font-bold leading-none text-red-600 whitespace-nowrap" title="DOCX link cleared — file missing">DOCX&nbsp;✗</span>
           <div className="flex justify-center text-gray-300 text-[9px] select-none" />
-          <span className="text-[8px] font-bold leading-none text-red-600" title="PDF link cleared — file missing">PDF ✗</span>
+          <span className="text-[8px] font-bold leading-none text-red-600 whitespace-nowrap" title="PDF link cleared — file missing">PDF&nbsp;✗</span>
         </div>
       );
       return (
@@ -609,17 +609,6 @@ export default function SOPTable({
 
       return (
         <div className="flex flex-nowrap items-center gap-0.5 overflow-visible">
-          {isWord ? (
-            <a
-              href={previewHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={`Preview ${doc.type} in browser`}
-              onClick={(e) => e.stopPropagation()}
-              className="shrink-0 rounded p-px text-violet-600 hover:bg-violet-100 hover:text-violet-900">
-              <Eye className="h-2.5 w-2.5" />
-            </a>
-          ) : null}
           <a
             href={previewHref}
             target="_blank"
@@ -674,9 +663,9 @@ export default function SOPTable({
                 renderSlot(wordDoc)
               ) : (
                 <span
-                  className="text-[8px] font-bold leading-none text-red-600"
+                  className="text-[8px] font-bold leading-none text-red-600 whitespace-nowrap"
                   title="DOCX missing for this language (current revision)">
-                  DOCX ✗
+                  DOCX&nbsp;✗
                 </span>
               )}
               <div className="flex justify-center text-gray-300 text-[9px] select-none">
@@ -686,9 +675,9 @@ export default function SOPTable({
                 renderSlot(pdfDoc)
               ) : (
                 <span
-                  className="text-[8px] font-bold leading-none text-red-600"
+                  className="text-[8px] font-bold leading-none text-red-600 whitespace-nowrap"
                   title="PDF missing for this language (current revision)">
-                  PDF ✗
+                  PDF&nbsp;✗
                 </span>
               )}
             </>
@@ -1333,14 +1322,14 @@ export default function SOPTable({
                                     eng,
                                     row,
                                     "English",
-                                    row.isDualLanguage ? "ENG" : undefined,
+                                    "ENG",
                                   )}
                                 {guj.length > 0 &&
                                   renderVersionArtifactLinks(
                                     guj,
                                     row,
                                     "Gujarati",
-                                    row.isDualLanguage ? "GUJ" : undefined,
+                                    "GUJ",
                                   )}
                               </div>
                             );
@@ -1356,7 +1345,7 @@ export default function SOPTable({
                               row,
                               monoLang,
                               dualSlots,
-                              undefined,
+                              monoLang === "Gujarati" ? "GUJ" : "ENG",
                               false,
                             );
                           }
@@ -1385,32 +1374,39 @@ export default function SOPTable({
                                 —
                               </span>
                             );
+                          const legacyLangLabel =
+                            row.language === "Gujarati" ? "GUJ" : "ENG";
                           return (
-                            <table className="w-full border-collapse text-[10px] leading-tight text-gray-600 table-fixed">
-                              <colgroup>
-                                <col className="w-[2.25rem]" />
-                                <col />
-                              </colgroup>
-                              <tbody>
-                                {items.map((it) => (
-                                  <tr key={it.key}>
-                                    <td className="py-px pr-1 align-middle font-semibold whitespace-nowrap">
-                                      {it.label}
-                                    </td>
-                                    <td className="py-px align-middle">
-                                      <span
-                                        className={
-                                          it.ok
-                                            ? "text-emerald-600"
-                                            : "text-red-500"
-                                        }>
-                                        {it.ok ? "✓" : "✗"}
-                                      </span>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                            <div className="flex flex-row flex-nowrap items-center gap-x-2 leading-none">
+                              <span className="text-[8px] font-bold uppercase text-gray-400 leading-none w-[18px] shrink-0">
+                                {legacyLangLabel}
+                              </span>
+                              <table className="border-collapse text-[10px] leading-tight text-gray-600 table-fixed">
+                                <colgroup>
+                                  <col className="w-[2.25rem]" />
+                                  <col />
+                                </colgroup>
+                                <tbody>
+                                  {items.map((it) => (
+                                    <tr key={it.key}>
+                                      <td className="py-px pr-1 align-middle font-semibold whitespace-nowrap">
+                                        {it.label}
+                                      </td>
+                                      <td className="py-px align-middle">
+                                        <span
+                                          className={
+                                            it.ok
+                                              ? "text-emerald-600"
+                                              : "text-red-500"
+                                          }>
+                                          {it.ok ? "✓" : "✗"}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
                           );
                         })()}
                       </td>

@@ -303,16 +303,37 @@ async function findFirstReachablePathForIdentifiers(
   wantKind: 'pdf' | 'docx' | 'doc',
 ): Promise<string | null> {
   const wantGuj = language === 'Gujarati';
+  /** A single library row often holds both ENG and GUJ docs in sopDocuments — filter per-doc so we don't return the English file when Gujarati was requested. */
+  const docMatchesLanguage = (d: any): boolean => {
+    const docLang = String(d?.language || '').trim().toLowerCase();
+    const docPath = String(d?.filePath || '');
+    if (wantGuj) {
+      return docLang === 'gujarati' || docLang === 'guj' || pathSuggestsGujarati(docPath);
+    }
+    return docLang !== 'gujarati' && docLang !== 'guj' && !pathSuggestsGujarati(docPath);
+  };
   for (const id of ids) {
     const libs = await SOPLibrary.find(sopIdentifierMatchFilter(id, 'sopIdentifier'))
       .select('sopDocuments language')
       .lean();
-    for (const row of orderLibraryRowsByLanguage(libs, wantGuj)) {
-      for (const d of row.sopDocuments || []) {
-        const p = (d as { filePath?: string; fileType?: string }).filePath?.trim();
-        if (!p || isAnnexurePath(p)) continue;
-        if (fileKindFromStoredPath(p, (d as { fileType?: string }).fileType) !== wantKind) continue;
-        if (await isLocalStoredPathReachable(p)) return p;
+    /** Pass 1: only docs whose own language matches. Pass 2: any doc (legacy rows with no per-doc language). */
+    for (const strictLang of [true, false]) {
+      for (const row of orderLibraryRowsByLanguage(libs, wantGuj)) {
+        for (const d of row.sopDocuments || []) {
+          const p = (d as { filePath?: string; fileType?: string }).filePath?.trim();
+          if (!p || isAnnexurePath(p)) continue;
+          if (fileKindFromStoredPath(p, (d as { fileType?: string }).fileType) !== wantKind) continue;
+          if (strictLang && !docMatchesLanguage(d)) continue;
+          if (await isLocalStoredPathReachable(p)) {
+            if (!strictLang) {
+              console.warn(
+                `[FILE_LANG] findFirstReachablePathForIdentifiers: no ${wantGuj ? 'Gujarati' : 'English'} ${wantKind} ` +
+                `tagged for "${id}" — falling back to untagged doc: ${p}`,
+              );
+            }
+            return p;
+          }
+        }
       }
     }
 
@@ -654,6 +675,21 @@ export async function loadWordDocumentBuffer(
       /^https?:\/\//i.test(s) || s.startsWith('bunny://') ? s : s.replace(/^\/+/, '');
     return loadStoredFileBuffer(p, trusted);
   };
+
+  /**
+   * When the caller passed a Word pathHint, load it directly first. The dashboard picks the
+   * correct file for each language slot; the identifier resolver can swap to the wrong
+   * language's file when a single library row stores both ENG + GUJ docs under the same id.
+   * CDN basenames are often hash/timestamped, so we cannot reliably detect language from path
+   * text — we must trust the caller.
+   */
+  if (normalizedHint) {
+    const kind = fileKindFromStoredPath(normalizedHint);
+    if (kind === 'docx' || kind === 'doc') {
+      const direct = await tryLoad(normalizedHint);
+      if (direct) return direct;
+    }
+  }
 
   const id = (identifier || '').trim();
   if (id) {

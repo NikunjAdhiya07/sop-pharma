@@ -3,7 +3,8 @@ import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
 import { signViewerToken } from '@/lib/viewerToken';
 import { sopIdentifierMatchFilter } from '@/lib/sopIdentifierNormalize';
-import { extractBunnyPath, getBunnyCdnUrl } from '@/lib/bunnyStorage';
+import { extractBunnyPath, getBunnyCdnUrl, isBunnyPath } from '@/lib/bunnyStorage';
+import { fileKindFromStoredPath } from '@/lib/filePathFileKind';
 
 // ---------------------------------------------------------------------------
 // Server-side in-memory cache for resolved viewer URLs
@@ -17,12 +18,15 @@ const g = global as typeof global & { __viewerUrlCache?: Map<string, ViewerCache
 if (!g.__viewerUrlCache) g.__viewerUrlCache = new Map();
 const viewerUrlCache = g.__viewerUrlCache;
 
+/** Bump when resolver-priority semantics change so stale entries from older code paths are bypassed. */
+const VIEWER_CACHE_VERSION = 'v2';
+
 function viewerCacheKey(
   identifier: string | null,
   language: string | null,
   pathParam: string | null,
 ): string {
-  return `${identifier ?? ''}::${language ?? ''}::${pathParam ?? ''}`;
+  return `${VIEWER_CACHE_VERSION}::${identifier ?? ''}::${language ?? ''}::${pathParam ?? ''}`;
 }
 
 function getCachedViewerUrl(key: string): string | null {
@@ -93,14 +97,39 @@ export async function resolvePublicDocUrl(
   const cacheKey = viewerCacheKey(identifier, language, pathParam);
   const cachedUrl = getCachedViewerUrl(cacheKey);
   if (cachedUrl) {
-    return { publicUrl: cachedUrl };
+    /** When pathParam is supplied, the caller has already picked the file for this language slot.
+     *  Drop any cached entry that no longer matches that path so wrong-language URLs from the previous
+     *  resolver-first behaviour can't linger. */
+    const expectedFromPath = pathParam ? pathParam.trim() : '';
+    if (!expectedFromPath || cachedUrl === expectedFromPath || cachedUrl.endsWith(expectedFromPath)) {
+      return { publicUrl: cachedUrl };
+    }
+    viewerUrlCache.delete(cacheKey);
   }
 
   let fileUrl: string | null = null;
 
+  /**
+   * Trust an explicit pathParam when the caller passed a directly usable Word URL.
+   * The dashboard picks the correct file for each language slot (CDN basenames are
+   * often hash/timestamped, so path-text heuristics can't tell ENG vs GUJ). Honour
+   * the caller's choice instead of letting the identifier-based resolver swap files.
+   * This mirrors the download flow.
+   */
+  const trimmedPath = pathParam ? pathParam.trim() : '';
+  if (trimmedPath) {
+    const isHttps = /^https?:\/\//i.test(trimmedPath);
+    const isBunny = isBunnyPath(trimmedPath);
+    const kind = fileKindFromStoredPath(trimmedPath);
+    const isWord = kind === 'docx' || kind === 'doc';
+    if (isWord && (isHttps || isBunny)) {
+      fileUrl = trimmedPath;
+    }
+  }
+
   // Comprehensive resolution: checks SOPLibrary + SOP, verifies reachability (Bunny CDN, local disk, https).
   // This ensures Office Online gets the best available URL rather than a stale SOP.fileUrl.
-  if (identifier || pathParam) {
+  if (!fileUrl && (identifier || pathParam)) {
     const { resolveDocxPathForViewer } = await import('@/lib/loadStoredFileBuffer');
     const pathTrim = pathParam ? pathParam.replace(/^\/+/, '') : null;
     const resolved = await resolveDocxPathForViewer(identifier, language || undefined, pathTrim);

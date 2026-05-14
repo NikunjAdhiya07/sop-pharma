@@ -138,20 +138,31 @@ function foldRegistryRowIntoCapsuleAcc(
   if (nDocxFiles < expDocx) s.missingDocxRows++;
   if (nPdfFiles < expPdf) s.missingPdfRows++;
 
-  // Count rows that have each language present. Mirror the same signals the "Dual"
-  // capsule uses (isDualLanguage flag, version strings, or detected file slots) so the
-  // Dual / w/ EN / w/ GU counts reconcile — e.g. if Dual=46 then w/ GU should be >= 46.
+  // Total per-language SOP counts (overlap allowed): every SOP that is English
+  // contributes to w/EN, every SOP that is Gujarati contributes to w/GU. A Dual
+  // SOP is both English and Gujarati so it contributes to BOTH buckets. This
+  // makes w/EN = English-SOPs-total (English-only + Dual) and w/GU = Gujarati-
+  // SOPs-total (Gujarati-only + Dual). Equivalently:
+  //   w/EN = SOPs - Gujarati-only
+  //   w/GU = SOPs - English-only
+  // Dual rows are detected via expectedDocxSlotsForRow (matches the Dual bucket
+  // accumulated above) so even a dual row whose files are missing still counts
+  // toward both languages — the row is *defined* as bilingual.
   const langSlots = scanRowLanguageFileSlots(row);
-  const isBilingual = expectedDocxSlotsForRow(row) >= 2;
-  const hasEng = !!row.englishVersion || langSlots.engDocx || langSlots.engPdf || isBilingual;
-  const hasGuj =
-    !!row.gujaratiVersion ||
-    langSlots.gujDocx ||
-    langSlots.gujPdf ||
-    row?.isDualLanguage === true ||
-    isBilingual;
-  if (hasEng) s.eng++;
-  if (hasGuj) s.guj++;
+  const isDualRow = expectedDocxSlotsForRow(row) >= 2;
+  const hasEngSignal =
+    !!row.englishVersion || langSlots.engDocx || langSlots.engPdf;
+  const hasGujSignal =
+    !!row.gujaratiVersion || langSlots.gujDocx || langSlots.gujPdf;
+  const stored = String(row?.language || "").trim().toLowerCase();
+  // A row "is English" if it's dual OR has any English signal OR its stored
+  // language isn't Gujarati (default English when no signal is present).
+  const rowIsEng = isDualRow || hasEngSignal || (stored !== "gujarati" && !hasGujSignal);
+  // A row "is Gujarati" if it's dual OR has any Gujarati signal OR its stored
+  // language is Gujarati.
+  const rowIsGuj = isDualRow || hasGujSignal || stored === "gujarati";
+  if (rowIsEng) s.eng++;
+  if (rowIsGuj) s.guj++;
   if (row.mediaStatus?.videos) s.videos++;
   if (row.mediaStatus?.slides) s.slides++;
 
@@ -168,7 +179,7 @@ function foldRegistryRowIntoCapsuleAcc(
 
   // Per-language breakdown (reuse the slot scan computed above)
   const slots = langSlots;
-  const isDualDocx = isBilingual;
+  const isDualDocx = expectedDocxSlotsForRow(row) >= 2;
   const isDualPdf = expectedPdfSlotsForRow(row) >= 2;
 
   const langPairs: Array<{
@@ -1116,8 +1127,8 @@ function DepartmentCapsuleCard({
           isActive={capsuleMetricMatches(deptForFilter, "eng", filterSnapshot)}
           title={
             isGrand
-              ? "All departments: rows with an English document."
-              : `Rows with an English document in ${label}`
+              ? "All departments: total English SOPs (English-only + Dual)."
+              : `Total English SOPs in ${label} (English-only + Dual)`
           }
         />
         <CapsuleMetric
@@ -1127,8 +1138,8 @@ function DepartmentCapsuleCard({
           isActive={capsuleMetricMatches(deptForFilter, "guj", filterSnapshot)}
           title={
             isGrand
-              ? "All departments: rows with Gujarati (overlaps w/ EN for dual)."
-              : `Rows with Gujarati in ${label} (overlaps w/ EN for dual)`
+              ? "All departments: total Gujarati SOPs (Gujarati-only + Dual)."
+              : `Total Gujarati SOPs in ${label} (Gujarati-only + Dual)`
           }
         />
         {/* Expiry metrics: always render in one horizontal row for alignment */}
@@ -1182,11 +1193,14 @@ function DepartmentCapsuleCard({
             />
           </div>
         </div>
-        {/* DOCX Section */}
+        {/* DOCX Section — slot-level totals. A Dual SOP expects 2 DOCX slots (EN + GU),
+            single-language SOPs expect 1. Found = filled slots, Missing = empty slots,
+            so Found+Missing always equals expectedDocx (e.g. 427 SOPs + 46 dual = 473). */}
         <CapsuleMetricAvailMissing
           label="DOCX"
           totalExpected={stat.expectedDocx}
           available={stat.docxFiles}
+          missingCount={Math.max(0, stat.expectedDocx - stat.docxFiles)}
           onFilterClick={() => apply("docx")}
           onAvailableClick={() =>
             applyCapsuleAvailMiss(deptForFilter, "docx", "available")
@@ -1222,56 +1236,41 @@ function DepartmentCapsuleCard({
           }
           titleSummary={
             isGrand
-              ? `${stat.docxFiles} DOCX slots filled · ${Math.max(0, stat.expectedDocx - stat.docxFiles)} missing of ${stat.expectedDocx} expected (EN+GU per bilingual row) · green = filled slots, red = missing slots`
-              : `${stat.docxFiles} DOCX slots in ${label} · green = filled, red = missing`
+              ? `${stat.docxFiles} DOCX slots filled out of ${stat.expectedDocx} expected (dual rows count 2 — EN + GU separately).`
+              : `${stat.docxFiles} of ${stat.expectedDocx} DOCX slots filled in ${label} (EN+GU counted separately).`
           }
         />
-        {sortLangCodes([...stat.langDocx.keys()]).map((lang) => {
-          const ld = stat.langDocx.get(lang)!;
-          const langFilter = lang === "EN" ? "ENG" : lang === "GJ" ? "GUJ" : lang.toUpperCase();
-          const docxAvailActive =
-            filterSnapshot.filterDept === deptForFilter &&
-            filterSnapshot.filterFileType === "DOCX" &&
-            filterSnapshot.filterLanguage === langFilter &&
-            !filterSnapshot.filterDualLang &&
-            filterSnapshot.filterExpiry === "all" &&
-            filterSnapshot.filterMedia === "all" &&
-            filterSnapshot.filterVersionStatus === "all";
-          const docxMissingActive =
-            filterSnapshot.filterDept === deptForFilter &&
-            filterSnapshot.filterFileType === "NO_DOCX" &&
-            filterSnapshot.filterLanguage === langFilter &&
-            !filterSnapshot.filterDualLang &&
-            filterSnapshot.filterExpiry === "all" &&
-            filterSnapshot.filterMedia === "all" &&
-            filterSnapshot.filterVersionStatus === "all";
-          return (
-            <CapsuleMetricAvailMissing
-              key={`docx-lang-${lang}`}
-              label={<span className="pl-3 text-gray-500 text-[9px]">[{lang}]</span>}
-              totalExpected={ld.found + ld.missing}
-              available={ld.found}
-              missingCount={ld.missing}
-              onFilterClick={() => {
-                applyCapsuleAvailMiss(deptForFilter, "docx", "available", langFilter as "ENG" | "GUJ");
-              }}
-              onAvailableClick={() => {
-                applyCapsuleAvailMiss(deptForFilter, "docx", "available", langFilter as "ENG" | "GUJ");
-              }}
-              onMissingClick={() => {
-                applyCapsuleAvailMiss(deptForFilter, "docx", "missing", langFilter as "ENG" | "GUJ");
-              }}
-              highlightAvailable={docxAvailActive}
-              highlightMissing={docxMissingActive}
-              filterRowActive={docxAvailActive || docxMissingActive}
-              titleSummary={`${lang} DOCX: ${ld.found} found, ${ld.missing} missing`}
-            />
-          );
-        })}
+        {/* DOCX Language Sub-rows (EN and GUJ side-by-side) — mirrors the PDF layout. */}
+        <div className="mt-0.5">
+          <CompactLanguagePairRow
+            langDataMap={new Map(
+              ["EN", "GJ"].map((lang) => [
+                lang,
+                {
+                  found: stat.langDocx.get(lang)?.found ?? 0,
+                  missing: stat.langDocx.get(lang)?.missing ?? 0,
+                  filter: (lang === "EN" ? "ENG" : "GUJ") as "ENG" | "GUJ",
+                },
+              ])
+            )}
+            onAvailableClick={(langFilter) => {
+              applyCapsuleAvailMiss(deptForFilter, "docx", "available", langFilter);
+            }}
+            onMissingClick={(langFilter) => {
+              applyCapsuleAvailMiss(deptForFilter, "docx", "missing", langFilter);
+            }}
+            filterSnapshot={filterSnapshot}
+            deptScope={deptForFilter}
+            metric="docx"
+          />
+        </div>
+        {/* PDF Section — slot-level totals (mirrors DOCX). Dual rows expect 2 PDF
+            slots, single-language rows expect 1. Found+Missing = expectedPdf. */}
         <CapsuleMetricAvailMissing
           label="PDF"
           totalExpected={stat.expectedPdf}
           available={stat.pdfFiles}
+          missingCount={Math.max(0, stat.expectedPdf - stat.pdfFiles)}
           onFilterClick={() => apply("pdf")}
           onAvailableClick={() =>
             applyCapsuleAvailMiss(deptForFilter, "pdf", "available")
@@ -1307,8 +1306,8 @@ function DepartmentCapsuleCard({
           }
           titleSummary={
             isGrand
-              ? `${stat.pdfFiles} PDF slots filled · ${Math.max(0, stat.expectedPdf - stat.pdfFiles)} missing of ${stat.expectedPdf} expected · green = filled slots, red = missing slots`
-              : `${stat.pdfFiles} PDF slots in ${label} · green = filled, red = missing`
+              ? `${stat.pdfFiles} PDF slots filled out of ${stat.expectedPdf} expected (dual rows count 2 — EN + GU separately).`
+              : `${stat.pdfFiles} of ${stat.expectedPdf} PDF slots filled in ${label} (EN+GU counted separately).`
           }
         />
         {/* PDF Language Sub-rows (EN and GUJ side-by-side) — always show both */}
@@ -1375,7 +1374,7 @@ function DepartmentCapsuleCard({
         />
         {/* DOCX Versions Sub-section (EN and GUJ side-by-side) — DOCX-scoped per-language */}
         <div className="mt-0.5 flex w-full min-h-[20px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
-          <span className="text-gray-400 font-medium">DOCX</span>
+          <span className="text-gray-400 font-medium inline-block w-[30px] shrink-0">DOCX</span>
           <CompactLanguageVersionPairRow
             langVersionDataMap={new Map(
               ["EN", "GJ"].map((lang) => [
@@ -1396,7 +1395,7 @@ function DepartmentCapsuleCard({
         </div>
         {/* PDF Versions Sub-section (EN and GUJ side-by-side) — PDF-scoped per-language */}
         <div className="mt-0.5 flex w-full min-h-[20px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
-          <span className="text-gray-400 font-medium">PDF</span>
+          <span className="text-gray-400 font-medium inline-block w-[30px] shrink-0">PDF</span>
           <CompactLanguageVersionPairRow
             langVersionDataMap={new Map(
               ["EN", "GJ"].map((lang) => [
