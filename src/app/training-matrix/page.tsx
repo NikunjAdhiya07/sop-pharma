@@ -89,10 +89,10 @@ interface DeptCardData {
   sopTrainersMissingList?: Array<{ sopCode: string; title: string; department: string }>;
   okayCount: number;
   expiredCount: number;
-  dueSoon60Count?: number;
-  dueSoon60McqReviewed?: number;
-  dueSoon60McqPartial?: number;
-  dueSoon60McqNotReviewed?: number;
+  dueSoon30Count?: number;
+  dueSoon30McqReviewed?: number;
+  dueSoon30McqPartial?: number;
+  dueSoon30McqNotReviewed?: number;
   mcqCreatedCount: number;
   mcqNotCreatedCount: number;
   mcqAllApprovedCount: number;
@@ -142,10 +142,10 @@ interface TotalCardData {
   sopTrainersMissingList?: Array<{ sopCode: string; title: string; department: string }>;
   okayCount: number;
   expiredCount: number;
-  dueSoon60Count?: number;
-  dueSoon60McqReviewed?: number;
-  dueSoon60McqPartial?: number;
-  dueSoon60McqNotReviewed?: number;
+  dueSoon30Count?: number;
+  dueSoon30McqReviewed?: number;
+  dueSoon30McqPartial?: number;
+  dueSoon30McqNotReviewed?: number;
   mcqCreatedCount: number;
   mcqNotCreatedCount: number;
   mcqAllApprovedCount: number;
@@ -555,20 +555,26 @@ function RowA({
   value: React.ReactNode;
   onClick?: () => void;
 }) {
+  const content = (
+    <>
+      <span className="min-w-0 shrink font-semibold text-gray-700 whitespace-nowrap overflow-hidden text-ellipsis">{label}</span>
+      <span className="font-bold tabular-nums shrink-0 leading-tight text-gray-900">{value}</span>
+    </>
+  );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex w-full min-h-[24px] cursor-pointer items-center justify-between gap-1.5 rounded-[4px] border border-transparent px-1 py-0.5 text-left text-[10px] transition-colors hover:bg-purple-100/80 active:bg-purple-200/60 focus:z-10 focus:outline-none focus:ring-1 focus:ring-purple-400"
+      >
+        {content}
+      </button>
+    );
+  }
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-[10px] font-normal text-gray-500">{label}</span>
-      {onClick ? (
-        <button
-          type="button"
-          onClick={onClick}
-          className="text-[11px] font-bold text-gray-900 hover:underline"
-        >
-          {value}
-        </button>
-      ) : (
-        <span className="text-[11px] font-bold text-gray-900">{value}</span>
-      )}
+    <div className="flex w-full min-h-[24px] items-center justify-between gap-1.5 rounded-[4px] border border-transparent px-1 py-0.5 text-[10px]">
+      {content}
     </div>
   );
 }
@@ -587,32 +593,33 @@ function RowB({
   onClickRed?: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-[10px] text-gray-500">{label}</span>
-      <span className="flex items-center gap-1.5">
+    <div className="grid min-h-[26px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[5px] border border-transparent px-1 py-px text-[10px]">
+      <span className="min-w-0 truncate text-left font-semibold text-gray-700">{label}</span>
+      <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
         {onClickGreen ? (
           <button
             type="button"
             onClick={onClickGreen}
-            className="text-[11px] font-bold text-emerald-600 hover:underline"
+            className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
           >
             {green}
           </button>
         ) : (
-          <span className="text-[11px] font-bold text-emerald-600">{green}</span>
+          <span className="min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700">{green}</span>
         )}
+        <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
         {onClickRed ? (
           <button
             type="button"
             onClick={onClickRed}
-            className="text-[11px] font-bold text-red-600 hover:underline"
+            className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-400/70"
           >
             {red}
           </button>
         ) : (
-          <span className="text-[11px] font-bold text-red-600">{red}</span>
+          <span className="min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600">{red}</span>
         )}
-      </span>
+      </div>
     </div>
   );
 }
@@ -635,43 +642,45 @@ function RowC({
   onClickRed?: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-[10px] text-gray-500">{label}</span>
-      <span className="flex items-center gap-1.5">
+    <div className="grid min-h-[26px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[5px] border border-transparent px-1 py-px text-[10px]">
+      <span className="min-w-0 truncate text-left font-semibold text-gray-700">{label}</span>
+      <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
         {onClickGreen ? (
           <button
             type="button"
             onClick={onClickGreen}
-            className="text-[11px] font-bold text-emerald-600 hover:underline"
+            className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
           >
             {green}
           </button>
         ) : (
-          <span className="text-[11px] font-bold text-emerald-600">{green}</span>
+          <span className="min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700">{green}</span>
         )}
+        <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
         {onClickAmber ? (
           <button
             type="button"
             onClick={onClickAmber}
-            className="text-[11px] font-bold text-amber-500 hover:underline"
+            className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-amber-400/70"
           >
             {amber}
           </button>
         ) : (
-          <span className="text-[11px] font-bold text-amber-500">{amber}</span>
+          <span className="min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none text-amber-600">{amber}</span>
         )}
+        <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
         {onClickRed ? (
           <button
             type="button"
             onClick={onClickRed}
-            className="text-[11px] font-bold text-red-600 hover:underline"
+            className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-400/70"
           >
             {red}
           </button>
         ) : (
-          <span className="text-[11px] font-bold text-red-600">{red}</span>
+          <span className="min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600">{red}</span>
         )}
-      </span>
+      </div>
     </div>
   );
 }
@@ -690,10 +699,12 @@ function RowD({
   tooltip?: string;
 }) {
   const colorClass =
-    color === 'green' ? 'text-emerald-600' : color === 'red' ? 'text-red-600' : 'text-amber-600';
+    color === 'green' ? 'text-emerald-700' : color === 'red' ? 'text-red-600' : 'text-amber-600';
+  const hoverBg =
+    color === 'green' ? 'hover:bg-emerald-50' : color === 'red' ? 'hover:bg-red-50' : 'hover:bg-amber-50';
   return (
-    <div className="flex items-center justify-between pl-2">
-      <span className="flex items-center gap-0.5 text-[9px] text-gray-400">
+    <div className="grid min-h-[24px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[4px] border border-transparent px-1 py-px text-[10px]">
+      <span className="flex min-w-0 items-center gap-0.5 truncate text-[10px] font-semibold text-gray-700">
         {label}
         {tooltip && (
           <span className="group/tip relative inline-flex items-center">
@@ -713,7 +724,7 @@ function RowD({
       <button
         type="button"
         onClick={onClick}
-        className={`text-[10px] font-semibold ${colorClass} ${onClick ? 'hover:underline' : ''}`}
+        className={`min-w-[1.35rem] rounded px-1 py-0.5 text-center font-bold leading-none tabular-nums ${colorClass} ${onClick ? `cursor-pointer ${hoverBg} focus:z-10 focus:outline-none focus:ring-1 focus:ring-purple-400` : ''}`}
       >
         {value}
       </button>
@@ -727,12 +738,12 @@ function RepetitiveSopsRow({
   items: Array<{ label: string; value: React.ReactNode; total?: number; color: 'red' | 'amber' | 'green'; tooltip?: string; onClick?: () => void }>;
 }) {
   return (
-    <div className="flex items-center justify-between pl-2">
+    <div className="grid w-full min-h-[22px] grid-cols-3 items-center gap-x-1 gap-y-0.5 px-1 overflow-hidden">
       {items.map(({ label, value, total, color, tooltip, onClick }) => {
-        const colorClass = color === 'red' ? 'text-red-600' : color === 'amber' ? 'text-amber-600' : 'text-emerald-600';
+        const colorClass = color === 'red' ? 'text-red-600' : color === 'amber' ? 'text-amber-600' : 'text-emerald-700';
         return (
-          <span key={label} className="flex items-center gap-1">
-            <span className="group/rtip relative cursor-default text-[9px] text-gray-400">
+          <span key={label} className="flex min-w-0 items-center justify-center gap-0.5 tabular-nums">
+            <span className="group/rtip relative shrink-0 cursor-default text-[9px] font-semibold text-gray-500">
               {label}
               {tooltip && (
                 <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1 w-40 -translate-x-1/2 rounded bg-gray-800 px-2 py-1.5 text-[9px] leading-tight text-white opacity-0 transition-opacity group-hover/rtip:opacity-100">
@@ -743,7 +754,7 @@ function RepetitiveSopsRow({
             <button
               type="button"
               onClick={onClick}
-              className={`text-[10px] font-semibold ${colorClass} ${onClick ? 'hover:underline' : ''}`}
+              className={`min-w-[1.1rem] shrink-0 rounded px-0.5 text-center text-[10px] font-bold leading-none ${colorClass} ${onClick ? 'cursor-pointer hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-purple-400' : ''}`}
             >
               {value}
             </button>
@@ -751,7 +762,7 @@ function RepetitiveSopsRow({
               <button
                 type="button"
                 onClick={onClick}
-                className={`text-[9px] font-bold text-gray-500 ${onClick ? 'hover:underline' : ''}`}
+                className={`shrink-0 truncate text-[9px] font-bold text-gray-500 ${onClick ? 'hover:underline' : ''}`}
               >
                 ({total})
               </button>
@@ -777,10 +788,10 @@ function MonthStrip({
           key={m}
           type="button"
           onClick={() => onSelectMonth?.(m)}
-          className={`flex flex-col items-center rounded transition-colors ${onSelectMonth ? 'hover:bg-gray-100' : ''}`}
+          className={`flex flex-col items-center rounded-[4px] border border-transparent px-0.5 py-0.5 transition-colors ${onSelectMonth ? 'hover:bg-purple-100/80 focus:z-10 focus:outline-none focus:ring-1 focus:ring-purple-400' : ''}`}
         >
-          <span className="text-[8px] text-gray-400 leading-none">{MONTH_SHORT[m]}</span>
-          <span className="text-[9px] font-bold text-gray-700 leading-tight">{monthCounts[m] ?? 0}</span>
+          <span className="text-[8px] font-medium text-gray-500 leading-none">{MONTH_SHORT[m]}</span>
+          <span className="text-[10px] font-bold text-gray-900 leading-tight tabular-nums">{monthCounts[m] ?? 0}</span>
         </button>
       ))}
     </div>
@@ -812,20 +823,20 @@ function DeptStrip({
   return (
     <div className="grid grid-cols-4 gap-x-1 gap-y-0.5">
       {visible.map((d) => (
-        <span key={d} className="flex flex-col items-center">
-          <span className="text-[8px] text-gray-400 leading-none">{short(d)}</span>
-          <span className="flex items-center gap-1 leading-tight tabular-nums">
+        <span key={d} className="flex flex-col items-center rounded-[4px] px-0.5 py-0.5">
+          <span className="text-[8px] font-medium text-gray-500 leading-none">{short(d)}</span>
+          <span className="flex items-center gap-0.5 leading-tight tabular-nums">
             <button
               type="button"
               onClick={() => onSelectFound?.(d)}
-              className={`text-[9px] font-bold text-emerald-700 ${onSelectFound ? 'hover:underline' : ''}`}
+              className={`min-w-[1rem] rounded px-0.5 text-center text-[10px] font-bold text-emerald-700 ${onSelectFound ? 'cursor-pointer hover:bg-emerald-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-emerald-400' : ''}`}
             >
               {foundCounts?.[d] ?? 0}
             </button>
             <button
               type="button"
               onClick={() => onSelectMissing?.(d)}
-              className={`text-[9px] font-bold text-red-600 ${onSelectMissing ? 'hover:underline' : ''}`}
+              className={`min-w-[1rem] rounded px-0.5 text-center text-[10px] font-bold text-red-600 ${onSelectMissing ? 'cursor-pointer hover:bg-red-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-400' : ''}`}
             >
               {missingCounts?.[d] ?? 0}
             </button>
@@ -847,27 +858,31 @@ function CardShell({
   icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
   title: string;
 }) {
+  const isTotal = title === 'Total';
   return (
     <div
-      className="rounded-[12px] bg-white px-3 py-2.5 shadow-[0_1px_4px_rgba(0,0,0,0.07)] transition-shadow hover:shadow-[0_4px_12px_rgba(0,0,0,0.1)] flex-1 min-w-[140px]"
-      style={{ border: `1.5px solid ${accent}` }}
+      className={`flex w-full min-w-[180px] flex-1 flex-col overflow-hidden rounded-[10px] border px-2 py-1.5 text-left shadow-sm ${isTotal ? 'border-purple-300 bg-purple-50' : 'border-gray-200 bg-white'
+        }`}
     >
-      <div className="mb-2 flex items-center gap-1">
-        <Icon className="h-[13px] w-[13px] flex-shrink-0" style={{ color: accent }} />
-        <span className="text-[12px] font-semibold text-gray-900 truncate">{title}</span>
+      <div
+        className={`mb-2 flex w-full min-h-[40px] items-start gap-1.5 rounded-md border-b pb-2 ${isTotal ? 'border-purple-200' : 'border-gray-100'
+          }`}
+      >
+        <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: accent }} />
+        <span className="min-w-0 flex-1 text-[11px] font-bold leading-tight text-gray-800 break-words">{title}</span>
       </div>
-      <div className="space-y-[5px]">{children}</div>
+      <div className="flex min-w-0 flex-col gap-0 border-t border-transparent pt-0.5">{children}</div>
     </div>
   );
 }
 
 function Divider() {
-  return <div className="my-[4px] border-t border-gray-100" />;
+  return <div className="my-1 border-t border-gray-100" />;
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-300">{children}</div>
+    <div className="px-1 text-[9px] font-bold uppercase tracking-wider text-gray-500">{children}</div>
   );
 }
 
@@ -2093,9 +2108,6 @@ export default function TrainingMatrixPage() {
   const [empModalFilter, setEmpModalFilter] = useState<'all' | 'pending' | 'completed'>('all');
   const [empModalSort, setEmpModalSort] = useState<{ field: 'code' | 'name' | 'month'; dir: 'asc' | 'desc' }>({ field: 'code', dir: 'asc' });
 
-  type SopRowSortField = 'sopCode' | 'title' | 'dept' | 'month' | 'expiry' | 'completionPct' | 'inExcel' | 'applicable' | 'trainer' | 'mcq' | 'due' | 'xna';
-  const [sopRowSort, setSopRowSort] = useState<{ field: SopRowSortField; dir: 'asc' | 'desc' }>({ field: 'sopCode', dir: 'asc' });
-
   const [missingModal, setMissingModal] = useState<null | {
     title: string;
     kind: 'sop' | 'trainer' | 'repeat-sop';
@@ -2404,7 +2416,7 @@ export default function TrainingMatrixPage() {
       title: string;
       lang?: string;
       trainer?: 'assigned' | 'missing';
-      status?: 'all_db' | 'expired' | 'okay' | 'due_soon_60' | 'due_soon_60_mcq_reviewed' | 'due_soon_60_mcq_partial' | 'due_soon_60_mcq_not_reviewed' | 'mcq_created' | 'mcq_not_created' | 'mcq_all_approved' | 'mcq_partially_approved' | 'mcq_not_approved' | 'mcq_eng_created' | 'mcq_eng_not_created' | 'mcq_eng_all_approved' | 'mcq_eng_partially_approved' | 'mcq_eng_not_approved' | 'mcq_guj_created' | 'mcq_guj_not_created' | 'mcq_guj_all_approved' | 'mcq_guj_partially_approved' | 'mcq_guj_not_approved';
+      status?: 'all_db' | 'expired' | 'okay' | 'due_soon_30' | 'due_soon_30_mcq_reviewed' | 'due_soon_30_mcq_partial' | 'due_soon_30_mcq_not_reviewed' | 'mcq_created' | 'mcq_not_created' | 'mcq_all_approved' | 'mcq_partially_approved' | 'mcq_not_approved' | 'mcq_eng_created' | 'mcq_eng_not_created' | 'mcq_eng_all_approved' | 'mcq_eng_partially_approved' | 'mcq_eng_not_approved' | 'mcq_guj_created' | 'mcq_guj_not_created' | 'mcq_guj_all_approved' | 'mcq_guj_partially_approved' | 'mcq_guj_not_approved';
     }) => {
       setViewMode('sop');
       setGroupBy('department');
@@ -2429,9 +2441,6 @@ export default function TrainingMatrixPage() {
             dept: opts.dept,
             sopCodes: new Set(codes.map((c) => stripVersion(c))),
           });
-          setTimeout(() => {
-            tableSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }, 80);
           return;
         }
 
@@ -2442,47 +2451,6 @@ export default function TrainingMatrixPage() {
             const deptsForDb = opts.dept === 'All' ? Object.keys(dbByDept) : [opts.dept];
             const allDbCodes = deptsForDb.flatMap((d) => ((dbByDept[d] || []) as any[]).map((x: any) => stripVersion(x.sopCode)));
             codes = Array.from(new Set(allDbCodes));
-          } else if (opts.dept === 'All' && (
-            opts.status === 'mcq_created' || opts.status === 'mcq_not_created' ||
-            opts.status === 'mcq_all_approved' || opts.status === 'mcq_partially_approved' || opts.status === 'mcq_not_approved' ||
-            opts.status === 'mcq_eng_created' || opts.status === 'mcq_eng_not_created' ||
-            opts.status === 'mcq_eng_all_approved' || opts.status === 'mcq_eng_partially_approved' || opts.status === 'mcq_eng_not_approved' ||
-            opts.status === 'mcq_guj_created' || opts.status === 'mcq_guj_not_created' ||
-            opts.status === 'mcq_guj_all_approved' || opts.status === 'mcq_guj_partially_approved' || opts.status === 'mcq_guj_not_approved' ||
-            opts.status === 'expired' || opts.status === 'okay'
-          )) {
-            // Totals are computed over ALL DB SOPs (dbBaseSet) on the backend.
-            // Reproduce that here using sopStatusByCode so counts match exactly.
-            const status = opts.status;
-            const matched: string[] = [];
-            for (const [sopCode, s] of Object.entries(data.sopStatusByCode || {})) {
-              const tq = s.totalQuestions ?? 0;
-              const approved = s.approvedCount ?? 0;
-              const engTq = s.engTotalQuestions ?? 0;
-              const engApproved = s.engApprovedCount ?? 0;
-              const gujTq = s.gujTotalQuestions ?? 0;
-              const gujApproved = s.gujApprovedCount ?? 0;
-              let ok = false;
-              if (status === 'mcq_created') ok = tq >= 100;
-              else if (status === 'mcq_not_created') ok = tq < 100;
-              else if (status === 'mcq_all_approved') ok = tq > 0 && approved >= tq;
-              else if (status === 'mcq_partially_approved') ok = tq > 0 && approved > 0 && approved < tq;
-              else if (status === 'mcq_not_approved') ok = tq === 0 || approved === 0;
-              else if (status === 'mcq_eng_created') ok = engTq >= 100;
-              else if (status === 'mcq_eng_not_created') ok = engTq < 100;
-              else if (status === 'mcq_eng_all_approved') ok = engTq > 0 && engApproved >= engTq;
-              else if (status === 'mcq_eng_partially_approved') ok = engTq > 0 && engApproved > 0 && engApproved < engTq;
-              else if (status === 'mcq_eng_not_approved') ok = engTq === 0 || engApproved === 0;
-              else if (status === 'mcq_guj_created') ok = gujTq >= 100;
-              else if (status === 'mcq_guj_not_created') ok = gujTq < 100;
-              else if (status === 'mcq_guj_all_approved') ok = gujTq > 0 && gujApproved >= gujTq;
-              else if (status === 'mcq_guj_partially_approved') ok = gujTq > 0 && gujApproved > 0 && gujApproved < gujTq;
-              else if (status === 'mcq_guj_not_approved') ok = gujTq === 0 || gujApproved === 0;
-              else if (status === 'expired') ok = !!s.expired;
-              else if (status === 'okay') ok = !s.expired;
-              if (ok) matched.push(sopCode);
-            }
-            codes = matched;
           } else {
             // Use the exact pre-computed lists that match the backend counts
             for (const d of deptsToCheck) {
@@ -2491,10 +2459,10 @@ export default function TrainingMatrixPage() {
               let list: string[] = [];
               if (opts.status === 'expired') list = deptData.expiredList || [];
               else if (opts.status === 'okay') list = deptData.okayList || [];
-              else if (opts.status === 'due_soon_60') list = deptData.dueSoon60List || [];
-              else if (opts.status === 'due_soon_60_mcq_reviewed') list = deptData.dueSoon60McqReviewedList || [];
-              else if (opts.status === 'due_soon_60_mcq_partial') list = deptData.dueSoon60McqPartialList || [];
-              else if (opts.status === 'due_soon_60_mcq_not_reviewed') list = deptData.dueSoon60McqNotReviewedList || [];
+              else if (opts.status === 'due_soon_30') list = deptData.dueSoon30List || [];
+              else if (opts.status === 'due_soon_30_mcq_reviewed') list = deptData.dueSoon30McqReviewedList || [];
+              else if (opts.status === 'due_soon_30_mcq_partial') list = deptData.dueSoon30McqPartialList || [];
+              else if (opts.status === 'due_soon_30_mcq_not_reviewed') list = deptData.dueSoon30McqNotReviewedList || [];
               else if (opts.status === 'mcq_created') list = deptData.mcqCreatedList || [];
               else if (opts.status === 'mcq_not_created') list = deptData.mcqNotCreatedList || [];
               else if (opts.status === 'mcq_all_approved') list = deptData.mcqAllApprovedList || [];
@@ -2517,8 +2485,14 @@ export default function TrainingMatrixPage() {
           for (const d of deptsToCheck) {
             const deptData = data.perDept?.[d] as any;
             if (!deptData?.uploaded) continue;
-            // 'found' = Excel SOPs that are also in DB
-            let list = (deptData.foundInDbList || deptData.sopCodes || []);
+            // 'found' = Excel SOPs that are also in DB.
+            // When a cross-dept DeptStrip cell is clicked (dbDept set), the user wants
+            // *this card's* Excel SOPs whose DB owner is dbDept. foundInDbList only
+            // contains SOPs whose DB owner == this card's dept, so it would always
+            // intersect to 0 for any other dbDept. Start from full sopCodes instead.
+            let list: string[] = opts.dbDept && opts.dbDept !== 'All'
+              ? (deptData.sopCodes || [])
+              : (deptData.foundInDbList || deptData.sopCodes || []);
             if (opts.dbDept && opts.dbDept !== 'All') {
               const targetDbCodes = new Set(((data.totalCard as any)?.dbSopsByDept?.[opts.dbDept] || []).map((x: any) => x.sopCode));
               list = list.filter((c: string) => targetDbCodes.has(c));
@@ -2603,7 +2577,7 @@ export default function TrainingMatrixPage() {
 
   // Applies a repeat-based filter directly to the SOP table (no modal)
   const applyRepeatFilter = useCallback(
-    (dept: ActiveDept, bucket: '3+' | '2' | 'once' | 'all', list: Array<{ sopCode: string; count: number }>) => {
+    (dept: ActiveDept, bucket: '3+' | '2' | 'once', list: Array<{ sopCode: string; count: number }>) => {
       if (!list?.length || !data) return;
       setViewMode('sop');
       setGroupBy('department');
@@ -2619,7 +2593,7 @@ export default function TrainingMatrixPage() {
         return { sopCode, count, depts };
       });
 
-      const label = bucket === '3+' ? 'Repeat 3+' : bucket === '2' ? 'Repeat 2' : bucket === 'once' ? 'Once' : 'Repetitive SOPs';
+      const label = bucket === '3+' ? 'Repeat 3+' : bucket === '2' ? 'Repeat 2' : 'Once';
       setCapsuleSopFilter({
         title: `${dept} · ${label} (${list.length} SOPs shared across departments)`,
         dept: 'All',
@@ -2712,7 +2686,6 @@ export default function TrainingMatrixPage() {
             mcqGujApproved: (status as any)?.gujApprovedCount || 0,
           };
         })
-        .filter((r) => activeMonth === 'All' || r.month === activeMonth)
         .filter((r) => {
           if (!term) return true;
           return r.sopCode.toLowerCase().includes(term) || r.pendingEmployees.length > 0 || r.completedEmployees.length > 0;
@@ -2752,11 +2725,10 @@ export default function TrainingMatrixPage() {
       const excelCodes = (data.sopCodesByDept?.[dept] || []).map((c: string) => stripVersion(c));
       const dbCodes = ((data.totalCard as any)?.dbSopsByDept?.[dept] || []).map((x: any) => stripVersion(x.sopCode));
       const baseCodes = Array.from(new Set([...excelCodes, ...dbCodes]));
-      const monthMap = data.sopMonthMapByDept?.[dept] || {};
-      const sopCodes = (capsuleSopFilter
+      const sopCodes = capsuleSopFilter
         ? baseCodes.filter((c) => capsuleSopFilter.sopCodes.has(String(c).toUpperCase()))
-        : baseCodes
-      ).filter((c) => activeMonth === 'All' || monthMap[c] === activeMonth);
+        : baseCodes;
+      const monthMap = data.sopMonthMapByDept?.[dept] || {};
       const trainerMap: Record<string, string> = { ...globalTrainerMap, ...(data.perDept?.[dept]?.trainerBySopCode || {}) };
 
       const sopStats = new Map<string, {
@@ -2834,24 +2806,8 @@ export default function TrainingMatrixPage() {
       out.push({ department: dept, sops });
     }
 
-    // When a capsule filter is active, the same SOP can legitimately exist in
-    // multiple dept groups (cross-dept SOPs). Backend filter counts (e.g. "401
-    // MCQ created") count unique SOPs, so we dedupe here to keep rendered rows
-    // aligned with the displayed count.
-    if (capsuleSopFilter) {
-      const seen = new Set<string>();
-      for (const g of out) {
-        g.sops = g.sops.filter((s) => {
-          const key = s.sopCode.toUpperCase();
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-      }
-    }
-
     return out.filter((g) => g.sops.length > 0);
-  }, [data, activeDept, activeMonth, search, capsuleSopFilter]);
+  }, [data, activeDept, search, capsuleSopFilter]);
 
   const renderTotalCard = (t: TotalCardData) => {
     const TotalIcon = DEPT_ICON.Total;
@@ -2922,26 +2878,24 @@ export default function TrainingMatrixPage() {
 
     return (
       <CardShell accent={DEPT_ACCENT.Total} icon={TotalIcon} title="Total">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-normal text-gray-500">SOPs (DB)</span>
-          <button
-            type="button"
-            onClick={() => {
-              clearCapsuleFilter();
-              setViewMode('sop');
-              setGroupBy('department');
-              setActiveMonth('All');
-              setSearch('');
-              setActiveDept('All');
-            }}
-            className="text-[11px] font-bold text-gray-900 hover:underline"
-          >
-            {t.dbSopCount}
-          </button>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-normal text-gray-500">In Excel</span>
-          <div className="flex items-center gap-1.5 tabular-nums">
+        <button
+          type="button"
+          onClick={() => {
+            clearCapsuleFilter();
+            setViewMode('sop');
+            setGroupBy('department');
+            setActiveMonth('All');
+            setSearch('');
+            setActiveDept('All');
+          }}
+          className="flex w-full min-h-[24px] cursor-pointer items-center justify-between gap-1.5 rounded-[4px] border border-transparent px-1 py-0.5 text-left text-[10px] transition-colors hover:bg-purple-100/80 active:bg-purple-200/60 focus:z-10 focus:outline-none focus:ring-1 focus:ring-purple-400"
+        >
+          <span className="min-w-0 shrink font-semibold text-gray-700 whitespace-nowrap overflow-hidden text-ellipsis">SOPs (DB)</span>
+          <span className="font-bold tabular-nums shrink-0 leading-tight text-gray-900">{t.dbSopCount}</span>
+        </button>
+        <div className="grid min-h-[26px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[5px] border border-transparent px-1 py-px text-[10px]">
+          <span className="min-w-0 truncate text-left font-semibold text-gray-700">In Excel</span>
+          <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
             <button
               type="button"
               onClick={() =>
@@ -2951,12 +2905,12 @@ export default function TrainingMatrixPage() {
                   title: 'Total · Found in Excel',
                 })
               }
-              className="text-[11px] font-bold text-emerald-600 hover:underline"
+              className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
               title="Found"
             >
               {t.excelSopCount}
             </button>
-            <span className="text-[10px] text-gray-300 select-none">/</span>
+            <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
             <button
               type="button"
               onClick={() =>
@@ -2966,7 +2920,7 @@ export default function TrainingMatrixPage() {
                   title: 'Total · Missing (DB but not in Excel)',
                 })
               }
-              className="text-[11px] font-bold text-red-600 hover:underline"
+              className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-400/70"
               title="Missing"
             >
               {t.missingSopCount}
@@ -2974,14 +2928,14 @@ export default function TrainingMatrixPage() {
           </div>
         </div>
         {totalLangBreakdown.length > 0 && (
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-normal text-gray-500 shrink-0">Lang (DB)</span>
-            <div className="flex items-center gap-3 tabular-nums">
+          <div className="flex min-h-[24px] w-full items-center justify-between gap-1 rounded-[4px] border border-transparent px-1 py-0.5 text-[10px]">
+            <span className="min-w-0 shrink truncate font-semibold text-gray-700">Lang (DB)</span>
+            <div className="flex items-center gap-2 tabular-nums">
               {totalLangBreakdown.map((lr) => {
                 const dbTotal = lr.found + lr.missing;
                 return (
                   <span key={lr.key} className="inline-flex items-center gap-1">
-                    <span className="text-[10px] font-semibold text-gray-500">{lr.label}</span>
+                    <span className="text-[9px] font-medium text-gray-500">{lr.label}</span>
                     <button
                       type="button"
                       onClick={() =>
@@ -2992,7 +2946,7 @@ export default function TrainingMatrixPage() {
                           lang: lr.key,
                         })
                       }
-                      className="text-[11px] font-bold text-gray-900 hover:text-emerald-600 hover:underline transition-colors"
+                      className="min-w-[1.35rem] rounded px-1 text-center text-[10px] font-bold tabular-nums text-gray-900 transition-colors hover:bg-emerald-50 hover:text-emerald-700 focus:z-10 focus:outline-none focus:ring-1 focus:ring-purple-400"
                       title={`DB Total (${lr.found} Found + ${lr.missing} Missing)`}
                     >
                       {dbTotal}
@@ -3006,22 +2960,22 @@ export default function TrainingMatrixPage() {
         {hasTotalExcelDeptSplit && (
           <>
             <Divider />
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-normal text-gray-500">Excel SOP </span>
-              <div className="flex items-center gap-1.5 tabular-nums">
+            <div className="grid min-h-[26px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[5px] border border-transparent px-1 py-px text-[10px]">
+              <span className="min-w-0 truncate text-left font-semibold text-gray-700">Excel SOP</span>
+              <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
                 <button
                   type="button"
                   onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Total · Found in Excel' })}
-                  className="text-[11px] font-bold text-emerald-600 hover:underline"
+                  className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
                   title="Found"
                 >
                   {totalExcelDeptFoundSum}
                 </button>
-                <span className="text-[10px] text-gray-300 select-none">/</span>
+                <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
                 <button
                   type="button"
                   onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'missing', title: 'Total · Missing (DB but not in Excel)' })}
-                  className="text-[11px] font-bold text-red-600 hover:underline"
+                  className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-400/70"
                   title="Missing"
                 >
                   {totalExcelDeptMissingSum}
@@ -3090,43 +3044,23 @@ export default function TrainingMatrixPage() {
           const r1Total = totalRepeatOnceList.reduce((s, i) => s + (i.count || 0), 0);
           const bucketSopSum = totalRepeat3PlusList.length + totalRepeat2List.length + totalRepeatOnceList.length;
           return (
-        <>
-        <div className="flex items-center justify-between">
-          <SectionLabel>Repetitive SOPs</SectionLabel>
-          <span className="flex items-center gap-1.5 tabular-nums">
-            <button
-              type="button"
-              onClick={() =>
-                applyRepeatFilter('All', 'all', [
-                  ...totalRepeat3PlusList,
-                  ...totalRepeat2List,
-                  ...totalRepeatOnceList,
-                ])
-              }
-              className="text-[11px] font-bold text-emerald-600 hover:underline"
-              title="All Repetitive SOPs"
-            >
-              {bucketSopSum}
-            </button>
-            <span className="text-[10px] text-gray-300 select-none">/</span>
-            <button
-              type="button"
-              onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'missing', title: 'Total · Missing (DB but not in Excel)' })}
-              className="text-[11px] font-bold text-red-600 hover:underline"
-              title="Missing"
-            >
-              {totalExcelDeptMissingSum}
-            </button>
-          </span>
-        </div>
-        <RepetitiveSopsRow
-          items={[
-            { label: '3+', value: totalRepeat3PlusList.length, total: r3Total, color: 'red', tooltip: 'SOPs scheduled 3 or more times across departments', onClick: () => applyRepeatFilter('All', '3+', totalRepeat3PlusList) },
-            { label: '2×', value: totalRepeat2List.length, total: r2Total, color: 'amber', tooltip: 'SOPs scheduled exactly 2 times across departments', onClick: () => applyRepeatFilter('All', '2', totalRepeat2List) },
-            { label: '1×', value: totalRepeatOnceList.length, total: r1Total, color: 'green', tooltip: 'SOPs scheduled only once (no repetition across departments)', onClick: () => applyRepeatFilter('All', 'once', totalRepeatOnceList) },
-          ]}
-        />
-        </>
+            <>
+              <div className="flex w-full min-h-[24px] items-center justify-between gap-1 px-1 py-0.5 text-[10px]">
+                <SectionLabel>Repetitive SOPs</SectionLabel>
+                <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
+                  <span className="min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700">{bucketSopSum}</span>
+                  <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
+                  <span className="min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600">{totalExcelDeptMissingSum}</span>
+                </div>
+              </div>
+              <RepetitiveSopsRow
+                items={[
+                  { label: '3+', value: totalRepeat3PlusList.length, total: r3Total, color: 'red', tooltip: 'SOPs scheduled 3 or more times across departments', onClick: () => applyRepeatFilter('All', '3+', totalRepeat3PlusList) },
+                  { label: '2×', value: totalRepeat2List.length, total: r2Total, color: 'amber', tooltip: 'SOPs scheduled exactly 2 times across departments', onClick: () => applyRepeatFilter('All', '2', totalRepeat2List) },
+                  { label: '1×', value: totalRepeatOnceList.length, total: r1Total, color: 'green', tooltip: 'SOPs scheduled only once (no repetition across departments)', onClick: () => applyRepeatFilter('All', 'once', totalRepeatOnceList) },
+                ]}
+              />
+            </>
           );
         })()}
         <RowB
@@ -3150,17 +3084,23 @@ export default function TrainingMatrixPage() {
             })
           }
         />
-        <div className="flex items-center justify-between pl-2">
-          <span className="flex items-center gap-1">
-            <span className="text-[9px] text-gray-400">ENG</span>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ ENG Created (100+)', status: 'mcq_eng_created' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{t.mcqEngCreatedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ ENG Not Created (<100)', status: 'mcq_eng_not_created' })} className="text-[10px] font-bold text-red-600 hover:underline">{t.mcqEngNotCreatedCount ?? 0}</button>
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="text-[9px] text-gray-400">GUJ</span>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ GUJ Created (100+)', status: 'mcq_guj_created' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{t.mcqGujCreatedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ GUJ Not Created (<100)', status: 'mcq_guj_not_created' })} className="text-[10px] font-bold text-red-600 hover:underline">{t.mcqGujNotCreatedCount ?? 0}</button>
-          </span>
+        <div className="flex w-full flex-col gap-0.5 px-1 py-0 text-[9px]">
+          <div className="flex min-w-0 items-center justify-between gap-1">
+            <span className="text-gray-500 text-[9px] font-semibold shrink-0">ENG</span>
+            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white/90 px-0.5 py-0.5 shadow-sm tabular-nums">
+              <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ ENG Created (100+)', status: 'mcq_eng_created' })} className="min-w-[1.3rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqEngCreatedCount ?? 0}</button>
+              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
+              <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ ENG Not Created (<100)', status: 'mcq_eng_not_created' })} className="min-w-[1.3rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqEngNotCreatedCount ?? 0}</button>
+            </div>
+          </div>
+          <div className="flex min-w-0 items-center justify-between gap-1">
+            <span className="text-gray-500 text-[9px] font-semibold shrink-0">GUJ</span>
+            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white/90 px-0.5 py-0.5 shadow-sm tabular-nums">
+              <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ GUJ Created (100+)', status: 'mcq_guj_created' })} className="min-w-[1.3rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqGujCreatedCount ?? 0}</button>
+              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
+              <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ GUJ Not Created (<100)', status: 'mcq_guj_not_created' })} className="min-w-[1.3rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqGujNotCreatedCount ?? 0}</button>
+            </div>
+          </div>
         </div>
         <RowC
           label="MCQ Approved"
@@ -3192,19 +3132,27 @@ export default function TrainingMatrixPage() {
             })
           }
         />
-        <div className="flex items-center justify-between pl-2">
-          <span className="flex items-center gap-1">
-            <span className="text-[9px] text-gray-400">ENG</span>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ ENG All Approved', status: 'mcq_eng_all_approved' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{t.mcqEngAllApprovedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ ENG Partially Approved', status: 'mcq_eng_partially_approved' })} className="text-[10px] font-bold text-amber-500 hover:underline">{t.mcqEngPartiallyApprovedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ ENG Not Approved', status: 'mcq_eng_not_approved' })} className="text-[10px] font-bold text-red-600 hover:underline">{t.mcqEngNotApprovedCount ?? 0}</button>
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="text-[9px] text-gray-400">GUJ</span>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ GUJ All Approved', status: 'mcq_guj_all_approved' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{t.mcqGujAllApprovedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ GUJ Partially Approved', status: 'mcq_guj_partially_approved' })} className="text-[10px] font-bold text-amber-500 hover:underline">{t.mcqGujPartiallyApprovedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ GUJ Not Approved', status: 'mcq_guj_not_approved' })} className="text-[10px] font-bold text-red-600 hover:underline">{t.mcqGujNotApprovedCount ?? 0}</button>
-          </span>
+        <div className="flex w-full flex-col gap-0.5 px-1 py-0 text-[9px]">
+          <div className="flex min-w-0 items-center justify-between gap-1">
+            <span className="text-gray-500 text-[9px] font-semibold shrink-0">ENG</span>
+            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white/90 px-0.5 py-0.5 shadow-sm tabular-nums">
+              <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ ENG All Approved', status: 'mcq_eng_all_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqEngAllApprovedCount ?? 0}</button>
+              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
+              <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ ENG Partially Approved', status: 'mcq_eng_partially_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqEngPartiallyApprovedCount ?? 0}</button>
+              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
+              <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ ENG Not Approved', status: 'mcq_eng_not_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqEngNotApprovedCount ?? 0}</button>
+            </div>
+          </div>
+          <div className="flex min-w-0 items-center justify-between gap-1">
+            <span className="text-gray-500 text-[9px] font-semibold shrink-0">GUJ</span>
+            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white/90 px-0.5 py-0.5 shadow-sm tabular-nums">
+              <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ GUJ All Approved', status: 'mcq_guj_all_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqGujAllApprovedCount ?? 0}</button>
+              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
+              <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ GUJ Partially Approved', status: 'mcq_guj_partially_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqGujPartiallyApprovedCount ?? 0}</button>
+              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
+              <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'MCQ GUJ Not Approved', status: 'mcq_guj_not_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqGujNotApprovedCount ?? 0}</button>
+            </div>
+          </div>
         </div>
         <RowB
           label="SOP Expiry Status"
@@ -3228,24 +3176,24 @@ export default function TrainingMatrixPage() {
           }
         />
         <RowD
-          label="Due in next 60 days"
-          value={t.dueSoon60Count ?? 0}
+          label="Due in next 30 days"
+          value={t.dueSoon30Count ?? 0}
           color="amber"
-          onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in Next 60 Days', status: 'due_soon_60' })}
+          onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in Next 30 Days', status: 'due_soon_30' })}
         />
-        <div className="flex items-center justify-between pl-2">
-          <span className="flex items-center gap-1">
-            <span className="text-[9px] text-gray-400">Rev</span>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in 60 Days · Reviewed', status: 'due_soon_60_mcq_reviewed' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{t.dueSoon60McqReviewed ?? 0}</button>
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="text-[9px] text-gray-400">Part</span>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in 60 Days · Partially Reviewed', status: 'due_soon_60_mcq_partial' })} className="text-[10px] font-bold text-amber-500 hover:underline">{t.dueSoon60McqPartial ?? 0}</button>
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="text-[9px] text-gray-400">Not</span>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in 60 Days · Not Reviewed', status: 'due_soon_60_mcq_not_reviewed' })} className="text-[10px] font-bold text-red-600 hover:underline">{t.dueSoon60McqNotReviewed ?? 0}</button>
-          </span>
+        <div className="flex w-full min-h-[22px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
+          <div className="flex items-center gap-0.5">
+            <span className="text-gray-500 text-[9px] font-medium">Rev</span>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in 30 Days · Reviewed', status: 'due_soon_30_mcq_reviewed' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400 tabular-nums">{t.dueSoon30McqReviewed ?? 0}</button>
+          </div>
+          <div className="flex items-center gap-0.5">
+            <span className="text-gray-500 text-[9px] font-medium">Part</span>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in 30 Days · Partially Reviewed', status: 'due_soon_30_mcq_partial' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-amber-600 shadow-sm transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400 tabular-nums">{t.dueSoon30McqPartial ?? 0}</button>
+          </div>
+          <div className="flex items-center gap-0.5">
+            <span className="text-gray-500 text-[9px] font-medium">Not</span>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in 30 Days · Not Reviewed', status: 'due_soon_30_mcq_not_reviewed' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-red-600 shadow-sm transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400 tabular-nums">{t.dueSoon30McqNotReviewed ?? 0}</button>
+          </div>
         </div>
         <Divider />
         <RowA
@@ -3276,9 +3224,6 @@ export default function TrainingMatrixPage() {
             setActiveMonth(m);
             setSearch('');
             clearCapsuleFilter();
-            setTimeout(() => {
-              tableSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }, 80);
           }}
         />
         <Divider />
@@ -3295,31 +3240,29 @@ export default function TrainingMatrixPage() {
       0;
     return (
       <CardShell accent={DEPT_ACCENT[dept]} icon={Icon} title={dept}>
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-normal text-gray-500">SOPs (DB)</span>
-          <button
-            type="button"
-            onClick={() => {
-              const dbSopList: Array<{ sopCode: string }> = (data?.totalCard?.dbSopsByDept as any)?.[dept] || [];
-              setCapsuleSopFilter({
-                title: `${dept} · DB SOPs (${dbDeptCount})`,
-                dept,
-                sopCodes: new Set(dbSopList.map((x) => String(x.sopCode).toUpperCase())),
-              });
-              setViewMode('sop');
-              setGroupBy('department');
-              setActiveMonth('All');
-              setSearch('');
-              setActiveDept(dept);
-            }}
-            className="text-[11px] font-bold text-gray-900 hover:underline"
-          >
-            {dbDeptCount}
-          </button>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-normal text-gray-500">In Excel</span>
-          <div className="flex items-center gap-1.5 tabular-nums">
+        <button
+          type="button"
+          onClick={() => {
+            const dbSopList: Array<{ sopCode: string }> = (data?.totalCard?.dbSopsByDept as any)?.[dept] || [];
+            setCapsuleSopFilter({
+              title: `${dept} · DB SOPs (${dbDeptCount})`,
+              dept,
+              sopCodes: new Set(dbSopList.map((x) => String(x.sopCode).toUpperCase())),
+            });
+            setViewMode('sop');
+            setGroupBy('department');
+            setActiveMonth('All');
+            setSearch('');
+            setActiveDept(dept);
+          }}
+          className="flex w-full min-h-[24px] cursor-pointer items-center justify-between gap-1.5 rounded-[4px] border border-transparent px-1 py-0.5 text-left text-[10px] transition-colors hover:bg-purple-100/80 active:bg-purple-200/60 focus:z-10 focus:outline-none focus:ring-1 focus:ring-purple-400"
+        >
+          <span className="min-w-0 shrink font-semibold text-gray-700 whitespace-nowrap overflow-hidden text-ellipsis">SOPs (DB)</span>
+          <span className="font-bold tabular-nums shrink-0 leading-tight text-gray-900">{dbDeptCount}</span>
+        </button>
+        <div className="grid min-h-[26px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[5px] border border-transparent px-1 py-px text-[10px]">
+          <span className="min-w-0 truncate text-left font-semibold text-gray-700">In Excel</span>
+          <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
             <button
               type="button"
               onClick={() =>
@@ -3329,12 +3272,12 @@ export default function TrainingMatrixPage() {
                   title: `${dept} · Found in Excel`,
                 })
               }
-              className="text-[11px] font-bold text-emerald-600 hover:underline"
+              className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
               title="Found"
             >
               {d.foundInDb}
             </button>
-            <span className="text-[10px] text-gray-300 select-none">/</span>
+            <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
             <button
               type="button"
               onClick={() =>
@@ -3344,7 +3287,7 @@ export default function TrainingMatrixPage() {
                   title: `${dept} · Missing (DB but not in Excel)`,
                 })
               }
-              className="text-[11px] font-bold text-red-600 hover:underline"
+              className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-400/70"
               title="Missing"
             >
               {d.missingFromExcel}
@@ -3352,9 +3295,9 @@ export default function TrainingMatrixPage() {
           </div>
         </div>
         {(d.langBreakdown || []).length > 0 ? (
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-normal text-gray-500 shrink-0">Lang (DB)</span>
-            <div className="flex items-center gap-3 tabular-nums">
+          <div className="flex min-h-[24px] w-full items-center justify-between gap-1 rounded-[4px] border border-transparent px-1 py-0.5 text-[10px]">
+            <span className="min-w-0 shrink truncate font-semibold text-gray-700">Lang (DB)</span>
+            <div className="flex items-center gap-2 tabular-nums">
               {(d.langBreakdown || [])
                 .slice()
                 .sort((a, b) => (a.key === b.key ? 0 : a.key === 'ENG' ? -1 : 1))
@@ -3362,7 +3305,7 @@ export default function TrainingMatrixPage() {
                   const dbTotal = lr.found + lr.missing;
                   return (
                     <span key={lr.key} className="inline-flex items-center gap-1">
-                      <span className="text-[10px] font-semibold text-gray-500">{lr.label}</span>
+                      <span className="text-[9px] font-medium text-gray-500">{lr.label}</span>
                       <button
                         type="button"
                         onClick={() =>
@@ -3373,7 +3316,7 @@ export default function TrainingMatrixPage() {
                             lang: lr.key,
                           })
                         }
-                        className="text-[11px] font-bold text-gray-900 hover:text-emerald-600 hover:underline transition-colors"
+                        className="min-w-[1.35rem] rounded px-1 text-center text-[10px] font-bold tabular-nums text-gray-900 transition-colors hover:bg-emerald-50 hover:text-emerald-700 focus:z-10 focus:outline-none focus:ring-1 focus:ring-purple-400"
                         title={`DB Total (${lr.found} Found + ${lr.missing} Missing)`}
                       >
                         {dbTotal}
@@ -3388,22 +3331,22 @@ export default function TrainingMatrixPage() {
         {d.excelDeptSplit?.foundByDept ? (
           <>
             <Divider />
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-normal text-gray-500">Excel SOP</span>
-              <div className="flex items-center gap-1.5 tabular-nums">
+            <div className="grid min-h-[26px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[5px] border border-transparent px-1 py-px text-[10px]">
+              <span className="min-w-0 truncate text-left font-semibold text-gray-700">Excel SOP</span>
+              <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
                 <button
                   type="button"
                   onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Found in Excel` })}
-                  className="text-[11px] font-bold text-emerald-600 hover:underline"
+                  className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
                   title="Found"
                 >
                   {Object.values(d.excelDeptSplit.foundByDept || {}).reduce((a: number, b: unknown) => a + (b as number), 0) + (d.excelDeptSplit.unknownFound ?? 0)}
                 </button>
-                <span className="text-[10px] text-gray-300 select-none">/</span>
+                <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
                 <button
                   type="button"
                   onClick={() => applySummaryCapsuleFilter({ dept, type: 'missing', title: `${dept} · Missing (DB but not in Excel)` })}
-                  className="text-[11px] font-bold text-red-600 hover:underline"
+                  className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-400/70"
                   title="Missing"
                 >
                   {Object.values(d.excelDeptSplit.missingByDept || {}).reduce((a: number, b: unknown) => a + (b as number), 0) + (d.excelDeptSplit.unknownMissing ?? 0)}
@@ -3478,33 +3421,13 @@ export default function TrainingMatrixPage() {
           const bucketSopSum = r3Count + r2Count + r1Count;
           return (
             <>
-              <div className="flex items-center justify-between">
+              <div className="flex w-full min-h-[24px] items-center justify-between gap-1 px-1 py-0.5 text-[10px]">
                 <SectionLabel>Repetitive SOPs</SectionLabel>
-                <span className="flex items-center gap-1.5 tabular-nums">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      applyRepeatFilter(dept, 'all', [
-                        ...(d.repeat3PlusList ?? []),
-                        ...(d.repeat2List ?? []),
-                        ...(d.repeat1List ?? []),
-                      ])
-                    }
-                    className="text-[11px] font-bold text-emerald-600 hover:underline"
-                    title="All Repetitive SOPs"
-                  >
-                    {bucketSopSum}
-                  </button>
-                  <span className="text-[10px] text-gray-300 select-none">/</span>
-                  <button
-                    type="button"
-                    onClick={() => applySummaryCapsuleFilter({ dept, type: 'missing', title: `${dept} · Missing (DB but not in Excel)` })}
-                    className="text-[11px] font-bold text-red-600 hover:underline"
-                    title="Missing"
-                  >
-                    {dMissingSum}
-                  </button>
-                </span>
+                <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
+                  <span className="min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700">{bucketSopSum}</span>
+                  <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
+                  <span className="min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600">{dMissingSum}</span>
+                </div>
               </div>
               <RepetitiveSopsRow
                 items={[
@@ -3537,17 +3460,23 @@ export default function TrainingMatrixPage() {
             })
           }
         />
-        <div className="flex items-center justify-between pl-2">
-          <span className="flex items-center gap-1">
-            <span className="text-[9px] text-gray-400">ENG</span>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ ENG Created (100+)`, status: 'mcq_eng_created' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{d.mcqEngCreatedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ ENG Not Created (<100)`, status: 'mcq_eng_not_created' })} className="text-[10px] font-bold text-red-600 hover:underline">{d.mcqEngNotCreatedCount ?? 0}</button>
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="text-[9px] text-gray-400">GUJ</span>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ GUJ Created (100+)`, status: 'mcq_guj_created' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{d.mcqGujCreatedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ GUJ Not Created (<100)`, status: 'mcq_guj_not_created' })} className="text-[10px] font-bold text-red-600 hover:underline">{d.mcqGujNotCreatedCount ?? 0}</button>
-          </span>
+        <div className="flex w-full flex-col gap-0.5 px-1 py-0 text-[9px]">
+          <div className="flex min-w-0 items-center justify-between gap-1">
+            <span className="text-gray-500 text-[9px] font-semibold shrink-0">ENG</span>
+            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white/90 px-0.5 py-0.5 shadow-sm tabular-nums">
+              <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ ENG Created (100+)`, status: 'mcq_eng_created' })} className="min-w-[1.3rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqEngCreatedCount ?? 0}</button>
+              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
+              <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ ENG Not Created (<100)`, status: 'mcq_eng_not_created' })} className="min-w-[1.3rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqEngNotCreatedCount ?? 0}</button>
+            </div>
+          </div>
+          <div className="flex min-w-0 items-center justify-between gap-1">
+            <span className="text-gray-500 text-[9px] font-semibold shrink-0">GUJ</span>
+            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white/90 px-0.5 py-0.5 shadow-sm tabular-nums">
+              <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ GUJ Created (100+)`, status: 'mcq_guj_created' })} className="min-w-[1.3rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqGujCreatedCount ?? 0}</button>
+              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
+              <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ GUJ Not Created (<100)`, status: 'mcq_guj_not_created' })} className="min-w-[1.3rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqGujNotCreatedCount ?? 0}</button>
+            </div>
+          </div>
         </div>
         <RowC
           label="MCQ Approved"
@@ -3579,19 +3508,27 @@ export default function TrainingMatrixPage() {
             })
           }
         />
-        <div className="flex items-center justify-between pl-2">
-          <span className="flex items-center gap-1">
-            <span className="text-[9px] text-gray-400">ENG</span>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ ENG All Approved`, status: 'mcq_eng_all_approved' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{d.mcqEngAllApprovedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ ENG Partially Approved`, status: 'mcq_eng_partially_approved' })} className="text-[10px] font-bold text-amber-500 hover:underline">{d.mcqEngPartiallyApprovedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ ENG Not Approved`, status: 'mcq_eng_not_approved' })} className="text-[10px] font-bold text-red-600 hover:underline">{d.mcqEngNotApprovedCount ?? 0}</button>
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="text-[9px] text-gray-400">GUJ</span>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ GUJ All Approved`, status: 'mcq_guj_all_approved' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{d.mcqGujAllApprovedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ GUJ Partially Approved`, status: 'mcq_guj_partially_approved' })} className="text-[10px] font-bold text-amber-500 hover:underline">{d.mcqGujPartiallyApprovedCount ?? 0}</button>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ GUJ Not Approved`, status: 'mcq_guj_not_approved' })} className="text-[10px] font-bold text-red-600 hover:underline">{d.mcqGujNotApprovedCount ?? 0}</button>
-          </span>
+        <div className="flex w-full flex-col gap-0.5 px-1 py-0 text-[9px]">
+          <div className="flex min-w-0 items-center justify-between gap-1">
+            <span className="text-gray-500 text-[9px] font-semibold shrink-0">ENG</span>
+            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white/90 px-0.5 py-0.5 shadow-sm tabular-nums">
+              <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ ENG All Approved`, status: 'mcq_eng_all_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqEngAllApprovedCount ?? 0}</button>
+              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
+              <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ ENG Partially Approved`, status: 'mcq_eng_partially_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqEngPartiallyApprovedCount ?? 0}</button>
+              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
+              <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ ENG Not Approved`, status: 'mcq_eng_not_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqEngNotApprovedCount ?? 0}</button>
+            </div>
+          </div>
+          <div className="flex min-w-0 items-center justify-between gap-1">
+            <span className="text-gray-500 text-[9px] font-semibold shrink-0">GUJ</span>
+            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white/90 px-0.5 py-0.5 shadow-sm tabular-nums">
+              <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ GUJ All Approved`, status: 'mcq_guj_all_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqGujAllApprovedCount ?? 0}</button>
+              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
+              <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ GUJ Partially Approved`, status: 'mcq_guj_partially_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqGujPartiallyApprovedCount ?? 0}</button>
+              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
+              <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · MCQ GUJ Not Approved`, status: 'mcq_guj_not_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqGujNotApprovedCount ?? 0}</button>
+            </div>
+          </div>
         </div>
         <RowB
           label="SOP Expiry Status"
@@ -3615,24 +3552,24 @@ export default function TrainingMatrixPage() {
           }
         />
         <RowD
-          label="Due in next 60 days"
-          value={d.dueSoon60Count ?? 0}
+          label="Due in next 30 days"
+          value={d.dueSoon30Count ?? 0}
           color="amber"
-          onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in Next 60 Days`, status: 'due_soon_60' })}
+          onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in Next 30 Days`, status: 'due_soon_30' })}
         />
-        <div className="flex items-center justify-between pl-2">
-          <span className="flex items-center gap-1">
-            <span className="text-[9px] text-gray-400">Rev</span>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in 60 Days · Reviewed`, status: 'due_soon_60_mcq_reviewed' })} className="text-[10px] font-bold text-emerald-600 hover:underline">{d.dueSoon60McqReviewed ?? 0}</button>
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="text-[9px] text-gray-400">Part</span>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in 60 Days · Partially Reviewed`, status: 'due_soon_60_mcq_partial' })} className="text-[10px] font-bold text-amber-500 hover:underline">{d.dueSoon60McqPartial ?? 0}</button>
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="text-[9px] text-gray-400">Not</span>
-            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in 60 Days · Not Reviewed`, status: 'due_soon_60_mcq_not_reviewed' })} className="text-[10px] font-bold text-red-600 hover:underline">{d.dueSoon60McqNotReviewed ?? 0}</button>
-          </span>
+        <div className="flex w-full min-h-[22px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
+          <div className="flex items-center gap-0.5">
+            <span className="text-gray-500 text-[9px] font-medium">Rev</span>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in 30 Days · Reviewed`, status: 'due_soon_30_mcq_reviewed' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400 tabular-nums">{d.dueSoon30McqReviewed ?? 0}</button>
+          </div>
+          <div className="flex items-center gap-0.5">
+            <span className="text-gray-500 text-[9px] font-medium">Part</span>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in 30 Days · Partially Reviewed`, status: 'due_soon_30_mcq_partial' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-amber-600 shadow-sm transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400 tabular-nums">{d.dueSoon30McqPartial ?? 0}</button>
+          </div>
+          <div className="flex items-center gap-0.5">
+            <span className="text-gray-500 text-[9px] font-medium">Not</span>
+            <button type="button" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in 30 Days · Not Reviewed`, status: 'due_soon_30_mcq_not_reviewed' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-red-600 shadow-sm transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400 tabular-nums">{d.dueSoon30McqNotReviewed ?? 0}</button>
+          </div>
         </div>
         {/* (no extra Assigned/Missing rows; shown inline above) */}
         <Divider />
@@ -3664,9 +3601,6 @@ export default function TrainingMatrixPage() {
             setActiveMonth(m);
             setSearch('');
             clearCapsuleFilter();
-            setTimeout(() => {
-              tableSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }, 80);
           }}
         />
       </CardShell>
@@ -3704,8 +3638,8 @@ export default function TrainingMatrixPage() {
               ? 'bg-violet-600 text-white'
               : 'bg-slate-600 text-white';
     return (
-      <span className={`inline-flex items-center justify-between gap-2 rounded-full px-3 py-1 text-[10px] font-black shadow-sm w-[92px] flex-shrink-0 whitespace-nowrap ${cls}`}>
-        <span className="opacity-90 whitespace-nowrap">{label}</span>
+      <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[10px] font-black shadow-sm ${cls}`}>
+        <span className="opacity-90">{label}</span>
         <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-black">{value}</span>
       </span>
     );
@@ -3750,7 +3684,7 @@ export default function TrainingMatrixPage() {
       >
         <div className="flex flex-col lg:flex-row lg:items-center gap-3 px-4 py-3">
           <div className="min-w-0 flex-1">{left}</div>
-          <div className="flex flex-nowrap items-center justify-start lg:justify-end gap-2 flex-shrink-0">{chips}</div>
+          <div className="flex flex-wrap items-center justify-start lg:justify-end gap-2">{chips}</div>
         </div>
         {bottom ? <div className="px-4 pb-3">{bottom}</div> : null}
       </div>
@@ -3852,31 +3786,37 @@ export default function TrainingMatrixPage() {
             )}
             <div className="flex-shrink-0 mt-0.5">
               <div className="inline-flex flex-col">
-                <span className="inline-flex items-center gap-2 rounded-xl px-3 py-2 bg-white/70 border border-white/70 shadow-sm w-[280px]">
-                  <span className="font-mono text-[12px] font-black text-gray-900 flex-shrink-0 w-[58px]">{sop.sopCode}</span>
-                  <span className="text-gray-300 text-[10px] flex-shrink-0">|</span>
-                  <div className="flex flex-col min-w-0 flex-1">
-                    <span className="font-sans text-[10px] font-semibold text-gray-600 truncate" title={sop.title || ''}>{sop.title || ''}</span>
-                    {sop.isDualLanguage && sop.gujaratiName && (
-                      <span className="font-sans text-[10px] font-medium text-indigo-700 truncate" title={sop.gujaratiName}>{sop.gujaratiName}</span>
-                    )}
-                  </div>
+                <span className="inline-flex items-start gap-2 rounded-xl px-3 py-2 bg-white/70 border border-white/70 shadow-sm max-w-[420px]">
+                  <span className="font-mono text-[12px] font-black text-gray-900 flex-shrink-0 leading-tight mt-0.5">{sop.sopCode}</span>
+                  {sop.title && (
+                    <>
+                      <span className="text-gray-300 text-[10px] flex-shrink-0 mt-0.5">|</span>
+                      <div className="flex flex-col min-w-0 flex-1">
+                        <span className="font-sans text-[12px] font-bold leading-tight text-gray-900 whitespace-normal break-words" title={sop.title}>{sop.title}</span>
+                        {sop.isDualLanguage && sop.gujaratiName && (
+                          <span className="font-sans text-[10px] font-bold leading-tight text-indigo-700 whitespace-normal break-words mt-0.5" title={sop.gujaratiName}>{sop.gujaratiName}</span>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </span>
               </div>
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-nowrap mb-0.5">
-                <span className="text-[11px] font-black text-gray-900 w-[80px] flex-shrink-0">{dept}</span>
-                <span
-                  className={`text-[10px] font-black rounded-full px-2 py-0.5 border w-[80px] text-center flex-shrink-0 ${sop.month ? (isActiveMonth ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white/60 text-gray-600 border-white/60') : 'bg-transparent text-transparent border-transparent'
-                    }`}
-                  title={sop.month ? (isActiveMonth ? 'Exam scheduled in selected month' : 'Scheduled month') : ''}
-                >
-                  {sop.month || '—'}
-                </span>
+              <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                <span className="text-[11px] font-black text-gray-900">{dept}</span>
+                {!!sop.month && (
+                  <span
+                    className={`text-[10px] font-black rounded-full px-2 py-0.5 border ${isActiveMonth ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white/60 text-gray-600 border-white/60'
+                      }`}
+                    title={isActiveMonth ? 'Exam scheduled in selected month' : 'Scheduled month'}
+                  >
+                    {sop.month}
+                  </span>
+                )}
                 {sop.targetDate ? (
                   <span
-                    className={`inline-flex items-center justify-center gap-1 text-[10px] font-bold rounded-full px-2.5 py-0.5 border w-[150px] flex-shrink-0 ${sop.expired
+                    className={`inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2.5 py-0.5 border ${sop.expired
                       ? 'bg-red-100 text-red-700 border-red-300'
                       : 'bg-emerald-100 text-emerald-700 border-emerald-300'
                       }`}
@@ -3888,13 +3828,14 @@ export default function TrainingMatrixPage() {
                   </span>
                 ) : (
                   <span
-                    className="inline-flex items-center justify-center gap-1 text-[10px] font-bold rounded-full px-2.5 py-0.5 border bg-gray-100 text-gray-500 border-gray-300 w-[150px] flex-shrink-0"
+                    className="inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2.5 py-0.5 border bg-gray-100 text-gray-500 border-gray-300"
                     title="No expiry/review date set for this SOP"
                   >
                     <span className="text-[9px]">—</span>
                     No date
                   </span>
                 )}
+                <ProgressPill pct={sop.completionPct} />
                 {(() => {
                   if (!data) return null;
                   const inExcelDepts = DEPARTMENTS.filter((d) =>
@@ -3911,7 +3852,7 @@ export default function TrainingMatrixPage() {
                           rows: inExcelDepts.map(d => ({ sopCode: sop.sopCode, department: d, title: sop.title || '' }))
                         });
                       }}
-                      className="inline-flex items-center justify-center gap-1 text-[10px] font-bold rounded-full px-2 py-0.5 border bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100 transition shadow-sm ml-1 w-[90px] flex-shrink-0"
+                      className="inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2 py-0.5 border bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100 transition shadow-sm ml-1"
                       title={`Click to see which departments have this SOP in their Excel`}
                     >
                       in excel: <span className="font-black bg-indigo-200 text-indigo-800 rounded-full px-1.5">{inExcelDepts.length}</span>
@@ -3919,16 +3860,16 @@ export default function TrainingMatrixPage() {
                   );
                 })()}
               </div>
-              <div className="mt-0.5 flex items-center gap-3 flex-nowrap">
-                <span className="text-[10px] text-gray-500 w-[88px] flex-shrink-0">
+              <div className="mt-0.5 flex items-center gap-3 flex-wrap">
+                <span className="text-[10px] text-gray-500">
                   Applicable: <span className="font-black text-gray-800">{sop.totalApplicable}</span>
                 </span>
                 {sop.trainer ? (
-                  <span className="text-[10px] font-semibold text-emerald-700 truncate">
+                  <span className="text-[10px] font-semibold text-emerald-700">
                     {sop.trainer}
                   </span>
                 ) : (
-                  <span className="text-[10px] font-semibold text-red-500 truncate">
+                  <span className="text-[10px] font-semibold text-red-500">
                     No Trainer
                   </span>
                 )}
@@ -3993,9 +3934,9 @@ export default function TrainingMatrixPage() {
           </>
         }
         bottom={
-          (sop.completedEmployees && sop.completedEmployees.length > 0) ? (
+          sop.pendingEmployees.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
-              {[...sop.completedEmployees].sort((a, b) => a.localeCompare(b)).slice(0, 12).map((n) => {
+              {sop.pendingEmployees.slice(0, 12).map((n) => {
                 const deptEmployees = data?.perDept?.[dept as Dept]?.employees || [];
                 const byName = new Map<string, { designation?: string }>();
                 for (const e of deptEmployees) byName.set(e.name, { designation: e.designation });
@@ -4029,9 +3970,9 @@ export default function TrainingMatrixPage() {
                   </button>
                 );
               })}
-              {sop.completedEmployees && sop.completedEmployees.length > 12 ? (
+              {sop.pendingEmployees.length > 12 ? (
                 <span className="text-[10px] font-semibold text-gray-500 px-1">
-                  +{sop.completedEmployees.length - 12} more
+                  +{sop.pendingEmployees.length - 12} more
                 </span>
               ) : null}
             </div>
@@ -4357,7 +4298,7 @@ export default function TrainingMatrixPage() {
                         }`}
                     >
                       <span className={`h-2 w-2 rounded-full ${empModalFilter === 'pending' ? 'bg-white' : 'bg-gray-400'}`} />
-                      Not Assigned: {totalPending}
+                      Pending: {totalPending}
                     </button>
                     <button
                       type="button"
@@ -4368,14 +4309,14 @@ export default function TrainingMatrixPage() {
                         }`}
                     >
                       <span className={`h-2 w-2 rounded-full ${empModalFilter === 'completed' ? 'bg-white' : 'bg-gray-400'}`} />
-                      Assigned: {totalCompleted}
+                      Completed: {totalCompleted}
                     </button>
                     <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${empModalFilter === 'all' && !q ? 'bg-gray-100 border-gray-200 text-gray-600' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
                       Total: {allSops.length}
                     </span>
                     {allSops.length > 0 && (
                       <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-50 border border-purple-200 px-3 py-1 text-xs font-bold text-purple-700">
-                        {Math.round((totalCompleted / allSops.length) * 100)}% Assigned
+                        {Math.round((totalCompleted / allSops.length) * 100)}% Complete
                       </span>
                     )}
                     {/* Search */}
@@ -4455,14 +4396,14 @@ export default function TrainingMatrixPage() {
                                 {showPendingHeader && (
                                   <tr>
                                     <td colSpan={6} className="px-3 py-1.5 bg-red-50 border-b border-red-100">
-                                      <span className="text-[10px] font-black uppercase tracking-wider text-red-500">Not Assigned ({pendingCount})</span>
+                                      <span className="text-[10px] font-black uppercase tracking-wider text-red-500">Pending ({pendingCount})</span>
                                     </td>
                                   </tr>
                                 )}
                                 {showCompletedHeader && (
                                   <tr>
                                     <td colSpan={6} className="px-3 py-1.5 bg-emerald-50 border-b border-emerald-100">
-                                      <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600">Assigned ({displayRows.filter((x) => x.symbol === '√').length})</span>
+                                      <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600">Completed ({displayRows.filter((x) => x.symbol === '√').length})</span>
                                     </td>
                                   </tr>
                                 )}
@@ -4471,12 +4412,12 @@ export default function TrainingMatrixPage() {
                                     {isPending ? (
                                       <span className="inline-flex items-center gap-1 rounded-full bg-red-100 border border-red-200 px-2 py-0.5 text-[10px] font-black text-red-700">
                                         <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-                                        Not Assigned
+                                        Pending
                                       </span>
                                     ) : (
                                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 border border-emerald-200 px-2 py-0.5 text-[10px] font-black text-emerald-700">
                                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                                        Assigned
+                                        Completed
                                       </span>
                                     )}
                                   </td>
@@ -4752,148 +4693,44 @@ export default function TrainingMatrixPage() {
       }
 
       // default groupBy department — flat list, no dept headers
-      const flatRows = sopWiseGroups.flatMap((g) => {
-        const accent = DEPT_ACCENT[(g.department as Dept) || 'Total'] || '#a855f7';
-        return g.sops.map((s: any) => ({ dept: g.department, accent, s }));
-      });
-
-      const inExcelCountFor = (code: string) => {
-        if (!data) return 0;
-        return DEPARTMENTS.filter((d) =>
-          (data.sopCodesByDept?.[d] || []).some((c: string) => c.toUpperCase() === code.toUpperCase())
-        ).length;
-      };
-
-      const dir = sopRowSort.dir === 'asc' ? 1 : -1;
-      const sortedRows = [...flatRows].sort((a, b) => {
-        const sa = a.s; const sb = b.s;
-        const cmpStr = (x: string, y: string) => x.localeCompare(y);
-        switch (sopRowSort.field) {
-          case 'sopCode': return dir * cmpStr(sa.sopCode || '', sb.sopCode || '');
-          case 'title': return dir * cmpStr((sa.title || '').toLowerCase(), (sb.title || '').toLowerCase());
-          case 'dept': return dir * cmpStr(a.dept || '', b.dept || '');
-          case 'month': return dir * cmpStr(sa.month || '', sb.month || '');
-          case 'expiry': {
-            const da = sa.targetDate ? new Date(sa.targetDate).getTime() : Number.POSITIVE_INFINITY;
-            const db = sb.targetDate ? new Date(sb.targetDate).getTime() : Number.POSITIVE_INFINITY;
-            return dir * (da - db);
-          }
-          case 'completionPct': return dir * ((sa.completionPct || 0) - (sb.completionPct || 0));
-          case 'inExcel': return dir * (inExcelCountFor(sa.sopCode) - inExcelCountFor(sb.sopCode));
-          case 'applicable': return dir * ((sa.totalApplicable || 0) - (sb.totalApplicable || 0));
-          case 'trainer': return dir * cmpStr((sa.trainer || '').toLowerCase(), (sb.trainer || '').toLowerCase());
-          case 'mcq': {
-            const av = sa.isDualLanguage ? (sa.mcqEngTotal ?? 0) : (sa.mcqTotal ?? 0);
-            const bv = sb.isDualLanguage ? (sb.mcqEngTotal ?? 0) : (sb.mcqTotal ?? 0);
-            return dir * (av - bv);
-          }
-          case 'due': return dir * ((sa.completed || 0) - (sb.completed || 0));
-          case 'xna': return dir * ((sa.pending || 0) - (sb.pending || 0));
-          default: return 0;
-        }
-      });
-
-      const toggleSort = (field: SopRowSortField) => {
-        setSopRowSort((cur) => cur.field === field ? { field, dir: cur.dir === 'asc' ? 'desc' : 'asc' } : { field, dir: 'asc' });
-      };
-      const SortBtn = ({ field, label, widthClass, align = 'center' }: { field: SopRowSortField; label: string; widthClass: string; align?: 'left' | 'center' | 'right' }) => {
-        const active = sopRowSort.field === field;
-        const arrow = active ? (sopRowSort.dir === 'asc' ? '▲' : '▼') : '⇅';
-        const justify = align === 'left' ? 'justify-start' : align === 'right' ? 'justify-end' : 'justify-center';
-        return (
-          <button
-            type="button"
-            onClick={() => toggleSort(field)}
-            className={`inline-flex items-center gap-1 ${justify} ${widthClass} flex-shrink-0 text-[10px] font-bold rounded-md px-2 py-1 border transition ${active ? 'bg-purple-100 text-purple-700 border-purple-300' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:text-gray-800'}`}
-            title={`Sort by ${label}`}
-          >
-            <span className="truncate">{label}</span>
-            <span className="opacity-60 text-[9px]">{arrow}</span>
-          </button>
-        );
-      };
-
       let globalSr = 0;
       return (
         <div className="space-y-3">
-          <div className="rounded-2xl border border-gray-200 bg-white/70 shadow-sm px-4 py-2">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] font-black uppercase tracking-wider text-gray-500">Sort by</span>
-              <button
-                type="button"
-                onClick={() => setSopRowSort({ field: 'sopCode', dir: 'asc' })}
-                disabled={sopRowSort.field === 'sopCode' && sopRowSort.dir === 'asc'}
-                className="ml-auto inline-flex items-center gap-1 text-[10px] font-bold rounded-md px-2 py-1 border bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:text-gray-800 transition disabled:opacity-40 disabled:cursor-not-allowed"
-                title="Reset sort to default (SOP code ascending)"
-              >
-                <RefreshCw className="h-3 w-3" />
-                Reset
-              </button>
-            </div>
-            <div className="flex flex-col lg:flex-row lg:items-center gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-start gap-3 min-w-0">
-                  <span className="flex-shrink-0 w-5" />
-                  <div className="flex-shrink-0">
-                    <div className="flex items-center gap-2 w-[280px]">
-                      <SortBtn field="sopCode" label="SOP" widthClass="w-[58px]" />
-                      <span className="text-gray-300 text-[10px] flex-shrink-0">|</span>
-                      <SortBtn field="title" label="SOP Name" widthClass="flex-1" align="left" />
-                    </div>
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-nowrap">
-                      <SortBtn field="dept" label="Dept" widthClass="w-[80px]" />
-                      <SortBtn field="month" label="Month" widthClass="w-[80px]" />
-                      <SortBtn field="expiry" label="Expiry" widthClass="w-[150px]" />
-                      <SortBtn field="inExcel" label="In Excel" widthClass="w-[90px]" />
-                    </div>
-                    <div className="mt-1 flex items-center gap-3 flex-nowrap">
-                      <SortBtn field="applicable" label="Applicable" widthClass="w-[88px]" align="left" />
-                      <SortBtn field="trainer" label="Trainer" widthClass="w-[120px]" align="left" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-nowrap items-center justify-start lg:justify-end gap-2 flex-shrink-0">
-                <SortBtn field="mcq" label="MCQs" widthClass="min-w-[130px]" />
-                <SortBtn field="due" label="√ Due" widthClass="w-[92px]" />
-                <SortBtn field="xna" label="X/NA" widthClass="w-[92px]" />
-              </div>
-            </div>
-          </div>
-          {sortedRows.map(({ dept, accent, s }) => {
-            globalSr += 1;
-            return (
-              <SopCard
-                key={`${dept}|${s.sopCode}`}
-                dept={dept}
-                accent={accent}
-                sr={globalSr}
-                sop={{
-                  sopCode: s.sopCode,
-                  title: (s as any).title || '',
-                  isDualLanguage: (s as any).isDualLanguage,
-                  gujaratiName: (s as any).gujaratiName,
-                  month: s.month,
-                  trainer: (s as any).trainer || '',
-                  completed: s.completed,
-                  pending: s.pending,
-                  totalApplicable: s.totalApplicable,
-                  completionPct: s.completionPct,
-                  pendingEmployees: s.pendingEmployees,
-                  completedEmployees: (s as any).completedEmployees || [],
-                  targetDate: s.targetDate,
-                  expired: s.expired,
-                  mcqTotal: s.mcqTotal,
-                  mcqApproved: s.mcqApproved,
-                  mcqEngTotal: s.mcqEngTotal,
-                  mcqEngApproved: s.mcqEngApproved,
-                  mcqGujTotal: s.mcqGujTotal,
-                  mcqGujApproved: s.mcqGujApproved,
-                }}
-              />
-            );
+          {sopWiseGroups.flatMap((g) => {
+            const accent = DEPT_ACCENT[(g.department as Dept) || 'Total'] || '#a855f7';
+            return g.sops.map((s) => {
+              globalSr += 1;
+              return (
+                <SopCard
+                  key={`${g.department}|${s.sopCode}`}
+                  dept={g.department}
+                  accent={accent}
+                  sr={globalSr}
+                  sop={{
+                    sopCode: s.sopCode,
+                    title: (s as any).title || '',
+                    isDualLanguage: (s as any).isDualLanguage,
+                    gujaratiName: (s as any).gujaratiName,
+                    month: s.month,
+                    trainer: (s as any).trainer || '',
+                    completed: s.completed,
+                    pending: s.pending,
+                    totalApplicable: s.totalApplicable,
+                    completionPct: s.completionPct,
+                    pendingEmployees: s.pendingEmployees,
+                    completedEmployees: (s as any).completedEmployees || [],
+                    targetDate: s.targetDate,
+                    expired: s.expired,
+                    mcqTotal: s.mcqTotal,
+                    mcqApproved: s.mcqApproved,
+                    mcqEngTotal: s.mcqEngTotal,
+                    mcqEngApproved: s.mcqEngApproved,
+                    mcqGujTotal: s.mcqGujTotal,
+                    mcqGujApproved: s.mcqGujApproved,
+                  }}
+                />
+              );
+            });
           })}
         </div>
       );
@@ -5252,7 +5089,7 @@ export default function TrainingMatrixPage() {
               ))}
             </div>
           ) : data ? (
-            <div className="flex gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+            <div className="flex gap-2 overflow-x-auto pb-2">
               {renderTotalCard(data.totalCard)}
               {DEPARTMENTS.map((dept) => <Fragment key={dept}>{renderDeptCard(dept, data.perDept[dept])}</Fragment>)}
             </div>
@@ -5328,7 +5165,7 @@ export default function TrainingMatrixPage() {
                 {capsuleSopFilter ? (
                   <div className="flex items-center gap-2">
                     <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-black text-purple-700 border border-purple-200">
-                      {sopWiseGroups.reduce((n, g) => n + g.sops.length, 0)} SOPs
+                      {capsuleSopFilter.sopCodes.size} SOPs
                     </span>
                     <span className="text-[11px] font-semibold text-gray-700 truncate max-w-xs" title={capsuleSopFilter.title}>
                       {capsuleSopFilter.title}
@@ -5603,7 +5440,7 @@ function TrainingTable({
                       return (
                         <td
                           key={s.code}
-                          className={`border-gray-100 px-2 py-1.5 text-center font-bold ${ok ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'
+                          className={`border-white px-2 py-1.5 text-center font-bold ${ok ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'
                             }`}
                         >
                           {ok ? '✓' : '✗'}
@@ -5632,4 +5469,4 @@ function TrainingTable({
       </table>
     </div>
   );
-}
+}  
