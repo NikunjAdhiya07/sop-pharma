@@ -3048,9 +3048,23 @@ export default function TrainingMatrixPage() {
               <div className="flex w-full min-h-[24px] items-center justify-between gap-1 px-1 py-0.5 text-[10px]">
                 <SectionLabel>Repetitive SOPs</SectionLabel>
                 <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
-                  <span className="min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700">{bucketSopSum}</span>
+                  <button
+                    type="button"
+                    title="All Repetitive SOPs"
+                    onClick={() => applyRepeatFilter('All', '3+', [...totalRepeat3PlusList, ...totalRepeat2List, ...totalRepeatOnceList])}
+                    className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
+                  >
+                    {bucketSopSum}
+                  </button>
                   <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
-                  <span className="min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600">{totalExcelDeptMissingSum}</span>
+                  <button
+                    type="button"
+                    title="Missing SOPs (DB but not in Excel)"
+                    onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'missing', title: 'Total · Missing (DB but not in Excel)' })}
+                    className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400/70"
+                  >
+                    {totalExcelDeptMissingSum}
+                  </button>
                 </div>
               </div>
               <RepetitiveSopsRow
@@ -3424,9 +3438,23 @@ export default function TrainingMatrixPage() {
               <div className="flex w-full min-h-[24px] items-center justify-between gap-1 px-1 py-0.5 text-[10px]">
                 <SectionLabel>Repetitive SOPs</SectionLabel>
                 <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
-                  <span className="min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700">{bucketSopSum}</span>
+                  <button
+                    type="button"
+                    title="All Repetitive SOPs"
+                    onClick={() => applyRepeatFilter(dept, '3+', [...(d.repeat3PlusList ?? []), ...(d.repeat2List ?? []), ...(d.repeat1List ?? [])])}
+                    className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
+                  >
+                    {bucketSopSum}
+                  </button>
                   <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
-                  <span className="min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600">{dMissingSum}</span>
+                  <button
+                    type="button"
+                    title="Missing SOPs (DB but not in Excel)"
+                    onClick={() => applySummaryCapsuleFilter({ dept, type: 'missing', title: `${dept} · Missing (DB but not in Excel)` })}
+                    className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400/70"
+                  >
+                    {dMissingSum}
+                  </button>
                 </div>
               </div>
               <RepetitiveSopsRow
