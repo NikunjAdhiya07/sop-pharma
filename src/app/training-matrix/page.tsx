@@ -2498,6 +2498,9 @@ export default function TrainingMatrixPage() {
             dept: opts.dept,
             sopCodes: new Set(codes.map((c) => stripVersion(c))),
           });
+          setTimeout(() => {
+            tableSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 80);
           return;
         }
 
@@ -2747,6 +2750,7 @@ export default function TrainingMatrixPage() {
           };
         })
         .filter((r) => {
+          if (activeMonth !== 'All' && r.month !== activeMonth) return false;
           if (!term) return true;
           return r.sopCode.toLowerCase().includes(term) || r.pendingEmployees.length > 0 || r.completedEmployees.length > 0;
         })
@@ -2826,6 +2830,7 @@ export default function TrainingMatrixPage() {
           };
         })
         .filter((r) => {
+          if (activeMonth !== 'All' && r.month !== activeMonth) return false;
           if (!term) return true;
           return r.sopCode.toLowerCase().includes(term) || (r.month || '').toLowerCase().includes(term) || r.pendingEmployees.length > 0 || r.completedEmployees.length > 0;
         });
@@ -2936,6 +2941,7 @@ export default function TrainingMatrixPage() {
           };
         })
         .filter((r) => {
+          if (activeMonth !== 'All' && r.month !== activeMonth) return false;
           if (!term) return true;
           // keep if sop matches month/code search too
           return r.sopCode.toLowerCase().includes(term) || (r.month || '').toLowerCase().includes(term) || r.pendingEmployees.length > 0 || r.completedEmployees.length > 0;
@@ -2946,7 +2952,7 @@ export default function TrainingMatrixPage() {
     }
 
     return out.filter((g) => g.sops.length > 0);
-  }, [data, activeDept, search, capsuleSopFilter]);
+  }, [data, activeDept, activeMonth, search, capsuleSopFilter]);
 
   const renderTotalCard = (t: TotalCardData) => {
     const trainerBuckets = resolveTrainerBucketCounts(t);
@@ -3027,6 +3033,9 @@ export default function TrainingMatrixPage() {
             setActiveMonth('All');
             setSearch('');
             setActiveDept('All');
+            setTimeout(() => {
+              tableSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 80);
           }}
           className="flex w-full min-h-[24px] cursor-pointer items-center justify-between gap-1.5 rounded-[4px] border border-transparent px-1 py-0.5 text-left text-[10px] transition-colors hover:bg-purple-100/80 active:bg-purple-200/60 focus:z-10 focus:outline-none focus:ring-1 focus:ring-purple-400"
         >
@@ -3335,20 +3344,6 @@ export default function TrainingMatrixPage() {
           color="amber"
           onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in Next 30 Days', status: 'due_soon_30' })}
         />
-        <div className="flex w-full min-h-[22px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
-          <div className="flex items-center gap-0.5" title="MCQ fully reviewed — all questions approved">
-            <span className="text-gray-500 text-[9px] font-medium">Rev</span>
-            <button type="button" title="SOPs expiring in 30 days with MCQ fully reviewed" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in 30 Days · Reviewed', status: 'due_soon_30_mcq_reviewed' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400 tabular-nums">{t.dueSoon30McqReviewed ?? 0}</button>
-          </div>
-          <div className="flex items-center gap-0.5" title="MCQ partially reviewed — some questions approved">
-            <span className="text-gray-500 text-[9px] font-medium">Part</span>
-            <button type="button" title="SOPs expiring in 30 days with MCQ partially reviewed" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in 30 Days · Partially Reviewed', status: 'due_soon_30_mcq_partial' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-amber-600 shadow-sm transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400 tabular-nums">{t.dueSoon30McqPartial ?? 0}</button>
-          </div>
-          <div className="flex items-center gap-0.5" title="MCQ not reviewed — no questions approved yet">
-            <span className="text-gray-500 text-[9px] font-medium">Not</span>
-            <button type="button" title="SOPs expiring in 30 days with MCQ not reviewed" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in 30 Days · Not Reviewed', status: 'due_soon_30_mcq_not_reviewed' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-red-600 shadow-sm transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400 tabular-nums">{t.dueSoon30McqNotReviewed ?? 0}</button>
-          </div>
-        </div>
         <Divider />
         <SectionLabel>Trainers / SOP</SectionLabel>
         <div className="flex w-full min-h-[22px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
@@ -3376,6 +3371,9 @@ export default function TrainingMatrixPage() {
             setActiveMonth(m);
             setSearch('');
             clearCapsuleFilter();
+            setTimeout(() => {
+              tableSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 80);
           }}
         />
         <Divider />
@@ -3407,6 +3405,9 @@ export default function TrainingMatrixPage() {
             setActiveMonth('All');
             setSearch('');
             setActiveDept(dept);
+            setTimeout(() => {
+              tableSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 80);
           }}
           className="flex w-full min-h-[24px] cursor-pointer items-center justify-between gap-1.5 rounded-[4px] border border-transparent px-1 py-0.5 text-left text-[10px] transition-colors hover:bg-purple-100/80 active:bg-purple-200/60 focus:z-10 focus:outline-none focus:ring-1 focus:ring-purple-400"
         >
@@ -3724,21 +3725,6 @@ export default function TrainingMatrixPage() {
           color="amber"
           onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in Next 30 Days`, status: 'due_soon_30' })}
         />
-        <div className="flex w-full min-h-[22px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
-          <div className="flex items-center gap-0.5" title="MCQ fully reviewed — all questions approved">
-            <span className="text-gray-500 text-[9px] font-medium">Rev</span>
-            <button type="button" title="SOPs expiring in 30 days with MCQ fully reviewed" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in 30 Days · Reviewed`, status: 'due_soon_30_mcq_reviewed' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400 tabular-nums">{d.dueSoon30McqReviewed ?? 0}</button>
-          </div>
-          <div className="flex items-center gap-0.5" title="MCQ partially reviewed — some questions approved">
-            <span className="text-gray-500 text-[9px] font-medium">Part</span>
-            <button type="button" title="SOPs expiring in 30 days with MCQ partially reviewed" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in 30 Days · Partially Reviewed`, status: 'due_soon_30_mcq_partial' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-amber-600 shadow-sm transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400 tabular-nums">{d.dueSoon30McqPartial ?? 0}</button>
-          </div>
-          <div className="flex items-center gap-0.5" title="MCQ not reviewed — no questions approved yet">
-            <span className="text-gray-500 text-[9px] font-medium">Not</span>
-            <button type="button" title="SOPs expiring in 30 days with MCQ not reviewed" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in 30 Days · Not Reviewed`, status: 'due_soon_30_mcq_not_reviewed' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-red-600 shadow-sm transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400 tabular-nums">{d.dueSoon30McqNotReviewed ?? 0}</button>
-          </div>
-        </div>
-        {/* (no extra Assigned/Missing rows; shown inline above) */}
         <Divider />
         <SectionLabel>Trainers / SOP</SectionLabel>
         <div className="flex w-full min-h-[22px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
@@ -3766,6 +3752,9 @@ export default function TrainingMatrixPage() {
             setActiveMonth(m);
             setSearch('');
             clearCapsuleFilter();
+            setTimeout(() => {
+              tableSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 80);
           }}
         />
       </CardShell>
