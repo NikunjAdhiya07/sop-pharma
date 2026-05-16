@@ -195,6 +195,35 @@ type MatrixViewMode = 'sop' | 'employee' | 'month';
 type GroupByMode = 'department' | 'employee' | 'sop' | 'month';
 type EmployeeListFilter = 'all' | 'full' | 'incomplete';
 
+type TrainerBucketSource = Pick<
+  TotalCardData,
+  | 'sop0TrainerCount'
+  | 'sop1TrainerCount'
+  | 'sop2PlusTrainerCount'
+  | 'sop0TrainerList'
+  | 'sop1TrainerList'
+  | 'sop2PlusTrainerList'
+>;
+
+function resolveTrainerBucketCounts(src: TrainerBucketSource | null | undefined) {
+  return {
+    sop0: src?.sop0TrainerCount ?? src?.sop0TrainerList?.length ?? 0,
+    sop1: src?.sop1TrainerCount ?? src?.sop1TrainerList?.length ?? 0,
+    sop2Plus: src?.sop2PlusTrainerCount ?? src?.sop2PlusTrainerList?.length ?? 0,
+  };
+}
+
+function overviewHasTrainerBuckets(payload: OverviewData): boolean {
+  const t = payload.totalCard;
+  if (!t) return false;
+  if ((t.dbSopCount ?? 0) === 0) return true;
+  return (
+    typeof t.sop0TrainerCount === 'number' &&
+    typeof t.sop1TrainerCount === 'number' &&
+    typeof t.sop2PlusTrainerCount === 'number'
+  );
+}
+
 interface OverviewData {
   departments: Dept[];
   perDept: Record<Dept, DeptCardData>;
@@ -2163,7 +2192,7 @@ export default function TrainingMatrixPage() {
   const [empCapsules, setEmpCapsules] = useState<any[]>([]);
 
   const fetchData = useCallback(async (forceRefresh = false) => {
-    const CACHE_KEY = 'training_matrix_overview_cache';
+    const CACHE_KEY = 'training_matrix_overview_cache_v2';
     const FRESH_TTL_MS = 5 * 60 * 1000;
 
     // Tier 1: localStorage — show any cached data immediately (even if stale), then revalidate.
@@ -2174,7 +2203,7 @@ export default function TrainingMatrixPage() {
         const raw = localStorage.getItem(CACHE_KEY);
         if (raw) {
           const { payload, cachedAt } = JSON.parse(raw);
-          if (payload?.success) {
+          if (payload?.success && overviewHasTrainerBuckets(payload as OverviewData)) {
             setData(payload as OverviewData);
             setLoading(false);
             hasShownCached = true;
@@ -2920,6 +2949,7 @@ export default function TrainingMatrixPage() {
   }, [data, activeDept, search, capsuleSopFilter]);
 
   const renderTotalCard = (t: TotalCardData) => {
+    const trainerBuckets = resolveTrainerBucketCounts(t);
     const TotalIcon = DEPT_ICON.Total;
 
     // Prefer the authoritative global lang breakdown from the API (covers all DB SOPs regardless of dept).
@@ -3324,15 +3354,15 @@ export default function TrainingMatrixPage() {
         <div className="flex w-full min-h-[22px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
           <div className="flex items-center gap-0.5" title="SOPs with 2 or more trainers assigned">
             <span className="text-gray-500 text-[9px] font-medium">2+</span>
-            <button type="button" title="SOPs with 2 or more trainers" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'SOPs with 2+ Trainers', status: 'sop_2plus_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400 tabular-nums">{t.sop2PlusTrainerCount ?? 0}</button>
+            <button type="button" title="SOPs with 2 or more trainers" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'SOPs with 2+ Trainers', status: 'sop_2plus_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400 tabular-nums">{trainerBuckets.sop2Plus}</button>
           </div>
           <div className="flex items-center gap-0.5" title="SOPs with exactly 1 trainer assigned">
             <span className="text-gray-500 text-[9px] font-medium">1</span>
-            <button type="button" title="SOPs with 1 trainer" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'SOPs with 1 Trainer', status: 'sop_1_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-amber-600 shadow-sm transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400 tabular-nums">{t.sop1TrainerCount ?? 0}</button>
+            <button type="button" title="SOPs with 1 trainer" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'SOPs with 1 Trainer', status: 'sop_1_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-amber-600 shadow-sm transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400 tabular-nums">{trainerBuckets.sop1}</button>
           </div>
           <div className="flex items-center gap-0.5" title="SOPs with no trainer assigned">
             <span className="text-gray-500 text-[9px] font-medium">0</span>
-            <button type="button" title="SOPs with 0 trainers" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'SOPs with 0 Trainers', status: 'sop_0_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-red-600 shadow-sm transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400 tabular-nums">{t.sop0TrainerCount ?? 0}</button>
+            <button type="button" title="SOPs with 0 trainers" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'SOPs with 0 Trainers', status: 'sop_0_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-red-600 shadow-sm transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400 tabular-nums">{trainerBuckets.sop0}</button>
           </div>
         </div>
         <Divider />
@@ -3355,6 +3385,7 @@ export default function TrainingMatrixPage() {
   };
 
   const renderDeptCard = (dept: Dept, d: DeptCardData) => {
+    const deptTrainerBuckets = resolveTrainerBucketCounts(d);
     const Icon = DEPT_ICON[dept];
     const dbDeptCount =
       (data?.totalCard?.dbSopCountsByDept as any)?.[dept] ??
@@ -3713,15 +3744,15 @@ export default function TrainingMatrixPage() {
         <div className="flex w-full min-h-[22px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
           <div className="flex items-center gap-0.5" title="SOPs with 2 or more trainers assigned">
             <span className="text-gray-500 text-[9px] font-medium">2+</span>
-            <button type="button" title="SOPs with 2 or more trainers" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · SOPs with 2+ Trainers`, status: 'sop_2plus_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400 tabular-nums">{d.sop2PlusTrainerCount ?? 0}</button>
+            <button type="button" title="SOPs with 2 or more trainers" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · SOPs with 2+ Trainers`, status: 'sop_2plus_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400 tabular-nums">{deptTrainerBuckets.sop2Plus}</button>
           </div>
           <div className="flex items-center gap-0.5" title="SOPs with exactly 1 trainer assigned">
             <span className="text-gray-500 text-[9px] font-medium">1</span>
-            <button type="button" title="SOPs with 1 trainer" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · SOPs with 1 Trainer`, status: 'sop_1_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-amber-600 shadow-sm transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400 tabular-nums">{d.sop1TrainerCount ?? 0}</button>
+            <button type="button" title="SOPs with 1 trainer" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · SOPs with 1 Trainer`, status: 'sop_1_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-amber-600 shadow-sm transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400 tabular-nums">{deptTrainerBuckets.sop1}</button>
           </div>
           <div className="flex items-center gap-0.5" title="SOPs with no trainer assigned">
             <span className="text-gray-500 text-[9px] font-medium">0</span>
-            <button type="button" title="SOPs with 0 trainers" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · SOPs with 0 Trainers`, status: 'sop_0_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-red-600 shadow-sm transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400 tabular-nums">{d.sop0TrainerCount ?? 0}</button>
+            <button type="button" title="SOPs with 0 trainers" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · SOPs with 0 Trainers`, status: 'sop_0_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-red-600 shadow-sm transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400 tabular-nums">{deptTrainerBuckets.sop0}</button>
           </div>
         </div>
         <Divider />

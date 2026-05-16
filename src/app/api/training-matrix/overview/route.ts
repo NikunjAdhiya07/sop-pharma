@@ -18,7 +18,7 @@ const DEPT_CANONICAL = ['QA','QC','Microbiology','Production','Store','Engineeri
 
 type LangKey = 'ENG' | 'GUJ';
 
-const CACHE_KEY = 'training-matrix-overview:v37';
+const CACHE_KEY = 'training-matrix-overview:v38';
 // In-memory fallback TTL (used when Redis is not configured)
 const MEMORY_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -450,6 +450,25 @@ export async function GET(req: NextRequest) {
       if (tr) dbBaseTrainerName.set(base, tr);
     }
 
+    const trainerBucketsForDept = (deptDbCodes: string[], deptName: string) => {
+      const sop0TrainerList = deptDbCodes.filter((c) => (dbBaseTrainerCount.get(c) ?? 0) === 0);
+      const sop1TrainerList = deptDbCodes.filter((c) => (dbBaseTrainerCount.get(c) ?? 0) === 1);
+      const sop2PlusTrainerList = deptDbCodes.filter((c) => (dbBaseTrainerCount.get(c) ?? 0) >= 2);
+      return {
+        sop0TrainerCount: sop0TrainerList.length,
+        sop1TrainerCount: sop1TrainerList.length,
+        sop2PlusTrainerCount: sop2PlusTrainerList.length,
+        sop0TrainerList,
+        sop1TrainerList,
+        sop2PlusTrainerList,
+        sopTrainersAssigned: deptDbCodes.filter((c) => dbBaseHasTrainer.get(c)).length,
+        sopTrainersMissing: deptDbCodes.filter((c) => !dbBaseHasTrainer.get(c)).length,
+        sopTrainersMissingList: deptDbCodes
+          .filter((c) => !dbBaseHasTrainer.get(c))
+          .map((c) => ({ sopCode: c, title: dbBaseMeta.get(c)?.title || '', department: deptName })),
+      };
+    };
+
     // 2b. Obsolete SOPs: these may not appear in primary registry rows but are still "in DB".
     // We treat them separately so UI can show "Found (obsolete)" explicitly.
     // (obsoleteDocs fetched in Tier 1 above)
@@ -527,6 +546,7 @@ export async function GET(req: NextRequest) {
     for (const dept of DEPT_CANONICAL) {
       const up = latestByDept.get(dept);
       if (!up || !up.snapshot) {
+        const deptDbCodesNoUpload = (dbSopsByDept[dept] || []).map((x) => x.sopCode);
         perDept[dept] = {
           uploaded: false,
           sopCount: 0,
@@ -546,6 +566,7 @@ export async function GET(req: NextRequest) {
           trainersMissingList: [],
           additionalTraining: { total: 0, byDept: {} },
           langBreakdown: [],
+          ...trainerBucketsForDept(deptDbCodesNoUpload, dept),
         };
         continue;
       }
@@ -676,15 +697,17 @@ export async function GET(req: NextRequest) {
       const trainersMissing = trainersMissingListRows.length;
 
       // SOP-wise trainer counts: based on all DB SOPs for this dept (not just Excel-found)
-      const sopTrainersAssigned = deptDbCodes.filter((c) => dbBaseHasTrainer.get(c)).length;
-      const sopTrainersMissing = deptDbCodes.filter((c) => !dbBaseHasTrainer.get(c)).length;
-      const sopTrainersMissingList = deptDbCodes
-        .filter((c) => !dbBaseHasTrainer.get(c))
-        .map((c) => ({ sopCode: c, title: dbBaseMeta.get(c)?.title || '', department: dept }));
-      // Trainer-count buckets: 0 / 1 / 2+
-      const sop0TrainerList = deptDbCodes.filter((c) => (dbBaseTrainerCount.get(c) ?? 0) === 0);
-      const sop1TrainerList = deptDbCodes.filter((c) => (dbBaseTrainerCount.get(c) ?? 0) === 1);
-      const sop2PlusTrainerList = deptDbCodes.filter((c) => (dbBaseTrainerCount.get(c) ?? 0) >= 2);
+      const {
+        sopTrainersAssigned,
+        sopTrainersMissing,
+        sopTrainersMissingList,
+        sop0TrainerCount,
+        sop1TrainerCount,
+        sop2PlusTrainerCount,
+        sop0TrainerList,
+        sop1TrainerList,
+        sop2PlusTrainerList,
+      } = trainerBucketsForDept(deptDbCodes, dept);
       
       let expiredCount = 0;
       let okayCount = 0;
@@ -855,9 +878,9 @@ export async function GET(req: NextRequest) {
         sopTrainersAssigned,
         sopTrainersMissing,
         sopTrainersMissingList,
-        sop0TrainerCount: sop0TrainerList.length,
-        sop1TrainerCount: sop1TrainerList.length,
-        sop2PlusTrainerCount: sop2PlusTrainerList.length,
+        sop0TrainerCount,
+        sop1TrainerCount,
+        sop2PlusTrainerCount,
         sop0TrainerList,
         sop1TrainerList,
         sop2PlusTrainerList,
