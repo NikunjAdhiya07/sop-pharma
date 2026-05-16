@@ -754,7 +754,7 @@ export default function SOPTable({
     return (
       <span
         className={`inline-block max-w-[200px] rounded border px-1 py-0.5 text-[8px] font-semibold leading-snug ${colorClass}`}
-        title={typeof dateStr === "string" ? dateStr : review.toISOString()}>
+        title={`Expiry: ${review.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`}>
         {label}
       </span>
     );

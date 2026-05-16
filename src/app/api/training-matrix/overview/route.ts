@@ -232,6 +232,9 @@ export async function GET(req: NextRequest) {
     const registryRows = Array.isArray(dashboard?.data) ? dashboard.data : [];
     const familyUniqueRows = filterPrimaryRegistryRowsUniqueByFamily(registryRows);
 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     // Build base metadata from registry rows (titles, dept, language)
     const dbBaseSet = new Set<string>();
     const dbBaseMeta = new Map<string, { title: string; department: string; departmentCode: string; expired?: boolean; targetDate?: string | null; latestIdentifier?: string; isDualLanguage?: boolean; gujaratiName?: string }>();
@@ -243,12 +246,17 @@ export async function GET(req: NextRequest) {
       dbBaseSet.add(base);
 
       if (!dbBaseMeta.has(base)) {
+        // Use the dashboard row's already-resolved expiryDate (includes MasterSOPRepository priority)
+        const rowExpiryDate = row?.expiryDate ? String(row.expiryDate) : null;
+        const rowExpired = rowExpiryDate
+          ? Math.floor((new Date(rowExpiryDate).getTime() - today.getTime()) / (1000 * 3600 * 24)) < 0
+          : false;
         dbBaseMeta.set(base, {
           title: String(row?.englishName || row?.sopName || row?.name || ''),
           department: String(row?.department || ''),
           departmentCode: String(row?.departmentCode || ''),
-          expired: false,
-          targetDate: null,
+          expired: rowExpired,
+          targetDate: rowExpiryDate,
           latestIdentifier: sopNo,
           isDualLanguage: !!row?.isDualLanguage || (!!row?.englishVersion && !!row?.gujaratiVersion),
           gujaratiName: String(row?.gujaratiName || '')
@@ -279,12 +287,7 @@ export async function GET(req: NextRequest) {
       if (langs.size === 0) langs.add('ENG');
     }
 
-    // Fetch actual expiry/review dates directly from the SOP model
-    // NOTE: The actual DB field with dates is `reviewDate` (446 docs), NOT `expiryDate` (0) or `nextReviewDate` (0).
-    // We also check SOPLibrary.expiryDate as a fallback (144 docs).
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
+    // Fallback: fill in any SOPs still missing a date from the dashboard (SOP.reviewDate → SOPLibrary.expiryDate)
     const latestIdentifiers = Array.from(dbBaseMeta.values())
       .map(m => m.latestIdentifier)
       .filter(Boolean);
@@ -301,10 +304,7 @@ export async function GET(req: NextRequest) {
       ).lean(),
     ]);
 
-    // Primary source: SOP collection `reviewDate` field (fetched in Tier 1 above).
-    // Sort newest-first so that when multiple records share the same identifier (duplicate
-    // uploads), the most recently uploaded SOP's review date wins.
-    // The processing loop skips any doc whose base is not in dbBaseMeta, so no pre-filter needed.
+    // Secondary fallback: SOP collection `reviewDate` for any SOPs that had no expiryDate in the dashboard response.
     const sopDateDocs = sopDateDocsRaw as any[];
 
     for (const doc of sopDateDocs as any[]) {
@@ -428,12 +428,23 @@ export async function GET(req: NextRequest) {
       return '';
     };
 
-    // Pre-compute trainer name + has-trainer for every base SOP in the DB set
+    // Pre-compute trainer name + has-trainer + trainer count for every base SOP in the DB set
     const dbBaseHasTrainer = new Map<string, boolean>();
     const dbBaseTrainerName = new Map<string, string>();
+    const dbBaseTrainerCount = new Map<string, number>(); // 0 | 1 | 2+
     for (const base of dbBaseSet) {
       const meta = dbBaseMeta.get(base);
       const ownerDept = resolveDeptForBaseSop(base, meta);
+      // Count distinct trainers for this SOP (same resolution priority as resolveTrainer)
+      let count = 0;
+      if (sopTrainerMap.has(base) && sopTrainerMap.get(base)!.size > 0) {
+        count = sopTrainerMap.get(base)!.size;
+      } else if (deptTrainerMap.has(ownerDept) && deptTrainerMap.get(ownerDept)!.size > 0) {
+        count = deptTrainerMap.get(ownerDept)!.size;
+      } else if (fallbackTrainerMap[ownerDept]) {
+        count = fallbackTrainerMap[ownerDept].length;
+      }
+      dbBaseTrainerCount.set(base, count);
       const tr = resolveTrainer(base, ownerDept);
       dbBaseHasTrainer.set(base, Boolean(tr));
       if (tr) dbBaseTrainerName.set(base, tr);
@@ -670,12 +681,16 @@ export async function GET(req: NextRequest) {
       const sopTrainersMissingList = deptDbCodes
         .filter((c) => !dbBaseHasTrainer.get(c))
         .map((c) => ({ sopCode: c, title: dbBaseMeta.get(c)?.title || '', department: dept }));
+      // Trainer-count buckets: 0 / 1 / 2+
+      const sop0TrainerList = deptDbCodes.filter((c) => (dbBaseTrainerCount.get(c) ?? 0) === 0);
+      const sop1TrainerList = deptDbCodes.filter((c) => (dbBaseTrainerCount.get(c) ?? 0) === 1);
+      const sop2PlusTrainerList = deptDbCodes.filter((c) => (dbBaseTrainerCount.get(c) ?? 0) >= 2);
       
       let expiredCount = 0;
       let okayCount = 0;
-      let dueSoon60Count = 0;
-      const dueSoon60List: string[] = [];
-      const sixtyDaysMs = 60 * 24 * 3600 * 1000;
+      let dueSoon30Count = 0;
+      const dueSoon30List: string[] = [];
+      const thirtyDaysMs = 30 * 24 * 3600 * 1000;
       for (const c of deptDbCodes) {
         const meta = dbBaseMeta.get(c);
         if (!meta?.targetDate) {
@@ -687,27 +702,27 @@ export async function GET(req: NextRequest) {
         } else {
           okayCount++;
           const t = new Date(meta.targetDate).getTime();
-          if (t - today.getTime() <= sixtyDaysMs) {
-            dueSoon60Count++;
-            dueSoon60List.push(c);
+          if (t - today.getTime() <= thirtyDaysMs) {
+            dueSoon30Count++;
+            dueSoon30List.push(c);
           }
         }
       }
 
       // MCQ review status for the due-soon SOPs
-      let dueSoon60McqReviewed = 0;
-      let dueSoon60McqPartial = 0;
-      let dueSoon60McqNotReviewed = 0;
-      const dueSoon60McqReviewedList: string[] = [];
-      const dueSoon60McqPartialList: string[] = [];
-      const dueSoon60McqNotReviewedList: string[] = [];
-      for (const c of dueSoon60List) {
+      let dueSoon30McqReviewed = 0;
+      let dueSoon30McqPartial = 0;
+      let dueSoon30McqNotReviewed = 0;
+      const dueSoon30McqReviewedList: string[] = [];
+      const dueSoon30McqPartialList: string[] = [];
+      const dueSoon30McqNotReviewedList: string[] = [];
+      for (const c of dueSoon30List) {
         const mcqStat = mcqStatMap.get(c);
         const tq = mcqStat?.totalQuestions ?? 0;
         const approved = mcqStat?.approvedCount ?? 0;
-        if (tq > 0 && approved >= tq) { dueSoon60McqReviewed++; dueSoon60McqReviewedList.push(c); }
-        else if (approved > 0) { dueSoon60McqPartial++; dueSoon60McqPartialList.push(c); }
-        else { dueSoon60McqNotReviewed++; dueSoon60McqNotReviewedList.push(c); }
+        if (tq > 0 && approved >= tq) { dueSoon30McqReviewed++; dueSoon30McqReviewedList.push(c); }
+        else if (approved > 0) { dueSoon30McqPartial++; dueSoon30McqPartialList.push(c); }
+        else { dueSoon30McqNotReviewed++; dueSoon30McqNotReviewedList.push(c); }
       }
 
       // MCQ counts for this dept (scoped to Excel SOPs found in DB)
@@ -840,16 +855,22 @@ export async function GET(req: NextRequest) {
         sopTrainersAssigned,
         sopTrainersMissing,
         sopTrainersMissingList,
+        sop0TrainerCount: sop0TrainerList.length,
+        sop1TrainerCount: sop1TrainerList.length,
+        sop2PlusTrainerCount: sop2PlusTrainerList.length,
+        sop0TrainerList,
+        sop1TrainerList,
+        sop2PlusTrainerList,
         expiredCount,
         okayCount,
-        dueSoon60Count,
-        dueSoon60List,
-        dueSoon60McqReviewed,
-        dueSoon60McqPartial,
-        dueSoon60McqNotReviewed,
-        dueSoon60McqReviewedList,
-        dueSoon60McqPartialList,
-        dueSoon60McqNotReviewedList,
+        dueSoon30Count,
+        dueSoon30List,
+        dueSoon30McqReviewed,
+        dueSoon30McqPartial,
+        dueSoon30McqNotReviewed,
+        dueSoon30McqReviewedList,
+        dueSoon30McqPartialList,
+        dueSoon30McqNotReviewedList,
         mcqCreatedCount,
         mcqNotCreatedCount,
         mcqAllApprovedCount,
@@ -872,8 +893,8 @@ export async function GET(req: NextRequest) {
         sopCodes: codes,
         // Exact lists for instant client-side filtering (no API call needed)
         foundInDbList: foundInDb,
-        expiredList: foundInDb.filter((c) => dbBaseMeta.get(c)?.expired),
-        okayList: foundInDb.filter((c) => !dbBaseMeta.get(c)?.expired),
+        expiredList: deptDbCodes.filter((c) => dbBaseMeta.get(c)?.expired),
+        okayList: deptDbCodes.filter((c) => !dbBaseMeta.get(c)?.expired),
         mcqCreatedList,
         mcqNotCreatedList,
         mcqAllApprovedList,
@@ -965,12 +986,16 @@ export async function GET(req: NextRequest) {
     let totalSopTrainersAssigned = 0;
     let totalSopTrainersMissing = 0;
     const totalSopTrainersMissingList: { sopCode: string; title: string; department: string }[] = [];
+    // Trainer-count bucket totals (across all DB SOPs, not just uploaded depts)
+    const totalSop0TrainerList: string[] = [];
+    const totalSop1TrainerList: string[] = [];
+    const totalSop2PlusTrainerList: string[] = [];
     let totalSopOkayCount = 0;
     let totalSopExpiredCount = 0;
-    let totalDueSoon60Count = 0;
-    let totalDueSoon60McqReviewed = 0;
-    let totalDueSoon60McqPartial = 0;
-    let totalDueSoon60McqNotReviewed = 0;
+    let totalDueSoon30Count = 0;
+    let totalDueSoon30McqReviewed = 0;
+    let totalDueSoon30McqPartial = 0;
+    let totalDueSoon30McqNotReviewed = 0;
     const totalTrainersMissingList: any[] = [];
     // MCQ totals across ALL DB SOPs (not dept-scoped by upload)
     let totalMcqCreated = 0;
@@ -1030,8 +1055,8 @@ export async function GET(req: NextRequest) {
         }
       }
     }
-    // Total expiry counts over ALL 427 DB SOPs (not just Excel-found)
-    const sixtyDaysMsTotal = 60 * 24 * 3600 * 1000;
+    // Total expiry counts over ALL DB SOPs (not just Excel-found)
+    const thirtyDaysMsTotal = 30 * 24 * 3600 * 1000;
     for (const base of dbBaseSet) {
       const meta = dbBaseMeta.get(base);
       if (!meta?.targetDate) {
@@ -1043,15 +1068,15 @@ export async function GET(req: NextRequest) {
       } else {
         totalSopOkayCount++;
         const t = new Date(meta.targetDate).getTime();
-        if (t - today.getTime() <= sixtyDaysMsTotal) {
-          totalDueSoon60Count++;
+        if (t - today.getTime() <= thirtyDaysMsTotal) {
+          totalDueSoon30Count++;
           // MCQ status for due-soon SOP
           const mcqStat = mcqStatMap.get(base);
           const tq = mcqStat?.totalQuestions ?? 0;
           const approved = mcqStat?.approvedCount ?? 0;
-          if (tq > 0 && approved >= tq) totalDueSoon60McqReviewed++;
-          else if (approved > 0) totalDueSoon60McqPartial++;
-          else totalDueSoon60McqNotReviewed++;
+          if (tq > 0 && approved >= tq) totalDueSoon30McqReviewed++;
+          else if (approved > 0) totalDueSoon30McqPartial++;
+          else totalDueSoon30McqNotReviewed++;
         }
       }
     }
@@ -1064,8 +1089,13 @@ export async function GET(req: NextRequest) {
       totalTrainersMissingList.push(...perDept[dept].trainersMissingList);
     }
 
-    // SOP-wise trainer totals: all 427 DB SOPs (uses full 3-tier trainer resolution)
+    // SOP-wise trainer totals: all DB SOPs (uses full 3-tier trainer resolution)
     for (const base of dbBaseSet) {
+      const count = dbBaseTrainerCount.get(base) ?? 0;
+      if (count >= 2) totalSop2PlusTrainerList.push(base);
+      else if (count === 1) totalSop1TrainerList.push(base);
+      else totalSop0TrainerList.push(base);
+
       if (dbBaseHasTrainer.get(base)) {
         totalSopTrainersAssigned++;
       } else {
@@ -1119,12 +1149,18 @@ export async function GET(req: NextRequest) {
       sopTrainersAssigned: totalSopTrainersAssigned,
       sopTrainersMissing: totalSopTrainersMissing,
       sopTrainersMissingList: totalSopTrainersMissingList,
+      sop0TrainerCount: totalSop0TrainerList.length,
+      sop1TrainerCount: totalSop1TrainerList.length,
+      sop2PlusTrainerCount: totalSop2PlusTrainerList.length,
+      sop0TrainerList: totalSop0TrainerList,
+      sop1TrainerList: totalSop1TrainerList,
+      sop2PlusTrainerList: totalSop2PlusTrainerList,
       okayCount: totalSopOkayCount,
       expiredCount: totalSopExpiredCount,
-      dueSoon60Count: totalDueSoon60Count,
-      dueSoon60McqReviewed: totalDueSoon60McqReviewed,
-      dueSoon60McqPartial: totalDueSoon60McqPartial,
-      dueSoon60McqNotReviewed: totalDueSoon60McqNotReviewed,
+      dueSoon30Count: totalDueSoon30Count,
+      dueSoon30McqReviewed: totalDueSoon30McqReviewed,
+      dueSoon30McqPartial: totalDueSoon30McqPartial,
+      dueSoon30McqNotReviewed: totalDueSoon30McqNotReviewed,
       mcqCreatedCount: totalMcqCreated,
       mcqNotCreatedCount: totalMcqNotCreated,
       mcqAllApprovedCount: totalMcqAllApproved,
