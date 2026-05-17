@@ -46,16 +46,40 @@ export default function SOPFolderUploadModal({ isOpen, onClose, onSuccess }: SOP
   }, []);
 
   /**
-   * Use larger chunks so big folder uploads do not feel "one-by-one".
-   * 1805 files @45 => ~41 requests; with adaptive chunking this drops significantly.
+   * Adaptive chunk size: bigger requests when there are many files, smaller when few.
+   * Each batch is additionally capped by a byte budget below so a few huge PDFs
+   * don't push past the server's 50MB body limit (next.config.mjs).
    */
   const getFilesPerChunk = (totalFiles: number) => {
-    return 10;
+    if (totalFiles <= 30) return Math.max(1, totalFiles);
+    if (totalFiles <= 200) return 25;
+    if (totalFiles <= 800) return 40;
+    return 50;
   };
-  const MAX_PARALLEL_BATCHES = 1;
+  /** Run several batches at once instead of strictly one-by-one. */
+  const MAX_PARALLEL_BATCHES = 4;
+  /** Hard byte budget per request — keeps us comfortably under the 50MB server cap. */
+  const MAX_BATCH_BYTES = 35 * 1024 * 1024;
+  /** Retry transient network / 5xx / 429 failures before giving up on a batch. */
+  const BATCH_MAX_ATTEMPTS = 3;
 
-  const isAnnexureLikePath = (p: string) =>
-    /\b(annexure|annex|appendix)\b/i.test(String(p || ''));
+  /**
+   * Annexures are supporting docs that should be skipped (faster uploads, no clutter
+   * in version history). We detect them by the filename — `Annexure-I_…`, `Annex-…`,
+   * `Appendix-…`, etc. BUT a main SOP file whose filename starts with the SOP code
+   * (e.g. `QAGE08-09_VENDOR QUALITY AUDIT.docx`) must NEVER be filtered, even if its
+   * descriptive title happens to contain the word "annex" somewhere later. Same goes
+   * for parent folder segments — we only look at the file's own basename.
+   */
+  const isAnnexureLikePath = (p: string) => {
+    const s = String(p || '');
+    if (!s) return false;
+    const fileName = s.split(/[\\/]/).pop() || s;
+    // Main SOP files start with `<CODE><digits>-<digits>` (e.g. QAGE08-09_…, BSGE1-4 …).
+    // If the basename matches this pattern, it's the SOP version file, not an annexure.
+    if (/^[A-Z]{2,6}\d{1,4}-\d{1,3}\b/i.test(fileName)) return false;
+    return /\b(annexure|annex|appendix)\b/i.test(fileName);
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -98,6 +122,8 @@ export default function SOPFolderUploadModal({ isOpen, onClose, onSuccess }: SOP
     return `FILE:${f.name}`;
   };
 
+  const batchBytes = (b: File[]) => b.reduce((s, f) => s + (f.size || 0), 0);
+
   const buildSmartBatches = (allFiles: File[], targetSize: number): File[][] => {
     const groups = new Map<string, File[]>();
     for (const f of allFiles) {
@@ -108,16 +134,33 @@ export default function SOPFolderUploadModal({ isOpen, onClose, onSuccess }: SOP
     const groupList = [...groups.values()].sort((a, b) => b.length - a.length);
     const batches: File[][] = [];
 
-    for (const g of groupList) {
-      if (g.length > targetSize) {
-        // Shard this massive group into multiple batches
-        for (let i = 0; i < g.length; i += targetSize) {
-          batches.push(g.slice(i, i + targetSize));
+    const pushSharded = (g: File[]) => {
+      // Shard a group into chunks that respect BOTH target file count and byte budget.
+      let chunk: File[] = [];
+      let chunkBytes = 0;
+      for (const f of g) {
+        const fSize = f.size || 0;
+        const overCount = chunk.length + 1 > targetSize;
+        const overBytes = chunkBytes + fSize > MAX_BATCH_BYTES && chunk.length > 0;
+        if (overCount || overBytes) {
+          batches.push(chunk);
+          chunk = [];
+          chunkBytes = 0;
         }
+        chunk.push(f);
+        chunkBytes += fSize;
+      }
+      if (chunk.length) batches.push(chunk);
+    };
+
+    for (const g of groupList) {
+      const gBytes = batchBytes(g);
+      if (g.length > targetSize || gBytes > MAX_BATCH_BYTES) {
+        pushSharded(g);
       } else {
         let placed = false;
         for (const b of batches) {
-          if (b.length + g.length <= targetSize) {
+          if (b.length + g.length <= targetSize && batchBytes(b) + gBytes <= MAX_BATCH_BYTES) {
             b.push(...g);
             placed = true;
             break;
@@ -252,39 +295,69 @@ export default function SOPFolderUploadModal({ isOpen, onClose, onSuccess }: SOP
           formData.append(`files[${rel}]`, f);
         }
         try {
-          let res: Response;
-          try {
-            res = await fetch('/api/sop/folder-upload', { method: 'POST', body: formData });
-          } catch (netErr) {
-            const msg = netErr instanceof Error ? netErr.message : 'Network error';
-            throw new Error(`${msg} (batch ${batchIndex + 1}/${totalChunks})`);
+          type BatchResponse = {
+            success?: boolean;
+            error?: string;
+            processed?: number;
+            skippedOlderVersions?: number;
+            maxPriorVersions?: number;
+            priorVersionsUnlimited?: boolean;
+            identifiers?: number;
+            versionsStored?: number;
+            errors?: Array<{ path: string; error: string }>;
+            storage?: string;
+            results?: Array<{ identifier: string; entries?: Array<{ version?: number }> }>;
+          };
+
+          let data: BatchResponse | null = null;
+          let lastError: Error | null = null;
+          for (let attempt = 1; attempt <= BATCH_MAX_ATTEMPTS; attempt++) {
+            let res: Response;
+            try {
+              res = await fetch('/api/sop/folder-upload', { method: 'POST', body: formData });
+            } catch (netErr) {
+              const msg = netErr instanceof Error ? netErr.message : 'Network error';
+              lastError = new Error(
+                `${msg} (batch ${batchIndex + 1}/${totalChunks}, attempt ${attempt}/${BATCH_MAX_ATTEMPTS})`,
+              );
+              if (attempt < BATCH_MAX_ATTEMPTS) {
+                await new Promise((r) => setTimeout(r, 800 * attempt * attempt));
+                continue;
+              }
+              throw lastError;
+            }
+            const text = await res.text();
+            let parsed: BatchResponse | null = null;
+            try {
+              parsed = JSON.parse(text) as BatchResponse;
+            } catch {
+              lastError = new Error(
+                res.ok
+                  ? `Invalid server response (batch ${batchIndex + 1}/${totalChunks})`
+                  : `Server error ${res.status} (batch ${batchIndex + 1}/${totalChunks}): ${text.slice(0, 200)}`,
+              );
+              const retryable = !res.ok && (res.status >= 500 || res.status === 429 || res.status === 408);
+              if (retryable && attempt < BATCH_MAX_ATTEMPTS) {
+                await new Promise((r) => setTimeout(r, 800 * attempt * attempt));
+                continue;
+              }
+              throw lastError;
+            }
+            if (!res.ok || parsed.success === false) {
+              lastError = new Error(
+                parsed.error || `Upload failed (batch ${batchIndex + 1}/${totalChunks})`,
+              );
+              const retryable = res.status >= 500 || res.status === 429 || res.status === 408;
+              if (retryable && attempt < BATCH_MAX_ATTEMPTS) {
+                await new Promise((r) => setTimeout(r, 800 * attempt * attempt));
+                continue;
+              }
+              throw lastError;
+            }
+            data = parsed;
+            break;
           }
-          const text = await res.text();
-          let data: {
-          success?: boolean;
-          error?: string;
-          processed?: number;
-          skippedOlderVersions?: number;
-          maxPriorVersions?: number;
-          priorVersionsUnlimited?: boolean;
-          identifiers?: number;
-          versionsStored?: number;
-          errors?: Array<{ path: string; error: string }>;
-          storage?: string;
-          results?: Array<{ identifier: string; entries?: Array<{ version?: number }> }>;
-        };
-          try {
-            data = JSON.parse(text) as typeof data;
-          } catch {
-            throw new Error(
-              res.ok
-                ? `Invalid server response (batch ${batchIndex + 1}/${totalChunks})`
-                : `Server error ${res.status} (batch ${batchIndex + 1}/${totalChunks}): ${text.slice(0, 200)}`,
-            );
-          }
-          if (!res.ok || data.success === false) {
-            throw new Error(data.error || `Upload failed (batch ${batchIndex + 1}/${totalChunks})`);
-          }
+          if (!data) throw lastError ?? new Error(`Upload failed (batch ${batchIndex + 1}/${totalChunks})`);
 
           totalProcessed += data.processed ?? 0;
           totalSkippedOlder += data.skippedOlderVersions ?? 0;
@@ -327,7 +400,17 @@ export default function SOPFolderUploadModal({ isOpen, onClose, onSuccess }: SOP
         while (nextIndex < totalChunks) {
           const idx = nextIndex++;
           setCurrentBatch(`${idx + 1}/${totalChunks}`);
-          await runOneBatch(idx);
+          try {
+            await runOneBatch(idx);
+          } catch (batchErr) {
+            // Log a per-batch error and keep going — never let one batch kill the whole run.
+            const msg = batchErr instanceof Error ? batchErr.message : String(batchErr);
+            const previewNames = batches[idx]
+              .slice(0, 2)
+              .map((f) => (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name)
+              .join(', ');
+            allErrors.push({ path: previewNames, error: msg });
+          }
           doneCount++;
           setUploadProgress({ done: doneCount, total: totalChunks });
         }

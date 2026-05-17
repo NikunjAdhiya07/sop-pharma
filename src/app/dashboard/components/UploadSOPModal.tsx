@@ -196,6 +196,10 @@ export default function UploadSOPModal({ isOpen, onClose, onSuccess, initialTab 
         const formData = new FormData();
         formData.append('language', language);
         if (department.trim()) formData.append('department', department.trim());
+        // Skip the MCQ / similarity / compliance pipeline — this modal is now a pure
+        // file-upload tool. User explicitly wants to fill missing DOCX/PDF on existing
+        // SOPs without paying for AI processing and without changing pipeline status.
+        formData.append('filesOnly', '1');
         formData.append(
           'relativePaths',
           JSON.stringify(
