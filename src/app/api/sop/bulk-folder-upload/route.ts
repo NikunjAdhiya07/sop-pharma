@@ -308,7 +308,10 @@ export async function POST(request: NextRequest) {
 
             // Generate SOP name from folder path structure
             // The folder structure has the full title: "QAGE01-10 - STANDARD OPERATING PROCEDURE FOR SOP"
-            const sopName = extractTitleFromFolderPath(folderPath, sopIdentifier);
+            let sopName = extractTitleFromFolderPath(folderPath, sopIdentifier);
+            if (headerData.subject) {
+              sopName = String(headerData.subject).trim();
+            }
 
             // Save file to Bunny CDN (or local disk fallback)
             const { fileUrl: savedFileUrl, storedPath: savedFilePath } = await storeFile(

@@ -14,6 +14,7 @@ import { uploadToBunny, generateSOPDocumentPath } from '@/lib/bunnyStorage';
 import { persistUploadPath } from '@/lib/persistUploadPath';
 import { getDepartmentForSubcategory, extractSubcategoryFromIdentifier } from '@/lib/mcqTreeBuilder';
 import { resolveSopLanguageForUpload } from '@/lib/detectSopLanguage';
+import { invalidateDashboardSopsCache } from '@/lib/dashboardSopsCache';
 
 const useBunny = () =>
   Boolean(
@@ -60,6 +61,11 @@ function normalizeDeptForDisplay(d: string): string {
   if (lower === 'qa' || lower.includes('quality assurance')) return 'QA';
   if (lower === 'qc' || lower.includes('quality control')) return 'QC';
   return d;
+}
+
+function isGenericDepartment(d?: string | null): boolean {
+  const v = String(d || '').trim().toLowerCase();
+  return !v || v === 'general' || v === 'other' || v === 'unknown';
 }
 
 export async function POST(request: NextRequest) {
@@ -128,7 +134,7 @@ export async function POST(request: NextRequest) {
         const nameWithoutExt = baseName.replace(/\.(pdf|docx|doc)$/i, '');
         const codeMatch = nameWithoutExt.match(/([A-Z]{2,}[-_]?\d+[-_]?\d*)/i);
         const sopIdentifier = codeMatch ? codeMatch[1].toUpperCase().replace(/_/g, '-') : `SOP-${Date.now()}`;
-        const sopName = nameWithoutExt;
+        let sopName = nameWithoutExt;
 
         let parsed: ParsedDocument;
         try {
@@ -221,10 +227,28 @@ export async function POST(request: NextRequest) {
         if (batchDepartment) {
           department = normalizeDeptForDisplay(batchDepartment);
         } else {
+          let headerDepartment = '';
+          if (fileType === 'docx') {
+            try {
+              const { extractSOPHeaderTableData } = await import('@/lib/docxHeaderExtractor');
+              const headerData = await extractSOPHeaderTableData(buffer);
+              if (headerData?.department) {
+                headerDepartment = normalizeDeptForDisplay(String(headerData.department).trim());
+              }
+              if (headerData?.subject) {
+                sopName = String(headerData.subject).trim();
+              }
+            } catch {
+              // Best-effort header extraction; continue with other detectors.
+            }
+          }
           const fromContent = detectDepartment(nameWithoutExt, parsed.content);
           const subcategory = extractSubcategoryFromIdentifier(sopIdentifier);
           const fromIdentifier = getDepartmentForSubcategory(subcategory);
-          department = fromIdentifier || normalizeDeptForDisplay(fromContent);
+          department =
+            (!isGenericDepartment(headerDepartment) ? headerDepartment : '') ||
+            (!isGenericDepartment(fromIdentifier) ? normalizeDeptForDisplay(fromIdentifier) : '') ||
+            normalizeDeptForDisplay(fromContent);
         }
 
         const extractedDates = await extractDatesFromBuffer(buffer, fileType, parsed.content);
@@ -260,7 +284,7 @@ export async function POST(request: NextRequest) {
         let sop = await SOP.findOne({ identifier: sopIdentifier, language: effectiveLanguage });
         if (sop) {
           if (!sop.name || sop.name === sopIdentifier) sop.name = sopName;
-          if (!sop.department || sop.department === 'General') sop.department = department;
+          if (!sop.department || isGenericDepartment(sop.department)) sop.department = department;
           sop.fileUrl = fileUrl;
           sop.fileType = fileType;
           sop.originalFileName = fileName;
@@ -373,12 +397,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Revalidate dashboard cache after successful uploads
+    // Revalidate/invalidate dashboard caches after successful uploads
     try {
       await revalidateTag('dashboard-sops', 'max');
     } catch (revalidateError) {
       console.warn('Failed to revalidate dashboard cache:', revalidateError);
-      // Don't fail the upload if cache revalidation fails
+      // Don't fail the upload if tag revalidation fails
+    }
+    if (results.length > 0) {
+      void invalidateDashboardSopsCache();
     }
 
     // Deduplicate results by sopId. Multiple files (e.g. DOCX + PDF) for the same SOP

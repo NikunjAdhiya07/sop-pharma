@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
 import User from '@/models/User';
+import TrainingMatrix from '@/models/TrainingMatrix';
+import MatrixEntry from '@/models/MatrixEntry';
+import MatrixSOPAssignment from '@/models/MatrixSOPAssignment';
+import DepartmentTrainer from '@/models/DepartmentTrainer';
 import { invalidateDashboardSopsCache } from '@/lib/dashboardSopsCache';
+import { invalidateTrainingMatrixCache } from '@/lib/trainingMatrixCache';
 import { isValidObsoletePassword } from '@/lib/obsoletePasswordAuth';
 
 export async function POST(request: NextRequest) {
@@ -45,11 +50,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'SOP not found' }, { status: 404 });
     }
 
+    // Derive the base SOP code (without version suffix) for training matrix cleanup
+    const baseCode = prefix ?? String(sopIdentifier).replace(/-\d+$/, '');
+
+    // Cascade-delete all training matrix data linked to this SOP family
+    const tmQuery = prefix
+      ? { sopIdentifier: { $regex: `^${prefix}-`, $options: 'i' } }
+      : { sopIdentifier: { $regex: `^${String(sopIdentifier).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } };
+
+    await Promise.all([
+      TrainingMatrix.deleteMany(tmQuery),
+      MatrixEntry.deleteMany({ sopCode: { $regex: `^${baseCode}$`, $options: 'i' } }),
+      MatrixSOPAssignment.deleteMany({ sopCode: { $regex: `^${baseCode}$`, $options: 'i' } }),
+      DepartmentTrainer.deleteMany({ sopIdentifier: tmQuery.sopIdentifier }),
+    ]);
+
     void invalidateDashboardSopsCache();
+    void invalidateTrainingMatrixCache();
 
     return NextResponse.json({
       success: true,
-      message: `Deleted ${result.deletedCount} SOP record(s)`,
+      message: `Deleted ${result.deletedCount} SOP record(s) and associated training matrix data`,
     });
   } catch (error) {
     console.error('[delete-sop] error:', error);

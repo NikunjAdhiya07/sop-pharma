@@ -83,9 +83,20 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
+        let headerSubject = '';
+        if (extension === 'docx' || extension === 'doc') {
+          try {
+            const { extractSOPHeaderTableData } = await import('@/lib/docxHeaderExtractor');
+            const headerData = await extractSOPHeaderTableData(buffer);
+            if (headerData?.subject) {
+              headerSubject = String(headerData.subject).trim();
+            }
+          } catch {}
+        }
+
         // Auto-generate SOP name and identifier from filename
         const nameWithoutExt = file.name.replace(/\.(pdf|docx|doc)$/i, '');
-        const sopName = nameWithoutExt;
+        const sopName = headerSubject || nameWithoutExt;
 
         // Generate identifier
         const codeMatch = nameWithoutExt.match(/([A-Z]{2,}[-_]?\d+[-_]?\d*)/i);

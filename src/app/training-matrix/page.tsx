@@ -32,10 +32,10 @@ import * as XLSX from 'xlsx';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const DEPARTMENTS = ['QA', 'QC', 'Microbiology', 'Production', 'Store', 'Engineering', 'Personnel'] as const;
-type Dept = (typeof DEPARTMENTS)[number];
+const DEFAULT_DEPARTMENTS = ['QA', 'QC', 'Microbiology', 'Production', 'Store', 'Engineering', 'Personnel'] as const;
+type Dept = string;
 
-const DEPT_ACCENT: Record<Dept | 'Total', string> = {
+const DEPT_ACCENT: Record<string, string> = {
   Total: '#a855f7',
   QA: '#6366f1',
   QC: '#3b82f6',
@@ -46,7 +46,7 @@ const DEPT_ACCENT: Record<Dept | 'Total', string> = {
   Personnel: '#ec4899',
 };
 
-const DEPT_ICON: Record<Dept | 'Total', React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
+const DEPT_ICON: Record<string, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
   Total: ClipboardList,
   QA: FlaskConical,
   QC: FlaskConical,
@@ -56,6 +56,14 @@ const DEPT_ICON: Record<Dept | 'Total', React.ComponentType<{ className?: string
   Engineering: Wrench,
   Personnel: UserRound,
 };
+
+function getDeptAccent(dept: string): string {
+  return DEPT_ACCENT[dept] || '#a855f7';
+}
+
+function getDeptIcon(dept: string): React.ComponentType<{ className?: string; style?: React.CSSProperties }> {
+  return DEPT_ICON[dept] || ClipboardList;
+}
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -189,7 +197,7 @@ interface EmployeeRow {
   training: Record<string, boolean>;
 }
 
-type SopDetailType = 'db' | 'excel' | 'found' | 'missing' | 'obsolete';
+type SopDetailType = 'db' | 'excel' | 'found' | 'missing' | 'obsolete' | 'found_any';
 
 type MatrixViewMode = 'sop' | 'employee' | 'month';
 type GroupByMode = 'department' | 'employee' | 'sop' | 'month';
@@ -1370,7 +1378,7 @@ function AssignSOPModal({
                 onChange={(e) => { setDepartment(e.target.value); setSelectedSop(null); setSopSearch(''); setSopOptions([]); }}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs focus:border-purple-300 focus:outline-none"
               >
-                {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+                {DEFAULT_DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
               </select>
             </div>
             <div>
@@ -1932,14 +1940,19 @@ function AssignSOPDataForm({
 // Main Manage SOPs Modal — shows unassigned SOPs, drives the 2-step assign flow
 function ManageMatrixSOPsModal({
   defaultDept,
+  departments,
   onClose,
   onRefresh,
 }: {
   defaultDept?: string;
+  departments?: string[];
   onClose: () => void;
   onRefresh: () => void;
 }) {
-  const [dept, setDept] = useState(defaultDept || 'QA');
+  const deptOptions = departments?.length ? departments : [...DEFAULT_DEPARTMENTS];
+  const [dept, setDept] = useState(
+    defaultDept && deptOptions.includes(defaultDept) ? defaultDept : (deptOptions[0] || 'QA')
+  );
   const [search, setSearch] = useState('');
   const [unassigned, setUnassigned] = useState<any[]>([]);
   const [uploadContext, setUploadContext] = useState<{ month: number; year: number; monthName: string } | null>(null);
@@ -2014,7 +2027,7 @@ function ManageMatrixSOPsModal({
             onChange={(e) => { setDept(e.target.value); setSaved([]); }}
             className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs focus:border-purple-300 focus:outline-none"
           >
-            {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+            {deptOptions.map((d) => <option key={d} value={d}>{d}</option>)}
           </select>
           <div className="relative flex-1">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
@@ -2099,6 +2112,10 @@ function ManageMatrixSOPsModal({
 export default function TrainingMatrixPage() {
   useAuthGuard();
   const [data, setData] = useState<OverviewData | null>(null);
+  const departments = useMemo(
+    () => (data?.departments?.length ? data.departments : [...DEFAULT_DEPARTMENTS]),
+    [data]
+  );
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
   const [showManageSOPs, setShowManageSOPs] = useState(false);
@@ -2251,7 +2268,7 @@ export default function TrainingMatrixPage() {
   // Build the SOP list for the table based on active dept + month
   const visibleSops = useMemo(() => {
     if (!data) return [];
-    const depts: Dept[] = activeDept === 'All' ? [...DEPARTMENTS] : [activeDept];
+    const depts: Dept[] = activeDept === 'All' ? [...departments] : [activeDept];
     const codes = new Set<string>();
     const monthOf: Record<string, string> = {};
     for (const d of depts) {
@@ -2270,7 +2287,7 @@ export default function TrainingMatrixPage() {
   const visibleEmployees = useMemo(() => {
     if (!data) return [];
     const term = search.trim().toLowerCase();
-    const depts: Dept[] = activeDept === 'All' ? [...DEPARTMENTS] : [activeDept];
+    const depts: Dept[] = activeDept === 'All' ? [...departments] : [activeDept];
     return data.employees
       .filter((e) => depts.includes(e.department as Dept))
       .filter((e) => !term || e.name.toLowerCase().includes(term) || (e.designation || '').toLowerCase().includes(term));
@@ -2288,7 +2305,7 @@ export default function TrainingMatrixPage() {
     const counts: Record<string, number> = {};
     for (const m of MONTHS) counts[m] = 0;
     if (!data) return counts;
-    const depts: Dept[] = activeDept === 'All' ? [...DEPARTMENTS] : [activeDept];
+    const depts: Dept[] = activeDept === 'All' ? [...departments] : [activeDept];
     if (activeDept !== 'All') {
       // Single dept: use the pre-aggregated counts directly
       const m = data.monthCountsByDept?.[depts[0]] || {};
@@ -2305,7 +2322,7 @@ export default function TrainingMatrixPage() {
 
   const totalUniqueSops = useMemo(() => {
     if (!data) return 0;
-    const depts: Dept[] = activeDept === 'All' ? [...DEPARTMENTS] : [activeDept];
+    const depts: Dept[] = activeDept === 'All' ? [...departments] : [activeDept];
     const codes = new Set<string>();
     for (const d of depts) {
       (data.sopCodesByDept?.[d] || []).forEach((c: string) => codes.add(c));
@@ -2483,7 +2500,7 @@ export default function TrainingMatrixPage() {
 
       if (data) {
         let codes: string[] = [];
-        const deptsToCheck = opts.dept === 'All' ? DEPARTMENTS : [opts.dept];
+        const deptsToCheck = opts.dept === 'All' ? departments : [opts.dept];
 
         // Fast-path for language-based DB total filter (ENG / GUJ buttons)
         if (opts.lang && opts.type === 'db') {
@@ -2544,7 +2561,11 @@ export default function TrainingMatrixPage() {
               codes.push(...list);
             }
           }
-        } else if (opts.type === 'found' || opts.type === 'excel') {
+        } else if (opts.type === 'found' || opts.type === 'excel' || opts.type === 'found_any') {
+          const allDbCodes = opts.type === 'found_any'
+            ? new Set(Object.values((data.totalCard as any)?.dbSopsByDept || {}).flatMap(list => ((list as any[]) || []).map(x => x.sopCode)))
+            : null;
+
           for (const d of deptsToCheck) {
             const deptData = data.perDept?.[d] as any;
             if (!deptData?.uploaded) continue;
@@ -2553,9 +2574,16 @@ export default function TrainingMatrixPage() {
             // *this card's* Excel SOPs whose DB owner is dbDept. foundInDbList only
             // contains SOPs whose DB owner == this card's dept, so it would always
             // intersect to 0 for any other dbDept. Start from full sopCodes instead.
-            let list: string[] = opts.dbDept && opts.dbDept !== 'All'
-              ? (deptData.sopCodes || [])
-              : (deptData.foundInDbList || deptData.sopCodes || []);
+            let list: string[] = [];
+            
+            if (opts.type === 'found_any') {
+              list = (deptData.sopCodes || []).filter((c: string) => allDbCodes!.has(c));
+            } else {
+              list = opts.dbDept && opts.dbDept !== 'All'
+                ? (deptData.sopCodes || [])
+                : (deptData.foundInDbList || deptData.sopCodes || []);
+            }
+
             if (opts.dbDept && opts.dbDept !== 'All') {
               const targetDbCodes = new Set(((data.totalCard as any)?.dbSopsByDept?.[opts.dbDept] || []).map((x: any) => x.sopCode));
               list = list.filter((c: string) => targetDbCodes.has(c));
@@ -2620,7 +2648,7 @@ export default function TrainingMatrixPage() {
   const openEmployeeListPopup = useCallback(
     (dept: ActiveDept, filter: EmployeeListFilter, title: string) => {
       if (!data) return;
-      const depts: Dept[] = dept === 'All' ? [...DEPARTMENTS] : [dept as Dept];
+      const depts: Dept[] = dept === 'All' ? [...departments] : [dept as Dept];
       const rows: Array<{ name: string; designation: string; department: string; fullyTrained: boolean; totalSops: number; trainedSops: number }> = [];
       for (const d of depts) {
         const deptData = data.perDept?.[d];
@@ -2650,7 +2678,7 @@ export default function TrainingMatrixPage() {
 
       // Build per-SOP dept membership using sopCodesByDept
       const repeatMeta = list.map(({ sopCode, count }) => {
-        const depts = DEPARTMENTS.filter((d) =>
+        const depts = departments.filter((d) =>
           (data.sopCodesByDept?.[d] || []).some((c: string) => c.toUpperCase() === sopCode.toUpperCase())
         );
         return { sopCode, count, depts };
@@ -2676,11 +2704,11 @@ export default function TrainingMatrixPage() {
   const sopWiseGroups = useMemo(() => {
     if (!data) return [];
     const term = search.trim().toLowerCase();
-    const depts: Dept[] = activeDept === 'All' ? [...DEPARTMENTS] : [activeDept];
+    const depts: Dept[] = activeDept === 'All' ? [...departments] : [activeDept];
 
     // Build a global trainer map across ALL depts so DB-only SOPs also show their trainer
     const globalTrainerMap: Record<string, string> = {};
-    for (const d of DEPARTMENTS) {
+    for (const d of departments) {
       const tb = (data.perDept?.[d] as any)?.trainerBySopCode || {};
       for (const [code, name] of Object.entries(tb)) {
         if (name && !globalTrainerMap[code]) globalTrainerMap[code] = name as string;
@@ -2782,7 +2810,7 @@ export default function TrainingMatrixPage() {
           const upper = sopCode.toUpperCase();
           const dualInfo = dualMap.get(upper);
           // Find the primary department this SOP actually belongs to
-          const primaryDept = DEPARTMENTS.find((d) =>
+          const primaryDept = departments.find((d) =>
             (data.sopCodesByDept?.[d] || []).some((c: string) => stripVersion(c).toUpperCase() === upper) ||
             ((data.totalCard as any)?.dbSopsByDept?.[d] || []).some((x: any) => stripVersion(x.sopCode).toUpperCase() === upper)
           ) || '';
@@ -2965,7 +2993,7 @@ export default function TrainingMatrixPage() {
         return t.langBreakdown.slice().sort((a, b) => (a.key === b.key ? 0 : a.key === 'ENG' ? -1 : 1));
       }
       const map = new Map<string, { found: number; missing: number }>();
-      for (const dept of DEPARTMENTS) {
+      for (const dept of departments) {
         const deptData = data?.perDept?.[dept] as any;
         if (!deptData?.uploaded) continue;
         for (const lr of (deptData.langBreakdown || []) as Array<{ key: string; label: string; found: number; missing: number }>) {
@@ -2983,7 +3011,7 @@ export default function TrainingMatrixPage() {
     const allRepeat3Plus = new Map<string, { sopCode: string; title: string; department: string; count: number }>();
     const allRepeat2 = new Map<string, { sopCode: string; title: string; department: string; count: number }>();
     const allRepeatOnce = new Map<string, { sopCode: string; title: string; department: string; count: number }>();
-    for (const dept of DEPARTMENTS) {
+    for (const dept of departments) {
       const deptData = data?.perDept?.[dept] as any;
       if (!deptData?.uploaded) continue;
       for (const item of (deptData.repeat3PlusList || []) as Array<{ sopCode: string; title: string; department: string; count: number }>) {
@@ -3006,14 +3034,14 @@ export default function TrainingMatrixPage() {
     let totalExcelDeptUnknownFound = 0;
     let totalExcelDeptUnknownMissing = 0;
     let totalExcelDeptTotal = 0;
-    for (const dept of DEPARTMENTS) {
+    for (const dept of departments) {
       const deptData = data?.perDept?.[dept] as any;
       if (!deptData?.uploaded || !deptData.excelDeptSplit) continue;
       const split = deptData.excelDeptSplit;
       totalExcelDeptTotal += split.total ?? 0;
       totalExcelDeptUnknownFound += split.unknownFound ?? 0;
       totalExcelDeptUnknownMissing += split.unknownMissing ?? 0;
-      for (const d of DEPARTMENTS) {
+      for (const d of departments) {
         totalExcelDeptFoundByDept[d] = (totalExcelDeptFoundByDept[d] || 0) + (split.foundByDept?.[d] || 0);
         totalExcelDeptMissingByDept[d] = (totalExcelDeptMissingByDept[d] || 0) + (split.missingByDept?.[d] || 0);
       }
@@ -3023,7 +3051,7 @@ export default function TrainingMatrixPage() {
     const hasTotalExcelDeptSplit = totalExcelDeptTotal > 0;
 
     return (
-      <CardShell accent={DEPT_ACCENT.Total} icon={TotalIcon} title="Total">
+      <CardShell accent={getDeptAccent('Total')} icon={TotalIcon} title="Total">
         <button
           type="button"
           onClick={() => {
@@ -3114,7 +3142,7 @@ export default function TrainingMatrixPage() {
               <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
                 <button
                   type="button"
-                  onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Total · Found in Excel' })}
+                  onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found_any', title: 'Total · Found in Excel' })}
                   className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
                   title="Found"
                 >
@@ -3142,14 +3170,14 @@ export default function TrainingMatrixPage() {
               }}
               order={
                 totalExcelDeptUnknownFound > 0 || totalExcelDeptUnknownMissing > 0
-                  ? ([...DEPARTMENTS, 'NA'] as const)
-                  : DEPARTMENTS
+                  ? [...departments, 'NA']
+                  : departments
               }
               onSelectFound={(dbDept) =>
                 applySummaryCapsuleFilter({
                   dept: 'All',
                   dbDept: dbDept === 'NA' ? 'All' : dbDept,
-                  type: 'found',
+                  type: 'found_any',
                   title: `Total · Found (DB Dept: ${dbDept})`,
                 })
               }
@@ -3384,13 +3412,13 @@ export default function TrainingMatrixPage() {
 
   const renderDeptCard = (dept: Dept, d: DeptCardData) => {
     const deptTrainerBuckets = resolveTrainerBucketCounts(d);
-    const Icon = DEPT_ICON[dept];
+    const Icon = getDeptIcon(dept);
     const dbDeptCount =
       (data?.totalCard?.dbSopCountsByDept as any)?.[dept] ??
       (data?.totalCard?.dbSopsByDept as any)?.[dept]?.length ??
       0;
     return (
-      <CardShell accent={DEPT_ACCENT[dept]} icon={Icon} title={dept}>
+      <CardShell accent={getDeptAccent(dept)} icon={Icon} title={dept}>
         <button
           type="button"
           onClick={() => {
@@ -3490,7 +3518,7 @@ export default function TrainingMatrixPage() {
               <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
                 <button
                   type="button"
-                  onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Found in Excel` })}
+                  onClick={() => applySummaryCapsuleFilter({ dept, type: 'found_any', title: `${dept} · Found in Excel` })}
                   className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
                   title="Found"
                 >
@@ -3518,14 +3546,14 @@ export default function TrainingMatrixPage() {
               }}
               order={
                 (d.excelDeptSplit.unknownFound ?? 0) > 0 || (d.excelDeptSplit.unknownMissing ?? 0) > 0
-                  ? ([...DEPARTMENTS, 'NA'] as const)
-                  : DEPARTMENTS
+                  ? [...departments, 'NA']
+                  : departments
               }
               onSelectFound={(dbDept) =>
                 applySummaryCapsuleFilter({
                   dept,
                   dbDept: dbDept === 'NA' ? 'All' : dbDept,
-                  type: 'found',
+                  type: 'found_any',
                   title: `${dept} · Found (DB Dept: ${dbDept})`,
                 })
               }
@@ -4099,13 +4127,13 @@ export default function TrainingMatrixPage() {
         onClick={() => {
           if (!data) return;
           const byName = new Map<string, { designation?: string }>();
-          const empDepts = dept === 'All' ? DEPARTMENTS : [dept as Dept];
+          const empDepts = dept === 'All' ? departments : [dept as Dept];
           for (const d of empDepts) {
             for (const e of data.perDept?.[d]?.employees || []) byName.set(e.name, { designation: e.designation });
           }
           const found = (sop.completedEmployees || []).map((n) => ({ name: n, designation: byName.get(n)?.designation, department: dept }));
           const missing = (sop.pendingEmployees || []).map((n) => ({ name: n, designation: byName.get(n)?.designation, department: dept }));
-          const inExcelDepts = DEPARTMENTS.filter((d) =>
+          const inExcelDepts = departments.filter((d) =>
             (data.sopCodesByDept?.[d] || []).some((c: string) => c.toUpperCase() === sop.sopCode.toUpperCase())
           );
           setSopDetailSearch('');
@@ -4898,7 +4926,7 @@ export default function TrainingMatrixPage() {
           }>
         }>();
         for (const g of sopWiseGroups) {
-          const accent = DEPT_ACCENT[(g.department as Dept) || 'Total'] || '#a855f7';
+          const accent = getDeptAccent((g.department as Dept) || 'Total');
           for (const s of g.sops) {
             if (!map.has(s.sopCode)) map.set(s.sopCode, { sopCode: s.sopCode, title: s.title || '', month: s.month, items: [] });
             map.get(s.sopCode)!.items.push({ dept: g.department, accent, ...s, pendingEmployees: s.pendingEmployees });
@@ -4969,7 +4997,7 @@ export default function TrainingMatrixPage() {
           return {
           key: `${dept}|${s.sopCode}`,
           dept,
-          accent: DEPT_ACCENT[(dept as Dept) || 'Total'] || '#a855f7',
+          accent: getDeptAccent((dept as Dept) || 'Total'),
           sopCode: s.sopCode,
           title: (s as any).title || '',
           isDualLanguage: (s as any).isDualLanguage,
@@ -5056,7 +5084,7 @@ export default function TrainingMatrixPage() {
           m.get(k)!.push(c);
         }
         for (const [k, items] of m) {
-          const accent = DEPT_ACCENT[(k as Dept) || 'Total'] || '#a855f7';
+          const accent = getDeptAccent((k as Dept) || 'Total');
           groups.push({ key: k, title: k, items, accent });
         }
       }
@@ -5068,7 +5096,7 @@ export default function TrainingMatrixPage() {
               <div className="flex items-center gap-3 mb-4">
                 <span
                   className="text-white text-sm font-bold px-4 py-1.5 rounded-full shadow-sm whitespace-nowrap"
-                  style={{ background: g.accent || DEPT_ACCENT.Total }}
+                  style={{ background: g.accent || getDeptAccent('Total') }}
                 >
                   {g.title}
                 </span>
@@ -5077,7 +5105,7 @@ export default function TrainingMatrixPage() {
               </div>
               <div className="space-y-3">
                 {g.items.map((cap, i) => {
-                  const accent = DEPT_ACCENT[(cap.department as Dept) || 'Total'] || '#a855f7';
+                  const accent = getDeptAccent((cap.department as Dept) || 'Total');
                   return (
                     <RowCapsuleShell
                       key={`${cap.employeeName}|${cap.year}-${cap.month}-${i}`}
@@ -5176,7 +5204,7 @@ export default function TrainingMatrixPage() {
               </div>
               <div className="space-y-3">
                 {(mg.capsules || []).map((cap: any) => {
-                  const accent = DEPT_ACCENT[(cap.department as Dept) || 'Total'] || '#a855f7';
+                  const accent = getDeptAccent((cap.department as Dept) || 'Total');
                   const pct = cap.completionPct || 0;
                   return (
                     <RowCapsuleShell
@@ -5248,7 +5276,7 @@ export default function TrainingMatrixPage() {
     return (
       <div className="space-y-8">
         {deptList.map(([dept, caps]) => {
-          const accent = DEPT_ACCENT[(dept as Dept) || 'Total'] || '#a855f7';
+          const accent = getDeptAccent((dept as Dept) || 'Total');
           return (
             <div key={dept}>
               <div className="flex items-center gap-3 mb-4">
@@ -5368,7 +5396,7 @@ export default function TrainingMatrixPage() {
           ) : data ? (
             <div className="flex gap-2 overflow-x-auto pb-2">
               {renderTotalCard(data.totalCard)}
-              {DEPARTMENTS.map((dept) => <Fragment key={dept}>{renderDeptCard(dept, data.perDept[dept])}</Fragment>)}
+              {departments.map((dept) => <Fragment key={dept}>{renderDeptCard(dept, data.perDept[dept])}</Fragment>)}
             </div>
           ) : (
             <EmptyState onUpload={() => setShowUpload(true)} />
@@ -5384,15 +5412,15 @@ export default function TrainingMatrixPage() {
               <Pill
                 label="All Depts"
                 active={activeDept === 'All'}
-                accent={DEPT_ACCENT.Total}
+                accent={getDeptAccent('Total')}
                 onClick={() => setActiveDept('All')}
               />
-              {DEPARTMENTS.map((d) => (
+              {departments.map((d) => (
                 <Pill
                   key={d}
                   label={d}
                   active={activeDept === d}
-                  accent={DEPT_ACCENT[d]}
+                  accent={getDeptAccent(d)}
                   onClick={() => setActiveDept(d)}
                 />
               ))}
@@ -5408,7 +5436,7 @@ export default function TrainingMatrixPage() {
                 label="All"
                 count={totalUniqueSops}
                 active={activeMonth === 'All'}
-                accent={activeDept === 'All' ? DEPT_ACCENT.Total : DEPT_ACCENT[activeDept]}
+                accent={activeDept === 'All' ? getDeptAccent('Total') : getDeptAccent(activeDept)}
                 onClick={() => setActiveMonth('All')}
               />
               {MONTHS.map((m) => (
@@ -5417,7 +5445,7 @@ export default function TrainingMatrixPage() {
                   label={MONTH_SHORT[m]}
                   count={monthCountsForGrid[m] || 0}
                   active={activeMonth === m}
-                  accent={activeDept === 'All' ? DEPT_ACCENT.Total : DEPT_ACCENT[activeDept]}
+                  accent={activeDept === 'All' ? getDeptAccent('Total') : getDeptAccent(activeDept)}
                   onClick={() => setActiveMonth(m)}
                 />
               ))}
@@ -5484,7 +5512,8 @@ export default function TrainingMatrixPage() {
 
       {showManageSOPs && (
         <ManageMatrixSOPsModal
-          defaultDept={activeDept === 'All' ? 'QA' : activeDept}
+          defaultDept={activeDept === 'All' ? departments[0] || 'QA' : activeDept}
+          departments={departments}
           onClose={() => setShowManageSOPs(false)}
           onRefresh={() => fetchData(true)}
         />
@@ -5680,7 +5709,7 @@ function TrainingTable({
                   <td
                     colSpan={sops.length + 3}
                     className="border-l-[3px] bg-gray-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-600"
-                    style={{ borderLeftColor: DEPT_ACCENT[department as Dept] || '#e5e7eb' }}
+                    style={{ borderLeftColor: getDeptAccent(department as Dept) || '#e5e7eb' }}
                   >
                     {department} <span className="ml-2 text-gray-400">({rows.length})</span>
                   </td>

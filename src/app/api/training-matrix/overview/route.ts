@@ -9,64 +9,18 @@ import TrainingMatrix from '@/models/TrainingMatrix';
 import User from '@/models/User';
 import MCQBank from '@/models/MCQBank';
 import SOPLibrary from '@/models/SOPLibrary';
-import { getRedis, REDIS_TTL } from '@/lib/redis';
 import { expectedDocxSlotsForRow, scanRowLanguageFileSlots } from '@/lib/registryRowDocCounts';
+import {
+  getTrainingMatrixCached as getCached,
+  setTrainingMatrixCached as setCached,
+  invalidateTrainingMatrixCache,
+} from '@/lib/trainingMatrixCache';
 
 export const dynamic = 'force-dynamic';
 
-const DEPT_CANONICAL = ['QA','QC','Microbiology','Production','Store','Engineering','Personnel'];
+const DEFAULT_DEPARTMENTS = ['QA','QC','Microbiology','Production','Store','Engineering','Personnel'];
 
 type LangKey = 'ENG' | 'GUJ';
-
-const CACHE_KEY = 'training-matrix-overview:v38';
-// In-memory fallback TTL (used when Redis is not configured)
-const MEMORY_CACHE_TTL_MS = 5 * 60 * 1000;
-
-type MemoryCacheEntry = { ts: number; payload: any };
-
-function getMemoryCached(): any | null {
-  const store = (globalThis as any).__tm_overview_cache as MemoryCacheEntry | undefined;
-  if (!store) return null;
-  if (Date.now() - store.ts > MEMORY_CACHE_TTL_MS) return null;
-  return store.payload;
-}
-
-function setMemoryCached(payload: any) {
-  (globalThis as any).__tm_overview_cache = { ts: Date.now(), payload } satisfies MemoryCacheEntry;
-}
-
-async function getCached(): Promise<any | null> {
-  const redis = getRedis();
-  if (redis) {
-    try {
-      return await redis.get(CACHE_KEY);
-    } catch {
-      // Redis unavailable — fall through to memory cache
-    }
-  }
-  return getMemoryCached();
-}
-
-async function setCached(payload: any) {
-  const redis = getRedis();
-  if (redis) {
-    try {
-      await redis.set(CACHE_KEY, payload, { ex: REDIS_TTL.FIVE_MIN });
-      return;
-    } catch {
-      // Redis unavailable — fall through to memory cache
-    }
-  }
-  setMemoryCached(payload);
-}
-
-async function invalidateTrainingMatrixCache() {
-  const redis = getRedis();
-  if (redis) {
-    try { await redis.del(CACHE_KEY); } catch { /* best effort */ }
-  }
-  (globalThis as any).__tm_overview_cache = null;
-}
 
 function withCacheHeaders(res: NextResponse) {
   res.headers.set('Cache-Control', 'public, max-age=60, s-maxage=60, stale-while-revalidate=300');
@@ -83,6 +37,16 @@ function canonDept(raw: string): string {
   if (/store/.test(t)) return 'Store';
   if (/prod/.test(t)) return 'Production';
   return raw;
+}
+
+function normalizeDept(raw: string): string {
+  return canonDept(String(raw || '').trim()).trim();
+}
+
+function isValidDeptName(raw: string): boolean {
+  const dept = String(raw || '').trim();
+  if (!dept) return false;
+  return !/^unknown$/i.test(dept);
 }
 
 function stripVersion(code: string): string {
@@ -109,7 +73,7 @@ function resolveDeptForBaseSop(
   // Use the exact same mapping logic as the dashboard.
   // If it can’t resolve from code prefix, fall back to SOPLibrary.department string.
   const fromResolver = resolveDept(baseSopCode, meta?.department || null);
-  if (DEPT_CANONICAL.includes(fromResolver)) return fromResolver;
+  if (DEFAULT_DEPARTMENTS.includes(fromResolver)) return fromResolver;
   return canonDeptCode(meta?.departmentCode || '') || canonDept(meta?.department || '');
 }
 
@@ -123,6 +87,18 @@ export async function GET(req: NextRequest) {
     }
 
     await connectDB();
+    const dynamicDeptSet = new Set<string>(DEFAULT_DEPARTMENTS);
+    const addDynamicDept = (raw: string | null | undefined) => {
+      const dept = normalizeDept(String(raw || ''));
+      if (!isValidDeptName(dept)) return;
+      dynamicDeptSet.add(dept);
+    };
+    const getDynamicDepartments = () => {
+      const extras = Array.from(dynamicDeptSet)
+        .filter((d) => !DEFAULT_DEPARTMENTS.includes(d))
+        .sort((a, b) => a.localeCompare(b));
+      return [...DEFAULT_DEPARTMENTS, ...extras];
+    };
 
     // Build dashReq before parallel fetch
     const origin = req.nextUrl.origin;
@@ -219,7 +195,8 @@ export async function GET(req: NextRequest) {
     // 1. Pull the latest upload per department (with snapshot)
     const latestByDept = new Map<string, any>();
     for (const up of uploads) {
-      const dept = canonDept(up.department);
+      const dept = normalizeDept(up.department);
+      addDynamicDept(dept);
       if (!latestByDept.has(dept)) latestByDept.set(dept, up);
     }
 
@@ -262,6 +239,8 @@ export async function GET(req: NextRequest) {
           gujaratiName: String(row?.gujaratiName || '')
         });
       }
+      addDynamicDept(row?.department || '');
+      addDynamicDept(resolveDeptForBaseSop(base, dbBaseMeta.get(base)));
 
       if (!dbBaseLangs.has(base)) dbBaseLangs.set(base, new Set<LangKey>());
       const langs = dbBaseLangs.get(base)!;
@@ -474,7 +453,6 @@ export async function GET(req: NextRequest) {
     // (obsoleteDocs fetched in Tier 1 above)
 
     const obsoleteByDept: Record<string, Set<string>> = {};
-    for (const d of DEPT_CANONICAL) obsoleteByDept[d] = new Set<string>();
 
     for (const doc of obsoleteDocs as any[]) {
       const id = String(doc?.identifier || '').trim();
@@ -485,14 +463,18 @@ export async function GET(req: NextRequest) {
         department: String(doc?.department || ''),
         departmentCode: '',
       });
-      if (!DEPT_CANONICAL.includes(dept)) continue;
+      addDynamicDept(doc?.department || '');
+      addDynamicDept(dept);
+      if (!isValidDeptName(dept)) continue;
+      if (!obsoleteByDept[dept]) obsoleteByDept[dept] = new Set<string>();
       obsoleteByDept[dept].add(base);
     }
+    const departments = getDynamicDepartments();
 
     // Build department-wise SOP list (base SOPs) from DB
     const dbSopsByDept: Record<string, Array<{ sopCode: string; title: string; isDualLanguage: boolean; gujaratiName: string }>> = {};
     const dbSopCountsByDept: Record<string, number> = {};
-    for (const d of DEPT_CANONICAL) {
+    for (const d of departments) {
       dbSopsByDept[d] = [];
       dbSopCountsByDept[d] = 0;
     }
@@ -500,7 +482,7 @@ export async function GET(req: NextRequest) {
     for (const sopCode of dbBaseSet) {
       const meta = dbBaseMeta.get(sopCode);
       const dept = resolveDeptForBaseSop(sopCode, meta);
-      if (!DEPT_CANONICAL.includes(dept)) continue;
+      if (!departments.includes(dept)) continue;
       dbSopsByDept[dept].push({ 
         sopCode, 
         title: meta?.title || '',
@@ -508,14 +490,14 @@ export async function GET(req: NextRequest) {
         gujaratiName: meta?.gujaratiName || ''
       });
     }
-    for (const d of DEPT_CANONICAL) {
+    for (const d of departments) {
       dbSopsByDept[d].sort((a, b) => a.sopCode.localeCompare(b.sopCode));
       dbSopCountsByDept[d] = dbSopsByDept[d].length;
     }
 
     // Fast lookup: dept -> SOP base codes that belong to that dept in DB
     const dbDeptSets: Record<string, Set<string>> = {};
-    for (const d of DEPT_CANONICAL) {
+    for (const d of departments) {
       dbDeptSets[d] = new Set((dbSopsByDept[d] || []).map((x) => x.sopCode));
     }
 
@@ -531,7 +513,7 @@ export async function GET(req: NextRequest) {
     // Then build sopCodeToDeptCount: sopCode -> how many distinct departments contain it.
     // This is the correct "repetition" definition: count of departments sharing the same SOP.
     const sopCodeToDeptCount = new Map<string, number>();
-    for (const dept of DEPT_CANONICAL) {
+    for (const dept of departments) {
       const up = latestByDept.get(dept);
       if (!up?.snapshot) continue;
       const snap = up.snapshot as { sopCodes: string[] };
@@ -543,29 +525,157 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    for (const dept of DEPT_CANONICAL) {
+    for (const dept of departments) {
       const up = latestByDept.get(dept);
       if (!up || !up.snapshot) {
         const deptDbCodesNoUpload = (dbSopsByDept[dept] || []).map((x) => x.sopCode);
+        const langKeys = new Set<LangKey>();
+        for (const c of deptDbCodesNoUpload) {
+          const ls = dbBaseLangs.get(c);
+          (ls && ls.size > 0 ? Array.from(ls) : (['ENG'] as LangKey[])).forEach((k) => langKeys.add(k));
+        }
+        const langBreakdown = Array.from(langKeys)
+          .sort((a, b) => (a === b ? 0 : a === 'ENG' ? -1 : 1))
+          .map((k) => ({
+            key: k,
+            label: k,
+            found: 0,
+            missing: deptDbCodesNoUpload.filter((c) => (dbBaseLangs.get(c) || new Set<LangKey>(['ENG'])).has(k)).length,
+          }));
+        const langSopListByKey: Record<string, string[]> = {};
+        for (const k of langKeys) {
+          langSopListByKey[k] = deptDbCodesNoUpload
+            .filter((c) => (dbBaseLangs.get(c) || new Set<LangKey>(['ENG'])).has(k))
+            .sort((a, b) => a.localeCompare(b));
+        }
+        const excelDeptSplitFoundByDept: Record<string, number> = {};
+        const excelDeptSplitMissingByDept: Record<string, number> = {};
+        for (const d of departments) {
+          excelDeptSplitFoundByDept[d] = 0;
+          excelDeptSplitMissingByDept[d] = 0;
+        }
+        excelDeptSplitMissingByDept[dept] = deptDbCodesNoUpload.length;
+        let expiredCount = 0;
+        let okayCount = 0;
+        let dueSoon30Count = 0;
+        const dueSoon30List: string[] = [];
+        const dueSoon30McqReviewedList: string[] = [];
+        const dueSoon30McqPartialList: string[] = [];
+        const dueSoon30McqNotReviewedList: string[] = [];
+        let dueSoon30McqReviewed = 0;
+        let dueSoon30McqPartial = 0;
+        let dueSoon30McqNotReviewed = 0;
+        const thirtyDaysMs = 30 * 24 * 3600 * 1000;
+        for (const c of deptDbCodesNoUpload) {
+          const meta = dbBaseMeta.get(c);
+          if (!meta?.targetDate) {
+            okayCount++;
+            continue;
+          }
+          if (meta.expired) {
+            expiredCount++;
+          } else {
+            okayCount++;
+            const t = new Date(meta.targetDate).getTime();
+            if (t - today.getTime() <= thirtyDaysMs) {
+              dueSoon30Count++;
+              dueSoon30List.push(c);
+              const mcqStat = mcqStatMap.get(c);
+              const tq = mcqStat?.totalQuestions ?? 0;
+              const approved = mcqStat?.approvedCount ?? 0;
+              if (tq > 0 && approved >= tq) { dueSoon30McqReviewed++; dueSoon30McqReviewedList.push(c); }
+              else if (approved > 0) { dueSoon30McqPartial++; dueSoon30McqPartialList.push(c); }
+              else { dueSoon30McqNotReviewed++; dueSoon30McqNotReviewedList.push(c); }
+            }
+          }
+        }
+        const missingFromExcelList = deptDbCodesNoUpload.map((c) => ({
+          sopCode: c,
+          title: dbBaseMeta.get(c)?.title || '',
+          department: dept,
+        }));
         perDept[dept] = {
           uploaded: false,
           sopCount: 0,
           foundInDb: 0,
-          missingFromExcel: 0,
+          foundObsolete: 0,
+          missingFromExcel: deptDbCodesNoUpload.length,
+          langBreakdown,
+          langSopListByKey,
+          excelDeptSplit: {
+            total: 0,
+            foundByDept: excelDeptSplitFoundByDept,
+            missingByDept: excelDeptSplitMissingByDept,
+            unknownFound: 0,
+            unknownMissing: 0,
+          },
           trainersAssigned: 0,
           trainersMissing: 0,
           employeeCount: 0,
           fullyTrained: 0,
           incomplete: 0,
+          expiredCount,
+          okayCount,
+          dueSoon30Count,
+          dueSoon30List,
+          dueSoon30McqReviewed,
+          dueSoon30McqPartial,
+          dueSoon30McqNotReviewed,
+          dueSoon30McqReviewedList,
+          dueSoon30McqPartialList,
+          dueSoon30McqNotReviewedList,
+          mcqCreatedCount: 0,
+          mcqNotCreatedCount: 0,
+          mcqAllApprovedCount: 0,
+          mcqPartiallyApprovedCount: 0,
+          mcqNotApprovedCount: 0,
+          mcqEngCreatedCount: 0,
+          mcqEngNotCreatedCount: 0,
+          mcqEngAllApprovedCount: 0,
+          mcqEngPartiallyApprovedCount: 0,
+          mcqEngNotApprovedCount: 0,
+          mcqGujCreatedCount: 0,
+          mcqGujNotCreatedCount: 0,
+          mcqGujAllApprovedCount: 0,
+          mcqGujPartiallyApprovedCount: 0,
+          mcqGujNotApprovedCount: 0,
           monthCounts: {},
           sopCodes: [],
+          foundInDbList: [],
+          expiredList: deptDbCodesNoUpload.filter((c) => dbBaseMeta.get(c)?.expired),
+          okayList: deptDbCodesNoUpload.filter((c) => !dbBaseMeta.get(c)?.expired),
+          mcqCreatedList: [],
+          mcqNotCreatedList: [],
+          mcqAllApprovedList: [],
+          mcqPartiallyApprovedList: [],
+          mcqNotApprovedList: [],
+          mcqEngCreatedList: [],
+          mcqEngNotCreatedList: [],
+          mcqEngAllApprovedList: [],
+          mcqEngPartiallyApprovedList: [],
+          mcqEngNotApprovedList: [],
+          mcqGujCreatedList: [],
+          mcqGujNotCreatedList: [],
+          mcqGujAllApprovedList: [],
+          mcqGujPartiallyApprovedList: [],
+          mcqGujNotApprovedList: [],
           employees: [],
           fileUrl: null,
           uploadedAt: null,
-          missingFromExcelList: [],
+          missingFromExcelList,
           trainersMissingList: [],
+          trainerBySopCode: Object.fromEntries(
+            deptDbCodesNoUpload
+              .map((c) => [c, dbBaseTrainerName.get(c) || ''])
+              .filter(([, v]) => v)
+          ),
+          repeat3PlusCount: 0,
+          repeat2Count: 0,
+          repeat1Count: 0,
+          repeat3PlusList: [],
+          repeat2List: [],
+          repeat1List: [],
           additionalTraining: { total: 0, byDept: {} },
-          langBreakdown: [],
           ...trainerBucketsForDept(deptDbCodesNoUpload, dept),
         };
         continue;
@@ -586,7 +696,7 @@ export async function GET(req: NextRequest) {
       monthCountsByDept[dept] = snapshot.monthCounts || {};
 
       const obsoleteSetAll = new Set<string>();
-      for (const d of DEPT_CANONICAL) {
+      for (const d of departments) {
         if (obsoleteByDept[d]) {
           for (const c of obsoleteByDept[d]) obsoleteSetAll.add(c);
         }
@@ -629,7 +739,7 @@ export async function GET(req: NextRequest) {
 
       const excelDeptSplitFoundByDept: Record<string, number> = {};
       const excelDeptSplitMissingByDept: Record<string, number> = {};
-      for (const d of DEPT_CANONICAL) {
+      for (const d of departments) {
         excelDeptSplitFoundByDept[d] = 0;
         excelDeptSplitMissingByDept[d] = 0;
       }
@@ -639,7 +749,7 @@ export async function GET(req: NextRequest) {
         const inDb = dbBaseSet.has(c);
         const meta = inDb ? dbBaseMeta.get(c) : undefined;
         const owner = resolveDeptForBaseSop(c, meta as any);
-        const isKnown = DEPT_CANONICAL.includes(owner);
+        const isKnown = departments.includes(owner);
         if (!isKnown) {
           if (inDb) excelDeptSplitUnknownFound += 1;
           continue;
@@ -652,7 +762,7 @@ export async function GET(req: NextRequest) {
       for (const c of missingFromExcel) {
         const meta = dbBaseMeta.get(c);
         const owner = resolveDeptForBaseSop(c, meta as any);
-        if (DEPT_CANONICAL.includes(owner)) {
+        if (departments.includes(owner)) {
           excelDeptSplitMissingByDept[owner] = (excelDeptSplitMissingByDept[owner] || 0) + 1;
         } else {
           excelDeptSplitUnknownMissing += 1;
@@ -962,7 +1072,7 @@ export async function GET(req: NextRequest) {
       let totalDFoundSum = 0;
       const allBucketSopCodes = new Map<string, number>(); // sopCode → count (deduped across depts)
       const deptOccurrences = new Map<string, Set<string>>(); // sopCode → set of depts that contain it in Excel
-      for (const d of DEPT_CANONICAL) {
+      for (const d of departments) {
         const pd = perDept[d];
         if (!pd?.uploaded) continue;
         const dFS = Object.values(pd.excelDeptSplit?.foundByDept || {}).reduce((a: number, b: any) => a + (b || 0), 0) + (pd.excelDeptSplit?.unknownFound ?? 0);
@@ -999,7 +1109,7 @@ export async function GET(req: NextRequest) {
     for (const c of dbSopsAll) {
       const meta = dbBaseMeta.get(c);
       const owner = resolveDeptForBaseSop(c, meta);
-      const ownerCodes = DEPT_CANONICAL.includes(owner) ? sopCodesByDept[owner] : undefined;
+      const ownerCodes = departments.includes(owner) ? sopCodesByDept[owner] : undefined;
       const ownerCodesSet = ownerCodes ? new Set(ownerCodes) : null;
       if (ownerCodesSet && ownerCodesSet.has(c)) foundInAllExcel.push(c);
       else missingFromAllExcel.push(c);
@@ -1104,7 +1214,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    for (const dept of DEPT_CANONICAL) {
+    for (const dept of departments) {
       if (perDept[dept].uploaded) {
         totalTrainersAssigned += perDept[dept].trainersAssigned || 0;
         totalTrainersMissing += perDept[dept].trainersMissing || 0;
@@ -1202,8 +1312,8 @@ export async function GET(req: NextRequest) {
       employeeCount: totalEmployees,
       fullyTrained: totalFullyTrained,
       incomplete: totalIncomplete,
-      departmentCount: DEPT_CANONICAL.filter((d) => perDept[d].uploaded).length,
-      totalDepartments: DEPT_CANONICAL.length,
+      departmentCount: departments.filter((d) => perDept[d].uploaded).length,
+      totalDepartments: departments.length,
       missingFromExcelList: totalMissingList,
       trainersMissingList: totalTrainersMissingList,
     };
@@ -1227,7 +1337,7 @@ export async function GET(req: NextRequest) {
 
     const payload = {
       success: true,
-      departments: DEPT_CANONICAL,
+      departments,
       perDept,
       totalCard,
       employees: allExcelEmployees,

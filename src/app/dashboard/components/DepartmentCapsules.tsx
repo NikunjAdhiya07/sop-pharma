@@ -380,10 +380,11 @@ function computeDepartmentStats(data: any[]): DeptCapsuleStats[] {
 
   const byDept = new Map<string, CapsuleAcc>();
 
-  const order = [...CAPSULE_DEPARTMENTS];
-  order.forEach((dept) => {
+  const defaultOrder = [...CAPSULE_DEPARTMENTS];
+  defaultOrder.forEach((dept) => {
     byDept.set(dept, emptyCapsuleAcc());
   });
+  const extraDepartments = new Set<string>();
 
   const normalizeDept = (raw: string): string => {
     if (!raw) return "";
@@ -396,9 +397,9 @@ function computeDepartmentStats(data: any[]): DeptCapsuleStats[] {
     if (lower.includes("person") || lower.includes("hr")) return "Personnel";
     if (lower.includes("store")) return "Store";
     if (lower.includes("prod")) return "Production";
-    const exact = order.find((d) => d === raw);
+    const exact = defaultOrder.find((d) => d === raw);
     if (exact) return exact;
-    return raw;
+    return String(raw).trim();
   };
 
   /** Infer department from sopNo prefix when the stored department is unknown. */
@@ -431,14 +432,23 @@ function computeDepartmentStats(data: any[]): DeptCapsuleStats[] {
     let dept = normalizeDept(rawDept);
     // If the stored department isn't a known capsule department, try to infer
     // from the SOP number prefix (handles SOPs tagged as "Other" in the DB)
-    if (!dept || !(order as readonly string[]).includes(dept)) {
+    if (!dept || /^other$/i.test(dept) || /^general$/i.test(dept)) {
       dept = deptFromSopNo(row.sopNo || '');
     }
-    if (!dept || !(order as readonly string[]).includes(dept)) return;
+    if (!dept) return;
+    if (!byDept.has(dept)) {
+      byDept.set(dept, emptyCapsuleAcc());
+      if (!defaultOrder.includes(dept as any)) extraDepartments.add(dept);
+    }
 
     const s = byDept.get(dept)!;
     foldRegistryRowIntoCapsuleAcc(s, row, today, day);
   });
+
+  const order = [
+    ...defaultOrder,
+    ...Array.from(extraDepartments).sort((a, b) => a.localeCompare(b)),
+  ];
 
   return order.map((department) =>
     accToDeptCapsuleStats(department, byDept.get(department)!),
@@ -1099,7 +1109,7 @@ function DepartmentCapsuleCard({
               }`
         }`}        title={
           isGrand
-            ? "Totals for the seven named departments only (rows with no/unmapped department are excluded). Use metric rows below to filter."
+            ? "Totals across all primary SOP rows shown in the registry."
             : `Show all ${label} SOPs in the registry`
         }>
         <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-600" />
@@ -1115,7 +1125,7 @@ function DepartmentCapsuleCard({
           isActive={capsuleMetricMatches(deptForFilter, "all", filterSnapshot)}
           title={
             isGrand
-              ? `${stat.totalSOPs} primary SOP rows in named departments (excludes folder-only artifact rows and unmapped departments).`
+              ? `${stat.totalSOPs} primary SOP rows across all departments (excludes folder-only artifact rows).`
               : `Primary SOP rows in ${label} (main registry records).`
           }
         />

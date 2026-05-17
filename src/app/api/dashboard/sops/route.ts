@@ -206,6 +206,19 @@ function normalizeDeptForDisplay(d: string): string {
   return d;
 }
 
+function isGenericDepartment(d?: string | null): boolean {
+  const v = String(d || '').trim().toLowerCase();
+  return !v || v === 'other' || v === 'general' || v === 'unknown';
+}
+
+function resolvePreferredDepartment(storedDept?: string | null, inferredDept?: string | null): string {
+  const stored = normalizeDeptForDisplay(String(storedDept || '').trim());
+  const inferred = normalizeDeptForDisplay(String(inferredDept || '').trim());
+  if (!isGenericDepartment(stored)) return stored;
+  if (!isGenericDepartment(inferred)) return inferred;
+  return stored || inferred || 'Other';
+}
+
 function stripFolderPath(name: string): string {
   if (!name) return name;
   let n = name.trim();
@@ -1433,7 +1446,8 @@ export async function GET(request: NextRequest) {
     const SOP_DATA = allSOPs.map((sop: any) => {
       const identifier = (sop.identifier || '').trim().toUpperCase();
       const subcategoryCode = extractSubcategoryFromIdentifier(sop.identifier);
-      const department = getDepartmentForSubcategory(subcategoryCode);
+      const inferredDepartment = getDepartmentForSubcategory(subcategoryCode);
+      const department = resolvePreferredDepartment(sop.department, inferredDepartment);
 
       let reviewDate: Date | null = null;
       if (sop.reviewDate) {
@@ -1500,7 +1514,7 @@ export async function GET(request: NextRequest) {
         sopNo: sop.identifier,
         sopName: sop.name,
         originalFileName: sop.originalFileName,
-        department: normalizeDeptForDisplay(department),
+        department: department,
         version: sop.version || '1',
         language: effectiveLanguage,
         expiryDate: expiryDateIso,

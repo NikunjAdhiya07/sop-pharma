@@ -76,6 +76,7 @@ export default function DashboardPageClient() {
   // Data State
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshingLatest, setRefreshingLatest] = useState(false);
   const [showDeptModal, setShowDeptModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadModalTab, setUploadModalTab] =
@@ -455,29 +456,15 @@ export default function DashboardPageClient() {
     // Tier 2: localStorage (24 hour TTL) — stale but shown instantly, then refreshed
     // Tier 3: Network fetch — when no cache is valid
 
-    /** Bypass all caches (see /api/dashboard/sops?refresh=1). */
-    const forceFresh =
-      refreshKey > 0 || searchParams.get("refresh") === "1";
+    /** Hard bypass only when URL explicitly asks for refresh=1. */
+    const forceFresh = searchParams.get("refresh") === "1";
+    /**
+     * Soft revalidate after local mutations/uploads:
+     * show cached data instantly, then fetch latest in background.
+     */
+    const shouldRevalidate = refreshKey > 0 || forceFresh;
 
-    // ── Tier 1: sessionStorage (freshest — skip network entirely if valid) ──
-    if (!forceFresh) {
-      try {
-        const raw = sessionStorage.getItem(SESSION_KEY);
-        if (raw) {
-          const { data: cachedData, meta, cachedAt } = JSON.parse(raw);
-          if (Date.now() - cachedAt <= SESSION_TTL_MS) {
-            console.log('📦 Dashboard: fresh sessionStorage cache — skipping network');
-            setData(cachedData ?? []);
-            setDashboardMeta(meta ?? null);
-            setLoading(false);
-            return; // ← Cache is fresh, no need to refetch
-          }
-        }
-      } catch { /* ignore */ }
-    }
-
-    // ── Tier 2: localStorage (stale data shown instantly, then background refresh) ──
-    let hadStaleCache = false;
+    let hadImmediateCache = false;
     if (!forceFresh) {
       try {
         const raw = localStorage.getItem(LOCAL_KEY);
@@ -488,16 +475,38 @@ export default function DashboardPageClient() {
             setData(cachedData ?? []);
             setDashboardMeta(meta ?? null);
             setLoading(false);
-            hadStaleCache = true;
+            hadImmediateCache = true;
           }
         }
       } catch { /* ignore */ }
     }
 
+
+    // ── Tier 1: sessionStorage (freshest — skip network entirely if valid) ──
+    if (!forceFresh) {
+      try {
+        const raw = sessionStorage.getItem(SESSION_KEY);
+        if (raw) {
+          const { data: cachedData, meta, cachedAt } = JSON.parse(raw);
+          if (Date.now() - cachedAt <= SESSION_TTL_MS) {
+            console.log('📦 Dashboard: fresh sessionStorage cache');
+            setData(cachedData ?? []);
+            setDashboardMeta(meta ?? null);
+            setLoading(false);
+            hadImmediateCache = true;
+            if (!shouldRevalidate) return; // skip network only when no revalidate requested
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    // ── Tier 2: localStorage (stale data shown instantly, then background refresh) ──
+
     // ── Tier 3: Network fetch ──
     const fetchData = async () => {
       // Only show the full-page spinner when there is no cached data to display.
-      if (!hadStaleCache) setLoading(true);
+      if (!hadImmediateCache) setLoading(true);
+      setRefreshingLatest(hadImmediateCache);
       try {
         const sopRes = await fetch(
           `/api/dashboard/sops${forceFresh ? "?refresh=1" : ""}`,
@@ -528,10 +537,11 @@ export default function DashboardPageClient() {
         console.error("Failed to fetch", e);
       } finally {
         setLoading(false);
+        setRefreshingLatest(false);
       }
     };
     fetchData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
 
   const handleLogout = () => {
@@ -540,20 +550,13 @@ export default function DashboardPageClient() {
   };
 
   /**
-   * Invalidate both the server-side and client-side caches, then trigger a
-   * fresh data load. Call this after any upload or mutation that changes SOP data.
+   * Soft-refresh dashboard data:
+   * keep cached UI visible and revalidate in background for faster UX.
    */
   const triggerRefresh = useCallback(async () => {
-    // Clear all client-side caches (both sessionStorage and localStorage)
-    try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
-    try { localStorage.removeItem(LOCAL_KEY); } catch { /* ignore */ }
-    console.log('🗑️ Cleared dashboard caches');
-    // Tell the server to drop its in-memory cache.
-    try {
-      await fetch("/api/dashboard/invalidate-cache", { method: "POST" });
-    } catch { /* non-critical — server cache will expire on its own TTL */ }
+    // Server cache invalidation is handled by mutation endpoints.
     setRefreshKey((k) => k + 1);
-  }, [SESSION_KEY, LOCAL_KEY]);
+  }, []);
 
   const handleRecheckFiles = async () => {
     setRecheckingFiles(true);
@@ -669,7 +672,7 @@ export default function DashboardPageClient() {
       if (!res.ok || !j.success) {
         window.alert(
           j.error ||
-            `Import failed (${res.status}). Use your site Excel (DP No. + SOP No.) or a simple SOP NO + LOCATION sheet.`,
+          `Import failed (${res.status}). Use your site Excel (DP No. + SOP No.) or a simple SOP NO + LOCATION sheet.`,
         );
         return;
       }
@@ -941,14 +944,14 @@ export default function DashboardPageClient() {
     if (filterExpiry !== "all") {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-    // Use Math.floor (same as capsule accumulator) so that expired vs near-expiry
-    // boundaries are consistent between the capsule counts and the filter results.
+      // Use Math.floor (same as capsule accumulator) so that expired vs near-expiry
+      // boundaries are consistent between the capsule counts and the filter results.
       result = result.filter((d: any) => {
         if (filterExpiry === "nodate") return !d.expiryDate;
         if (!d.expiryDate) return false;
         const diffDays = Math.floor(
           (new Date(d.expiryDate).getTime() - today.getTime()) /
-            (1000 * 60 * 60 * 24),
+          (1000 * 60 * 60 * 24),
         );
         if (filterExpiry === "expired") return diffDays < 0;
         if (filterExpiry === "high") return diffDays >= 0 && diffDays <= 30;
@@ -1686,9 +1689,8 @@ export default function DashboardPageClient() {
                     <div className="my-0.5 h-px bg-gray-100 w-full" />
                     <label
                       htmlFor={LOCATION_XLSX_INPUT_ID}
-                      className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs font-semibold text-gray-700 hover:bg-slate-50 hover:text-slate-800 w-full text-left ${
-                        locationImportBusy ? "pointer-events-none opacity-50" : ""
-                      }`}>
+                      className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs font-semibold text-gray-700 hover:bg-slate-50 hover:text-slate-800 w-full text-left ${locationImportBusy ? "pointer-events-none opacity-50" : ""
+                        }`}>
                       <Upload className="h-3.5 w-3.5 text-slate-500" /> Upload
                       locations
                     </label>
@@ -1760,7 +1762,7 @@ export default function DashboardPageClient() {
           </span>
           <div className="flex-1 min-w-0">
             <span className="text-sm font-semibold text-gray-800">
-              By Department <span className="text-gray-500 font-medium">(7)</span>
+              By Department <span className="text-gray-500 font-medium">({new Set(primaryRegistryData.map((r: any) => String(r?.department || '').trim()).filter(Boolean)).size})</span>
             </span>
             <p className="text-xs text-gray-400 leading-none mt-0.5">Filter SOPs by department</p>
           </div>
@@ -1807,6 +1809,12 @@ export default function DashboardPageClient() {
             <h3 className={`text-xs font-bold uppercase tracking-wider ${filterObsolete ? "text-rose-700" : "text-gray-600"}`}>
               {filterObsolete ? "Obsolete SOPs" : "SOP Registry"}
             </h3>
+            {refreshingLatest && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Refreshing latest SOPs...
+              </span>
+            )}
             <button
               type="button"
               onClick={handleClearFilters}
@@ -1844,11 +1852,11 @@ export default function DashboardPageClient() {
                 onChange={(e) =>
                   setSearchField(
                     e.target.value as
-                      | "all"
-                      | "sopNo"
-                      | "sopName"
-                      | "department"
-                      | "location",
+                    | "all"
+                    | "sopNo"
+                    | "sopName"
+                    | "department"
+                    | "location",
                   )
                 }
                 className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 focus:border-purple-500 focus:outline-none shadow-sm">
@@ -1879,11 +1887,10 @@ export default function DashboardPageClient() {
               <button
                 type="button"
                 onClick={() => setFilterPanelOpen((v) => !v)}
-                className={`shrink-0 rounded border px-2 py-1 transition-colors shadow-sm ${
-                  filterPanelOpen || panelFilterLocation.length > 0 || panelFilterVersion.length > 0 || panelFilterLanguage.length > 0 || panelFilterDateFrom || panelFilterDateTo
+                className={`shrink-0 rounded border px-2 py-1 transition-colors shadow-sm ${filterPanelOpen || panelFilterLocation.length > 0 || panelFilterVersion.length > 0 || panelFilterLanguage.length > 0 || panelFilterDateFrom || panelFilterDateTo
                     ? "border-purple-400 bg-purple-50 text-purple-700"
                     : "border-gray-300 bg-white text-gray-600 hover:border-purple-300 hover:text-purple-600"
-                }`}
+                  }`}
                 title="Open filter panel">
                 <SlidersHorizontal className="h-4 w-4" />
               </button>
@@ -2497,7 +2504,7 @@ export default function DashboardPageClient() {
                 <p className="font-semibold text-gray-800">Analyzing <span className="text-indigo-700">{sopNo}</span></p>
                 <p className="text-gray-400 flex items-center gap-1">
                   <Clock className="h-3 w-3" />
-                  {String(Math.floor(elapsed / 60)).padStart(2,'0')}:{String(elapsed % 60).padStart(2,'0')}
+                  {String(Math.floor(elapsed / 60)).padStart(2, '0')}:{String(elapsed % 60).padStart(2, '0')}
                 </p>
               </div>
               {wizardMinimized && showGuidelinesLibrary && (
