@@ -2330,7 +2330,7 @@ export default function SOPTable({
       const user = (() => {
         try { return JSON.parse(localStorage.getItem("user") || "{}"); } catch { return {}; }
       })();
-      const res = await fetch("/api/dashboard/sops/delete", {
+      const res = await fetch("/api/sop/mark-obsolete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
