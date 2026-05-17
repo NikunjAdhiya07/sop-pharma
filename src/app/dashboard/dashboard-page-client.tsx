@@ -85,7 +85,7 @@ export default function DashboardPageClient() {
   const [showSOPFolderUploadModal, setShowSOPFolderUploadModal] =
     useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-  const { tracked: trackedPipelines, trackUpload, trackMany, untrack } = usePipelineTracker();
+  const { tracked: trackedPipelines, trackUpload, untrack } = usePipelineTracker();
   const [recheckingFiles, setRecheckingFiles] = useState(false);
   const [fileAvailability, setFileAvailability] = useState<Record<string, boolean> | null>(null);
   const [recheckSummary, setRecheckSummary] = useState<{ checked: number; found: number; notFound: number; dbCleared: number; notFoundPaths?: string[] } | null>(null);
@@ -437,6 +437,9 @@ export default function DashboardPageClient() {
   const SESSION_TTL_MS = 5 * 60 * 1000; // 5 minutes
   const LOCAL_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+  /** Set to true by `triggerRefresh(true)` so the next fetch hits the server with `?refresh=1`. */
+  const [forceServerRefresh, setForceServerRefresh] = useState(false);
+
   useEffect(() => {
     const userData = localStorage.getItem("user");
     if (!userData) {
@@ -456,8 +459,8 @@ export default function DashboardPageClient() {
     // Tier 2: localStorage (24 hour TTL) — stale but shown instantly, then refreshed
     // Tier 3: Network fetch — when no cache is valid
 
-    /** Hard bypass only when URL explicitly asks for refresh=1. */
-    const forceFresh = searchParams.get("refresh") === "1";
+    /** Hard bypass when URL asks for refresh=1, OR when a mutation (upload) requested a hard refresh. */
+    const forceFresh = searchParams.get("refresh") === "1" || forceServerRefresh;
     /**
      * Soft revalidate after local mutations/uploads:
      * show cached data instantly, then fetch latest in background.
@@ -538,11 +541,13 @@ export default function DashboardPageClient() {
       } finally {
         setLoading(false);
         setRefreshingLatest(false);
+        // One-shot: clear the hard-refresh flag now that the bust has been issued.
+        if (forceServerRefresh) setForceServerRefresh(false);
       }
     };
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey]);
+  }, [refreshKey, forceServerRefresh]);
 
   const handleLogout = () => {
     localStorage.removeItem("user");
@@ -552,9 +557,16 @@ export default function DashboardPageClient() {
   /**
    * Soft-refresh dashboard data:
    * keep cached UI visible and revalidate in background for faster UX.
+   * Pass `hard=true` after mutations (uploads, version fetches) so the server-side
+   * 5-min cache for `/api/dashboard/sops` is bypassed and client caches are cleared —
+   * otherwise the dashboard keeps showing stale Versions / DOCX / PDF counts.
    */
-  const triggerRefresh = useCallback(async () => {
-    // Server cache invalidation is handled by mutation endpoints.
+  const triggerRefresh = useCallback(async (hard: boolean = false) => {
+    if (hard) {
+      try { sessionStorage.removeItem('dashboard_sops_cache'); } catch { /* ignore */ }
+      try { localStorage.removeItem('dashboard_sops_cache_persistent'); } catch { /* ignore */ }
+      setForceServerRefresh(true);
+    }
     setRefreshKey((k) => k + 1);
   }, []);
 
@@ -2364,9 +2376,15 @@ export default function DashboardPageClient() {
         isOpen={showUploadModal}
         initialTab={uploadModalTab}
         onClose={() => setShowUploadModal(false)}
-        onSuccess={(uploaded: UploadedSOPRef[]) => {
-          triggerRefresh();
-          trackMany(uploaded);
+        onSuccess={(_uploaded: UploadedSOPRef[]) => {
+          // Bulk upload SOP is now a pure file-upload tool (no MCQ pipeline).
+          // Skip `trackMany` — there's no pipeline to poll. Full reload onto
+          // ?refresh=1 so the new DOCX/PDF rows show up in the registry immediately.
+          try { sessionStorage.removeItem('dashboard_sops_cache'); } catch { /* ignore */ }
+          try { localStorage.removeItem('dashboard_sops_cache_persistent'); } catch { /* ignore */ }
+          const url = new URL(window.location.href);
+          url.searchParams.set('refresh', '1');
+          window.location.replace(url.toString());
         }}
       />
       <UploadPDFModal
@@ -2377,7 +2395,18 @@ export default function DashboardPageClient() {
       <SOPFolderUploadModal
         isOpen={showSOPFolderUploadModal}
         onClose={() => setShowSOPFolderUploadModal(false)}
-        onSuccess={() => triggerRefresh()}
+        onSuccess={() => {
+          // Bust every cache layer (sessionStorage, localStorage, in-memory) and force
+          // the dashboard to refetch with refresh=1 so Versions / DOCX / PDF capsule
+          // counts reflect the new uploads instead of the 5-min stale cached payload.
+          try { sessionStorage.removeItem('dashboard_sops_cache'); } catch { /* ignore */ }
+          try { localStorage.removeItem('dashboard_sops_cache_persistent'); } catch { /* ignore */ }
+          // Use a full reload onto refresh=1 — most reliable way to guarantee the
+          // server-side dashboard cache is bypassed even if Redis ack lagged the upsert.
+          const url = new URL(window.location.href);
+          url.searchParams.set('refresh', '1');
+          window.location.replace(url.toString());
+        }}
       />
       <PipelineProgressDock
         tracked={trackedPipelines}

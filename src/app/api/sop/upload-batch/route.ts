@@ -81,6 +81,11 @@ export async function POST(request: NextRequest) {
           ? 'Gujarati'
           : 'English';
     const batchDepartment = formData.get('department') as string | null;
+    // When `filesOnly` is set, the caller wants pure file ingest only — no MCQ pipeline,
+    // no similarity / compliance runs. Used by Bulk upload SOP when the goal is to fill
+    // missing DOCX/PDF on existing SOPs without paying for AI processing.
+    const filesOnlyMode =
+      formData.get('filesOnly') === '1' || formData.get('filesOnly') === 'true';
 
     let relativePathList: string[] = [];
     const rpRaw = formData.get('relativePaths');
@@ -426,8 +431,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fire pipeline (MCQ generation → similarity → compliance) once per unique SOP.
-    if (dedupedResults.length > 0) {
+    // Fire pipeline (MCQ generation → similarity → compliance) once per unique SOP —
+    // unless `filesOnly` was set, in which case the caller is using this endpoint as a
+    // pure file-ingest tool and explicitly does NOT want AI processing to run.
+    if (dedupedResults.length > 0 && !filesOnlyMode) {
       const baseUrl =
         process.env.NEXTAUTH_URL?.replace(/\/$/, '') ||
         process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
@@ -449,6 +456,8 @@ export async function POST(request: NextRequest) {
         );
       }
       console.log(`[upload-batch][PIPELINE] Triggered for ${dedupedResults.length} SOP(s)`);
+    } else if (dedupedResults.length > 0 && filesOnlyMode) {
+      console.log(`[upload-batch][PIPELINE] Skipped (filesOnly mode) for ${dedupedResults.length} SOP(s)`);
     }
 
     return NextResponse.json({

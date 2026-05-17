@@ -102,13 +102,16 @@ export async function POST(request: NextRequest) {
               return fromId ? normalizeDeptForDisplay(fromId) : 'General';
             })();
 
-        const sanitizedDept = department.replace(/[^a-zA-Z0-9-_]/g, '_');
-        let fileUrl: string;
+        const sanitizedDept = (department || 'General').replace(/[^a-zA-Z0-9-_]/g, '_');
+        let fileUrl = '';
 
         if (storeToBunny) {
-          const bunnyPath = generateSOPDocumentPath(department, sopIdentifier, fileName);
+          const bunnyPath = generateSOPDocumentPath(department || 'General', sopIdentifier, fileName);
           const cdnUrl = await uploadToBunny(buffer, bunnyPath);
-          if (cdnUrl) {
+          // `cdnUrl` can be null (upload failed) OR an empty string when CDN hostname
+          // isn't configured — both must fall back to a local path so we never end up
+          // saving an SOPLibrary subdoc with an empty `filePath` (schema requires it).
+          if (cdnUrl && cdnUrl.length > 0) {
             fileUrl = cdnUrl;
           } else {
             const localFileName = `${sopIdentifier}_${Date.now()}.pdf`;
@@ -117,6 +120,18 @@ export async function POST(request: NextRequest) {
         } else {
           const localFileName = `${sopIdentifier}_${Date.now()}.pdf`;
           fileUrl = `/uploads/sop-pdfs/${sanitizedDept}/${localFileName}`;
+        }
+
+        // Last-line defence: a Mongoose validation error here surfaces to the user as
+        // a confusing "filePath required" message; refuse the file with a clear error
+        // instead of pushing a half-baked subdoc that breaks every later save on this
+        // library row.
+        if (!fileUrl || fileUrl.length === 0) {
+          errors.push({
+            fileName,
+            error: 'Failed to derive a storage path for this PDF (Bunny + local fallback both empty).',
+          });
+          continue;
         }
 
         const storedRemotely =
@@ -154,6 +169,19 @@ export async function POST(request: NextRequest) {
         };
 
         if (sopLib) {
+          // Strip any historical sopDocuments with empty filePath — these come from
+          // earlier botched saves and would block every subsequent save with a
+          // confusing "Path `filePath` is required" validation error on save().
+          const beforeLen = sopLib.sopDocuments.length;
+          sopLib.sopDocuments = sopLib.sopDocuments.filter(
+            (d: any) => typeof d?.filePath === 'string' && d.filePath.trim().length > 0,
+          ) as any;
+          if (sopLib.sopDocuments.length !== beforeLen) {
+            console.log(
+              `[upload-pdf-batch] Cleaned ${beforeLen - sopLib.sopDocuments.length} stale subdoc(s) with empty filePath on ${sopIdentifier}`,
+            );
+          }
+
           const alreadyExists = sopLib.sopDocuments.some(
             (d: any) => d.fileType === 'pdf' && d.fileName === fileName
           );

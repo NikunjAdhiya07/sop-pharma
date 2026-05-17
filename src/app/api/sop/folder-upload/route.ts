@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import connectDB from '@/lib/mongodb';
 import SOPVersionArtifacts from '@/models/SOPVersionArtifacts';
+import SOP from '@/models/SOP';
 import { uploadToBunny } from '@/lib/bunnyStorage';
 import {
   normalizeSopIdentifierKey,
@@ -9,6 +10,7 @@ import {
   parseRevisionFromSopIdentifier,
 } from '@/lib/sopIdentifierNormalize';
 import { getMaxPriorVersionsStored } from '@/lib/sopFolderUploadLimits';
+import { invalidateDashboardSopsCache } from '@/lib/dashboardSopsCache';
 
 const debugSopUpload =
   process.env.SOP_UPLOAD_DEBUG_LOGS === '1' || process.env.SOP_UPLOAD_DEBUG_LOGS === 'true';
@@ -25,9 +27,18 @@ const MAX_VERSIONS_PER_SOP = getMaxPriorVersionsStored();
 type Acc = Map<number, { docxPath?: string; pdfPath?: string }>;
 
 function isAnnexureLikePath(relativePath: string): boolean {
-  const p = normalizeUnicodeHyphens(String(relativePath || '')).toLowerCase();
+  const raw = normalizeUnicodeHyphens(String(relativePath || ''));
+  if (!raw) return false;
+  // Only inspect the file basename, not the parent path — folder segments like
+  // "QAGE08 - Vendor Audit" don't carry annexure semantics for the file inside.
+  const fileName = raw.split(/[/\\]/).pop() || raw;
+  // A main SOP version file's name starts with the SOP code (e.g.
+  // `QAGE08-09_VENDOR QUALITY AUDIT.docx`). Even if its descriptive title later
+  // contains "annex" or "appendix" the file IS the SOP version and must not be
+  // filtered out — otherwise the prior version is silently dropped from the upload.
+  if (/^[A-Z]{2,6}\d{1,4}-\d{1,3}\b/i.test(fileName)) return false;
   // Skip annexure/appendix/support docs; keep only main SOP version DOCX/PDF files.
-  return /\b(annexure|annex|appendix)\b/.test(p);
+  return /\b(annexure|annex|appendix)\b/i.test(fileName);
 }
 
 function asIntVersion(v: unknown): number {
@@ -235,8 +246,12 @@ function fallbackParseRelativePath(relativePath: string): Parsed | null {
       : null;
   if (!ext) return null;
 
-  const department = detectDepartmentFromPathParts(parts);
   const stem = fileName.replace(/\.(docx|doc|pdf)$/i, '');
+  // Hint for department detection: pull the SOP code prefix from the stem so a flat
+  // layout like `Gujarati SOP/QAGE85/…docx` still resolves to the right department.
+  const codeHint =
+    parseSopCodeVersionPrefix(stem)?.base || parseSopDocNumberPrefix(stem) || null;
+  const department = detectDepartmentFromPathParts(parts, codeHint ?? undefined);
 
   // Try code-version prefix from stem (e.g. MAGE01-07)
   const fromStem = parseSopCodeVersionPrefix(stem);
@@ -304,12 +319,44 @@ function detectDepartment(firstFolder: string): string {
   return 'General';
 }
 
-/** First path segments often include a company root (e.g. SOPs/QA/…); scan a few levels for QA/QC/Store. */
-function detectDepartmentFromPathParts(parts: string[]): string {
+/**
+ * Map an SOP code prefix to its department. Keeps folder uploads working when the
+ * user's path doesn't include a department keyword (e.g. `Gujarati SOP/QAGE85/…`).
+ * Mirrors the conventions in `KNOWN_SOP_FAMILY_PREFIXES`.
+ */
+function departmentFromSopCodePrefix(code: string): string | null {
+  const m = String(code || '').toUpperCase().match(/^([A-Z]{2,6})\d/);
+  if (!m) return null;
+  const p = m[1];
+  if (p.startsWith('QAGE') || p === 'QAGX' || p === 'QAG' || p === 'QADE') return 'QA';
+  if (p === 'QAIO' || p === 'QAWO' || p === 'QASY' || p.startsWith('QAP') || p.startsWith('QAM')) return 'QA';
+  if (p === 'QC' || p.startsWith('QCGE') || p.startsWith('QCM') || p.startsWith('QCRM') ||
+      p.startsWith('QCPM') || p.startsWith('QCBL') || p.startsWith('QCCH') ||
+      p.startsWith('QCRE') || p.startsWith('QCRG') || p.startsWith('QCTR') || p.startsWith('QCIO')) return 'QC';
+  if (p.startsWith('QCMI') || p.startsWith('QMPI') || p.startsWith('QMBI') || p.startsWith('QAMI')) return 'MICROBIOLOGY';
+  if (p.startsWith('PR') || p === 'PROD' || p === 'PREP' || p === 'PREG' || p === 'PRGE' ||
+      p === 'PRMA' || p === 'PRPA' || p === 'PRCL' || p === 'PRED' || p === 'PREO' ||
+      p === 'PRAA' || p === 'MAGE') return 'PRODUCTION';
+  if (p.startsWith('ST') || p === 'STORE' || p.startsWith('BSGE') || p === 'WH') return 'STORE';
+  if (p.startsWith('PEGE') || p === 'HR' || p === 'PERS') return 'PERSONNEL';
+  if (p === 'EM' || p === 'PM' || p === 'UT' || p === 'MT' || p === 'AT') return 'Engineering and Maintenance';
+  return null;
+}
+
+/**
+ * First path segments often include a company root (e.g. SOPs/QA/…); scan a few
+ * levels for QA/QC/Store. Falls back to the SOP code prefix mapping so flat
+ * layouts like `Gujarati SOP/QAGE85/file.docx` still pick up the right department.
+ */
+function detectDepartmentFromPathParts(parts: string[], sopCodeHint?: string): string {
   const limit = Math.min(parts.length, 5);
   for (let i = 0; i < limit; i++) {
     const d = detectDepartment(parts[i] || '');
     if (d !== 'General') return d;
+  }
+  if (sopCodeHint) {
+    const fromCode = departmentFromSopCodePrefix(sopCodeHint);
+    if (fromCode) return fromCode;
   }
   return 'General';
 }
@@ -375,7 +422,11 @@ function parseSopCodeVersionFolder(name: string): { base: string; version: numbe
  */
 function parseSopCodeVersionPrefix(name: string): { base: string; version: number } | null {
   const n = normalizeUnicodeHyphens(name.trim());
-  const m = n.match(/^([A-Z]{2,6}\d{1,4})-(\d{1,4})\b/i);
+  // After the version digits, accept any non-digit separator (underscore, space, hyphen,
+  // dot, Unicode/Gujarati text, end-of-string). Using `\b` was wrong because `_` is a
+  // word character — files named `QAGE85-05_<gujarati title>.docx` failed to match
+  // and fell through to a v=1 fallback, breaking Gujarati version uploads.
+  const m = n.match(/^([A-Z]{2,6}\d{1,4})-(\d{1,4})(?=[^\d]|$)/i);
   if (!m) return null;
   return { base: m[1].toUpperCase(), version: parseInt(m[2], 10) };
 }
@@ -511,7 +562,20 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** One registry row per logical SOP: use highest numeric suffix (batch + existing artifacts for this base). */
+/**
+ * One registry row per logical SOP: use highest numeric suffix across THREE sources —
+ *  1. revisions in this batch (e.g. user uploaded V3, V4 → maxBatch = 4)
+ *  2. existing SOPVersionArtifacts rows for this base
+ *  3. the SOP registry itself — the registry's revision IS the current SOP version (e.g. BSGE01-05 → 5).
+ *
+ * Sources 1+2 alone would let an upload of V3+V4 store under "BSGE01-04" even when the
+ * registry already lists the SOP at revision 5 — the dashboard then can't match the
+ * artifacts to the registry row and shows the priors as missing.
+ *
+ * Bases like "BSGE01" and "BSGE1" must be treated as the same family — the registry
+ * commonly stores zero-padded identifiers ("BSGE01-05") while folder parsers emit the
+ * unpadded base ("BSGE1"). We match both forms when querying the SOP collection.
+ */
 async function resolveCanonicalIdentifier(
   base: string,
   versionNumsInBatch: number[],
@@ -519,16 +583,38 @@ async function resolveCanonicalIdentifier(
 ): Promise<string> {
   const maxBatch = versionNumsInBatch.length ? Math.max(...versionNumsInBatch) : 0;
   const b = base.toUpperCase();
-  const rx = new RegExp(`^${escapeRegex(b)}-\\d+$`, 'i');
-  const docs = await SOPVersionArtifacts.find({ language, identifier: { $regex: rx } })
+
+  // Build a regex that matches both "BSGE01-NN" and "BSGE1-NN" forms by allowing
+  // any leading zeros on the numeric portion of the base.
+  const baseLetters = b.match(/^([A-Z]+)/)?.[1] ?? b;
+  const baseDigits = b.slice(baseLetters.length);
+  const baseDigitsInt = parseInt(baseDigits, 10);
+  const baseRx = Number.isFinite(baseDigitsInt)
+    ? new RegExp(`^${escapeRegex(baseLetters)}0*${baseDigitsInt}-\\d+$`, 'i')
+    : new RegExp(`^${escapeRegex(b)}-\\d+$`, 'i');
+
+  let maxS = maxBatch;
+
+  const docs = await SOPVersionArtifacts.find({ language, identifier: { $regex: baseRx } })
     .select('identifier')
     .lean();
-  let maxS = maxBatch;
   for (const d of docs) {
     const id = String((d as { identifier?: string }).identifier || '');
     const mm = id.match(/-(\d+)$/i);
     if (mm) maxS = Math.max(maxS, parseInt(mm[1], 10));
   }
+
+  // Also consult the SOP registry — the registry's revision is the "current" version
+  // and should drive the canonical key so uploaded priors attach to that row.
+  const registryRows = await SOP.find({ identifier: { $regex: baseRx } })
+    .select('identifier')
+    .lean();
+  for (const r of registryRows) {
+    const id = String((r as { identifier?: string }).identifier || '');
+    const mm = id.match(/-(\d+)$/i);
+    if (mm) maxS = Math.max(maxS, parseInt(mm[1], 10));
+  }
+
   const w = Math.max(2, String(maxS).length, ...versionNumsInBatch.map((n) => String(n).length));
   return `${b}-${String(maxS).padStart(w, '0')}`;
 }
@@ -584,7 +670,14 @@ function parseRelativePath(relativePath: string): Parsed | null {
       : null;
   if (!ext) return null;
 
-  const department = detectDepartmentFromPathParts(parts);
+  // Hint for department detection: pull SOP code from filename so flat layouts like
+  // `Gujarati SOP/QAGE85/QAGE85-05_…docx` route to the right department instead of "General".
+  const stemForHint = fileName.replace(/\.(docx|doc|pdf)$/i, '');
+  const codeHint =
+    parseSopCodeVersionPrefix(stemForHint)?.base ||
+    parseSopDocNumberPrefix(stemForHint) ||
+    null;
+  const department = detectDepartmentFromPathParts(parts, codeHint ?? undefined);
 
   /** Dept/Code.pdf — version from file stem when no nested folders */
   if (parts.length === 2) {
@@ -1105,15 +1198,33 @@ export async function POST(request: NextRequest) {
     for (const [identifier, { department, versions: batchAll }] of byIdentifier) {
       const normId = normalizeSopIdentifierKey(identifier);
       const cached = artifactByNorm.get(normId);
-      const existingEntries = cached?.entries;
       const filteredBatch = filteredByIdentifier.get(normId)?.versions ?? new Map();
       const currentRev = parseRevisionFromSopIdentifier(normId);
       const cutoff = currentRev != null && currentRev > 0 ? currentRev : null;
+
+      // Read the LATEST DB state for this SOP right before merging — `artifactByNorm`
+      // is a request-start snapshot, so when 4 parallel batches touch the same SOP
+      // (e.g. the user dragged folders that all map to QAGE8-10) each would otherwise
+      // overwrite the others' writes. Re-reading here turns the cache into a
+      // fast-path hint and the DB read into the source of truth at write time.
+      const existingId = primaryIdByNorm.get(normId) ?? cached?._id;
+      let liveEntries: { version: number; docxPath?: string; pdfPath?: string }[] | undefined;
+      if (existingId) {
+        const live = await SOPVersionArtifacts.findById(existingId).select('entries sopName').lean<any>();
+        if (live?.entries) liveEntries = live.entries;
+      }
+      if (!liveEntries) {
+        const live = await SOPVersionArtifacts.findOne({ identifier: normId, language })
+          .select('entries sopName')
+          .lean<any>();
+        if (live?.entries) liveEntries = live.entries;
+      }
+      const existingEntries = liveEntries ?? cached?.entries;
+
       const entries = mergeVersionMaps(existingEntries, filteredBatch)
         .filter((e) => cutoff == null || asIntVersion(e.version) <= cutoff)
         .slice(0, MAX_VERSIONS_PER_SOP);
 
-      const existingId = primaryIdByNorm.get(normId) ?? cached?._id;
       if (entries.length === 0 && !existingId) continue;
 
       const mergedSopName = pickLongerTitle(sopNameByNorm.get(normId), cached?.sopName);
@@ -1184,6 +1295,11 @@ export async function POST(request: NextRequest) {
     }
 
     const versionsStored = results.reduce((sum, r) => sum + r.entries.length, 0);
+
+    // Bust the dashboard's 5-min cache so Versions / DOCX / PDF capsule counts reflect this upload immediately.
+    if (results.length > 0 || processed > 0) {
+      try { await invalidateDashboardSopsCache(); } catch { /* best effort */ }
+    }
 
     const detectedSummary = [...byIdentifier.entries()].map(([identifier, { versions: vs }]) => ({
       id: normalizeSopIdentifierKey(identifier),
