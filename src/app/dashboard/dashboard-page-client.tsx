@@ -69,6 +69,7 @@ import {
   type SopVersionFilterSegment,
 } from "@/lib/sopVersionCapsuleClassify";
 import { normalizeSopIdentifierKey } from "@/lib/sopIdentifierNormalize";
+import { detectMissingCategory, buildMissingExportRows } from "@/lib/missingExportRows";
 
 export default function DashboardPageClient() {
   const router = useRouter();
@@ -1856,6 +1857,36 @@ export default function DashboardPageClient() {
               title="Download list of SOPs missing DOCX files">
               <Download className="h-3 w-3" /> Export Missing DOCX
             </button>
+
+            {(() => {
+              const category = detectMissingCategory({
+                filterFileType,
+                filterMedia,
+                filterVersionStatus,
+                filterLanguage,
+              });
+              if (!category) return null;
+              return (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const XLSX = (await import("xlsx")).default || await import("xlsx");
+                    const rows = buildMissingExportRows(filteredAndSortedData as any[], category);
+                    if (rows.length === 0) {
+                      alert("No missing rows in current filter.");
+                      return;
+                    }
+                    const ws = XLSX.utils.json_to_sheet(rows);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, category.sheetName.slice(0, 31));
+                    XLSX.writeFile(wb, category.fileName);
+                  }}
+                  className="shrink-0 flex items-center gap-1 rounded border border-rose-300 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700 shadow-sm transition-colors hover:bg-rose-100 hover:border-rose-400"
+                  title={`Download ${filteredAndSortedData.length} ${category.label} row(s) currently filtered`}>
+                  <Download className="h-3 w-3" /> Export Missing Files ({filteredAndSortedData.length})
+                </button>
+              );
+            })()}
 
             {/* Search & Filter */}
             <div className="flex items-center gap-1.5">

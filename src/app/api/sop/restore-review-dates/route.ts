@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import SOP from '@/models/SOP';
+import MasterSOPRepository from '@/models/MasterSOPRepository';
 import { fetchBunnyFile, isBunnyPath } from '@/lib/bunnyStorage';
 import { extractSOPHeaderTableData } from '@/lib/docxHeaderExtractor';
 import { parseSOPDate, extractDatesFromContent } from '@/lib/dateExtractor';
@@ -9,7 +10,19 @@ import { invalidateDashboardSopsCache } from '@/lib/dashboardSopsCache';
 
 export const maxDuration = 300;
 
-export async function POST(request: NextRequest) {
+// Re-extract Review Date (= dashboard expiry date) for every non-obsolete SOP
+// directly from its DOCX header, then overwrite SOP.reviewDate / SOP.expiryDate.
+//
+// Date-source precedence per SOP:
+//   1. MasterSOPRepository.metadata.reviewDate — already parsed at upload, trusted
+//      when present (avoids re-downloading the DOCX from Bunny).
+//   2. DOCX from SOP.fileUrl (if it's a DOCX), then SOP.sopDocuments[] DOCX entries,
+//      then MasterSOPRepository.sopDocument.filePath — fetched and re-parsed with
+//      extractSOPHeaderTableData (cell-aware "REVIEW DT." reader) and a regex
+//      fallback.
+// PDFs without a DOCX sibling are skipped (text-only PDFs can't be reliably
+// parsed for header tables here).
+export async function POST(_request: NextRequest) {
   const encoder = new TextEncoder();
   const stream = new TransformStream();
   const writer = stream.writable.getWriter();
@@ -22,85 +35,135 @@ export async function POST(request: NextRequest) {
     try {
       await connectDB();
 
-      // Fetch all non-obsolete SOPs that have a file stored in Bunny
       const sops = await SOP.find({ isObsolete: { $ne: true } })
-        .select('_id identifier fileUrl fileType reviewDate effectiveDate validityPeriod language')
-        .lean();
+        .select('_id identifier fileUrl fileType reviewDate effectiveDate language sopDocuments')
+        .lean<any[]>();
 
-      const bunnySops = sops.filter(
-        (s) => s.fileUrl && (isBunnyPath(s.fileUrl) || s.fileUrl.startsWith('http'))
-      );
+      // Build a per-identifier index of MasterSOPRepository entries so we can
+      // resolve DOCX paths + pre-parsed review dates without N round-trips.
+      const masterByIdentifier = new Map<string, any[]>();
+      const masters = await MasterSOPRepository.find({})
+        .select('sopIdentifier language sopDocument metadata')
+        .lean<any[]>();
+      for (const m of masters) {
+        const key = String(m.sopIdentifier || '').trim().toUpperCase();
+        if (!key) continue;
+        const arr = masterByIdentifier.get(key) || [];
+        arr.push(m);
+        masterByIdentifier.set(key, arr);
+      }
 
-      await send({ type: 'init', total: bunnySops.length });
+      await send({ type: 'init', total: sops.length });
 
       let fixed = 0;
       let skipped = 0;
       let failed = 0;
 
-      for (const sop of bunnySops) {
-        const id = sop.identifier;
+      for (const sop of sops) {
+        const id = String(sop.identifier || '').trim();
+        const idUpper = id.toUpperCase();
         try {
-          // Only process DOCX files — PDFs need OCR, skip for now
-          const fileType = (sop.fileType as string) || '';
-          const fileUrl = sop.fileUrl as string;
-
-          if (fileType !== 'docx') {
-            await send({ type: 'skip', identifier: id, reason: 'not a DOCX' });
-            skipped++;
-            continue;
+          // --- Step 1: trust MasterSOPRepository.metadata.reviewDate when present ---
+          const masters = masterByIdentifier.get(idUpper) || [];
+          let masterReview: Date | null = null;
+          let masterEffective: Date | null = null;
+          for (const m of masters) {
+            const r = m?.metadata?.reviewDate;
+            const e = m?.metadata?.effectiveDate;
+            if (r && (!masterReview || new Date(r) > masterReview)) masterReview = new Date(r);
+            if (e && (!masterEffective || new Date(e) > masterEffective)) masterEffective = new Date(e);
           }
 
-          const buffer = await fetchBunnyFile(fileUrl);
-          if (!buffer) {
-            await send({ type: 'skip', identifier: id, reason: 'could not download file' });
-            skipped++;
-            continue;
-          }
-
-          // Try cell-aware header table extraction first (most reliable for SOP headers)
           let reviewDate: Date | null = null;
           let effectiveDate: Date | null = null;
           let dateSource = 'none';
 
-          try {
-            const headerData = await extractSOPHeaderTableData(buffer);
-            if (headerData.reviewDate) {
-              reviewDate = parseSOPDate(headerData.reviewDate);
-              if (reviewDate) dateSource = 'header-table';
+          if (masterReview && !isNaN(masterReview.getTime())) {
+            reviewDate = masterReview;
+            effectiveDate = masterEffective || null;
+            dateSource = 'master-repo';
+          } else {
+            // --- Step 2: find a DOCX URL to re-parse ---
+            const docxCandidates: string[] = [];
+            if (sop.fileType === 'docx' && sop.fileUrl) docxCandidates.push(sop.fileUrl);
+            for (const d of sop.sopDocuments || []) {
+              const isDocx =
+                (d.fileType && /docx/i.test(d.fileType)) ||
+                (d.fileName && /\.docx$/i.test(d.fileName)) ||
+                (d.filePath && /\.docx$/i.test(d.filePath));
+              if (isDocx && d.filePath) docxCandidates.push(d.filePath);
             }
-            if (headerData.effDate) {
-              effectiveDate = parseSOPDate(headerData.effDate);
+            for (const m of masters) {
+              const p = m?.sopDocument?.filePath;
+              if (p && /\.docx$/i.test(p)) docxCandidates.push(p);
             }
-          } catch {
-            // fall through to text extraction
-          }
+            const docxUrl = docxCandidates.find(
+              (u) => u && (isBunnyPath(u) || u.startsWith('http')),
+            );
 
-          // Fallback: text-based extraction
-          if (!reviewDate || !effectiveDate) {
+            if (!docxUrl) {
+              await send({ type: 'skip', identifier: id, reason: 'no DOCX available (PDF-only SOP)' });
+              skipped++;
+              continue;
+            }
+
+            const buffer = await fetchBunnyFile(docxUrl);
+            if (!buffer) {
+              await send({ type: 'skip', identifier: id, reason: 'could not download DOCX from Bunny' });
+              skipped++;
+              continue;
+            }
+
             try {
-              const parsed = await parseDOCX(buffer);
-              const extracted = extractDatesFromContent(parsed.content);
-              if (!reviewDate && extracted.reviewDate) {
-                reviewDate = extracted.reviewDate;
-                dateSource = 'text-regex';
+              const headerData = await extractSOPHeaderTableData(buffer);
+              if (headerData.reviewDate) {
+                reviewDate = parseSOPDate(headerData.reviewDate);
+                if (reviewDate) dateSource = 'header-table';
               }
-              if (!effectiveDate && extracted.effectiveDate) {
-                effectiveDate = extracted.effectiveDate;
+              if (headerData.effDate) {
+                effectiveDate = parseSOPDate(headerData.effDate);
               }
             } catch {
-              // ignore
+              /* fall through to regex */
+            }
+
+            if (!reviewDate || !effectiveDate) {
+              try {
+                const parsed = await parseDOCX(buffer);
+                const extracted = extractDatesFromContent(parsed.content);
+                if (!reviewDate && extracted.reviewDate) {
+                  reviewDate = extracted.reviewDate;
+                  dateSource = 'text-regex';
+                }
+                if (!effectiveDate && extracted.effectiveDate) {
+                  effectiveDate = extracted.effectiveDate;
+                }
+              } catch { /* ignore */ }
             }
           }
 
-          // If no date found from doc, skip — we never write a calculated value
           if (!reviewDate) {
-            await send({ type: 'skip', identifier: id, reason: 'no date found in document' });
+            await send({ type: 'skip', identifier: id, reason: 'no review date found in document' });
             skipped++;
             continue;
           }
 
-          // Update DB
-          const update: Record<string, Date> = { reviewDate };
+          // Only write when the value actually changes — keeps the audit clean.
+          const prev = sop.reviewDate ? new Date(sop.reviewDate).getTime() : null;
+          const next = reviewDate.getTime();
+          if (prev === next && sop.effectiveDate && effectiveDate &&
+              new Date(sop.effectiveDate).getTime() === effectiveDate.getTime()) {
+            await send({ type: 'unchanged', identifier: id, reviewDate: reviewDate.toISOString(), dateSource });
+            skipped++;
+            continue;
+          }
+
+          const update: Record<string, Date> = {
+            reviewDate,
+            // Sync the legacy `expiryDate` field so the dashboard fallback chain
+            // can't surface a stale value from a prior upload of this SOP.
+            expiryDate: reviewDate,
+          };
           if (effectiveDate) update.effectiveDate = effectiveDate;
 
           await SOP.updateOne({ _id: sop._id }, { $set: update });
@@ -109,20 +172,22 @@ export async function POST(request: NextRequest) {
           await send({
             type: 'fixed',
             identifier: id,
+            previousReviewDate: prev ? new Date(prev).toISOString() : null,
             reviewDate: reviewDate.toISOString(),
+            effectiveDate: effectiveDate ? effectiveDate.toISOString() : null,
             dateSource,
           });
         } catch (err: any) {
           failed++;
-          await send({ type: 'error', identifier: id, reason: err.message || 'unknown error' });
+          await send({ type: 'error', identifier: id, reason: err?.message || 'unknown error' });
         }
       }
 
       void invalidateDashboardSopsCache();
 
-      await send({ type: 'done', total: bunnySops.length, fixed, skipped, failed });
+      await send({ type: 'done', total: sops.length, fixed, skipped, failed });
     } catch (err: any) {
-      await send({ type: 'fatal', reason: err.message || 'Server error' });
+      await send({ type: 'fatal', reason: err?.message || 'Server error' });
     } finally {
       await writer.close();
     }
