@@ -53,6 +53,42 @@ function stripVersion(code: string): string {
   return String(code || '').toUpperCase().replace(/-\d+$/, '').trim();
 }
 
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+] as const;
+
+/** Align month map keys with stripVersion'd sopCodes so month filters match monthCounts. */
+function buildNormalizedMonthData(
+  rawMonthMap: Record<string, string>,
+  codes: string[],
+): { sopMonthMap: Record<string, string>; monthCounts: Record<string, number> } {
+  const sopMonthMap: Record<string, string> = {};
+  for (const [k, month] of Object.entries(rawMonthMap || {})) {
+    const base = stripVersion(k);
+    if (!base || !month) continue;
+    sopMonthMap[base] = month;
+  }
+  const monthCounts: Record<string, number> = {};
+  for (const m of MONTH_NAMES) monthCounts[m] = 0;
+  for (const c of codes) {
+    const month = sopMonthMap[c];
+    if (!month) continue;
+    monthCounts[month] = (monthCounts[month] || 0) + 1;
+  }
+  return { sopMonthMap, monthCounts };
+}
+
+function normalizeEmployeeTraining(training: Record<string, boolean> | undefined): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  for (const [k, v] of Object.entries(training || {})) {
+    const base = stripVersion(k);
+    if (!base) continue;
+    out[base] = out[base] || !!v;
+  }
+  return out;
+}
+
 function canonDeptCode(raw: string): string | null {
   const t = String(raw || '').toUpperCase().trim();
   if (!t) return null;
@@ -390,6 +426,361 @@ export async function GET(req: NextRequest) {
 
     const dbSopCount = dbBaseSet.size;
 
+    /**
+     * Build the full MCQ-creation / MCQ-approval bucket set for an arbitrary
+     * SOP-code list. Centralising this keeps the Total card, the per-dept
+     * cards (uploaded + no-upload), and any future scope-based panels using
+     * the same SOP-level definitions:
+     *
+     *   • Top "MCQ (100+ created)" is SOP-based: a SOP is "created" only when
+     *     every language it requires has 100+ MCQs. So `created + missing`
+     *     always equals the number of SOPs in scope (e.g. 429 for the Total
+     *     card), no matter how many languages each SOP needs.
+     *
+     *   • Non-Dual section (English-only SOPs): per-SOP ENG status.
+     *
+     *   • Dual section (ENG + GUJ SOPs, including every MAGE / Engineering
+     *     bilingual SOP): per-language slot status PLUS a per-SOP "either
+     *     incomplete" aggregate so the dual SOPs that fail in *any* language
+     *     are never silently merged into the ENG-only column.
+     */
+    const buildEmptyMcqBuckets = () => ({
+      // Top — SOP-based: created + notCreated == sopCodes.length
+      mcqCreatedCount: 0,
+      mcqNotCreatedCount: 0,
+      mcqCreatedList: [] as string[],
+      mcqNotCreatedList: [] as string[],
+      // Non-Dual SOPs (English-only) breakdown
+      mcqEngOnlyCreatedCount: 0,
+      mcqEngOnlyNotCreatedCount: 0,
+      mcqEngOnlyCreatedList: [] as string[],
+      mcqEngOnlyNotCreatedList: [] as string[],
+      // Dual SOPs: per-language slot status (every dual SOP contributes once
+      // to the ENG side and once to the GUJ side)
+      mcqDualEngCreatedCount: 0,
+      mcqDualEngNotCreatedCount: 0,
+      mcqDualEngCreatedList: [] as string[],
+      mcqDualEngNotCreatedList: [] as string[],
+      mcqDualGujCreatedCount: 0,
+      mcqDualGujNotCreatedCount: 0,
+      mcqDualGujCreatedList: [] as string[],
+      mcqDualGujNotCreatedList: [] as string[],
+      // Dual SOPs: per-SOP aggregate
+      mcqDualBothCreatedCount: 0,
+      mcqDualEitherIncompleteCount: 0,
+      mcqDualBothCreatedList: [] as string[],
+      mcqDualEitherIncompleteList: [] as string[],
+      // Total dual SOPs in this scope (so UI can render "x of y" if needed)
+      mcqDualSopCount: 0,
+      // Legacy ENG/GUJ totals — every SOP with an ENG slot contributes to the
+      // ENG total; only dual SOPs contribute to the GUJ total. Kept for
+      // backwards-compatible filter buttons.
+      mcqEngCreatedCount: 0,
+      mcqEngNotCreatedCount: 0,
+      mcqEngCreatedList: [] as string[],
+      mcqEngNotCreatedList: [] as string[],
+      mcqGujCreatedCount: 0,
+      mcqGujNotCreatedCount: 0,
+      mcqGujCreatedList: [] as string[],
+      mcqGujNotCreatedList: [] as string[],
+      // SOP-based approval (top-level) — universe is exactly the SOPs in
+      // `mcqCreated*` (i.e. sopOk: every required language has 100+ MCQs).
+      // SOPs that don't yet meet 100+ MCQs are NOT counted in approval at all,
+      // because approval-of-MCQs is meaningless before MCQs exist.
+      // Constraint: mcqAllApproved + mcqPartiallyApproved + mcqNotApproved
+      //            === mcqCreatedCount  (e.g. 366)
+      mcqAllApprovedCount: 0,
+      mcqPartiallyApprovedCount: 0,
+      mcqNotApprovedCount: 0,
+      mcqAllApprovedList: [] as string[],
+      mcqPartiallyApprovedList: [] as string[],
+      mcqNotApprovedList: [] as string[],
+      // Non-Dual SOPs (ENG-only) approval breakdown — sub-universe is
+      // mcqEngOnlyCreated (the non-dual SOPs that already have 100+ ENG MCQs).
+      mcqApprovedNonDualCount: 0,
+      mcqApprovalPartialNonDualCount: 0,
+      mcqApprovalMissingNonDualCount: 0,
+      mcqApprovedNonDualList: [] as string[],
+      mcqApprovalPartialNonDualList: [] as string[],
+      mcqApprovalMissingNonDualList: [] as string[],
+      // Dual SOPs (ENG + GUJ) approval breakdown — sub-universe is
+      // mcqDualBothCreated (the dual SOPs that already have 100+ in BOTH langs).
+      // Dual rules:
+      //   • Approved if BOTH ENG and GUJ are fully approved.
+      //   • Missing  if EITHER language has zero approvals.
+      //   • Partial  otherwise (both have some approvals, neither fully done).
+      mcqApprovedDualCount: 0,
+      mcqApprovalPartialDualCount: 0,
+      mcqApprovalMissingDualCount: 0,
+      mcqApprovedDualList: [] as string[],
+      mcqApprovalPartialDualList: [] as string[],
+      mcqApprovalMissingDualList: [] as string[],
+      // Per-language slot approval inside Dual-Found universe — display only,
+      // mirrors the ENG/GUJ slot pattern from the 100+ MCQ section.
+      mcqDualSlotEngAllApprovedCount: 0,
+      mcqDualSlotEngPartiallyApprovedCount: 0,
+      mcqDualSlotEngNotApprovedCount: 0,
+      mcqDualSlotEngAllApprovedList: [] as string[],
+      mcqDualSlotEngPartiallyApprovedList: [] as string[],
+      mcqDualSlotEngNotApprovedList: [] as string[],
+      mcqDualSlotGujAllApprovedCount: 0,
+      mcqDualSlotGujPartiallyApprovedCount: 0,
+      mcqDualSlotGujNotApprovedCount: 0,
+      mcqDualSlotGujAllApprovedList: [] as string[],
+      mcqDualSlotGujPartiallyApprovedList: [] as string[],
+      mcqDualSlotGujNotApprovedList: [] as string[],
+      // Legacy per-language approval (whole DB, not restricted to sopOk) — kept
+      // for backwards-compatible filter buttons. New UI should use the slot
+      // counts above which reconcile to the SOP-based totals.
+      mcqEngAllApprovedCount: 0,
+      mcqEngPartiallyApprovedCount: 0,
+      mcqEngNotApprovedCount: 0,
+      mcqEngAllApprovedList: [] as string[],
+      mcqEngPartiallyApprovedList: [] as string[],
+      mcqEngNotApprovedList: [] as string[],
+      mcqGujAllApprovedCount: 0,
+      mcqGujPartiallyApprovedCount: 0,
+      mcqGujNotApprovedCount: 0,
+      mcqGujAllApprovedList: [] as string[],
+      mcqGujPartiallyApprovedList: [] as string[],
+      mcqGujNotApprovedList: [] as string[],
+    });
+
+    type McqBuckets = ReturnType<typeof buildEmptyMcqBuckets>;
+
+    const finaliseMcqBuckets = (b: McqBuckets) => {
+      const sortAlpha = (a: string, c: string) => a.localeCompare(c);
+      b.mcqCreatedList.sort(sortAlpha);
+      b.mcqNotCreatedList.sort(sortAlpha);
+      b.mcqEngOnlyCreatedList.sort(sortAlpha);
+      b.mcqEngOnlyNotCreatedList.sort(sortAlpha);
+      b.mcqDualEngCreatedList.sort(sortAlpha);
+      b.mcqDualEngNotCreatedList.sort(sortAlpha);
+      b.mcqDualGujCreatedList.sort(sortAlpha);
+      b.mcqDualGujNotCreatedList.sort(sortAlpha);
+      b.mcqDualBothCreatedList.sort(sortAlpha);
+      b.mcqDualEitherIncompleteList.sort(sortAlpha);
+      b.mcqEngCreatedList.sort(sortAlpha);
+      b.mcqEngNotCreatedList.sort(sortAlpha);
+      b.mcqGujCreatedList.sort(sortAlpha);
+      b.mcqGujNotCreatedList.sort(sortAlpha);
+      // SOP-based approval lists
+      b.mcqAllApprovedList.sort(sortAlpha);
+      b.mcqPartiallyApprovedList.sort(sortAlpha);
+      b.mcqNotApprovedList.sort(sortAlpha);
+      b.mcqApprovedNonDualList.sort(sortAlpha);
+      b.mcqApprovalPartialNonDualList.sort(sortAlpha);
+      b.mcqApprovalMissingNonDualList.sort(sortAlpha);
+      b.mcqApprovedDualList.sort(sortAlpha);
+      b.mcqApprovalPartialDualList.sort(sortAlpha);
+      b.mcqApprovalMissingDualList.sort(sortAlpha);
+      b.mcqDualSlotEngAllApprovedList.sort(sortAlpha);
+      b.mcqDualSlotEngPartiallyApprovedList.sort(sortAlpha);
+      b.mcqDualSlotEngNotApprovedList.sort(sortAlpha);
+      b.mcqDualSlotGujAllApprovedList.sort(sortAlpha);
+      b.mcqDualSlotGujPartiallyApprovedList.sort(sortAlpha);
+      b.mcqDualSlotGujNotApprovedList.sort(sortAlpha);
+      b.mcqEngAllApprovedList.sort(sortAlpha);
+      b.mcqEngPartiallyApprovedList.sort(sortAlpha);
+      b.mcqEngNotApprovedList.sort(sortAlpha);
+      b.mcqGujAllApprovedList.sort(sortAlpha);
+      b.mcqGujPartiallyApprovedList.sort(sortAlpha);
+      b.mcqGujNotApprovedList.sort(sortAlpha);
+      return b;
+    };
+
+    const computeMcqBuckets = (sopCodes: Iterable<string>): McqBuckets => {
+      const b = buildEmptyMcqBuckets();
+      for (const code of sopCodes) {
+        const langSet = dbBaseLangs.get(code) || new Set<LangKey>(['ENG']);
+        const isDual = langSet.has('GUJ');
+
+        const langStat = mcqLangStatMap.get(code);
+        const engTq = langStat?.eng.totalQuestions ?? 0;
+        const engApproved = langStat?.eng.approvedCount ?? 0;
+        const gujTq = langStat?.guj.totalQuestions ?? 0;
+        const gujApproved = langStat?.guj.approvedCount ?? 0;
+
+        const mcqStat = mcqStatMap.get(code);
+        const combinedTq = mcqStat?.totalQuestions ?? 0;
+        const combinedApproved = mcqStat?.approvedCount ?? 0;
+
+        const engOk = engTq >= 100;
+        const gujOk = gujTq >= 100;
+        const sopOk = isDual ? (engOk && gujOk) : engOk;
+
+        // Top SOP-based bucket
+        if (sopOk) { b.mcqCreatedCount++; b.mcqCreatedList.push(code); }
+        else { b.mcqNotCreatedCount++; b.mcqNotCreatedList.push(code); }
+
+        if (!isDual) {
+          // Non-Dual SOPs (English-only)
+          if (engOk) {
+            b.mcqEngOnlyCreatedCount++;
+            b.mcqEngOnlyCreatedList.push(code);
+          } else {
+            b.mcqEngOnlyNotCreatedCount++;
+            b.mcqEngOnlyNotCreatedList.push(code);
+          }
+        } else {
+          b.mcqDualSopCount++;
+          // Dual SOPs — per-language slot
+          if (engOk) {
+            b.mcqDualEngCreatedCount++;
+            b.mcqDualEngCreatedList.push(code);
+          } else {
+            b.mcqDualEngNotCreatedCount++;
+            b.mcqDualEngNotCreatedList.push(code);
+          }
+          if (gujOk) {
+            b.mcqDualGujCreatedCount++;
+            b.mcqDualGujCreatedList.push(code);
+          } else {
+            b.mcqDualGujNotCreatedCount++;
+            b.mcqDualGujNotCreatedList.push(code);
+          }
+          // Dual SOPs — per-SOP aggregate
+          if (engOk && gujOk) {
+            b.mcqDualBothCreatedCount++;
+            b.mcqDualBothCreatedList.push(code);
+          } else {
+            b.mcqDualEitherIncompleteCount++;
+            b.mcqDualEitherIncompleteList.push(code);
+          }
+        }
+
+        // Legacy ENG totals — every SOP has an ENG slot
+        if (engOk) {
+          b.mcqEngCreatedCount++;
+          b.mcqEngCreatedList.push(code);
+        } else {
+          b.mcqEngNotCreatedCount++;
+          b.mcqEngNotCreatedList.push(code);
+        }
+        // Legacy GUJ totals — only dual SOPs contribute
+        if (isDual) {
+          if (gujOk) {
+            b.mcqGujCreatedCount++;
+            b.mcqGujCreatedList.push(code);
+          } else {
+            b.mcqGujNotCreatedCount++;
+            b.mcqGujNotCreatedList.push(code);
+          }
+        }
+
+        // ──────────────────────────────────────────────────────────────────
+        // SOP-based approval — strictly restricted to the 100+ MCQ Found
+        // universe (sopOk). Approval of MCQs is meaningless for SOPs that
+        // don't yet have 100+ MCQs, so those SOPs do NOT contribute to any
+        // approval bucket.
+        //
+        // Rules (mirror the same SOP-vs-language separation as the 100+ MCQ
+        // section so the totals reconcile):
+        //   Non-Dual SOP (English-only):
+        //     • Approved if engApproved >= engTq
+        //     • Missing  if engApproved == 0
+        //     • Partial  otherwise
+        //   Dual SOP (ENG + GUJ):
+        //     • Approved if BOTH engApproved >= engTq AND gujApproved >= gujTq
+        //     • Missing  if engApproved == 0 OR gujApproved == 0
+        //                (i.e. at least one language has no approvals at all)
+        //     • Partial  otherwise (both have some approvals, neither full)
+        //
+        // Constraints (always hold by construction):
+        //   mcqAllApproved + mcqPartiallyApproved + mcqNotApproved
+        //     === mcqCreatedCount  (e.g. 366)
+        //   mcqApproved{Non}Dual + mcqApprovalPartial{Non}Dual + mcqApprovalMissing{Non}Dual
+        //     === mcqEngOnlyCreatedCount      (Non-Dual sub-universe)
+        //   mcqApprovedDual + mcqApprovalPartialDual + mcqApprovalMissingDual
+        //     === mcqDualBothCreatedCount     (Dual sub-universe)
+        //   mcqAllApproved      === mcqApprovedNonDual + mcqApprovedDual
+        //   mcqPartiallyApproved === mcqApprovalPartialNonDual + mcqApprovalPartialDual
+        //   mcqNotApproved      === mcqApprovalMissingNonDual + mcqApprovalMissingDual
+        // ──────────────────────────────────────────────────────────────────
+        if (sopOk) {
+          if (!isDual) {
+            // Non-Dual SOP — ENG only
+            if (engTq > 0 && engApproved >= engTq) {
+              b.mcqAllApprovedCount++; b.mcqAllApprovedList.push(code);
+              b.mcqApprovedNonDualCount++; b.mcqApprovedNonDualList.push(code);
+            } else if (engApproved > 0) {
+              b.mcqPartiallyApprovedCount++; b.mcqPartiallyApprovedList.push(code);
+              b.mcqApprovalPartialNonDualCount++; b.mcqApprovalPartialNonDualList.push(code);
+            } else {
+              b.mcqNotApprovedCount++; b.mcqNotApprovedList.push(code);
+              b.mcqApprovalMissingNonDualCount++; b.mcqApprovalMissingNonDualList.push(code);
+            }
+          } else {
+            // Dual SOP — needs progress on BOTH ENG and GUJ
+            const engFull = engTq > 0 && engApproved >= engTq;
+            const gujFull = gujTq > 0 && gujApproved >= gujTq;
+            const engNone = engApproved === 0;
+            const gujNone = gujApproved === 0;
+            if (engFull && gujFull) {
+              b.mcqAllApprovedCount++; b.mcqAllApprovedList.push(code);
+              b.mcqApprovedDualCount++; b.mcqApprovedDualList.push(code);
+            } else if (engNone || gujNone) {
+              // Missing: at least one language has zero approvals — by user's
+              // rule this means "approval is missing" for the SOP overall,
+              // even if the other language is fully approved.
+              b.mcqNotApprovedCount++; b.mcqNotApprovedList.push(code);
+              b.mcqApprovalMissingDualCount++; b.mcqApprovalMissingDualList.push(code);
+            } else {
+              // Partial: both languages have some approvals, but at least
+              // one isn't fully approved.
+              b.mcqPartiallyApprovedCount++; b.mcqPartiallyApprovedList.push(code);
+              b.mcqApprovalPartialDualCount++; b.mcqApprovalPartialDualList.push(code);
+            }
+
+            // Per-language slot approval inside the Dual-Found universe —
+            // display only, won't reconcile to the Dual primary row above.
+            if (engTq > 0 && engApproved >= engTq) {
+              b.mcqDualSlotEngAllApprovedCount++;
+              b.mcqDualSlotEngAllApprovedList.push(code);
+            } else if (engApproved > 0) {
+              b.mcqDualSlotEngPartiallyApprovedCount++;
+              b.mcqDualSlotEngPartiallyApprovedList.push(code);
+            } else {
+              b.mcqDualSlotEngNotApprovedCount++;
+              b.mcqDualSlotEngNotApprovedList.push(code);
+            }
+            if (gujTq > 0 && gujApproved >= gujTq) {
+              b.mcqDualSlotGujAllApprovedCount++;
+              b.mcqDualSlotGujAllApprovedList.push(code);
+            } else if (gujApproved > 0) {
+              b.mcqDualSlotGujPartiallyApprovedCount++;
+              b.mcqDualSlotGujPartiallyApprovedList.push(code);
+            } else {
+              b.mcqDualSlotGujNotApprovedCount++;
+              b.mcqDualSlotGujNotApprovedList.push(code);
+            }
+          }
+        }
+
+        // Legacy per-language approval (whole DB, not restricted to sopOk) —
+        // kept so existing filter buttons / consumers don't break. New UI
+        // rows under "MCQ Approved" use the SOP-based + Dual-slot counts.
+        if (engTq > 0) {
+          if (engApproved >= engTq) { b.mcqEngAllApprovedCount++; b.mcqEngAllApprovedList.push(code); }
+          else if (engApproved > 0) { b.mcqEngPartiallyApprovedCount++; b.mcqEngPartiallyApprovedList.push(code); }
+          else { b.mcqEngNotApprovedCount++; b.mcqEngNotApprovedList.push(code); }
+        } else {
+          b.mcqEngNotApprovedCount++; b.mcqEngNotApprovedList.push(code);
+        }
+        if (isDual) {
+          if (gujTq > 0) {
+            if (gujApproved >= gujTq) { b.mcqGujAllApprovedCount++; b.mcqGujAllApprovedList.push(code); }
+            else if (gujApproved > 0) { b.mcqGujPartiallyApprovedCount++; b.mcqGujPartiallyApprovedList.push(code); }
+            else { b.mcqGujNotApprovedCount++; b.mcqGujNotApprovedList.push(code); }
+          } else {
+            b.mcqGujNotApprovedCount++; b.mcqGujNotApprovedList.push(code);
+          }
+        }
+        void combinedTq; void combinedApproved; // legacy combined stats no longer drive approval buckets
+      }
+      return finaliseMcqBuckets(b);
+    };
+
     /** Resolve trainer using the same priority as the Dashboard:
      *  1. SOP-specific TrainingMatrix entries (trainerName)
      *  2. Department-level Users with trainer role / isTrainerEligible
@@ -589,6 +980,13 @@ export async function GET(req: NextRequest) {
             }
           }
         }
+
+        // SOP-based MCQ buckets for this no-upload dept. Scope = every DB SOP
+        // that belongs to this dept, regardless of Excel presence — the same
+        // scope the per-language ENG/GUJ filters use, so the section's totals
+        // always reconcile and bilingual MAGE-style SOPs are never dropped.
+        const mcqBuckets = computeMcqBuckets(deptDbCodesNoUpload);
+
         const missingFromExcelList = deptDbCodesNoUpload.map((c) => ({
           sopCode: c,
           title: dbBaseMeta.get(c)?.title || '',
@@ -624,41 +1022,12 @@ export async function GET(req: NextRequest) {
           dueSoon30McqReviewedList,
           dueSoon30McqPartialList,
           dueSoon30McqNotReviewedList,
-          mcqCreatedCount: 0,
-          mcqNotCreatedCount: 0,
-          mcqAllApprovedCount: 0,
-          mcqPartiallyApprovedCount: 0,
-          mcqNotApprovedCount: 0,
-          mcqEngCreatedCount: 0,
-          mcqEngNotCreatedCount: 0,
-          mcqEngAllApprovedCount: 0,
-          mcqEngPartiallyApprovedCount: 0,
-          mcqEngNotApprovedCount: 0,
-          mcqGujCreatedCount: 0,
-          mcqGujNotCreatedCount: 0,
-          mcqGujAllApprovedCount: 0,
-          mcqGujPartiallyApprovedCount: 0,
-          mcqGujNotApprovedCount: 0,
+          ...mcqBuckets,
           monthCounts: {},
           sopCodes: [],
           foundInDbList: [],
           expiredList: deptDbCodesNoUpload.filter((c) => dbBaseMeta.get(c)?.expired),
           okayList: deptDbCodesNoUpload.filter((c) => !dbBaseMeta.get(c)?.expired),
-          mcqCreatedList: [],
-          mcqNotCreatedList: [],
-          mcqAllApprovedList: [],
-          mcqPartiallyApprovedList: [],
-          mcqNotApprovedList: [],
-          mcqEngCreatedList: [],
-          mcqEngNotCreatedList: [],
-          mcqEngAllApprovedList: [],
-          mcqEngPartiallyApprovedList: [],
-          mcqEngNotApprovedList: [],
-          mcqGujCreatedList: [],
-          mcqGujNotCreatedList: [],
-          mcqGujAllApprovedList: [],
-          mcqGujPartiallyApprovedList: [],
-          mcqGujNotApprovedList: [],
           employees: [],
           fileUrl: null,
           uploadedAt: null,
@@ -688,12 +1057,16 @@ export async function GET(req: NextRequest) {
         employees: Array<{ name: string; designation: string; training: Record<string, boolean> }>;
       };
 
-      // Unique SOP codes from snapshot header row
-      const codes = Array.from(new Set((snapshot.sopCodes || []).map((c) => String(c).toUpperCase().replace(/-\d+$/, '').trim()))).filter(Boolean);
+      // Unique SOP codes from snapshot header row (strip version suffixes)
+      const codes = Array.from(new Set((snapshot.sopCodes || []).map((c) => stripVersion(c)))).filter(Boolean);
       codes.forEach((c) => allExcelCodes.add(c));
+      const { sopMonthMap: sopMonthMapNorm, monthCounts: monthCountsNorm } = buildNormalizedMonthData(
+        snapshot.sopMonthMap || {},
+        codes,
+      );
       sopCodesByDept[dept] = codes;
-      sopMonthMapAll[dept] = snapshot.sopMonthMap || {};
-      monthCountsByDept[dept] = snapshot.monthCounts || {};
+      sopMonthMapAll[dept] = sopMonthMapNorm;
+      monthCountsByDept[dept] = monthCountsNorm;
 
       const obsoleteSetAll = new Set<string>();
       for (const d of departments) {
@@ -800,7 +1173,7 @@ export async function GET(req: NextRequest) {
         .filter((c) => !dbBaseHasTrainer.get(c))
         .map((c) => ({
           sopCode: c,
-          month: (snapshot.sopMonthMap || {})[c] || '',
+          month: sopMonthMapNorm[c] || '',
           department: dept,
         }));
       const trainersAssigned = trainersAssignedList.length;
@@ -858,107 +1231,15 @@ export async function GET(req: NextRequest) {
         else { dueSoon30McqNotReviewed++; dueSoon30McqNotReviewedList.push(c); }
       }
 
-      // MCQ counts for this dept (scoped to Excel SOPs found in DB)
-      let mcqCreatedCount = 0;
-      let mcqNotCreatedCount = 0;
-      let mcqAllApprovedCount = 0;
-      let mcqPartiallyApprovedCount = 0;
-      let mcqNotApprovedCount = 0;
-      // Per-language MCQ counts
-      let mcqEngCreatedCount = 0;
-      let mcqEngNotCreatedCount = 0;
-      let mcqEngAllApprovedCount = 0;
-      let mcqEngPartiallyApprovedCount = 0;
-      let mcqEngNotApprovedCount = 0;
-      let mcqGujCreatedCount = 0;
-      let mcqGujNotCreatedCount = 0;
-      let mcqGujAllApprovedCount = 0;
-      let mcqGujPartiallyApprovedCount = 0;
-      let mcqGujNotApprovedCount = 0;
-
-      const mcqCreatedList: string[] = [];
-      const mcqNotCreatedList: string[] = [];
-      const mcqAllApprovedList: string[] = [];
-      const mcqPartiallyApprovedList: string[] = [];
-      const mcqNotApprovedList: string[] = [];
-      const mcqEngCreatedList: string[] = [];
-      const mcqEngNotCreatedList: string[] = [];
-      const mcqEngAllApprovedList: string[] = [];
-      const mcqEngPartiallyApprovedList: string[] = [];
-      const mcqEngNotApprovedList: string[] = [];
-      const mcqGujCreatedList: string[] = [];
-      const mcqGujNotCreatedList: string[] = [];
-      const mcqGujAllApprovedList: string[] = [];
-      const mcqGujPartiallyApprovedList: string[] = [];
-      const mcqGujNotApprovedList: string[] = [];
-
-      // Overall MCQ counts scoped to Excel SOPs found in DB (foundInDb)
-      for (const sopCode of foundInDb) {
-        const mcqStat = mcqStatMap.get(sopCode);
-        const tq = mcqStat?.totalQuestions ?? 0;
-        if (tq >= 100) {
-          mcqCreatedCount++;
-          mcqCreatedList.push(sopCode);
-        } else {
-          mcqNotCreatedCount++;
-          mcqNotCreatedList.push(sopCode);
-        }
-
-        const approved = mcqStat?.approvedCount ?? 0;
-        if (tq > 0) {
-          if (approved >= tq) {
-            mcqAllApprovedCount++;
-            mcqAllApprovedList.push(sopCode);
-          } else if (approved > 0) {
-            mcqPartiallyApprovedCount++;
-            mcqPartiallyApprovedList.push(sopCode);
-          } else {
-            mcqNotApprovedCount++;
-            mcqNotApprovedList.push(sopCode);
-          }
-        } else {
-          mcqNotApprovedCount++;
-          mcqNotApprovedList.push(sopCode);
-        }
-      }
-
-      // Per-language MCQ counts use the same SOP lists as langBreakdown/langSopListByKey,
-      // so ENG total == Lang(DB) ENG and GUJ total == Lang(DB) GUJ exactly.
-      const engSopList = langSopListByKey['ENG'] ?? deptDbCodes;
-      const gujSopList = langSopListByKey['GUJ'] ?? [];
-
-      for (const sopCode of engSopList) {
-        const langStat = mcqLangStatMap.get(sopCode);
-        const engTq = langStat?.eng.totalQuestions ?? 0;
-        const engApproved = langStat?.eng.approvedCount ?? 0;
-        if (engTq >= 100) { mcqEngCreatedCount++; mcqEngCreatedList.push(sopCode); }
-        else { mcqEngNotCreatedCount++; mcqEngNotCreatedList.push(sopCode); }
-        if (engTq > 0) {
-          if (engApproved >= engTq) { mcqEngAllApprovedCount++; mcqEngAllApprovedList.push(sopCode); }
-          else if (engApproved > 0) { mcqEngPartiallyApprovedCount++; mcqEngPartiallyApprovedList.push(sopCode); }
-          else { mcqEngNotApprovedCount++; mcqEngNotApprovedList.push(sopCode); }
-        } else {
-          mcqEngNotApprovedCount++; mcqEngNotApprovedList.push(sopCode);
-        }
-      }
-
-      for (const sopCode of gujSopList) {
-        const langStat = mcqLangStatMap.get(sopCode);
-        const gujTq = langStat?.guj.totalQuestions ?? 0;
-        const gujApproved = langStat?.guj.approvedCount ?? 0;
-        if (gujTq >= 100) { mcqGujCreatedCount++; mcqGujCreatedList.push(sopCode); }
-        else { mcqGujNotCreatedCount++; mcqGujNotCreatedList.push(sopCode); }
-        if (gujTq > 0) {
-          if (gujApproved >= gujTq) { mcqGujAllApprovedCount++; mcqGujAllApprovedList.push(sopCode); }
-          else if (gujApproved > 0) { mcqGujPartiallyApprovedCount++; mcqGujPartiallyApprovedList.push(sopCode); }
-          else { mcqGujNotApprovedCount++; mcqGujNotApprovedList.push(sopCode); }
-        } else {
-          mcqGujNotApprovedCount++; mcqGujNotApprovedList.push(sopCode);
-        }
-      }
+      // SOP-based MCQ buckets for this uploaded dept. Scope = every DB SOP
+      // belonging to this dept (deptDbCodes), so the section's totals always
+      // reconcile with the per-language ENG/GUJ filters and bilingual
+      // SOPs (e.g. MAGE) are never silently dropped from the dual breakdown.
+      const mcqBuckets = computeMcqBuckets(deptDbCodes);
 
       const employees = (snapshot.employees || []).map((e) => ({
         ...e,
+        training: normalizeEmployeeTraining(e.training as Record<string, boolean>),
         department: dept,
       }));
       const fullyTrained = employees.filter((e) => {
@@ -1004,45 +1285,16 @@ export async function GET(req: NextRequest) {
         dueSoon30McqReviewedList,
         dueSoon30McqPartialList,
         dueSoon30McqNotReviewedList,
-        mcqCreatedCount,
-        mcqNotCreatedCount,
-        mcqAllApprovedCount,
-        mcqPartiallyApprovedCount,
-        mcqNotApprovedCount,
-        mcqEngCreatedCount,
-        mcqEngNotCreatedCount,
-        mcqEngAllApprovedCount,
-        mcqEngPartiallyApprovedCount,
-        mcqEngNotApprovedCount,
-        mcqGujCreatedCount,
-        mcqGujNotCreatedCount,
-        mcqGujAllApprovedCount,
-        mcqGujPartiallyApprovedCount,
-        mcqGujNotApprovedCount,
+        ...mcqBuckets,
         employeeCount: employees.length,
         fullyTrained,
         incomplete,
-        monthCounts: snapshot.monthCounts || {},
+        monthCounts: monthCountsNorm,
         sopCodes: codes,
         // Exact lists for instant client-side filtering (no API call needed)
         foundInDbList: foundInDb,
         expiredList: deptDbCodes.filter((c) => dbBaseMeta.get(c)?.expired),
         okayList: deptDbCodes.filter((c) => !dbBaseMeta.get(c)?.expired),
-        mcqCreatedList,
-        mcqNotCreatedList,
-        mcqAllApprovedList,
-        mcqPartiallyApprovedList,
-        mcqNotApprovedList,
-        mcqEngCreatedList,
-        mcqEngNotCreatedList,
-        mcqEngAllApprovedList,
-        mcqEngPartiallyApprovedList,
-        mcqEngNotApprovedList,
-        mcqGujCreatedList,
-        mcqGujNotCreatedList,
-        mcqGujAllApprovedList,
-        mcqGujPartiallyApprovedList,
-        mcqGujNotApprovedList,
         employees,
         fileUrl: up.fileUrl || null,
         uploadedAt: up.uploadedAt,
@@ -1130,64 +1382,14 @@ export async function GET(req: NextRequest) {
     let totalDueSoon30McqPartial = 0;
     let totalDueSoon30McqNotReviewed = 0;
     const totalTrainersMissingList: any[] = [];
-    // MCQ totals across ALL DB SOPs (not dept-scoped by upload)
-    let totalMcqCreated = 0;
-    let totalMcqNotCreated = 0;
-    let totalMcqAllApproved = 0;
-    let totalMcqPartiallyApproved = 0;
-    let totalMcqNotApproved = 0;
-    let totalMcqEngCreated = 0;
-    let totalMcqEngNotCreated = 0;
-    let totalMcqEngAllApproved = 0;
-    let totalMcqEngPartiallyApproved = 0;
-    let totalMcqEngNotApproved = 0;
-    let totalMcqGujCreated = 0;
-    let totalMcqGujNotCreated = 0;
-    let totalMcqGujAllApproved = 0;
-    let totalMcqGujPartiallyApproved = 0;
-    let totalMcqGujNotApproved = 0;
-    for (const base of dbBaseSet) {
-      const mcqStat = mcqStatMap.get(base);
-      const tq = mcqStat?.totalQuestions ?? 0;
-      if (tq >= 100) totalMcqCreated++; else totalMcqNotCreated++;
-      const approved = mcqStat?.approvedCount ?? 0;
-      if (tq > 0) {
-        if (approved >= tq) totalMcqAllApproved++;
-        else if (approved > 0) totalMcqPartiallyApproved++;
-        else totalMcqNotApproved++;
-      } else {
-        totalMcqNotApproved++;
-      }
-
-      const langStat = mcqLangStatMap.get(base);
-      const engTq = langStat?.eng.totalQuestions ?? 0;
-      const engApproved = langStat?.eng.approvedCount ?? 0;
-      const gujTq = langStat?.guj.totalQuestions ?? 0;
-      const gujApproved = langStat?.guj.approvedCount ?? 0;
-
-      // ENG: every SOP counts toward ENG total
-      if (engTq >= 100) totalMcqEngCreated++; else totalMcqEngNotCreated++;
-      if (engTq > 0) {
-        if (engApproved >= engTq) totalMcqEngAllApproved++;
-        else if (engApproved > 0) totalMcqEngPartiallyApproved++;
-        else totalMcqEngNotApproved++;
-      } else {
-        totalMcqEngNotApproved++;
-      }
-
-      // GUJ: use same default as globalLangMap (new Set(['ENG'])) so counts match Lang(DB) GUJ total
-      const baseHasGuj = (dbBaseLangs.get(base) || new Set<LangKey>(['ENG'])).has('GUJ');
-      if (baseHasGuj) {
-        if (gujTq >= 100) totalMcqGujCreated++; else totalMcqGujNotCreated++;
-        if (gujTq > 0) {
-          if (gujApproved >= gujTq) totalMcqGujAllApproved++;
-          else if (gujApproved > 0) totalMcqGujPartiallyApproved++;
-          else totalMcqGujNotApproved++;
-        } else {
-          totalMcqGujNotApproved++;
-        }
-      }
-    }
+    // SOP-based MCQ totals across ALL DB SOPs (every primary SOP, regardless
+    // of dept upload status). The helper guarantees:
+    //   • Top "MCQ (100+ created)" Found + Missing == dbBaseSet.size (e.g. 429)
+    //   • Non-Dual section = English-only SOPs ENG status
+    //   • Dual section = bilingual SOPs (incl. all MAGE/Engineering rows),
+    //     reported per-language slot AND as a per-SOP "either incomplete"
+    //     aggregate so dual issues never get hidden inside the ENG-only column.
+    const totalMcqBuckets = computeMcqBuckets(dbBaseSet);
     // Total expiry counts over ALL DB SOPs (not just Excel-found)
     const thirtyDaysMsTotal = 30 * 24 * 3600 * 1000;
     for (const base of dbBaseSet) {
@@ -1294,21 +1496,7 @@ export async function GET(req: NextRequest) {
       dueSoon30McqReviewed: totalDueSoon30McqReviewed,
       dueSoon30McqPartial: totalDueSoon30McqPartial,
       dueSoon30McqNotReviewed: totalDueSoon30McqNotReviewed,
-      mcqCreatedCount: totalMcqCreated,
-      mcqNotCreatedCount: totalMcqNotCreated,
-      mcqAllApprovedCount: totalMcqAllApproved,
-      mcqPartiallyApprovedCount: totalMcqPartiallyApproved,
-      mcqNotApprovedCount: totalMcqNotApproved,
-      mcqEngCreatedCount: totalMcqEngCreated,
-      mcqEngNotCreatedCount: totalMcqEngNotCreated,
-      mcqEngAllApprovedCount: totalMcqEngAllApproved,
-      mcqEngPartiallyApprovedCount: totalMcqEngPartiallyApproved,
-      mcqEngNotApprovedCount: totalMcqEngNotApproved,
-      mcqGujCreatedCount: totalMcqGujCreated,
-      mcqGujNotCreatedCount: totalMcqGujNotCreated,
-      mcqGujAllApprovedCount: totalMcqGujAllApproved,
-      mcqGujPartiallyApprovedCount: totalMcqGujPartiallyApproved,
-      mcqGujNotApprovedCount: totalMcqGujNotApproved,
+      ...totalMcqBuckets,
       employeeCount: totalEmployees,
       fullyTrained: totalFullyTrained,
       incomplete: totalIncomplete,
