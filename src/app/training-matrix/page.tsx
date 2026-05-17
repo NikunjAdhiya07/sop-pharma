@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useAuthGuard } from '@/hooks/useAuthGuard';
 
@@ -455,7 +455,7 @@ interface DeptCardData {
   // Non-Dual SOPs (English-only) breakdown
   mcqEngOnlyCreatedCount?: number;
   mcqEngOnlyNotCreatedCount?: number;
-  // Dual SOPs (ENG + GUJ) breakdown
+  // (ENG + GUJ) breakdown
   mcqDualSopCount?: number;
   mcqDualEngCreatedCount?: number;
   mcqDualEngNotCreatedCount?: number;
@@ -540,7 +540,7 @@ interface TotalCardData {
   // Non-Dual SOPs (English-only) breakdown
   mcqEngOnlyCreatedCount?: number;
   mcqEngOnlyNotCreatedCount?: number;
-  // Dual SOPs (ENG + GUJ) breakdown
+  // (ENG + GUJ) breakdown
   mcqDualSopCount?: number;
   mcqDualEngCreatedCount?: number;
   mcqDualEngNotCreatedCount?: number;
@@ -1220,6 +1220,153 @@ function MonthStrip({
   );
 }
 
+function deptStripShort(d: string) {
+  if (d === 'Microbiology') return 'Micro';
+  if (d === 'Production') return 'Prod';
+  if (d === 'Engineering') return 'Eng';
+  if (d === 'Personnel') return 'Pers';
+  if (d === 'NA') return 'NA';
+  return d;
+}
+
+function ExpiryInlineRow({
+  expired,
+  near,
+  okayNotNear,
+  onExpired,
+  onNear,
+  onOkay,
+}: {
+  expired: number;
+  near: number;
+  okayNotNear: number;
+  onExpired?: () => void;
+  onNear?: () => void;
+  onOkay?: () => void;
+}) {
+  const btn =
+    'min-w-[0.65rem] rounded-sm px-0.5 text-[8px] font-bold leading-none tabular-nums focus:outline-none focus:ring-1';
+  const label = 'shrink-0 text-[6px] font-medium leading-none text-gray-400';
+  return (
+    <div className="flex min-w-0 flex-nowrap items-center gap-x-1 px-1 py-0.5">
+      <span className={label} title="Expired">
+        Ex
+      </span>
+      {onExpired ? (
+        <button
+          type="button"
+          onClick={onExpired}
+          className={`${btn} cursor-pointer text-red-600 hover:bg-red-50 focus:ring-red-400`}
+        >
+          {expired}
+        </button>
+      ) : (
+        <span className={`${btn} text-red-600`}>{expired}</span>
+      )}
+      <span className={label} title="Due in next 30 days">
+        Near
+      </span>
+      {onNear ? (
+        <button
+          type="button"
+          onClick={onNear}
+          className={`${btn} cursor-pointer text-amber-600 hover:bg-amber-50 focus:ring-amber-400`}
+        >
+          {near}
+        </button>
+      ) : (
+        <span className={`${btn} text-amber-600`}>{near}</span>
+      )}
+      <span className={label} title="Valid (not expired, not due soon)">
+        No
+      </span>
+      {onOkay ? (
+        <button
+          type="button"
+          onClick={onOkay}
+          className={`${btn} cursor-pointer text-gray-800 hover:bg-gray-100 focus:ring-gray-400`}
+        >
+          {okayNotNear}
+        </button>
+      ) : (
+        <span className={`${btn} text-gray-800`}>{okayNotNear}</span>
+      )}
+    </div>
+  );
+}
+
+function ExpiryDeptStrip({
+  expiredCounts,
+  nearCounts,
+  okayCounts,
+  order,
+  onSelectExpired,
+  onSelectNear,
+  onSelectOkay,
+}: {
+  expiredCounts: Record<string, number>;
+  nearCounts: Record<string, number>;
+  okayCounts: Record<string, number>;
+  order: readonly string[];
+  onSelectExpired?: (dept: string) => void;
+  onSelectNear?: (dept: string) => void;
+  onSelectOkay?: (dept: string) => void;
+}) {
+  const btn =
+    'min-w-[0.65rem] rounded-sm px-0.5 text-[8px] font-bold leading-none tabular-nums focus:outline-none focus:ring-1';
+  const label = 'text-[6px] font-medium leading-none text-gray-400';
+  return (
+    <div className="flex min-w-0 flex-nowrap gap-x-0.5 overflow-x-auto px-0.5 py-0.5">
+      {order.map((d) => (
+        <div
+          key={d}
+          className="flex shrink-0 flex-col items-center border-r border-gray-200/70 px-1 last:border-r-0"
+        >
+          <span className="text-[7px] font-medium leading-none text-gray-500">{deptStripShort(d)}</span>
+          <span className="mt-px flex items-center gap-0.5 whitespace-nowrap tabular-nums">
+            <span className="inline-flex items-center gap-px">
+              <span className={label} title="Expired">
+                Ex
+              </span>
+              <button
+                type="button"
+                onClick={() => onSelectExpired?.(d)}
+                className={`${btn} ${onSelectExpired ? 'cursor-pointer text-red-600 hover:bg-red-50 focus:ring-red-400' : 'text-red-600'}`}
+              >
+                {expiredCounts?.[d] ?? 0}
+              </button>
+            </span>
+            <span className="inline-flex items-center gap-px">
+              <span className={label} title="Due in next 30 days">
+                Near
+              </span>
+              <button
+                type="button"
+                onClick={() => onSelectNear?.(d)}
+                className={`${btn} ${onSelectNear ? 'cursor-pointer text-amber-600 hover:bg-amber-50 focus:ring-amber-400' : 'text-amber-600'}`}
+              >
+                {nearCounts?.[d] ?? 0}
+              </button>
+            </span>
+            <span className="inline-flex items-center gap-px">
+              <span className={label} title="Valid (not expired, not due soon)">
+                No
+              </span>
+              <button
+                type="button"
+                onClick={() => onSelectOkay?.(d)}
+                className={`${btn} ${onSelectOkay ? 'cursor-pointer text-gray-800 hover:bg-gray-100 focus:ring-gray-400' : 'text-gray-800'}`}
+              >
+                {okayCounts?.[d] ?? 0}
+              </button>
+            </span>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function DeptStrip({
   foundCounts,
   missingCounts,
@@ -1233,14 +1380,7 @@ function DeptStrip({
   onSelectFound?: (dept: string) => void;
   onSelectMissing?: (dept: string) => void;
 }) {
-  const short = (d: string) => {
-    if (d === 'Microbiology') return 'Micro';
-    if (d === 'Production') return 'Prod';
-    if (d === 'Engineering') return 'Eng';
-    if (d === 'Personnel') return 'Pers';
-    if (d === 'NA') return 'NA';
-    return d; // QA, QC, Store
-  };
+  const short = deptStripShort;
   const visible = order;
   return (
     <div className="grid grid-cols-4 gap-x-1 gap-y-0.5">
@@ -1269,6 +1409,31 @@ function DeptStrip({
   );
 }
 
+const SummaryStripeContext = createContext<(() => number) | null>(null);
+
+function SummaryTopics({ children }: { children: React.ReactNode }) {
+  const stripeRef = useRef(-1);
+  stripeRef.current = -1;
+  const nextStripe = useCallback(() => {
+    stripeRef.current += 1;
+    return stripeRef.current;
+  }, []);
+  return (
+    <SummaryStripeContext.Provider value={nextStripe}>
+      <div className="flex min-w-0 flex-col gap-0">{children}</div>
+    </SummaryStripeContext.Provider>
+  );
+}
+
+function SummaryTopic({ children }: { children: React.ReactNode }) {
+  const nextStripe = useContext(SummaryStripeContext);
+  const stripe = nextStripe ? nextStripe() : 0;
+  const bg = stripe % 2 === 0 ? 'bg-gray-100' : 'bg-white';
+  return (
+    <div className={`flex flex-col gap-0 rounded-sm px-0.5 py-0.5 ${bg}`}>{children}</div>
+  );
+}
+
 function CardShell({
   accent,
   children,
@@ -1280,31 +1445,228 @@ function CardShell({
   icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
   title: string;
 }) {
-  const isTotal = title === 'Total';
   return (
     <div
-      className={`flex w-full min-w-[180px] flex-1 flex-col overflow-hidden rounded-[10px] border px-2 py-1.5 text-left shadow-sm ${isTotal ? 'border-purple-300 bg-purple-50' : 'border-gray-200 bg-white'
-        }`}
+      className="flex w-full min-w-[180px] flex-1 flex-col overflow-hidden rounded-[10px] bg-white px-2 py-1 text-left"
     >
-      <div
-        className={`mb-2 flex w-full min-h-[40px] items-start gap-1.5 rounded-md border-b pb-2 ${isTotal ? 'border-purple-200' : 'border-gray-100'
-          }`}
-      >
-        <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: accent }} />
+      <div className="flex w-full items-center gap-1.5 pb-px">
+        <Icon className="h-3.5 w-3.5 shrink-0" style={{ color: accent }} />
         <span className="min-w-0 flex-1 text-[11px] font-bold leading-tight text-gray-800 break-words">{title}</span>
       </div>
-      <div className="flex min-w-0 flex-col gap-0 border-t border-transparent pt-0.5">{children}</div>
+      <SummaryTopics>{children}</SummaryTopics>
     </div>
   );
 }
 
-function Divider() {
-  return <div className="my-1 border-t border-gray-100" />;
-}
-
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-1 text-[9px] font-bold uppercase tracking-wider text-gray-500">{children}</div>
+    <div className="px-1 text-[7px] font-semibold leading-none text-gray-500">{children}</div>
+  );
+}
+
+const mcqCompactPill =
+  'inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums';
+const mcqCompactSep = 'select-none text-[6px] leading-none text-gray-300';
+const mcqCompactBtn =
+  'min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none transition-colors focus:outline-none focus:ring-1';
+
+function McqCompactRow2({
+  label,
+  labelTitle,
+  green,
+  red,
+  onGreen,
+  onRed,
+}: {
+  label: string;
+  labelTitle?: string;
+  green: number;
+  red: number;
+  onGreen?: () => void;
+  onRed?: () => void;
+}) {
+  return (
+    <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
+      <span className="min-w-0 truncate text-[7px] font-semibold leading-none text-gray-500" title={labelTitle ?? label}>
+        {label}
+      </span>
+      <div className={mcqCompactPill}>
+        <button type="button" onClick={onGreen} className={`${mcqCompactBtn} text-emerald-700 hover:bg-emerald-50 focus:ring-emerald-400`}>
+          {green}
+        </button>
+        <span className={mcqCompactSep}>|</span>
+        <button type="button" onClick={onRed} className={`${mcqCompactBtn} text-red-600 hover:bg-red-50 focus:ring-red-400`}>
+          {red}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function McqCompactRow3({
+  label,
+  labelTitle,
+  green,
+  amber,
+  red,
+  onGreen,
+  onAmber,
+  onRed,
+}: {
+  label: string;
+  labelTitle?: string;
+  green: number;
+  amber: number;
+  red: number;
+  onGreen?: () => void;
+  onAmber?: () => void;
+  onRed?: () => void;
+}) {
+  return (
+    <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
+      <span className="min-w-0 truncate text-[7px] font-semibold leading-none text-gray-500" title={labelTitle ?? label}>
+        {label}
+      </span>
+      <div className={mcqCompactPill}>
+        <button type="button" onClick={onGreen} className={`${mcqCompactBtn} text-emerald-700 hover:bg-emerald-50 focus:ring-emerald-400`}>
+          {green}
+        </button>
+        <span className={mcqCompactSep}>|</span>
+        <button type="button" onClick={onAmber} className={`${mcqCompactBtn} text-amber-600 hover:bg-amber-50 focus:ring-amber-400`}>
+          {amber}
+        </button>
+        <span className={mcqCompactSep}>|</span>
+        <button type="button" onClick={onRed} className={`${mcqCompactBtn} text-red-600 hover:bg-red-50 focus:ring-red-400`}>
+          {red}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function McqCompactSlot2({
+  tag,
+  green,
+  red,
+  onGreen,
+  onRed,
+  greenTitle,
+  redTitle,
+}: {
+  tag: string;
+  green: number;
+  red: number;
+  onGreen?: () => void;
+  onRed?: () => void;
+  greenTitle?: string;
+  redTitle?: string;
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-px">
+      <span className="shrink-0 text-[6px] italic leading-none text-gray-400">{tag}</span>
+      <div className={mcqCompactPill}>
+        <button type="button" title={greenTitle} onClick={onGreen} className={`${mcqCompactBtn} text-emerald-700 hover:bg-emerald-50 focus:ring-emerald-400`}>
+          {green}
+        </button>
+        <span className={mcqCompactSep}>|</span>
+        <button type="button" title={redTitle} onClick={onRed} className={`${mcqCompactBtn} text-red-600 hover:bg-red-50 focus:ring-red-400`}>
+          {red}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function McqCompactSlot3({
+  tag,
+  green,
+  amber,
+  red,
+  onGreen,
+  onAmber,
+  onRed,
+  greenTitle,
+  amberTitle,
+  redTitle,
+}: {
+  tag: string;
+  green: number;
+  amber: number;
+  red: number;
+  onGreen?: () => void;
+  onAmber?: () => void;
+  onRed?: () => void;
+  greenTitle?: string;
+  amberTitle?: string;
+  redTitle?: string;
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-px">
+      <span className="shrink-0 text-[6px] italic leading-none text-gray-400">{tag}</span>
+      <div className={mcqCompactPill}>
+        <button type="button" title={greenTitle} onClick={onGreen} className={`${mcqCompactBtn} text-emerald-700 hover:bg-emerald-50 focus:ring-emerald-400`}>
+          {green}
+        </button>
+        <span className={mcqCompactSep}>|</span>
+        <button type="button" title={amberTitle} onClick={onAmber} className={`${mcqCompactBtn} text-amber-600 hover:bg-amber-50 focus:ring-amber-400`}>
+          {amber}
+        </button>
+        <span className={mcqCompactSep}>|</span>
+        <button type="button" title={redTitle} onClick={onRed} className={`${mcqCompactBtn} text-red-600 hover:bg-red-50 focus:ring-red-400`}>
+          {red}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function McqCompactSlots2({
+  eng,
+  guj,
+}: {
+  eng: { green: number; red: number; onGreen?: () => void; onRed?: () => void; greenTitle?: string; redTitle?: string };
+  guj: { green: number; red: number; onGreen?: () => void; onRed?: () => void; greenTitle?: string; redTitle?: string };
+}) {
+  return (
+    <div className="mt-px flex min-w-0 flex-nowrap items-center gap-x-0.5 opacity-80">
+      <McqCompactSlot2 tag="ENG" {...eng} />
+      <McqCompactSlot2 tag="GUJ" {...guj} />
+    </div>
+  );
+}
+
+function McqCompactSlots3({
+  eng,
+  guj,
+}: {
+  eng: {
+    green: number;
+    amber: number;
+    red: number;
+    onGreen?: () => void;
+    onAmber?: () => void;
+    onRed?: () => void;
+    greenTitle?: string;
+    amberTitle?: string;
+    redTitle?: string;
+  };
+  guj: {
+    green: number;
+    amber: number;
+    red: number;
+    onGreen?: () => void;
+    onAmber?: () => void;
+    onRed?: () => void;
+    greenTitle?: string;
+    amberTitle?: string;
+    redTitle?: string;
+  };
+}) {
+  return (
+    <div className="mt-px flex min-w-0 flex-nowrap items-center gap-x-0.5 opacity-80">
+      <McqCompactSlot3 tag="ENG" {...eng} />
+      <McqCompactSlot3 tag="GUJ" {...guj} />
+    </div>
   );
 }
 
@@ -2878,7 +3240,7 @@ export default function TrainingMatrixPage() {
       title: string;
       lang?: string;
       trainer?: 'assigned' | 'missing';
-      status?: 'all_db' | 'expired' | 'okay' | 'due_soon_30' | 'due_soon_30_mcq_reviewed' | 'due_soon_30_mcq_partial' | 'due_soon_30_mcq_not_reviewed' | 'mcq_created' | 'mcq_not_created' | 'mcq_all_approved' | 'mcq_partially_approved' | 'mcq_not_approved' | 'mcq_eng_created' | 'mcq_eng_not_created' | 'mcq_eng_all_approved' | 'mcq_eng_partially_approved' | 'mcq_eng_not_approved' | 'mcq_guj_created' | 'mcq_guj_not_created' | 'mcq_guj_all_approved' | 'mcq_guj_partially_approved' | 'mcq_guj_not_approved' | 'mcq_eng_only_created' | 'mcq_eng_only_not_created' | 'mcq_dual_eng_created' | 'mcq_dual_eng_not_created' | 'mcq_dual_guj_created' | 'mcq_dual_guj_not_created' | 'mcq_dual_both_created' | 'mcq_dual_either_incomplete' | 'mcq_approved_nondual' | 'mcq_approval_partial_nondual' | 'mcq_approval_missing_nondual' | 'mcq_approved_dual' | 'mcq_approval_partial_dual' | 'mcq_approval_missing_dual' | 'mcq_dual_slot_eng_all_approved' | 'mcq_dual_slot_eng_partially_approved' | 'mcq_dual_slot_eng_not_approved' | 'mcq_dual_slot_guj_all_approved' | 'mcq_dual_slot_guj_partially_approved' | 'mcq_dual_slot_guj_not_approved' | 'sop_0_trainer' | 'sop_1_trainer' | 'sop_2plus_trainer';
+      status?: 'all_db' | 'expired' | 'okay' | 'okay_not_near' | 'due_soon_30' | 'due_soon_30_mcq_reviewed' | 'due_soon_30_mcq_partial' | 'due_soon_30_mcq_not_reviewed' | 'mcq_created' | 'mcq_not_created' | 'mcq_all_approved' | 'mcq_partially_approved' | 'mcq_not_approved' | 'mcq_eng_created' | 'mcq_eng_not_created' | 'mcq_eng_all_approved' | 'mcq_eng_partially_approved' | 'mcq_eng_not_approved' | 'mcq_guj_created' | 'mcq_guj_not_created' | 'mcq_guj_all_approved' | 'mcq_guj_partially_approved' | 'mcq_guj_not_approved' | 'mcq_eng_only_created' | 'mcq_eng_only_not_created' | 'mcq_dual_eng_created' | 'mcq_dual_eng_not_created' | 'mcq_dual_guj_created' | 'mcq_dual_guj_not_created' | 'mcq_dual_both_created' | 'mcq_dual_either_incomplete' | 'mcq_approved_nondual' | 'mcq_approval_partial_nondual' | 'mcq_approval_missing_nondual' | 'mcq_approved_dual' | 'mcq_approval_partial_dual' | 'mcq_approval_missing_dual' | 'mcq_dual_slot_eng_all_approved' | 'mcq_dual_slot_eng_partially_approved' | 'mcq_dual_slot_eng_not_approved' | 'mcq_dual_slot_guj_all_approved' | 'mcq_dual_slot_guj_partially_approved' | 'mcq_dual_slot_guj_not_approved' | 'sop_0_trainer' | 'sop_1_trainer' | 'sop_2plus_trainer';
     }) => {
       setViewMode('sop');
       setGroupBy('department');
@@ -2924,7 +3286,10 @@ export default function TrainingMatrixPage() {
               let list: string[] = [];
               if (opts.status === 'expired') list = deptData.expiredList || [];
               else if (opts.status === 'okay') list = deptData.okayList || [];
-              else if (opts.status === 'due_soon_30') list = deptData.dueSoon30List || [];
+              else if (opts.status === 'okay_not_near') {
+                const nearSet = new Set(deptData.dueSoon30List || []);
+                list = (deptData.okayList || []).filter((c: string) => !nearSet.has(c));
+              } else if (opts.status === 'due_soon_30') list = deptData.dueSoon30List || [];
               else if (opts.status === 'due_soon_30_mcq_reviewed') list = deptData.dueSoon30McqReviewedList || [];
               else if (opts.status === 'due_soon_30_mcq_partial') list = deptData.dueSoon30McqPartialList || [];
               else if (opts.status === 'due_soon_30_mcq_not_reviewed') list = deptData.dueSoon30McqNotReviewedList || [];
@@ -3614,8 +3979,22 @@ export default function TrainingMatrixPage() {
     const totalExcelDeptMissingSum = Object.values(totalExcelDeptMissingByDept).reduce((a, b) => a + b, 0) + totalExcelDeptUnknownMissing;
     const hasTotalExcelDeptSplit = totalExcelDeptTotal > 0;
 
+    const totalExpiryExpiredByDept: Record<string, number> = {};
+    const totalExpiryNearByDept: Record<string, number> = {};
+    const totalExpiryOkayByDept: Record<string, number> = {};
+    for (const dept of departments) {
+      const deptData = data?.perDept?.[dept] as DeptCardData | undefined;
+      if (!deptData) continue;
+      totalExpiryExpiredByDept[dept] = deptData.expiredCount ?? 0;
+      totalExpiryNearByDept[dept] = deptData.dueSoon30Count ?? 0;
+      const okay = deptData.okayCount ?? 0;
+      const near = deptData.dueSoon30Count ?? 0;
+      totalExpiryOkayByDept[dept] = Math.max(0, okay - near);
+    }
+
     return (
       <CardShell accent={getDeptAccent('Total')} icon={TotalIcon} title="Total">
+        <SummaryTopic>
         <button
           type="button"
           onClick={() =>
@@ -3695,9 +4074,38 @@ export default function TrainingMatrixPage() {
             </div>
           </div>
         )}
+        <ExpiryDeptStrip
+          expiredCounts={totalExpiryExpiredByDept}
+          nearCounts={totalExpiryNearByDept}
+          okayCounts={totalExpiryOkayByDept}
+          order={departments}
+          onSelectExpired={(d) =>
+            applySummaryCapsuleFilter({
+              dept: d as ActiveDept,
+              type: 'found',
+              title: `${d} · Expired SOPs`,
+              status: 'expired',
+            })
+          }
+          onSelectNear={(d) =>
+            applySummaryCapsuleFilter({
+              dept: d as ActiveDept,
+              type: 'found',
+              title: `${d} · Due in Next 30 Days`,
+              status: 'due_soon_30',
+            })
+          }
+          onSelectOkay={(d) =>
+            applySummaryCapsuleFilter({
+              dept: d as ActiveDept,
+              type: 'found',
+              title: `${d} · Valid SOPs (not due soon)`,
+              status: 'okay_not_near',
+            })
+          }
+        />
         {hasTotalExcelDeptSplit && (
           <>
-            <Divider />
             <div className="grid min-h-[26px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[5px] border border-transparent px-1 py-px text-[10px]">
               <span className="min-w-0 truncate text-left font-semibold text-gray-700">Excel SOP</span>
               <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
@@ -3753,7 +4161,8 @@ export default function TrainingMatrixPage() {
             />
           </>
         )}
-        <Divider />
+        </SummaryTopic>
+        <SummaryTopic>
         <RowB
           label="SOP wise Trainers"
           green={t.sopTrainersAssigned ?? t.trainersAssigned}
@@ -3775,7 +4184,8 @@ export default function TrainingMatrixPage() {
             })
           }
         />
-        <Divider />
+        </SummaryTopic>
+        <SummaryTopic>
         {(() => {
           const r3Total = totalRepeat3PlusList.reduce((s, i) => s + (i.count || 0), 0);
           const r2Total = totalRepeat2List.reduce((s, i) => s + (i.count || 0), 0);
@@ -3815,6 +4225,8 @@ export default function TrainingMatrixPage() {
             </>
           );
         })()}
+        </SummaryTopic>
+        <SummaryTopic>
         <RowB
           label={`MCQ (100+ created) · ${(t.mcqCreatedCount ?? 0) + (t.mcqNotCreatedCount ?? 0)}`}
           green={t.mcqCreatedCount}
@@ -3843,45 +4255,47 @@ export default function TrainingMatrixPage() {
               NonDual.Missing + Dual.Missing ≡ Overall.Missing
             The ENG / GUJ slot rows under "Dual SOPs" are display-only and do
             not feed the reconciliation. */}
-        <div className="flex w-full flex-col gap-0.5 px-1 py-0 text-[9px]">
-          <SectionLabel>{`SOPs (ENG only) · ${(t.mcqEngOnlyCreatedCount ?? 0) + (t.mcqEngOnlyNotCreatedCount ?? 0)}`}</SectionLabel>
-          <div className="flex min-w-0 items-center justify-between gap-1">
-            <span className="text-gray-500 text-[9px] font-semibold shrink-0">Found | Missing</span>
-            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white/90 px-0.5 py-0.5 shadow-sm tabular-nums">
-              <button type="button" title="Non-dual SOPs with 100+ ENG MCQs (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · Found (ENG ≥100)', status: 'mcq_eng_only_created' })} className="min-w-[1.3rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqEngOnlyCreatedCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Non-dual SOPs with <100 ENG MCQs (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · Missing (ENG <100)', status: 'mcq_eng_only_not_created' })} className="min-w-[1.3rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqEngOnlyNotCreatedCount ?? 0}</button>
+        <div className="flex w-full flex-col gap-px px-1 py-0">
+          <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
+            <span className="min-w-0 truncate text-[7px] font-semibold leading-none text-gray-500">{`ENG·${(t.mcqEngOnlyCreatedCount ?? 0) + (t.mcqEngOnlyNotCreatedCount ?? 0)}`}</span>
+            <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
+              <button type="button" title="Non-dual SOPs with 100+ ENG MCQs (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · Found (ENG ≥100)', status: 'mcq_eng_only_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqEngOnlyCreatedCount ?? 0}</button>
+              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+              <button type="button" title="Non-dual SOPs with <100 ENG MCQs (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · Missing (ENG <100)', status: 'mcq_eng_only_not_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqEngOnlyNotCreatedCount ?? 0}</button>
             </div>
           </div>
-          <SectionLabel>{`Dual SOPs (ENG + GUJ) · ${t.mcqDualSopCount ?? 0}`}</SectionLabel>
-          <div className="flex min-w-0 items-center justify-between gap-1">
-            <span className="text-gray-500 text-[9px] font-semibold shrink-0">Found | Missing</span>
-            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white/90 px-0.5 py-0.5 shadow-sm tabular-nums">
-              <button type="button" title="Dual SOPs with 100+ MCQs in BOTH ENG and GUJ (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · Found (ENG ≥100 AND GUJ ≥100)', status: 'mcq_dual_both_created' })} className="min-w-[1.3rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualBothCreatedCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Dual SOPs missing 100+ MCQs in EITHER ENG or GUJ (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · Missing (ENG <100 OR GUJ <100)', status: 'mcq_dual_either_incomplete' })} className="min-w-[1.3rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualEitherIncompleteCount ?? 0}</button>
+          <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
+            <span className="min-w-0 truncate text-[7px] font-semibold leading-none text-gray-500" title="(ENG + GUJ)">{`(E+G)·${t.mcqDualSopCount ?? 0}`}</span>
+            <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
+              <button type="button" title="Dual SOPs with 100+ MCQs in BOTH ENG and GUJ (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · Found (ENG ≥100 AND GUJ ≥100)', status: 'mcq_dual_both_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualBothCreatedCount ?? 0}</button>
+              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+              <button type="button" title="Dual SOPs missing 100+ MCQs in EITHER ENG or GUJ (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · Missing (ENG <100 OR GUJ <100)', status: 'mcq_dual_either_incomplete' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualEitherIncompleteCount ?? 0}</button>
             </div>
           </div>
           {/* Display-only per-language slot breakdown for Dual SOPs.
               These do NOT reconcile to the Dual Found/Missing row above — they
               describe individual language slots, not whole SOPs. */}
-          <div className="mt-0.5 flex min-w-0 items-center justify-between gap-1 opacity-80">
-            <span className="text-gray-400 text-[8px] italic shrink-0">ENG slot</span>
-            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/70 bg-white/80 px-0.5 py-0 tabular-nums">
-              <button type="button" title="Dual SOPs whose ENG slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot ≥100 (display)', status: 'mcq_dual_eng_created' })} className="min-w-[1.1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[9px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualEngCreatedCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Dual SOPs whose ENG slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot <100 (display)', status: 'mcq_dual_eng_not_created' })} className="min-w-[1.1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[9px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualEngNotCreatedCount ?? 0}</button>
+          <div className="flex min-w-0 flex-nowrap items-center gap-x-0.5 opacity-80">
+            <div className="flex shrink-0 items-center gap-px">
+              <span className="text-gray-400 text-[6px] italic leading-none shrink-0">ENG</span>
+              <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
+                <button type="button" title="Dual SOPs whose ENG slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot ≥100 (display)', status: 'mcq_dual_eng_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualEngCreatedCount ?? 0}</button>
+                <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+                <button type="button" title="Dual SOPs whose ENG slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot <100 (display)', status: 'mcq_dual_eng_not_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualEngNotCreatedCount ?? 0}</button>
+              </div>
             </div>
-          </div>
-          <div className="flex min-w-0 items-center justify-between gap-1 opacity-80">
-            <span className="text-gray-400 text-[8px] italic shrink-0">GUJ slot</span>
-            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/70 bg-white/80 px-0.5 py-0 tabular-nums">
-              <button type="button" title="Dual SOPs whose GUJ slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot ≥100 (display)', status: 'mcq_dual_guj_created' })} className="min-w-[1.1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[9px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualGujCreatedCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Dual SOPs whose GUJ slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot <100 (display)', status: 'mcq_dual_guj_not_created' })} className="min-w-[1.1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[9px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualGujNotCreatedCount ?? 0}</button>
+            <div className="flex shrink-0 items-center gap-px">
+              <span className="text-gray-400 text-[6px] italic leading-none shrink-0">GUJ</span>
+              <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
+                <button type="button" title="Dual SOPs whose GUJ slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot ≥100 (display)', status: 'mcq_dual_guj_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualGujCreatedCount ?? 0}</button>
+                <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+                <button type="button" title="Dual SOPs whose GUJ slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot <100 (display)', status: 'mcq_dual_guj_not_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualGujNotCreatedCount ?? 0}</button>
+              </div>
             </div>
           </div>
         </div>
+        </SummaryTopic>
+        <SummaryTopic>
         <RowC
           label={`MCQ Approved · ${t.mcqCreatedCount ?? 0}`}
           green={t.mcqAllApprovedCount}
@@ -3920,78 +4334,52 @@ export default function TrainingMatrixPage() {
               Top.(Approved+Partial+Missing)     === mcqCreatedCount
             The ENG slot / GUJ slot rows under "Dual SOPs" are display-only and
             do NOT reconcile to the Dual primary row above them. */}
-        <div className="flex w-full flex-col gap-0.5 px-1 py-0 text-[9px]">
-          <SectionLabel>{`SOPs (ENG only) · ${t.mcqEngOnlyCreatedCount ?? 0}`}</SectionLabel>
-          <div className="flex min-w-0 items-center justify-between gap-1">
-            <span className="text-gray-500 text-[9px] font-semibold shrink-0" title="SOP-level breakdown — Approved | Partial | Missing">SOPs</span>
-            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white/90 px-0.5 py-0.5 shadow-sm tabular-nums">
-              <button type="button" title="Non-dual SOPs whose ENG MCQs are fully approved" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · MCQ Approved (ENG fully approved)', status: 'mcq_approved_nondual' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqApprovedNonDualCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Non-dual SOPs with some ENG approval but not full" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · MCQ Partially Approved', status: 'mcq_approval_partial_nondual' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqApprovalPartialNonDualCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Non-dual SOPs with zero ENG approvals" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · MCQ Approval Missing (zero approvals)', status: 'mcq_approval_missing_nondual' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqApprovalMissingNonDualCount ?? 0}</button>
+        <div className="flex w-full flex-col gap-px px-1 py-0">
+          <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
+            <span className="min-w-0 truncate text-[7px] font-semibold leading-none text-gray-500">{`ENG·${t.mcqEngOnlyCreatedCount ?? 0}`}</span>
+            <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
+              <button type="button" title="Non-dual SOPs whose ENG MCQs are fully approved" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · MCQ Approved (ENG fully approved)', status: 'mcq_approved_nondual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqApprovedNonDualCount ?? 0}</button>
+              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+              <button type="button" title="Non-dual SOPs with some ENG approval but not full" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · MCQ Partially Approved', status: 'mcq_approval_partial_nondual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqApprovalPartialNonDualCount ?? 0}</button>
+              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+              <button type="button" title="Non-dual SOPs with zero ENG approvals" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · MCQ Approval Missing (zero approvals)', status: 'mcq_approval_missing_nondual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqApprovalMissingNonDualCount ?? 0}</button>
             </div>
           </div>
-          <SectionLabel>{`Dual SOPs (ENG + GUJ) · ${t.mcqDualBothCreatedCount ?? 0}`}</SectionLabel>
-          <div className="flex min-w-0 items-center justify-between gap-1">
-            <span className="text-gray-500 text-[9px] font-semibold shrink-0" title="SOP-level breakdown — Approved | Partial | Missing">SOPs</span>
-            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white/90 px-0.5 py-0.5 shadow-sm tabular-nums">
-              <button type="button" title="Dual SOPs with BOTH ENG and GUJ fully approved (SOP-level Approved)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · MCQ Approved (ENG fully + GUJ fully)', status: 'mcq_approved_dual' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqApprovedDualCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Dual SOPs where both languages have some approvals but at least one isn't fully approved" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · MCQ Partially Approved (both langs in progress)', status: 'mcq_approval_partial_dual' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqApprovalPartialDualCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Dual SOPs where at least one language has zero approvals (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · MCQ Approval Missing (a language has zero approvals)', status: 'mcq_approval_missing_dual' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqApprovalMissingDualCount ?? 0}</button>
+          <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
+            <span className="min-w-0 truncate text-[7px] font-semibold leading-none text-gray-500" title="(ENG + GUJ)">{`(E+G)·${t.mcqDualBothCreatedCount ?? 0}`}</span>
+            <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
+              <button type="button" title="Dual SOPs with BOTH ENG and GUJ fully approved (SOP-level Approved)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · MCQ Approved (ENG fully + GUJ fully)', status: 'mcq_approved_dual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqApprovedDualCount ?? 0}</button>
+              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+              <button type="button" title="Dual SOPs where both languages have some approvals but at least one isn't fully approved" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · MCQ Partially Approved (both langs in progress)', status: 'mcq_approval_partial_dual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqApprovalPartialDualCount ?? 0}</button>
+              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+              <button type="button" title="Dual SOPs where at least one language has zero approvals (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · MCQ Approval Missing (a language has zero approvals)', status: 'mcq_approval_missing_dual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqApprovalMissingDualCount ?? 0}</button>
             </div>
           </div>
-          <div className="mt-0.5 flex min-w-0 items-center justify-between gap-1 opacity-80">
-            <span className="text-gray-400 text-[8px] italic shrink-0">ENG slot</span>
-            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/70 bg-white/80 px-0.5 py-0 tabular-nums">
-              <button type="button" title="Dual SOPs whose ENG slot is fully approved (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot fully approved (display)', status: 'mcq_dual_slot_eng_all_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[9px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualSlotEngAllApprovedCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Dual SOPs whose ENG slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot partially approved (display)', status: 'mcq_dual_slot_eng_partially_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[9px] font-bold leading-tight text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqDualSlotEngPartiallyApprovedCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Dual SOPs whose ENG slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot zero approvals (display)', status: 'mcq_dual_slot_eng_not_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[9px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualSlotEngNotApprovedCount ?? 0}</button>
+          <div className="flex min-w-0 flex-nowrap items-center gap-x-0.5 opacity-80">
+            <div className="flex shrink-0 items-center gap-px">
+              <span className="text-gray-400 text-[6px] italic leading-none shrink-0">ENG</span>
+              <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
+                <button type="button" title="Dual SOPs whose ENG slot is fully approved (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot fully approved (display)', status: 'mcq_dual_slot_eng_all_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualSlotEngAllApprovedCount ?? 0}</button>
+              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+              <button type="button" title="Dual SOPs whose ENG slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot partially approved (display)', status: 'mcq_dual_slot_eng_partially_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqDualSlotEngPartiallyApprovedCount ?? 0}</button>
+              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+              <button type="button" title="Dual SOPs whose ENG slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot zero approvals (display)', status: 'mcq_dual_slot_eng_not_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualSlotEngNotApprovedCount ?? 0}</button>
+              </div>
             </div>
-          </div>
-          <div className="flex min-w-0 items-center justify-between gap-1 opacity-80">
-            <span className="text-gray-400 text-[8px] italic shrink-0">GUJ slot</span>
-            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/70 bg-white/80 px-0.5 py-0 tabular-nums">
-              <button type="button" title="Dual SOPs whose GUJ slot is fully approved (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot fully approved (display)', status: 'mcq_dual_slot_guj_all_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[9px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualSlotGujAllApprovedCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Dual SOPs whose GUJ slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot partially approved (display)', status: 'mcq_dual_slot_guj_partially_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[9px] font-bold leading-tight text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqDualSlotGujPartiallyApprovedCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Dual SOPs whose GUJ slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot zero approvals (display)', status: 'mcq_dual_slot_guj_not_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[9px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualSlotGujNotApprovedCount ?? 0}</button>
+            <div className="flex shrink-0 items-center gap-px">
+              <span className="text-gray-400 text-[6px] italic leading-none shrink-0">GUJ</span>
+              <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
+                <button type="button" title="Dual SOPs whose GUJ slot is fully approved (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot fully approved (display)', status: 'mcq_dual_slot_guj_all_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualSlotGujAllApprovedCount ?? 0}</button>
+              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+              <button type="button" title="Dual SOPs whose GUJ slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot partially approved (display)', status: 'mcq_dual_slot_guj_partially_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqDualSlotGujPartiallyApprovedCount ?? 0}</button>
+              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+              <button type="button" title="Dual SOPs whose GUJ slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot zero approvals (display)', status: 'mcq_dual_slot_guj_not_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualSlotGujNotApprovedCount ?? 0}</button>
+              </div>
             </div>
           </div>
         </div>
-        <RowB
-          label="SOP Expiry Status"
-          green={t.okayCount}
-          red={t.expiredCount}
-          onClickGreen={() =>
-            applySummaryCapsuleFilter({
-              dept: 'All',
-              type: 'found',
-              title: 'Valid SOPs',
-              status: 'okay',
-            })
-          }
-          onClickRed={() =>
-            applySummaryCapsuleFilter({
-              dept: 'All',
-              type: 'found',
-              title: 'Expired SOPs',
-              status: 'expired',
-            })
-          }
-        />
-        <RowD
-          label="Due in next 30 days"
-          value={t.dueSoon30Count ?? 0}
-          color="amber"
-          onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Due in Next 30 Days', status: 'due_soon_30' })}
-        />
-        <Divider />
+        </SummaryTopic>
+        <SummaryTopic>
         <SectionLabel>Trainers / SOP</SectionLabel>
         <div className="flex w-full min-h-[22px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
           <div className="flex items-center gap-0.5" title="SOPs with 2 or more trainers assigned">
@@ -4007,7 +4395,8 @@ export default function TrainingMatrixPage() {
             <button type="button" title="SOPs with 0 trainers" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'SOPs with 0 Trainers', status: 'sop_0_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-red-600 shadow-sm transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400 tabular-nums">{trainerBuckets.sop0}</button>
           </div>
         </div>
-        <Divider />
+        </SummaryTopic>
+        <SummaryTopic>
         <SectionLabel>SOPs / Month</SectionLabel>
         <MonthStrip
           monthCounts={totalMonthCounts}
@@ -4023,8 +4412,10 @@ export default function TrainingMatrixPage() {
             }, 80);
           }}
         />
-        <Divider />
+        </SummaryTopic>
+        <SummaryTopic>
         <RowA label="Departments" value={`${t.departmentCount}/${t.totalDepartments}`} />
+        </SummaryTopic>
       </CardShell>
     );
   };
@@ -4038,6 +4429,7 @@ export default function TrainingMatrixPage() {
       0;
     return (
       <CardShell accent={getDeptAccent(dept)} icon={Icon} title={dept}>
+        <SummaryTopic>
         <button
           type="button"
           onClick={() => {
@@ -4129,9 +4521,38 @@ export default function TrainingMatrixPage() {
           </div>
         ) : null}
 
+        <ExpiryInlineRow
+          expired={d.expiredCount ?? 0}
+          near={d.dueSoon30Count ?? 0}
+          okayNotNear={Math.max(0, (d.okayCount ?? 0) - (d.dueSoon30Count ?? 0))}
+          onExpired={() =>
+            applySummaryCapsuleFilter({
+              dept,
+              type: 'found',
+              title: `${dept} · Expired SOPs`,
+              status: 'expired',
+            })
+          }
+          onNear={() =>
+            applySummaryCapsuleFilter({
+              dept,
+              type: 'found',
+              title: `${dept} · Due in Next 30 Days`,
+              status: 'due_soon_30',
+            })
+          }
+          onOkay={() =>
+            applySummaryCapsuleFilter({
+              dept,
+              type: 'found',
+              title: `${dept} · Valid SOPs (not due soon)`,
+              status: 'okay_not_near',
+            })
+          }
+        />
+
         {d.excelDeptSplit?.foundByDept ? (
           <>
-            <Divider />
             <div className="grid min-h-[26px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[5px] border border-transparent px-1 py-px text-[10px]">
               <span className="min-w-0 truncate text-left font-semibold text-gray-700">Excel SOP</span>
               <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
@@ -4188,7 +4609,8 @@ export default function TrainingMatrixPage() {
           </>
         ) : null}
 
-        <Divider />
+        </SummaryTopic>
+        <SummaryTopic>
         <RowB
           label="SOP wise Trainers"
           green={d.sopTrainersAssigned ?? d.trainersAssigned}
@@ -4210,7 +4632,8 @@ export default function TrainingMatrixPage() {
             })
           }
         />
-        <Divider />
+        </SummaryTopic>
+        <SummaryTopic>
         {(() => {
           const dMissingSum = Object.values(d.excelDeptSplit?.missingByDept || {}).reduce((a, b) => a + b, 0) + (d.excelDeptSplit?.unknownMissing ?? 0);
           const r3Count = d.repeat3PlusCount ?? 0;
@@ -4254,6 +4677,8 @@ export default function TrainingMatrixPage() {
             </>
           );
         })()}
+        </SummaryTopic>
+        <SummaryTopic>
         <RowB
           label={`MCQ (100+ created) · ${(d.mcqCreatedCount ?? 0) + (d.mcqNotCreatedCount ?? 0)}`}
           green={d.mcqCreatedCount ?? 0}
@@ -4280,42 +4705,44 @@ export default function TrainingMatrixPage() {
             rows under "Dual SOPs" are display-only and intentionally do NOT
             reconcile to the Dual Found/Missing row (they describe individual
             language slots, not whole SOPs). */}
-        <div className="flex w-full flex-col gap-0.5 px-1 py-0 text-[9px]">
-          <SectionLabel>{`SOPs (ENG only) · ${(d.mcqEngOnlyCreatedCount ?? 0) + (d.mcqEngOnlyNotCreatedCount ?? 0)}`}</SectionLabel>
-          <div className="flex min-w-0 items-center justify-between gap-1">
-            <span className="text-gray-500 text-[9px] font-semibold shrink-0">Found | Missing</span>
-            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white/90 px-0.5 py-0.5 shadow-sm tabular-nums">
-              <button type="button" title="Non-dual SOPs with 100+ ENG MCQs (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · Found (ENG ≥100)`, status: 'mcq_eng_only_created' })} className="min-w-[1.3rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqEngOnlyCreatedCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Non-dual SOPs with <100 ENG MCQs (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · Missing (ENG <100)`, status: 'mcq_eng_only_not_created' })} className="min-w-[1.3rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqEngOnlyNotCreatedCount ?? 0}</button>
+        <div className="flex w-full flex-col gap-px px-1 py-0">
+          <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
+            <span className="min-w-0 truncate text-[7px] font-semibold leading-none text-gray-500">{`ENG·${(d.mcqEngOnlyCreatedCount ?? 0) + (d.mcqEngOnlyNotCreatedCount ?? 0)}`}</span>
+            <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
+              <button type="button" title="Non-dual SOPs with 100+ ENG MCQs (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · Found (ENG ≥100)`, status: 'mcq_eng_only_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqEngOnlyCreatedCount ?? 0}</button>
+              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+              <button type="button" title="Non-dual SOPs with <100 ENG MCQs (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · Missing (ENG <100)`, status: 'mcq_eng_only_not_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqEngOnlyNotCreatedCount ?? 0}</button>
             </div>
           </div>
-          <SectionLabel>{`Dual SOPs (ENG + GUJ) · ${d.mcqDualSopCount ?? 0}`}</SectionLabel>
-          <div className="flex min-w-0 items-center justify-between gap-1">
-            <span className="text-gray-500 text-[9px] font-semibold shrink-0">Found | Missing</span>
-            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white/90 px-0.5 py-0.5 shadow-sm tabular-nums">
-              <button type="button" title="Dual SOPs with 100+ MCQs in BOTH ENG and GUJ (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · Found (ENG ≥100 AND GUJ ≥100)`, status: 'mcq_dual_both_created' })} className="min-w-[1.3rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualBothCreatedCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Dual SOPs missing 100+ MCQs in EITHER ENG or GUJ (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · Missing (ENG <100 OR GUJ <100)`, status: 'mcq_dual_either_incomplete' })} className="min-w-[1.3rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualEitherIncompleteCount ?? 0}</button>
+          <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
+            <span className="min-w-0 truncate text-[7px] font-semibold leading-none text-gray-500" title="(ENG + GUJ)">{`(E+G)·${d.mcqDualSopCount ?? 0}`}</span>
+            <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
+              <button type="button" title="Dual SOPs with 100+ MCQs in BOTH ENG and GUJ (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · Found (ENG ≥100 AND GUJ ≥100)`, status: 'mcq_dual_both_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualBothCreatedCount ?? 0}</button>
+              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+              <button type="button" title="Dual SOPs missing 100+ MCQs in EITHER ENG or GUJ (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · Missing (ENG <100 OR GUJ <100)`, status: 'mcq_dual_either_incomplete' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualEitherIncompleteCount ?? 0}</button>
             </div>
           </div>
-          <div className="mt-0.5 flex min-w-0 items-center justify-between gap-1 opacity-80">
-            <span className="text-gray-400 text-[8px] italic shrink-0">ENG slot</span>
-            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/70 bg-white/80 px-0.5 py-0 tabular-nums">
-              <button type="button" title="Dual SOPs whose ENG slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot ≥100 (display)`, status: 'mcq_dual_eng_created' })} className="min-w-[1.1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[9px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualEngCreatedCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Dual SOPs whose ENG slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot <100 (display)`, status: 'mcq_dual_eng_not_created' })} className="min-w-[1.1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[9px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualEngNotCreatedCount ?? 0}</button>
+          <div className="flex min-w-0 flex-nowrap items-center gap-x-0.5 opacity-80">
+            <div className="flex shrink-0 items-center gap-px">
+              <span className="text-gray-400 text-[6px] italic leading-none shrink-0">ENG</span>
+              <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
+                <button type="button" title="Dual SOPs whose ENG slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot ≥100 (display)`, status: 'mcq_dual_eng_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualEngCreatedCount ?? 0}</button>
+                <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+                <button type="button" title="Dual SOPs whose ENG slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot <100 (display)`, status: 'mcq_dual_eng_not_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualEngNotCreatedCount ?? 0}</button>
+              </div>
             </div>
-          </div>
-          <div className="flex min-w-0 items-center justify-between gap-1 opacity-80">
-            <span className="text-gray-400 text-[8px] italic shrink-0">GUJ slot</span>
-            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/70 bg-white/80 px-0.5 py-0 tabular-nums">
-              <button type="button" title="Dual SOPs whose GUJ slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot ≥100 (display)`, status: 'mcq_dual_guj_created' })} className="min-w-[1.1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[9px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualGujCreatedCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Dual SOPs whose GUJ slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot <100 (display)`, status: 'mcq_dual_guj_not_created' })} className="min-w-[1.1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[9px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualGujNotCreatedCount ?? 0}</button>
+            <div className="flex shrink-0 items-center gap-px">
+              <span className="text-gray-400 text-[6px] italic leading-none shrink-0">GUJ</span>
+              <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
+                <button type="button" title="Dual SOPs whose GUJ slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot ≥100 (display)`, status: 'mcq_dual_guj_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualGujCreatedCount ?? 0}</button>
+                <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+                <button type="button" title="Dual SOPs whose GUJ slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot <100 (display)`, status: 'mcq_dual_guj_not_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualGujNotCreatedCount ?? 0}</button>
+              </div>
             </div>
           </div>
         </div>
+        </SummaryTopic>
+        <SummaryTopic>
         <RowC
           label={`MCQ Approved · ${d.mcqCreatedCount ?? 0}`}
           green={d.mcqAllApprovedCount ?? 0}
@@ -4349,78 +4776,52 @@ export default function TrainingMatrixPage() {
         {/* SOP-based approval breakdown (department scope) — universe is the
             "MCQ (100+ created) · Found" SOPs in this department. NonDual+Dual
             sub-totals always sum to the top primary row above. */}
-        <div className="flex w-full flex-col gap-0.5 px-1 py-0 text-[9px]">
-          <SectionLabel>{`SOPs (ENG only) · ${d.mcqEngOnlyCreatedCount ?? 0}`}</SectionLabel>
-          <div className="flex min-w-0 items-center justify-between gap-1">
-            <span className="text-gray-500 text-[9px] font-semibold shrink-0" title="SOP-level breakdown — Approved | Partial | Missing">SOPs</span>
-            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white/90 px-0.5 py-0.5 shadow-sm tabular-nums">
-              <button type="button" title="Non-dual SOPs whose ENG MCQs are fully approved" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · MCQ Approved (ENG fully approved)`, status: 'mcq_approved_nondual' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqApprovedNonDualCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Non-dual SOPs with some ENG approval but not full" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · MCQ Partially Approved`, status: 'mcq_approval_partial_nondual' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqApprovalPartialNonDualCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Non-dual SOPs with zero ENG approvals" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · MCQ Approval Missing`, status: 'mcq_approval_missing_nondual' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqApprovalMissingNonDualCount ?? 0}</button>
+        <div className="flex w-full flex-col gap-px px-1 py-0">
+          <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
+            <span className="min-w-0 truncate text-[7px] font-semibold leading-none text-gray-500">{`ENG·${d.mcqEngOnlyCreatedCount ?? 0}`}</span>
+            <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
+              <button type="button" title="Non-dual SOPs whose ENG MCQs are fully approved" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · MCQ Approved (ENG fully approved)`, status: 'mcq_approved_nondual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqApprovedNonDualCount ?? 0}</button>
+              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+              <button type="button" title="Non-dual SOPs with some ENG approval but not full" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · MCQ Partially Approved`, status: 'mcq_approval_partial_nondual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqApprovalPartialNonDualCount ?? 0}</button>
+              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+              <button type="button" title="Non-dual SOPs with zero ENG approvals" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · MCQ Approval Missing`, status: 'mcq_approval_missing_nondual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqApprovalMissingNonDualCount ?? 0}</button>
             </div>
           </div>
-          <SectionLabel>{`Dual SOPs (ENG + GUJ) · ${d.mcqDualBothCreatedCount ?? 0}`}</SectionLabel>
-          <div className="flex min-w-0 items-center justify-between gap-1">
-            <span className="text-gray-500 text-[9px] font-semibold shrink-0" title="SOP-level breakdown — Approved | Partial | Missing">SOPs</span>
-            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white/90 px-0.5 py-0.5 shadow-sm tabular-nums">
-              <button type="button" title="Dual SOPs with BOTH ENG and GUJ fully approved (SOP-level Approved)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · MCQ Approved (ENG fully + GUJ fully)`, status: 'mcq_approved_dual' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqApprovedDualCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Dual SOPs where both languages have some approvals but at least one isn't fully approved" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · MCQ Partially Approved`, status: 'mcq_approval_partial_dual' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqApprovalPartialDualCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Dual SOPs where at least one language has zero approvals (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · MCQ Approval Missing`, status: 'mcq_approval_missing_dual' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[10px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqApprovalMissingDualCount ?? 0}</button>
+          <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
+            <span className="min-w-0 truncate text-[7px] font-semibold leading-none text-gray-500" title="(ENG + GUJ)">{`(E+G)·${d.mcqDualBothCreatedCount ?? 0}`}</span>
+            <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
+              <button type="button" title="Dual SOPs with BOTH ENG and GUJ fully approved (SOP-level Approved)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · MCQ Approved (ENG fully + GUJ fully)`, status: 'mcq_approved_dual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqApprovedDualCount ?? 0}</button>
+              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+              <button type="button" title="Dual SOPs where both languages have some approvals but at least one isn't fully approved" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · MCQ Partially Approved`, status: 'mcq_approval_partial_dual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqApprovalPartialDualCount ?? 0}</button>
+              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+              <button type="button" title="Dual SOPs where at least one language has zero approvals (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · MCQ Approval Missing`, status: 'mcq_approval_missing_dual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqApprovalMissingDualCount ?? 0}</button>
             </div>
           </div>
-          <div className="mt-0.5 flex min-w-0 items-center justify-between gap-1 opacity-80">
-            <span className="text-gray-400 text-[8px] italic shrink-0">ENG slot</span>
-            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/70 bg-white/80 px-0.5 py-0 tabular-nums">
-              <button type="button" title="Dual SOPs whose ENG slot is fully approved (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot fully approved (display)`, status: 'mcq_dual_slot_eng_all_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[9px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualSlotEngAllApprovedCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Dual SOPs whose ENG slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot partially approved (display)`, status: 'mcq_dual_slot_eng_partially_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[9px] font-bold leading-tight text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqDualSlotEngPartiallyApprovedCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Dual SOPs whose ENG slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot zero approvals (display)`, status: 'mcq_dual_slot_eng_not_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[9px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualSlotEngNotApprovedCount ?? 0}</button>
+          <div className="flex min-w-0 flex-nowrap items-center gap-x-0.5 opacity-80">
+            <div className="flex shrink-0 items-center gap-px">
+              <span className="text-gray-400 text-[6px] italic leading-none shrink-0">ENG</span>
+              <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
+                <button type="button" title="Dual SOPs whose ENG slot is fully approved (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot fully approved (display)`, status: 'mcq_dual_slot_eng_all_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualSlotEngAllApprovedCount ?? 0}</button>
+                <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+                <button type="button" title="Dual SOPs whose ENG slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot partially approved (display)`, status: 'mcq_dual_slot_eng_partially_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqDualSlotEngPartiallyApprovedCount ?? 0}</button>
+                <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+                <button type="button" title="Dual SOPs whose ENG slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot zero approvals (display)`, status: 'mcq_dual_slot_eng_not_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualSlotEngNotApprovedCount ?? 0}</button>
+              </div>
             </div>
-          </div>
-          <div className="flex min-w-0 items-center justify-between gap-1 opacity-80">
-            <span className="text-gray-400 text-[8px] italic shrink-0">GUJ slot</span>
-            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/70 bg-white/80 px-0.5 py-0 tabular-nums">
-              <button type="button" title="Dual SOPs whose GUJ slot is fully approved (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot fully approved (display)`, status: 'mcq_dual_slot_guj_all_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[9px] font-bold leading-tight text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualSlotGujAllApprovedCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Dual SOPs whose GUJ slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot partially approved (display)`, status: 'mcq_dual_slot_guj_partially_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[9px] font-bold leading-tight text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqDualSlotGujPartiallyApprovedCount ?? 0}</button>
-              <span className="select-none text-[7px] text-gray-300 leading-tight">|</span>
-              <button type="button" title="Dual SOPs whose GUJ slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot zero approvals (display)`, status: 'mcq_dual_slot_guj_not_approved' })} className="min-w-[1rem] cursor-pointer rounded px-0.5 py-0 text-center text-[9px] font-bold leading-tight text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualSlotGujNotApprovedCount ?? 0}</button>
+            <div className="flex shrink-0 items-center gap-px">
+              <span className="text-gray-400 text-[6px] italic leading-none shrink-0">GUJ</span>
+              <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
+                <button type="button" title="Dual SOPs whose GUJ slot is fully approved (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot fully approved (display)`, status: 'mcq_dual_slot_guj_all_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualSlotGujAllApprovedCount ?? 0}</button>
+                <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+                <button type="button" title="Dual SOPs whose GUJ slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot partially approved (display)`, status: 'mcq_dual_slot_guj_partially_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqDualSlotGujPartiallyApprovedCount ?? 0}</button>
+                <span className="select-none text-[6px] leading-none text-gray-300">|</span>
+                <button type="button" title="Dual SOPs whose GUJ slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot zero approvals (display)`, status: 'mcq_dual_slot_guj_not_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualSlotGujNotApprovedCount ?? 0}</button>
+              </div>
             </div>
           </div>
         </div>
-        <RowB
-          label="SOP Expiry Status"
-          green={d.okayCount}
-          red={d.expiredCount}
-          onClickGreen={() =>
-            applySummaryCapsuleFilter({
-              dept,
-              type: 'found',
-              title: `${dept} · Valid SOPs`,
-              status: 'okay',
-            })
-          }
-          onClickRed={() =>
-            applySummaryCapsuleFilter({
-              dept,
-              type: 'found',
-              title: `${dept} · Expired SOPs`,
-              status: 'expired',
-            })
-          }
-        />
-        <RowD
-          label="Due in next 30 days"
-          value={d.dueSoon30Count ?? 0}
-          color="amber"
-          onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Due in Next 30 Days`, status: 'due_soon_30' })}
-        />
-        <Divider />
+        </SummaryTopic>
+        <SummaryTopic>
         <SectionLabel>Trainers / SOP</SectionLabel>
         <div className="flex w-full min-h-[22px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
           <div className="flex items-center gap-0.5" title="SOPs with 2 or more trainers assigned">
@@ -4436,7 +4837,8 @@ export default function TrainingMatrixPage() {
             <button type="button" title="SOPs with 0 trainers" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · SOPs with 0 Trainers`, status: 'sop_0_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-red-600 shadow-sm transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400 tabular-nums">{deptTrainerBuckets.sop0}</button>
           </div>
         </div>
-        <Divider />
+        </SummaryTopic>
+        <SummaryTopic>
         <SectionLabel>SOPs / Month</SectionLabel>
         <MonthStrip
           monthCounts={d.monthCounts}
@@ -4452,6 +4854,7 @@ export default function TrainingMatrixPage() {
             }, 80);
           }}
         />
+        </SummaryTopic>
       </CardShell>
     );
   };
@@ -6038,14 +6441,16 @@ export default function TrainingMatrixPage() {
               {Array.from({ length: 8 }).map((_, i) => (
                 <div
                   key={i}
-                  className="h-[340px] min-w-[220px] animate-pulse rounded-xl border border-gray-100 bg-white"
+                  className="h-[340px] min-w-[220px] animate-pulse rounded-xl bg-white"
                 />
               ))}
             </div>
           ) : data ? (
             <div className="flex gap-2 overflow-x-auto pb-2">
               {renderTotalCard(data.totalCard)}
-              {departments.map((dept) => <Fragment key={dept}>{renderDeptCard(dept, data.perDept[dept])}</Fragment>)}
+              {departments.map((dept) => (
+                <Fragment key={dept}>{renderDeptCard(dept, data.perDept[dept])}</Fragment>
+              ))}
             </div>
           ) : (
             <EmptyState onUpload={() => setShowUpload(true)} />
