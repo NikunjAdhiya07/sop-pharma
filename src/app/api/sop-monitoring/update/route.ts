@@ -8,16 +8,19 @@ import { logAudit } from '@/lib/sopAuditLogger';
 export async function PUT(req: NextRequest) {
   try {
     await connectDB();
-    const { 
-      sopId, 
+    const {
+      sopId,
       reviewDate,
-      expiryDate, 
+      expiryDate,
       owner,
       processArea,
       version,
       effectiveDate,
       guidelineReference,
       remarks,
+      location,
+      department,
+      sopName,
       // User information for activity logging
       userId,
       userName,
@@ -87,6 +90,18 @@ export async function PUT(req: NextRequest) {
     
     if (remarks !== undefined) {
       updateData.remarks = remarks;
+    }
+
+    if (location !== undefined) {
+      updateData.location = location;
+    }
+
+    if (department !== undefined) {
+      updateData.department = department;
+    }
+
+    if (sopName !== undefined) {
+      updateData.sopName = sopName;
     }
 
     if (englishPdfLink !== undefined && englishPdfLink !== "") {
