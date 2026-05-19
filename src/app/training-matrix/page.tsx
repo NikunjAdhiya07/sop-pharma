@@ -65,6 +65,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { buildViewDocHref } from '@/lib/viewDocLinks';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -142,11 +143,11 @@ function deptToBgTint(dept: string, expired?: boolean): DeptBgTint {
   return 'slate';
 }
 
-/** Grid columns: #, code, title, dept, month, expiry, trainer, ENG MCQs, ENG appr, GUJ MCQs, GUJ appr */
+/** Grid columns: #, code, title, dept(DB), dept, month, trainer, docs, ENG MCQs, ENG appr, GUJ MCQs, GUJ appr, expiry */
 const SOP_TABLE_GRID_COLS =
-  '1.5rem 5.5rem minmax(8rem,1fr) 5.5rem 5rem 8rem 8.5rem repeat(4, minmax(3.5rem, 4.5rem))';
+  '1.25rem 4.5rem minmax(7rem,1fr) 4.5rem 4.5rem 4rem 7rem 4rem repeat(4, minmax(3rem, 4rem)) 5.5rem';
 
-/** Employee bubbles sit in cols 1–3 (#, code, title) — must not extend under Dept / Month / Trainer. */
+/** Employee bubbles sit in cols 1–3 (#, code, title) — must not extend under Dept (DB) / Dept / Month / Trainer. */
 const SOP_EMP_BUBBLE_GRID_COL = '1 / 4';
 
 const EMP_BUBBLE_GAP_PX = 6;
@@ -156,10 +157,12 @@ function EmployeeBubbleRow({
   names,
   variant,
   onNameClick,
+  onMoreClick,
 }: {
   names: string[];
   variant: 'due' | 'pending';
   onNameClick: (name: string) => void;
+  onMoreClick?: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
@@ -239,7 +242,7 @@ function EmployeeBubbleRow({
         e.stopPropagation();
         onNameClick(n);
       }}
-      className={`shrink-0 text-[10px] px-2 py-0.5 rounded-lg border transition cursor-pointer whitespace-nowrap ${bubbleClass}`}
+      className={`shrink-0 text-[9px] px-1.5 py-0 rounded-md border leading-tight transition cursor-pointer whitespace-nowrap ${bubbleClass}`}
     >
       {n}
     </button>
@@ -262,13 +265,14 @@ function EmployeeBubbleRow({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                setPopupOpen((v) => !v);
+                if (onMoreClick) onMoreClick();
+                else setPopupOpen((v) => !v);
               }}
-              className={`text-[10px] font-semibold px-2 py-0.5 rounded-lg border transition cursor-pointer whitespace-nowrap ${bubbleClass}`}
+              className={`text-[9px] font-semibold px-1.5 py-0 rounded-md border leading-tight transition cursor-pointer whitespace-nowrap ${bubbleClass}`}
             >
               +{hidden.length} more
             </button>
-            {popupOpen ? (
+            {!onMoreClick && popupOpen ? (
               <div
                 className="absolute left-0 top-full z-50 mt-1 min-w-[12rem] max-w-sm max-h-56 overflow-y-auto rounded-xl border border-gray-200 bg-white p-2 shadow-lg"
                 onClick={(e) => e.stopPropagation()}
@@ -353,10 +357,10 @@ function SopMcqMetrics({
   if (mcqTotal === undefined && mcqEngTotal === undefined) {
     return (
       <>
-        <span className="flex items-center justify-center text-[10px] text-gray-400 font-semibold">—</span>
-        <span className="flex items-center justify-center text-[10px] text-gray-400 font-semibold">—</span>
-        <span className="flex items-center justify-center text-[10px] text-gray-400 font-semibold">—</span>
-        <span className="flex items-center justify-center text-[10px] text-gray-400 font-semibold">—</span>
+        <span className="flex items-center justify-center text-[10px] text-gray-400 font-semibold">NA</span>
+        <span className="flex items-center justify-center text-[10px] text-gray-400 font-semibold">NA</span>
+        <span className="flex items-center justify-center text-[10px] text-gray-400 font-semibold">NA</span>
+        <span className="flex items-center justify-center text-[10px] text-gray-400 font-semibold">NA</span>
       </>
     );
   }
@@ -376,18 +380,18 @@ function SopMcqMetrics({
       />
       <McqMetricColumn
         sopCode={sopCode}
-        display={engTotal > 0 ? `${engAppr}/${engTotal}` : '—'}
+        display={engTotal > 0 ? `${Math.round((engAppr / engTotal) * 100)}%` : 'NA'}
         tone={mcqApprovalTone(engAppr, engTotal)}
       />
       <McqMetricColumn
         sopCode={sopCode}
-        display={isDualLanguage ? String(gujTotal) : '—'}
+        display={isDualLanguage ? String(gujTotal) : 'NA'}
         tone={isDualLanguage ? mcqCountTone(gujTotal) : neutral}
         enabled={!!isDualLanguage}
       />
       <McqMetricColumn
         sopCode={sopCode}
-        display={isDualLanguage && gujTotal > 0 ? `${gujAppr}/${gujTotal}` : isDualLanguage ? '—' : '—'}
+        display={isDualLanguage && gujTotal > 0 ? `${Math.round((gujAppr / gujTotal) * 100)}%` : 'NA'}
         tone={isDualLanguage ? mcqApprovalTone(gujAppr, gujTotal) : neutral}
         enabled={!!isDualLanguage}
       />
@@ -624,6 +628,7 @@ interface OverviewData {
     gujApprovedCount?: number;
     title?: string;
   }>;
+  dbDocPathsByCode?: Record<string, { eng?: string; guj?: string; id?: string }>;
 }
 
 type ActiveDept = 'All' | Dept;
@@ -1160,35 +1165,22 @@ function RepetitiveSopsRow({
   items: Array<{ label: string; value: React.ReactNode; total?: number; color: 'red' | 'amber' | 'green'; tooltip?: string; onClick?: () => void }>;
 }) {
   return (
-    <div className="grid w-full min-h-[22px] grid-cols-3 items-center gap-x-1 gap-y-0.5 px-1 overflow-hidden">
-      {items.map(({ label, value, total, color, tooltip, onClick }) => {
+    <div className="flex w-full min-w-0 items-center justify-between gap-x-1 px-1 min-h-[22px]">
+      {items.map(({ label, value, color, tooltip, onClick }) => {
         const colorClass = color === 'red' ? 'text-red-600' : color === 'amber' ? 'text-amber-600' : 'text-emerald-700';
         return (
-          <span key={label} className="flex min-w-0 items-center justify-center gap-0.5 tabular-nums">
-            <span className="group/rtip relative shrink-0 cursor-default text-[9px] font-semibold text-gray-500">
+          <span key={label} className="flex shrink-0 items-center gap-x-0.5 tabular-nums" title={tooltip}>
+            <span className="shrink-0 cursor-default text-[10px] font-semibold text-gray-500">
               {label}
-              {tooltip && (
-                <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1 w-40 -translate-x-1/2 rounded bg-gray-800 px-2 py-1.5 text-[9px] leading-tight text-white opacity-0 transition-opacity group-hover/rtip:opacity-100">
-                  {tooltip}
-                </span>
-              )}
             </span>
             <button
               type="button"
               onClick={onClick}
-              className={`min-w-[1.1rem] shrink-0 rounded px-0.5 text-center text-[10px] font-bold leading-none ${colorClass} ${onClick ? 'cursor-pointer hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-purple-400' : ''}`}
+              title={tooltip}
+              className={`shrink-0 rounded px-0.5 text-center text-[10px] font-bold leading-none ${colorClass} ${onClick ? 'cursor-pointer hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-purple-400' : ''}`}
             >
               {value}
             </button>
-            {total !== undefined && (
-              <button
-                type="button"
-                onClick={onClick}
-                className={`shrink-0 truncate text-[9px] font-bold text-gray-500 ${onClick ? 'hover:underline' : ''}`}
-              >
-                ({total})
-              </button>
-            )}
           </span>
         );
       })}
@@ -1212,8 +1204,8 @@ function MonthStrip({
           onClick={() => onSelectMonth?.(m)}
           className={`flex flex-col items-center rounded-[4px] border border-transparent px-0.5 py-0.5 transition-colors ${onSelectMonth ? 'hover:bg-purple-100/80 focus:z-10 focus:outline-none focus:ring-1 focus:ring-purple-400' : ''}`}
         >
-          <span className="text-[8px] font-medium text-gray-500 leading-none">{MONTH_SHORT[m]}</span>
-          <span className="text-[10px] font-bold text-gray-900 leading-tight tabular-nums">{monthCounts[m] ?? 0}</span>
+          <span className="text-[10px] font-medium text-gray-500 leading-none">{MONTH_SHORT[m]}</span>
+          <span className="text-[11px] font-bold text-gray-900 leading-tight tabular-nums">{monthCounts[m] ?? 0}</span>
         </button>
       ))}
     </div>
@@ -1232,137 +1224,71 @@ function deptStripShort(d: string) {
 function ExpiryInlineRow({
   expired,
   near,
-  okayNotNear,
+  noDate,
   onExpired,
   onNear,
-  onOkay,
+  onNoDate,
 }: {
   expired: number;
   near: number;
-  okayNotNear: number;
+  noDate: number;
   onExpired?: () => void;
   onNear?: () => void;
-  onOkay?: () => void;
+  onNoDate?: () => void;
 }) {
   const btn =
-    'min-w-[0.65rem] rounded-sm px-0.5 text-[8px] font-bold leading-none tabular-nums focus:outline-none focus:ring-1';
-  const label = 'shrink-0 text-[6px] font-medium leading-none text-gray-400';
+    'min-w-[1rem] rounded px-0.5 text-[10px] font-bold leading-none tabular-nums focus:outline-none focus:ring-1';
+  const label = 'shrink-0 text-[10px] font-medium leading-none text-gray-500';
   return (
-    <div className="flex min-w-0 flex-nowrap items-center gap-x-1 px-1 py-0.5">
-      <span className={label} title="Expired">
-        Ex
+    <div className="flex w-full min-w-0 flex-nowrap items-center justify-between gap-x-1 px-1 py-0.5">
+      <span className="flex shrink-0 items-center gap-x-0.5">
+        <span className={label} title="Expired">
+          Ex.
+        </span>
+        {onExpired ? (
+          <button
+            type="button"
+            onClick={onExpired}
+            className={`${btn} cursor-pointer text-red-600 hover:bg-red-50 focus:ring-red-400`}
+          >
+            {expired}
+          </button>
+        ) : (
+          <span className={`${btn} text-red-600`}>{expired}</span>
+        )}
       </span>
-      {onExpired ? (
-        <button
-          type="button"
-          onClick={onExpired}
-          className={`${btn} cursor-pointer text-red-600 hover:bg-red-50 focus:ring-red-400`}
-        >
-          {expired}
-        </button>
-      ) : (
-        <span className={`${btn} text-red-600`}>{expired}</span>
-      )}
-      <span className={label} title="Due in next 30 days">
-        Near
+      <span className="flex shrink-0 items-center gap-x-0.5">
+        <span className={label} title="Near expiry (≤ 30 days)">
+          Near
+        </span>
+        {onNear ? (
+          <button
+            type="button"
+            onClick={onNear}
+            className={`${btn} cursor-pointer text-amber-600 hover:bg-amber-50 focus:ring-amber-400`}
+          >
+            {near}
+          </button>
+        ) : (
+          <span className={`${btn} text-amber-600`}>{near}</span>
+        )}
       </span>
-      {onNear ? (
-        <button
-          type="button"
-          onClick={onNear}
-          className={`${btn} cursor-pointer text-amber-600 hover:bg-amber-50 focus:ring-amber-400`}
-        >
-          {near}
-        </button>
-      ) : (
-        <span className={`${btn} text-amber-600`}>{near}</span>
-      )}
-      <span className={label} title="Valid (not expired, not due soon)">
-        No
+      <span className="flex shrink-0 items-center gap-x-0.5">
+        <span className={label} title="No expiry date">
+          No Dt
+        </span>
+        {onNoDate ? (
+          <button
+            type="button"
+            onClick={onNoDate}
+            className={`${btn} cursor-pointer text-gray-800 hover:bg-gray-100 focus:ring-gray-400`}
+          >
+            {noDate}
+          </button>
+        ) : (
+          <span className={`${btn} text-gray-800`}>{noDate}</span>
+        )}
       </span>
-      {onOkay ? (
-        <button
-          type="button"
-          onClick={onOkay}
-          className={`${btn} cursor-pointer text-gray-800 hover:bg-gray-100 focus:ring-gray-400`}
-        >
-          {okayNotNear}
-        </button>
-      ) : (
-        <span className={`${btn} text-gray-800`}>{okayNotNear}</span>
-      )}
-    </div>
-  );
-}
-
-function ExpiryDeptStrip({
-  expiredCounts,
-  nearCounts,
-  okayCounts,
-  order,
-  onSelectExpired,
-  onSelectNear,
-  onSelectOkay,
-}: {
-  expiredCounts: Record<string, number>;
-  nearCounts: Record<string, number>;
-  okayCounts: Record<string, number>;
-  order: readonly string[];
-  onSelectExpired?: (dept: string) => void;
-  onSelectNear?: (dept: string) => void;
-  onSelectOkay?: (dept: string) => void;
-}) {
-  const btn =
-    'min-w-[0.65rem] rounded-sm px-0.5 text-[8px] font-bold leading-none tabular-nums focus:outline-none focus:ring-1';
-  const label = 'text-[6px] font-medium leading-none text-gray-400';
-  return (
-    <div className="flex min-w-0 flex-nowrap gap-x-0.5 overflow-x-auto px-0.5 py-0.5">
-      {order.map((d) => (
-        <div
-          key={d}
-          className="flex shrink-0 flex-col items-center border-r border-gray-200/70 px-1 last:border-r-0"
-        >
-          <span className="text-[7px] font-medium leading-none text-gray-500">{deptStripShort(d)}</span>
-          <span className="mt-px flex items-center gap-0.5 whitespace-nowrap tabular-nums">
-            <span className="inline-flex items-center gap-px">
-              <span className={label} title="Expired">
-                Ex
-              </span>
-              <button
-                type="button"
-                onClick={() => onSelectExpired?.(d)}
-                className={`${btn} ${onSelectExpired ? 'cursor-pointer text-red-600 hover:bg-red-50 focus:ring-red-400' : 'text-red-600'}`}
-              >
-                {expiredCounts?.[d] ?? 0}
-              </button>
-            </span>
-            <span className="inline-flex items-center gap-px">
-              <span className={label} title="Due in next 30 days">
-                Near
-              </span>
-              <button
-                type="button"
-                onClick={() => onSelectNear?.(d)}
-                className={`${btn} ${onSelectNear ? 'cursor-pointer text-amber-600 hover:bg-amber-50 focus:ring-amber-400' : 'text-amber-600'}`}
-              >
-                {nearCounts?.[d] ?? 0}
-              </button>
-            </span>
-            <span className="inline-flex items-center gap-px">
-              <span className={label} title="Valid (not expired, not due soon)">
-                No
-              </span>
-              <button
-                type="button"
-                onClick={() => onSelectOkay?.(d)}
-                className={`${btn} ${onSelectOkay ? 'cursor-pointer text-gray-800 hover:bg-gray-100 focus:ring-gray-400' : 'text-gray-800'}`}
-              >
-                {okayCounts?.[d] ?? 0}
-              </button>
-            </span>
-          </span>
-        </div>
-      ))}
     </div>
   );
 }
@@ -1447,7 +1373,7 @@ function CardShell({
 }) {
   return (
     <div
-      className="flex w-full min-w-[180px] flex-1 flex-col overflow-hidden rounded-[10px] bg-white px-2 py-1 text-left"
+      className="flex w-full min-w-0 flex-col overflow-hidden rounded-[10px] bg-white px-2 py-1 text-left"
     >
       <div className="flex w-full items-center gap-1.5 pb-px">
         <Icon className="h-3.5 w-3.5 shrink-0" style={{ color: accent }} />
@@ -1460,15 +1386,15 @@ function CardShell({
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-1 text-[7px] font-semibold leading-none text-gray-500">{children}</div>
+    <div className="px-1 text-[10px] font-semibold leading-none text-gray-500">{children}</div>
   );
 }
 
 const mcqCompactPill =
   'inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums';
-const mcqCompactSep = 'select-none text-[6px] leading-none text-gray-300';
+const mcqCompactSep = 'select-none text-[9px] leading-none text-gray-300';
 const mcqCompactBtn =
-  'min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none transition-colors focus:outline-none focus:ring-1';
+  'min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none transition-colors focus:outline-none focus:ring-1';
 
 function McqCompactRow2({
   label,
@@ -1487,7 +1413,7 @@ function McqCompactRow2({
 }) {
   return (
     <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
-      <span className="min-w-0 truncate text-[7px] font-semibold leading-none text-gray-500" title={labelTitle ?? label}>
+      <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-gray-500" title={labelTitle ?? label}>
         {label}
       </span>
       <div className={mcqCompactPill}>
@@ -1524,7 +1450,7 @@ function McqCompactRow3({
 }) {
   return (
     <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
-      <span className="min-w-0 truncate text-[7px] font-semibold leading-none text-gray-500" title={labelTitle ?? label}>
+      <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-gray-500" title={labelTitle ?? label}>
         {label}
       </span>
       <div className={mcqCompactPill}>
@@ -1563,7 +1489,7 @@ function McqCompactSlot2({
 }) {
   return (
     <div className="flex shrink-0 items-center gap-px">
-      <span className="shrink-0 text-[6px] italic leading-none text-gray-400">{tag}</span>
+      <span className="shrink-0 text-[10px] italic font-semibold leading-none text-gray-900">{tag}</span>
       <div className={mcqCompactPill}>
         <button type="button" title={greenTitle} onClick={onGreen} className={`${mcqCompactBtn} text-emerald-700 hover:bg-emerald-50 focus:ring-emerald-400`}>
           {green}
@@ -1602,7 +1528,7 @@ function McqCompactSlot3({
 }) {
   return (
     <div className="flex shrink-0 items-center gap-px">
-      <span className="shrink-0 text-[6px] italic leading-none text-gray-400">{tag}</span>
+      <span className="shrink-0 text-[10px] italic font-semibold leading-none text-gray-900">{tag}</span>
       <div className={mcqCompactPill}>
         <button type="button" title={greenTitle} onClick={onGreen} className={`${mcqCompactBtn} text-emerald-700 hover:bg-emerald-50 focus:ring-emerald-400`}>
           {green}
@@ -1628,9 +1554,9 @@ function McqCompactSlots2({
   guj: { green: number; red: number; onGreen?: () => void; onRed?: () => void; greenTitle?: string; redTitle?: string };
 }) {
   return (
-    <div className="mt-px flex min-w-0 flex-nowrap items-center gap-x-0.5 opacity-80">
-      <McqCompactSlot2 tag="ENG" {...eng} />
-      <McqCompactSlot2 tag="GUJ" {...guj} />
+    <div className="mt-px flex min-w-0 flex-nowrap items-center gap-x-2 opacity-80">
+      <McqCompactSlot2 tag="E" {...eng} />
+      <McqCompactSlot2 tag="G" {...guj} />
     </div>
   );
 }
@@ -1663,9 +1589,9 @@ function McqCompactSlots3({
   };
 }) {
   return (
-    <div className="mt-px flex min-w-0 flex-nowrap items-center gap-x-0.5 opacity-80">
-      <McqCompactSlot3 tag="ENG" {...eng} />
-      <McqCompactSlot3 tag="GUJ" {...guj} />
+    <div className="mt-px flex min-w-0 flex-nowrap items-center gap-x-2 opacity-80">
+      <McqCompactSlot3 tag="E" {...eng} />
+      <McqCompactSlot3 tag="G" {...guj} />
     </div>
   );
 }
@@ -2427,7 +2353,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-type MasterEmployee = { name: string; designation: string };
+type MasterEmployee = { name: string; designation: string; department: string };
 
 // Step 2 of the assign flow — fill training data for each employee
 function AssignSOPDataForm({
@@ -2448,37 +2374,50 @@ function AssignSOPDataForm({
 
   const [masterEmployees, setMasterEmployees] = useState<MasterEmployee[]>([]);
   const [employeesLoading, setEmployeesLoading] = useState(true);
-  const [rows, setRows] = useState<Array<{ name: string; designation: string; trainingStatus: string }>>([]);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [expandedDepartments, setExpandedDepartments] = useState<Set<string>>(new Set());
+  const [expandedDesignations, setExpandedDesignations] = useState<Set<string>>(new Set());
   const [month, setMonth] = useState(currentMonth);
   const [year, setYear] = useState(currentYear);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const empKey = (e: { department: string; name: string }) => `${e.department}::${e.name}`;
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setEmployeesLoading(true);
       try {
-        const res = await fetch(`/api/employees?department=${encodeURIComponent(dept)}`);
+        const res = await fetch(`/api/employees`);
         const json = await res.json();
         if (cancelled) return;
         const emps: MasterEmployee[] = (json.employees || [])
-          .filter((e: { name?: string; isActive?: boolean }) => e.name && e.isActive !== false)
-          .map((e: { name: string; designation?: string }) => ({
+          .filter((e: { name?: string; isActive?: boolean; department?: string }) => e.name && e.isActive !== false && e.department)
+          .map((e: { name: string; designation?: string; department: string }) => ({
             name: e.name,
-            designation: e.designation || '',
+            designation: e.designation || 'Unassigned',
+            department: e.department,
           }))
-          .sort((a: MasterEmployee, b: MasterEmployee) => a.name.localeCompare(b.name));
+          .sort((a: MasterEmployee, b: MasterEmployee) =>
+            a.department.localeCompare(b.department) || a.name.localeCompare(b.name),
+          );
         setMasterEmployees(emps);
-        setRows(
-          emps.length > 0
-            ? emps.map((e) => ({ name: e.name, designation: e.designation, trainingStatus: 'pending' }))
-            : [{ name: '', designation: '', trainingStatus: 'pending' }],
-        );
+        // Pre-select employees in the SOP's target department only, by default
+        const preselected = emps.filter((e) => e.department.toLowerCase() === dept.toLowerCase());
+        setSelectedKeys(new Set(preselected.map(empKey)));
+        const departments = Array.from(new Set(emps.map((e) => e.department)));
+        // Expand the target department by default; collapse others
+        setExpandedDepartments(new Set(
+          departments.filter((d) => d.toLowerCase() === dept.toLowerCase()),
+        ));
+        setExpandedDesignations(new Set(emps.map((e) => `${e.department}::${e.designation}`)));
       } catch {
         if (!cancelled) {
           setMasterEmployees([]);
-          setRows([{ name: '', designation: '', trainingStatus: 'pending' }]);
+          setSelectedKeys(new Set());
+          setExpandedDepartments(new Set());
+          setExpandedDesignations(new Set());
         }
       } finally {
         if (!cancelled) setEmployeesLoading(false);
@@ -2487,31 +2426,129 @@ function AssignSOPDataForm({
     return () => { cancelled = true; };
   }, [dept]);
 
-  const addRow = () => setRows((r) => [...r, { name: '', designation: '', trainingStatus: 'pending' }]);
-  const removeRow = (i: number) => setRows((r) => r.filter((_, idx) => idx !== i));
-  const updateRow = (i: number, key: string, val: string) =>
-    setRows((r) => r.map((row, idx) => idx === i ? { ...row, [key]: val } : row));
+  // Group: department → designation → employees
+  const departmentGroups = useMemo(() => {
+    const byDept = new Map<string, Map<string, MasterEmployee[]>>();
+    for (const emp of masterEmployees) {
+      if (!byDept.has(emp.department)) byDept.set(emp.department, new Map());
+      const desigMap = byDept.get(emp.department)!;
+      const desigKey = emp.designation || 'Unassigned';
+      if (!desigMap.has(desigKey)) desigMap.set(desigKey, []);
+      desigMap.get(desigKey)!.push(emp);
+    }
+    return Array.from(byDept.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([department, desigMap]) => ({
+        department,
+        designations: Array.from(desigMap.entries())
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([designation, emps]) => ({ designation, employees: emps })),
+        employees: Array.from(desigMap.values()).flat(),
+      }));
+  }, [masterEmployees]);
+
+  const toggleEmployee = (emp: MasterEmployee) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      const k = empKey(emp);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  };
+
+  const toggleDesignation = (department: string, designation: string) => {
+    const group = departmentGroups.find((g) => g.department === department);
+    const emps = group?.designations.find((d) => d.designation === designation)?.employees || [];
+    const allSelected = emps.length > 0 && emps.every((e) => selectedKeys.has(empKey(e)));
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (allSelected) emps.forEach((e) => next.delete(empKey(e)));
+      else emps.forEach((e) => next.add(empKey(e)));
+      return next;
+    });
+  };
+
+  const toggleDepartment = (department: string) => {
+    const group = departmentGroups.find((g) => g.department === department);
+    const emps = group?.employees || [];
+    const allSelected = emps.length > 0 && emps.every((e) => selectedKeys.has(empKey(e)));
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (allSelected) emps.forEach((e) => next.delete(empKey(e)));
+      else emps.forEach((e) => next.add(empKey(e)));
+      return next;
+    });
+  };
+
+  const toggleDepartmentExpand = (department: string) => {
+    setExpandedDepartments((prev) => {
+      const next = new Set(prev);
+      if (next.has(department)) next.delete(department);
+      else next.add(department);
+      return next;
+    });
+  };
+
+  const toggleDesignationExpand = (department: string, designation: string) => {
+    const k = `${department}::${designation}`;
+    setExpandedDesignations((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  };
+
+  const selectedCount = selectedKeys.size;
+  const selectedDepartmentCount = useMemo(() => {
+    const set = new Set<string>();
+    for (const k of selectedKeys) set.add(k.split('::')[0]);
+    return set.size;
+  }, [selectedKeys]);
 
   const handleSave = async () => {
-    const validRows = rows.filter((r) => r.name.trim());
-    if (!validRows.length) { setError('Add at least one employee.'); return; }
+    // Bucket selected employees by department
+    const byDept = new Map<string, Array<{ name: string; designation: string; trainingStatus: string }>>();
+    for (const emp of masterEmployees) {
+      if (!selectedKeys.has(empKey(emp))) continue;
+      if (!byDept.has(emp.department)) byDept.set(emp.department, []);
+      byDept.get(emp.department)!.push({
+        name: emp.name,
+        designation: emp.designation,
+        trainingStatus: 'pending',
+      });
+    }
+
+    if (byDept.size === 0) { setError('Select at least one employee.'); return; }
+
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/training-matrix/assign-sop-to-matrix', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          department: dept,
-          sopId: sop._id,
-          month,
-          year,
-          employees: validRows,
-          createdBy: 'admin',
+      const results = await Promise.all(
+        Array.from(byDept.entries()).map(async ([department, employees]) => {
+          const res = await fetch('/api/training-matrix/assign-sop-to-matrix', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              department,
+              sopId: sop._id,
+              month,
+              year,
+              employees,
+              createdBy: 'admin',
+            }),
+          });
+          const json = await res.json();
+          return { department, ok: res.ok, error: json?.error };
         }),
-      });
-      const json = await res.json();
-      if (!res.ok) { setError(json.error || 'Failed to assign SOP'); setLoading(false); return; }
+      );
+      const failed = results.filter((r) => !r.ok);
+      if (failed.length) {
+        setError(`Failed for: ${failed.map((f) => `${f.department} (${f.error || 'unknown'})`).join(', ')}`);
+        setLoading(false);
+        return;
+      }
       onSuccess();
     } finally {
       setLoading(false);
@@ -2528,7 +2565,7 @@ function AssignSOPDataForm({
           <ArrowLeft className="h-4 w-4" />
         </button>
         <div className="flex-1 min-w-0">
-          <h2 className="font-bold text-gray-800">Assign <span className="font-mono text-purple-700">{sop.identifier}</span> to {dept}</h2>
+          <h2 className="font-bold text-gray-800">Assign <span className="font-mono text-purple-700">{sop.identifier}</span> to employees</h2>
           <p className="mt-0.5 text-xs text-gray-500 truncate">{sop.name}</p>
         </div>
       </div>
@@ -2555,7 +2592,7 @@ function AssignSOPDataForm({
         )}
       </div>
 
-      {/* Employee rows */}
+      {/* Department → Designations → Employees */}
       <div className="flex-1 overflow-auto px-5 py-4">
         {error && (
           <div className="mb-3 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
@@ -2563,98 +2600,123 @@ function AssignSOPDataForm({
           </div>
         )}
 
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between">
           <p className="text-xs font-medium text-gray-600">
-            Set training status for each employee ({rows.filter(r => r.name.trim()).length} / {rows.length})
+            Select employees by department & designation
             {employeesLoading && <span className="ml-1 text-gray-400">— loading from employee master…</span>}
           </p>
-          <button
-            onClick={addRow}
-            disabled={employeesLoading}
-            className="flex items-center gap-1 rounded-lg border border-dashed border-purple-300 px-2.5 py-1 text-[11px] font-medium text-purple-600 hover:bg-purple-50 disabled:opacity-50"
-          >
-            <Plus className="h-3 w-3" /> Add employee
-          </button>
+          <span className="text-[11px] font-medium text-purple-700">
+            {selectedCount} selected · {selectedDepartmentCount} dept{selectedDepartmentCount === 1 ? '' : 's'}
+          </span>
         </div>
 
-        {/* Column headers */}
-        <div className="mb-1 grid grid-cols-[2fr_1.5fr_1.5fr_1.5fr_auto] gap-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-1">
-          <span>Employee Name</span>
-          <span>Designation</span>
-          <span>Training Status</span>
-          <span>Status</span>
-          <span className="w-6" />
-        </div>
-
-        <div className="space-y-2">
-          {employeesLoading ? (
-            <p className="py-6 text-center text-xs text-gray-400">Loading employees from master…</p>
-          ) : rows.map((row, i) => {
-            const usedNames = new Set(rows.map((r, idx) => (idx === i ? '' : r.name)).filter(Boolean));
-            const availableEmployees = masterEmployees.filter((e) => e.name === row.name || !usedNames.has(e.name));
-            const fromMaster = !!(row.name && masterEmployees.some((e) => e.name === row.name));
-            return (
-              <div key={i} className="grid grid-cols-[2fr_1.5fr_1.5fr_1.5fr_auto] items-center gap-2">
-                {masterEmployees.length > 0 ? (
-                  <select
-                    value={row.name}
-                    onChange={(e) => {
-                      const emp = masterEmployees.find((x) => x.name === e.target.value);
-                      updateRow(i, 'name', e.target.value);
-                      if (emp) updateRow(i, 'designation', emp.designation);
-                    }}
-                    className={inputCls}
-                  >
-                    {!row.name && <option value="">— select employee —</option>}
-                    {availableEmployees.map((e) => (
-                      <option key={e.name} value={e.name}>{e.name}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    value={row.name}
-                    onChange={(e) => updateRow(i, 'name', e.target.value)}
-                    placeholder="Employee name"
-                    className={inputCls}
-                  />
-                )}
-                <input
-                  value={row.designation}
-                  onChange={(e) => updateRow(i, 'designation', e.target.value)}
-                  placeholder="Designation"
-                  readOnly={!!fromMaster}
-                  className={`${inputCls}${fromMaster ? ' bg-gray-50' : ''}`}
-                />
-                <select
-                  value={row.trainingStatus === 'not_required' ? 'not_required' : 'pending'}
-                  onChange={(e) => updateRow(i, 'trainingStatus', e.target.value)}
-                  className={inputCls}
-                >
-                  <option value="pending">Training required</option>
-                  <option value="not_required">Not required</option>
-                </select>
-                <StatusBadge status={row.trainingStatus === 'not_required' ? 'not_required' : 'pending'} />
-                <button
-                  onClick={() => removeRow(i)}
-                  disabled={rows.length === 1}
-                  className="rounded p-1 text-gray-300 hover:text-red-500 disabled:opacity-30"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            );
-          })}
-        </div>
-
-        {!employeesLoading && masterEmployees.length === 0 && (
+        {employeesLoading ? (
+          <p className="py-6 text-center text-xs text-gray-400">Loading employees from master…</p>
+        ) : masterEmployees.length === 0 ? (
           <p className="mt-2 text-xs text-amber-700">
-            No employees found in the master for {dept}. Add them on the{' '}
+            No employees found in the master. Add them on the{' '}
             <a href="/employees" className="font-medium underline" target="_blank" rel="noreferrer">Employees</a> page.
           </p>
+        ) : (
+          <div className="space-y-3">
+            {departmentGroups.map((dg) => {
+              const deptSelectedCount = dg.employees.filter((e) => selectedKeys.has(empKey(e))).length;
+              const deptAllSelected = deptSelectedCount === dg.employees.length;
+              const deptSomeSelected = deptSelectedCount > 0 && !deptAllSelected;
+              const deptExpanded = expandedDepartments.has(dg.department);
+              const isTargetDept = dg.department.toLowerCase() === dept.toLowerCase();
+              return (
+                <div key={dg.department} className="overflow-hidden rounded-lg border border-gray-200">
+                  {/* Department header */}
+                  <div className={`flex items-center gap-2 px-4 py-2.5 border-b ${isTargetDept ? 'bg-purple-50 border-purple-100' : 'bg-gray-50 border-gray-100'}`}>
+                    <input
+                      type="checkbox"
+                      checked={deptAllSelected}
+                      ref={(el) => { if (el) el.indeterminate = deptSomeSelected; }}
+                      onChange={() => toggleDepartment(dg.department)}
+                      className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => toggleDepartmentExpand(dg.department)}
+                      className="flex items-center gap-1.5 text-sm font-bold text-gray-800 hover:text-purple-700"
+                    >
+                      <ChevronRight className={`h-3.5 w-3.5 transition-transform ${deptExpanded ? 'rotate-90' : ''}`} />
+                      {dg.department}
+                      {isTargetDept && (
+                        <span className="rounded-full bg-purple-200 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-purple-800">
+                          target
+                        </span>
+                      )}
+                    </button>
+                    <span className="ml-auto text-[11px] text-gray-500">
+                      {deptSelectedCount}/{dg.employees.length} · {dg.designations.length} designation{dg.designations.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
+
+                  {/* Designations */}
+                  {deptExpanded && (
+                    <div className="divide-y divide-gray-100">
+                      {dg.designations.map(({ designation, employees }) => {
+                        const selInGroup = employees.filter((e) => selectedKeys.has(empKey(e))).length;
+                        const allSel = selInGroup === employees.length;
+                        const someSel = selInGroup > 0 && !allSel;
+                        const desigKey = `${dg.department}::${designation}`;
+                        const desigExpanded = expandedDesignations.has(desigKey);
+                        return (
+                          <div key={designation}>
+                            <div className="flex items-center gap-2 bg-white px-4 py-2 pl-6">
+                              <input
+                                type="checkbox"
+                                checked={allSel}
+                                ref={(el) => { if (el) el.indeterminate = someSel; }}
+                                onChange={() => toggleDesignation(dg.department, designation)}
+                                className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => toggleDesignationExpand(dg.department, designation)}
+                                className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 hover:text-purple-700"
+                              >
+                                <ChevronRight className={`h-3 w-3 transition-transform ${desigExpanded ? 'rotate-90' : ''}`} />
+                                {designation}
+                              </button>
+                              <span className="text-[11px] text-gray-500">
+                                ({selInGroup}/{employees.length})
+                              </span>
+                            </div>
+
+                            {desigExpanded && (
+                              <div className="bg-gray-50/50 py-1">
+                                {employees.map((emp) => (
+                                  <label
+                                    key={empKey(emp)}
+                                    className="flex items-center gap-2 pl-16 pr-4 py-1.5 cursor-pointer hover:bg-purple-50/60"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedKeys.has(empKey(emp))}
+                                      onChange={() => toggleEmployee(emp)}
+                                      className="h-3.5 w-3.5 rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                                    />
+                                    <span className="text-xs text-gray-700">{emp.name}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
 
         <p className="mt-4 rounded-lg bg-blue-50 px-3 py-2 text-[11px] text-blue-700">
-          <strong>Note:</strong> This SOP will appear as a new column in the {dept} training matrix. SOP master data (ID, name) is read-only and comes from the central SOP database.
+          <strong>Note:</strong> Selected employees will be added to their respective department training matrices with status <em>Training required</em>. SOP master data (ID, name) is read-only and comes from the central SOP database.
         </p>
       </div>
 
@@ -2662,10 +2724,10 @@ function AssignSOPDataForm({
         <button onClick={onBack} className="rounded-lg border px-4 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50">Back</button>
         <button
           onClick={handleSave}
-          disabled={loading || employeesLoading}
+          disabled={loading || employeesLoading || selectedCount === 0}
           className="flex items-center gap-1.5 rounded-lg bg-purple-600 px-4 py-1.5 text-sm font-medium text-white shadow hover:bg-purple-700 disabled:opacity-50"
         >
-          <CheckCircle className="h-3.5 w-3.5" /> {loading ? 'Saving…' : `Add to Matrix (${rows.filter(r => r.name.trim()).length} employees)`}
+          <CheckCircle className="h-3.5 w-3.5" /> {loading ? 'Saving…' : `Add to Matrix (${selectedCount} employee${selectedCount === 1 ? '' : 's'} · ${selectedDepartmentCount} dept${selectedDepartmentCount === 1 ? '' : 's'})`}
         </button>
       </div>
     </div>
@@ -2859,7 +2921,7 @@ export default function TrainingMatrixPage() {
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<MatrixViewMode>('sop'); // default: SOP-wise
   const [groupBy, setGroupBy] = useState<GroupByMode>('department');
-  const [sopSortField, setSopSortField] = useState<'sopCode' | 'title' | 'dept' | 'month' | 'expiry' | 'trainer' | 'applicable' | 'mcq_eng' | 'mcq_guj' | 'mcq_eng_approved' | 'mcq_guj_approved'>('dept');
+  const [sopSortField, setSopSortField] = useState<'sopCode' | 'title' | 'dept' | 'dbDept' | 'month' | 'expiry' | 'trainer' | 'applicable' | 'mcq_eng' | 'mcq_guj' | 'mcq_eng_approved' | 'mcq_guj_approved'>('dept');
   const [sopSortDir, setSopSortDir] = useState<'asc' | 'desc'>('asc');
   const [falsyIgnoredKeys, setFalsyIgnoredKeys] = useState<Set<string>>(loadFalsyIgnoredKeys);
   const [falsyPanelExpanded, setFalsyPanelExpanded] = useState(false);
@@ -2919,7 +2981,7 @@ export default function TrainingMatrixPage() {
   const [sopDetailSortDir, setSopDetailSortDir] = useState<'asc' | 'desc'>('asc');
 
   const [empModalSearch, setEmpModalSearch] = useState('');
-  const [empModalFilter, setEmpModalFilter] = useState<'all' | 'pending' | 'completed'>('all');
+  const [empModalFilter, setEmpModalFilter] = useState<'all' | 'due' | 'assigned'>('all');
   const [empModalSort, setEmpModalSort] = useState<{ field: 'code' | 'name' | 'month'; dir: 'asc' | 'desc' }>({ field: 'code', dir: 'asc' });
 
   const [missingModal, setMissingModal] = useState<null | {
@@ -3040,6 +3102,19 @@ export default function TrainingMatrixPage() {
     if (idx < 0) return 'all';
     return String(idx + 1);
   }, [activeMonth]);
+
+  // Lookup map: stripped SOP code → DB-owning department, derived from totalCard.dbSopsByDept.
+  const dbDeptBySopCode = useMemo(() => {
+    const m = new Map<string, string>();
+    const byDept = (data?.totalCard?.dbSopsByDept || {}) as Record<string, Array<{ sopCode: string }>>;
+    for (const [d, list] of Object.entries(byDept)) {
+      for (const item of list) {
+        const key = stripVersion(String(item.sopCode || '')).toUpperCase();
+        if (key && !m.has(key)) m.set(key, d);
+      }
+    }
+    return m;
+  }, [data]);
 
   // Month counts for the Total card — always sum all departments (never changes when a dept is selected).
   const totalMonthCounts = useMemo(() => {
@@ -3240,13 +3315,13 @@ export default function TrainingMatrixPage() {
       title: string;
       lang?: string;
       trainer?: 'assigned' | 'missing';
-      status?: 'all_db' | 'expired' | 'okay' | 'okay_not_near' | 'due_soon_30' | 'due_soon_30_mcq_reviewed' | 'due_soon_30_mcq_partial' | 'due_soon_30_mcq_not_reviewed' | 'mcq_created' | 'mcq_not_created' | 'mcq_all_approved' | 'mcq_partially_approved' | 'mcq_not_approved' | 'mcq_eng_created' | 'mcq_eng_not_created' | 'mcq_eng_all_approved' | 'mcq_eng_partially_approved' | 'mcq_eng_not_approved' | 'mcq_guj_created' | 'mcq_guj_not_created' | 'mcq_guj_all_approved' | 'mcq_guj_partially_approved' | 'mcq_guj_not_approved' | 'mcq_eng_only_created' | 'mcq_eng_only_not_created' | 'mcq_dual_eng_created' | 'mcq_dual_eng_not_created' | 'mcq_dual_guj_created' | 'mcq_dual_guj_not_created' | 'mcq_dual_both_created' | 'mcq_dual_either_incomplete' | 'mcq_approved_nondual' | 'mcq_approval_partial_nondual' | 'mcq_approval_missing_nondual' | 'mcq_approved_dual' | 'mcq_approval_partial_dual' | 'mcq_approval_missing_dual' | 'mcq_dual_slot_eng_all_approved' | 'mcq_dual_slot_eng_partially_approved' | 'mcq_dual_slot_eng_not_approved' | 'mcq_dual_slot_guj_all_approved' | 'mcq_dual_slot_guj_partially_approved' | 'mcq_dual_slot_guj_not_approved' | 'sop_0_trainer' | 'sop_1_trainer' | 'sop_2plus_trainer';
+      status?: 'all_db' | 'expired' | 'okay' | 'okay_not_near' | 'no_date' | 'due_soon_30' | 'due_soon_30_mcq_reviewed' | 'due_soon_30_mcq_partial' | 'due_soon_30_mcq_not_reviewed' | 'mcq_created' | 'mcq_not_created' | 'mcq_all_approved' | 'mcq_partially_approved' | 'mcq_not_approved' | 'mcq_eng_created' | 'mcq_eng_not_created' | 'mcq_eng_all_approved' | 'mcq_eng_partially_approved' | 'mcq_eng_not_approved' | 'mcq_guj_created' | 'mcq_guj_not_created' | 'mcq_guj_all_approved' | 'mcq_guj_partially_approved' | 'mcq_guj_not_approved' | 'mcq_eng_only_created' | 'mcq_eng_only_not_created' | 'mcq_dual_eng_created' | 'mcq_dual_eng_not_created' | 'mcq_dual_guj_created' | 'mcq_dual_guj_not_created' | 'mcq_dual_both_created' | 'mcq_dual_either_incomplete' | 'mcq_approved_nondual' | 'mcq_approval_partial_nondual' | 'mcq_approval_missing_nondual' | 'mcq_approved_dual' | 'mcq_approval_partial_dual' | 'mcq_approval_missing_dual' | 'mcq_dual_slot_eng_all_approved' | 'mcq_dual_slot_eng_partially_approved' | 'mcq_dual_slot_eng_not_approved' | 'mcq_dual_slot_guj_all_approved' | 'mcq_dual_slot_guj_partially_approved' | 'mcq_dual_slot_guj_not_approved' | 'sop_0_trainer' | 'sop_1_trainer' | 'sop_2plus_trainer';
     }) => {
       setViewMode('sop');
       setGroupBy('department');
       setActiveMonth('All');
       setSearch('');
-      setActiveDept(opts.dbDept && opts.dbDept !== 'All' ? opts.dbDept as ActiveDept : opts.dept);
+      setActiveDept(opts.type !== 'found_any' && opts.dbDept && opts.dbDept !== 'All' ? opts.dbDept as ActiveDept : opts.dept);
 
       if (data) {
         let codes: string[] = [];
@@ -3289,6 +3364,8 @@ export default function TrainingMatrixPage() {
               else if (opts.status === 'okay_not_near') {
                 const nearSet = new Set(deptData.dueSoon30List || []);
                 list = (deptData.okayList || []).filter((c: string) => !nearSet.has(c));
+              } else if (opts.status === 'no_date') {
+                list = (deptData.okayList || []).filter((c: string) => !data.sopStatusByCode?.[c]?.targetDate && !data.sopStatusByCode?.[stripVersion(c)]?.targetDate);
               } else if (opts.status === 'due_soon_30') list = deptData.dueSoon30List || [];
               else if (opts.status === 'due_soon_30_mcq_reviewed') list = deptData.dueSoon30McqReviewedList || [];
               else if (opts.status === 'due_soon_30_mcq_partial') list = deptData.dueSoon30McqPartialList || [];
@@ -3472,6 +3549,43 @@ export default function TrainingMatrixPage() {
       setDetailModal({ kind: 'employeeList', title, employeeListRows: rows, employeeListFilter: filter });
     },
     [data],
+  );
+
+  const openEmployeeModal = useCallback(
+    (name: string, departmentHint?: string) => {
+      if (!data) return;
+      const lookupDepts: Dept[] =
+        departmentHint && departmentHint !== 'All' ? [departmentHint as Dept] : [...departments];
+      let empRow: { name: string; designation?: string; training?: Record<string, boolean> } | undefined;
+      let empDept = departmentHint && departmentHint !== 'All' ? departmentHint : '';
+      for (const d of lookupDepts) {
+        const found = data.perDept?.[d]?.employees?.find((e: any) => e.name === name);
+        if (found) {
+          empRow = found;
+          empDept = d;
+          break;
+        }
+      }
+      const monthMap = (data.sopMonthMapByDept as any)?.[empDept] || {};
+      const employeeSops: Array<{ sopCode: string; month: string; symbol: '√' | 'X' | 'NA' }> = [];
+      if (empRow) {
+        for (const [code, v] of Object.entries(empRow.training || {})) {
+          employeeSops.push({ sopCode: code, month: monthForCode(monthMap, code), symbol: v ? '√' : 'X' });
+        }
+        employeeSops.sort((a, b) => a.sopCode.localeCompare(b.sopCode));
+      }
+      setEmpModalSearch('');
+      setEmpModalFilter('all');
+      setEmpModalSort({ field: 'code', dir: 'asc' });
+      setDetailModal({
+        kind: 'employee',
+        title: name,
+        subtitle: `${empDept}${empRow?.designation ? ` · ${empRow.designation}` : ''}`,
+        employeeName: name,
+        employeeSops,
+      });
+    },
+    [data, departments],
   );
 
   // Applies a repeat-based filter directly to the SOP table (no modal)
@@ -3979,17 +4093,18 @@ export default function TrainingMatrixPage() {
     const totalExcelDeptMissingSum = Object.values(totalExcelDeptMissingByDept).reduce((a, b) => a + b, 0) + totalExcelDeptUnknownMissing;
     const hasTotalExcelDeptSplit = totalExcelDeptTotal > 0;
 
-    const totalExpiryExpiredByDept: Record<string, number> = {};
-    const totalExpiryNearByDept: Record<string, number> = {};
-    const totalExpiryOkayByDept: Record<string, number> = {};
+    let totalExpiryExpired = 0;
+    let totalExpiryNear = 0;
+    let totalExpiryNoDate = 0;
     for (const dept of departments) {
       const deptData = data?.perDept?.[dept] as DeptCardData | undefined;
       if (!deptData) continue;
-      totalExpiryExpiredByDept[dept] = deptData.expiredCount ?? 0;
-      totalExpiryNearByDept[dept] = deptData.dueSoon30Count ?? 0;
-      const okay = deptData.okayCount ?? 0;
-      const near = deptData.dueSoon30Count ?? 0;
-      totalExpiryOkayByDept[dept] = Math.max(0, okay - near);
+      totalExpiryExpired += deptData.expiredCount ?? 0;
+      totalExpiryNear += deptData.dueSoon30Count ?? 0;
+      const okayList = ((deptData as any).okayList || []) as string[];
+      totalExpiryNoDate += okayList.filter(
+        (c) => !data?.sopStatusByCode?.[c]?.targetDate && !data?.sopStatusByCode?.[stripVersion(c)]?.targetDate,
+      ).length;
     }
 
     return (
@@ -4074,33 +4189,32 @@ export default function TrainingMatrixPage() {
             </div>
           </div>
         )}
-        <ExpiryDeptStrip
-          expiredCounts={totalExpiryExpiredByDept}
-          nearCounts={totalExpiryNearByDept}
-          okayCounts={totalExpiryOkayByDept}
-          order={departments}
-          onSelectExpired={(d) =>
+        <ExpiryInlineRow
+          expired={totalExpiryExpired}
+          near={totalExpiryNear}
+          noDate={totalExpiryNoDate}
+          onExpired={() =>
             applySummaryCapsuleFilter({
-              dept: d as ActiveDept,
+              dept: 'All',
               type: 'found',
-              title: `${d} · Expired SOPs`,
+              title: 'Total · Expired SOPs',
               status: 'expired',
             })
           }
-          onSelectNear={(d) =>
+          onNear={() =>
             applySummaryCapsuleFilter({
-              dept: d as ActiveDept,
+              dept: 'All',
               type: 'found',
-              title: `${d} · Due in Next 30 Days`,
+              title: 'Total · Due in Next 30 Days',
               status: 'due_soon_30',
             })
           }
-          onSelectOkay={(d) =>
+          onNoDate={() =>
             applySummaryCapsuleFilter({
-              dept: d as ActiveDept,
+              dept: 'All',
               type: 'found',
-              title: `${d} · Valid SOPs (not due soon)`,
-              status: 'okay_not_near',
+              title: 'Total · SOPs with No Expiry Date',
+              status: 'no_date',
             })
           }
         />
@@ -4257,39 +4371,39 @@ export default function TrainingMatrixPage() {
             not feed the reconciliation. */}
         <div className="flex w-full flex-col gap-px px-1 py-0">
           <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
-            <span className="min-w-0 truncate text-[7px] font-semibold leading-none text-gray-500">{`ENG·${(t.mcqEngOnlyCreatedCount ?? 0) + (t.mcqEngOnlyNotCreatedCount ?? 0)}`}</span>
+            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-gray-500">{`ENG·${(t.mcqEngOnlyCreatedCount ?? 0) + (t.mcqEngOnlyNotCreatedCount ?? 0)}`}</span>
             <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
-              <button type="button" title="Non-dual SOPs with 100+ ENG MCQs (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · Found (ENG ≥100)', status: 'mcq_eng_only_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqEngOnlyCreatedCount ?? 0}</button>
-              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-              <button type="button" title="Non-dual SOPs with <100 ENG MCQs (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · Missing (ENG <100)', status: 'mcq_eng_only_not_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqEngOnlyNotCreatedCount ?? 0}</button>
+              <button type="button" title="Non-dual SOPs with 100+ ENG MCQs (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · Found (ENG ≥100)', status: 'mcq_eng_only_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqEngOnlyCreatedCount ?? 0}</button>
+              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+              <button type="button" title="Non-dual SOPs with <100 ENG MCQs (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · Missing (ENG <100)', status: 'mcq_eng_only_not_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqEngOnlyNotCreatedCount ?? 0}</button>
             </div>
           </div>
           <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
-            <span className="min-w-0 truncate text-[7px] font-semibold leading-none text-gray-500" title="(ENG + GUJ)">{`(E+G)·${t.mcqDualSopCount ?? 0}`}</span>
+            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-gray-500" title="(ENG + GUJ)">{`(E+G)·${t.mcqDualSopCount ?? 0}`}</span>
             <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
-              <button type="button" title="Dual SOPs with 100+ MCQs in BOTH ENG and GUJ (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · Found (ENG ≥100 AND GUJ ≥100)', status: 'mcq_dual_both_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualBothCreatedCount ?? 0}</button>
-              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-              <button type="button" title="Dual SOPs missing 100+ MCQs in EITHER ENG or GUJ (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · Missing (ENG <100 OR GUJ <100)', status: 'mcq_dual_either_incomplete' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualEitherIncompleteCount ?? 0}</button>
+              <button type="button" title="Dual SOPs with 100+ MCQs in BOTH ENG and GUJ (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · Found (ENG ≥100 AND GUJ ≥100)', status: 'mcq_dual_both_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualBothCreatedCount ?? 0}</button>
+              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+              <button type="button" title="Dual SOPs missing 100+ MCQs in EITHER ENG or GUJ (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · Missing (ENG <100 OR GUJ <100)', status: 'mcq_dual_either_incomplete' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualEitherIncompleteCount ?? 0}</button>
             </div>
           </div>
           {/* Display-only per-language slot breakdown for Dual SOPs.
               These do NOT reconcile to the Dual Found/Missing row above — they
               describe individual language slots, not whole SOPs. */}
-          <div className="flex min-w-0 flex-nowrap items-center gap-x-0.5 opacity-80">
+          <div className="flex w-full min-w-0 flex-nowrap items-center justify-between gap-x-2 opacity-80">
             <div className="flex shrink-0 items-center gap-px">
-              <span className="text-gray-400 text-[6px] italic leading-none shrink-0">ENG</span>
+              <span className="text-gray-900 text-[10px] italic font-semibold leading-none shrink-0">E</span>
               <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
-                <button type="button" title="Dual SOPs whose ENG slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot ≥100 (display)', status: 'mcq_dual_eng_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualEngCreatedCount ?? 0}</button>
-                <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-                <button type="button" title="Dual SOPs whose ENG slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot <100 (display)', status: 'mcq_dual_eng_not_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualEngNotCreatedCount ?? 0}</button>
+                <button type="button" title="Dual SOPs whose ENG slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot ≥100 (display)', status: 'mcq_dual_eng_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualEngCreatedCount ?? 0}</button>
+                <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+                <button type="button" title="Dual SOPs whose ENG slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot <100 (display)', status: 'mcq_dual_eng_not_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualEngNotCreatedCount ?? 0}</button>
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-px">
-              <span className="text-gray-400 text-[6px] italic leading-none shrink-0">GUJ</span>
+              <span className="text-gray-900 text-[10px] italic font-semibold leading-none shrink-0">G</span>
               <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
-                <button type="button" title="Dual SOPs whose GUJ slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot ≥100 (display)', status: 'mcq_dual_guj_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualGujCreatedCount ?? 0}</button>
-                <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-                <button type="button" title="Dual SOPs whose GUJ slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot <100 (display)', status: 'mcq_dual_guj_not_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualGujNotCreatedCount ?? 0}</button>
+                <button type="button" title="Dual SOPs whose GUJ slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot ≥100 (display)', status: 'mcq_dual_guj_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualGujCreatedCount ?? 0}</button>
+                <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+                <button type="button" title="Dual SOPs whose GUJ slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot <100 (display)', status: 'mcq_dual_guj_not_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualGujNotCreatedCount ?? 0}</button>
               </div>
             </div>
           </div>
@@ -4336,44 +4450,44 @@ export default function TrainingMatrixPage() {
             do NOT reconcile to the Dual primary row above them. */}
         <div className="flex w-full flex-col gap-px px-1 py-0">
           <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
-            <span className="min-w-0 truncate text-[7px] font-semibold leading-none text-gray-500">{`ENG·${t.mcqEngOnlyCreatedCount ?? 0}`}</span>
+            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-gray-500">{`ENG·${t.mcqEngOnlyCreatedCount ?? 0}`}</span>
             <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
-              <button type="button" title="Non-dual SOPs whose ENG MCQs are fully approved" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · MCQ Approved (ENG fully approved)', status: 'mcq_approved_nondual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqApprovedNonDualCount ?? 0}</button>
-              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-              <button type="button" title="Non-dual SOPs with some ENG approval but not full" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · MCQ Partially Approved', status: 'mcq_approval_partial_nondual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqApprovalPartialNonDualCount ?? 0}</button>
-              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-              <button type="button" title="Non-dual SOPs with zero ENG approvals" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · MCQ Approval Missing (zero approvals)', status: 'mcq_approval_missing_nondual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqApprovalMissingNonDualCount ?? 0}</button>
+              <button type="button" title="Non-dual SOPs whose ENG MCQs are fully approved" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · MCQ Approved (ENG fully approved)', status: 'mcq_approved_nondual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqApprovedNonDualCount ?? 0}</button>
+              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+              <button type="button" title="Non-dual SOPs with some ENG approval but not full" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · MCQ Partially Approved', status: 'mcq_approval_partial_nondual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqApprovalPartialNonDualCount ?? 0}</button>
+              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+              <button type="button" title="Non-dual SOPs with zero ENG approvals" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · MCQ Approval Missing (zero approvals)', status: 'mcq_approval_missing_nondual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqApprovalMissingNonDualCount ?? 0}</button>
             </div>
           </div>
           <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
-            <span className="min-w-0 truncate text-[7px] font-semibold leading-none text-gray-500" title="(ENG + GUJ)">{`(E+G)·${t.mcqDualBothCreatedCount ?? 0}`}</span>
+            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-gray-500" title="(ENG + GUJ)">{`(E+G)·${t.mcqDualBothCreatedCount ?? 0}`}</span>
             <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
-              <button type="button" title="Dual SOPs with BOTH ENG and GUJ fully approved (SOP-level Approved)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · MCQ Approved (ENG fully + GUJ fully)', status: 'mcq_approved_dual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqApprovedDualCount ?? 0}</button>
-              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-              <button type="button" title="Dual SOPs where both languages have some approvals but at least one isn't fully approved" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · MCQ Partially Approved (both langs in progress)', status: 'mcq_approval_partial_dual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqApprovalPartialDualCount ?? 0}</button>
-              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-              <button type="button" title="Dual SOPs where at least one language has zero approvals (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · MCQ Approval Missing (a language has zero approvals)', status: 'mcq_approval_missing_dual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqApprovalMissingDualCount ?? 0}</button>
+              <button type="button" title="Dual SOPs with BOTH ENG and GUJ fully approved (SOP-level Approved)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · MCQ Approved (ENG fully + GUJ fully)', status: 'mcq_approved_dual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqApprovedDualCount ?? 0}</button>
+              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+              <button type="button" title="Dual SOPs with partial progress — at least one language has approvals or is fully approved, but both aren't fully approved" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · MCQ Partially Approved (some progress on at least one language)', status: 'mcq_approval_partial_dual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqApprovalPartialDualCount ?? 0}</button>
+              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+              <button type="button" title="Dual SOPs where BOTH languages have zero approvals (fully missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · MCQ Approval Missing (both languages have zero approvals)', status: 'mcq_approval_missing_dual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqApprovalMissingDualCount ?? 0}</button>
             </div>
           </div>
-          <div className="flex min-w-0 flex-nowrap items-center gap-x-0.5 opacity-80">
+          <div className="flex w-full min-w-0 flex-nowrap items-center justify-between gap-x-2 opacity-80">
             <div className="flex shrink-0 items-center gap-px">
-              <span className="text-gray-400 text-[6px] italic leading-none shrink-0">ENG</span>
+              <span className="text-gray-900 text-[10px] italic font-semibold leading-none shrink-0">E</span>
               <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
-                <button type="button" title="Dual SOPs whose ENG slot is fully approved (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot fully approved (display)', status: 'mcq_dual_slot_eng_all_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualSlotEngAllApprovedCount ?? 0}</button>
-              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-              <button type="button" title="Dual SOPs whose ENG slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot partially approved (display)', status: 'mcq_dual_slot_eng_partially_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqDualSlotEngPartiallyApprovedCount ?? 0}</button>
-              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-              <button type="button" title="Dual SOPs whose ENG slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot zero approvals (display)', status: 'mcq_dual_slot_eng_not_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualSlotEngNotApprovedCount ?? 0}</button>
+                <button type="button" title="Dual SOPs whose ENG slot is fully approved (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot fully approved (display)', status: 'mcq_dual_slot_eng_all_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualSlotEngAllApprovedCount ?? 0}</button>
+              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+              <button type="button" title="Dual SOPs whose ENG slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot partially approved (display)', status: 'mcq_dual_slot_eng_partially_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqDualSlotEngPartiallyApprovedCount ?? 0}</button>
+              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+              <button type="button" title="Dual SOPs whose ENG slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot zero approvals (display)', status: 'mcq_dual_slot_eng_not_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualSlotEngNotApprovedCount ?? 0}</button>
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-px">
-              <span className="text-gray-400 text-[6px] italic leading-none shrink-0">GUJ</span>
+              <span className="text-gray-900 text-[10px] italic font-semibold leading-none shrink-0">G</span>
               <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
-                <button type="button" title="Dual SOPs whose GUJ slot is fully approved (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot fully approved (display)', status: 'mcq_dual_slot_guj_all_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualSlotGujAllApprovedCount ?? 0}</button>
-              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-              <button type="button" title="Dual SOPs whose GUJ slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot partially approved (display)', status: 'mcq_dual_slot_guj_partially_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqDualSlotGujPartiallyApprovedCount ?? 0}</button>
-              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-              <button type="button" title="Dual SOPs whose GUJ slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot zero approvals (display)', status: 'mcq_dual_slot_guj_not_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualSlotGujNotApprovedCount ?? 0}</button>
+                <button type="button" title="Dual SOPs whose GUJ slot is fully approved (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot fully approved (display)', status: 'mcq_dual_slot_guj_all_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualSlotGujAllApprovedCount ?? 0}</button>
+              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+              <button type="button" title="Dual SOPs whose GUJ slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot partially approved (display)', status: 'mcq_dual_slot_guj_partially_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqDualSlotGujPartiallyApprovedCount ?? 0}</button>
+              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+              <button type="button" title="Dual SOPs whose GUJ slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot zero approvals (display)', status: 'mcq_dual_slot_guj_not_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualSlotGujNotApprovedCount ?? 0}</button>
               </div>
             </div>
           </div>
@@ -4381,17 +4495,17 @@ export default function TrainingMatrixPage() {
         </SummaryTopic>
         <SummaryTopic>
         <SectionLabel>Trainers / SOP</SectionLabel>
-        <div className="flex w-full min-h-[22px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
+        <div className="flex w-full min-h-[22px] items-center justify-between gap-1 px-1 py-0 text-[10px]">
           <div className="flex items-center gap-0.5" title="SOPs with 2 or more trainers assigned">
-            <span className="text-gray-500 text-[9px] font-medium">2+</span>
+            <span className="text-gray-500 text-[10px] font-medium">2+</span>
             <button type="button" title="SOPs with 2 or more trainers" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'SOPs with 2+ Trainers', status: 'sop_2plus_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400 tabular-nums">{trainerBuckets.sop2Plus}</button>
           </div>
           <div className="flex items-center gap-0.5" title="SOPs with exactly 1 trainer assigned">
-            <span className="text-gray-500 text-[9px] font-medium">1</span>
+            <span className="text-gray-500 text-[10px] font-medium">1</span>
             <button type="button" title="SOPs with 1 trainer" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'SOPs with 1 Trainer', status: 'sop_1_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-amber-600 shadow-sm transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400 tabular-nums">{trainerBuckets.sop1}</button>
           </div>
           <div className="flex items-center gap-0.5" title="SOPs with no trainer assigned">
-            <span className="text-gray-500 text-[9px] font-medium">0</span>
+            <span className="text-gray-500 text-[10px] font-medium">0</span>
             <button type="button" title="SOPs with 0 trainers" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'SOPs with 0 Trainers', status: 'sop_0_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-red-600 shadow-sm transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400 tabular-nums">{trainerBuckets.sop0}</button>
           </div>
         </div>
@@ -4524,7 +4638,7 @@ export default function TrainingMatrixPage() {
         <ExpiryInlineRow
           expired={d.expiredCount ?? 0}
           near={d.dueSoon30Count ?? 0}
-          okayNotNear={Math.max(0, (d.okayCount ?? 0) - (d.dueSoon30Count ?? 0))}
+          noDate={(((d as any).okayList || []) as string[]).filter((c) => !data?.sopStatusByCode?.[c]?.targetDate && !data?.sopStatusByCode?.[stripVersion(c)]?.targetDate).length}
           onExpired={() =>
             applySummaryCapsuleFilter({
               dept,
@@ -4541,12 +4655,12 @@ export default function TrainingMatrixPage() {
               status: 'due_soon_30',
             })
           }
-          onOkay={() =>
+          onNoDate={() =>
             applySummaryCapsuleFilter({
               dept,
               type: 'found',
-              title: `${dept} · Valid SOPs (not due soon)`,
-              status: 'okay_not_near',
+              title: `${dept} · SOPs with No Expiry Date`,
+              status: 'no_date',
             })
           }
         />
@@ -4707,36 +4821,36 @@ export default function TrainingMatrixPage() {
             language slots, not whole SOPs). */}
         <div className="flex w-full flex-col gap-px px-1 py-0">
           <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
-            <span className="min-w-0 truncate text-[7px] font-semibold leading-none text-gray-500">{`ENG·${(d.mcqEngOnlyCreatedCount ?? 0) + (d.mcqEngOnlyNotCreatedCount ?? 0)}`}</span>
+            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-gray-500">{`ENG·${(d.mcqEngOnlyCreatedCount ?? 0) + (d.mcqEngOnlyNotCreatedCount ?? 0)}`}</span>
             <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
-              <button type="button" title="Non-dual SOPs with 100+ ENG MCQs (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · Found (ENG ≥100)`, status: 'mcq_eng_only_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqEngOnlyCreatedCount ?? 0}</button>
-              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-              <button type="button" title="Non-dual SOPs with <100 ENG MCQs (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · Missing (ENG <100)`, status: 'mcq_eng_only_not_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqEngOnlyNotCreatedCount ?? 0}</button>
+              <button type="button" title="Non-dual SOPs with 100+ ENG MCQs (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · Found (ENG ≥100)`, status: 'mcq_eng_only_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqEngOnlyCreatedCount ?? 0}</button>
+              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+              <button type="button" title="Non-dual SOPs with <100 ENG MCQs (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · Missing (ENG <100)`, status: 'mcq_eng_only_not_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqEngOnlyNotCreatedCount ?? 0}</button>
             </div>
           </div>
           <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
-            <span className="min-w-0 truncate text-[7px] font-semibold leading-none text-gray-500" title="(ENG + GUJ)">{`(E+G)·${d.mcqDualSopCount ?? 0}`}</span>
+            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-gray-500" title="(ENG + GUJ)">{`(E+G)·${d.mcqDualSopCount ?? 0}`}</span>
             <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
-              <button type="button" title="Dual SOPs with 100+ MCQs in BOTH ENG and GUJ (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · Found (ENG ≥100 AND GUJ ≥100)`, status: 'mcq_dual_both_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualBothCreatedCount ?? 0}</button>
-              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-              <button type="button" title="Dual SOPs missing 100+ MCQs in EITHER ENG or GUJ (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · Missing (ENG <100 OR GUJ <100)`, status: 'mcq_dual_either_incomplete' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualEitherIncompleteCount ?? 0}</button>
+              <button type="button" title="Dual SOPs with 100+ MCQs in BOTH ENG and GUJ (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · Found (ENG ≥100 AND GUJ ≥100)`, status: 'mcq_dual_both_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualBothCreatedCount ?? 0}</button>
+              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+              <button type="button" title="Dual SOPs missing 100+ MCQs in EITHER ENG or GUJ (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · Missing (ENG <100 OR GUJ <100)`, status: 'mcq_dual_either_incomplete' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualEitherIncompleteCount ?? 0}</button>
             </div>
           </div>
-          <div className="flex min-w-0 flex-nowrap items-center gap-x-0.5 opacity-80">
+          <div className="flex w-full min-w-0 flex-nowrap items-center justify-between gap-x-2 opacity-80">
             <div className="flex shrink-0 items-center gap-px">
-              <span className="text-gray-400 text-[6px] italic leading-none shrink-0">ENG</span>
+              <span className="text-gray-900 text-[10px] italic font-semibold leading-none shrink-0">E</span>
               <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
-                <button type="button" title="Dual SOPs whose ENG slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot ≥100 (display)`, status: 'mcq_dual_eng_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualEngCreatedCount ?? 0}</button>
-                <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-                <button type="button" title="Dual SOPs whose ENG slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot <100 (display)`, status: 'mcq_dual_eng_not_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualEngNotCreatedCount ?? 0}</button>
+                <button type="button" title="Dual SOPs whose ENG slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot ≥100 (display)`, status: 'mcq_dual_eng_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualEngCreatedCount ?? 0}</button>
+                <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+                <button type="button" title="Dual SOPs whose ENG slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot <100 (display)`, status: 'mcq_dual_eng_not_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualEngNotCreatedCount ?? 0}</button>
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-px">
-              <span className="text-gray-400 text-[6px] italic leading-none shrink-0">GUJ</span>
+              <span className="text-gray-900 text-[10px] italic font-semibold leading-none shrink-0">G</span>
               <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
-                <button type="button" title="Dual SOPs whose GUJ slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot ≥100 (display)`, status: 'mcq_dual_guj_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualGujCreatedCount ?? 0}</button>
-                <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-                <button type="button" title="Dual SOPs whose GUJ slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot <100 (display)`, status: 'mcq_dual_guj_not_created' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualGujNotCreatedCount ?? 0}</button>
+                <button type="button" title="Dual SOPs whose GUJ slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot ≥100 (display)`, status: 'mcq_dual_guj_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualGujCreatedCount ?? 0}</button>
+                <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+                <button type="button" title="Dual SOPs whose GUJ slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot <100 (display)`, status: 'mcq_dual_guj_not_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualGujNotCreatedCount ?? 0}</button>
               </div>
             </div>
           </div>
@@ -4778,44 +4892,44 @@ export default function TrainingMatrixPage() {
             sub-totals always sum to the top primary row above. */}
         <div className="flex w-full flex-col gap-px px-1 py-0">
           <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
-            <span className="min-w-0 truncate text-[7px] font-semibold leading-none text-gray-500">{`ENG·${d.mcqEngOnlyCreatedCount ?? 0}`}</span>
+            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-gray-500">{`ENG·${d.mcqEngOnlyCreatedCount ?? 0}`}</span>
             <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
-              <button type="button" title="Non-dual SOPs whose ENG MCQs are fully approved" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · MCQ Approved (ENG fully approved)`, status: 'mcq_approved_nondual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqApprovedNonDualCount ?? 0}</button>
-              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-              <button type="button" title="Non-dual SOPs with some ENG approval but not full" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · MCQ Partially Approved`, status: 'mcq_approval_partial_nondual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqApprovalPartialNonDualCount ?? 0}</button>
-              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-              <button type="button" title="Non-dual SOPs with zero ENG approvals" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · MCQ Approval Missing`, status: 'mcq_approval_missing_nondual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqApprovalMissingNonDualCount ?? 0}</button>
+              <button type="button" title="Non-dual SOPs whose ENG MCQs are fully approved" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · MCQ Approved (ENG fully approved)`, status: 'mcq_approved_nondual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqApprovedNonDualCount ?? 0}</button>
+              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+              <button type="button" title="Non-dual SOPs with some ENG approval but not full" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · MCQ Partially Approved`, status: 'mcq_approval_partial_nondual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqApprovalPartialNonDualCount ?? 0}</button>
+              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+              <button type="button" title="Non-dual SOPs with zero ENG approvals" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · MCQ Approval Missing`, status: 'mcq_approval_missing_nondual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqApprovalMissingNonDualCount ?? 0}</button>
             </div>
           </div>
           <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
-            <span className="min-w-0 truncate text-[7px] font-semibold leading-none text-gray-500" title="(ENG + GUJ)">{`(E+G)·${d.mcqDualBothCreatedCount ?? 0}`}</span>
+            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-gray-500" title="(ENG + GUJ)">{`(E+G)·${d.mcqDualBothCreatedCount ?? 0}`}</span>
             <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
-              <button type="button" title="Dual SOPs with BOTH ENG and GUJ fully approved (SOP-level Approved)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · MCQ Approved (ENG fully + GUJ fully)`, status: 'mcq_approved_dual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqApprovedDualCount ?? 0}</button>
-              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-              <button type="button" title="Dual SOPs where both languages have some approvals but at least one isn't fully approved" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · MCQ Partially Approved`, status: 'mcq_approval_partial_dual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqApprovalPartialDualCount ?? 0}</button>
-              <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-              <button type="button" title="Dual SOPs where at least one language has zero approvals (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · MCQ Approval Missing`, status: 'mcq_approval_missing_dual' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqApprovalMissingDualCount ?? 0}</button>
+              <button type="button" title="Dual SOPs with BOTH ENG and GUJ fully approved (SOP-level Approved)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · MCQ Approved (ENG fully + GUJ fully)`, status: 'mcq_approved_dual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqApprovedDualCount ?? 0}</button>
+              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+              <button type="button" title="Dual SOPs with partial progress — at least one language has approvals or is fully approved, but both aren't fully approved" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · MCQ Partially Approved`, status: 'mcq_approval_partial_dual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqApprovalPartialDualCount ?? 0}</button>
+              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+              <button type="button" title="Dual SOPs where BOTH languages have zero approvals (fully missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · MCQ Approval Missing`, status: 'mcq_approval_missing_dual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqApprovalMissingDualCount ?? 0}</button>
             </div>
           </div>
-          <div className="flex min-w-0 flex-nowrap items-center gap-x-0.5 opacity-80">
+          <div className="flex w-full min-w-0 flex-nowrap items-center justify-between gap-x-2 opacity-80">
             <div className="flex shrink-0 items-center gap-px">
-              <span className="text-gray-400 text-[6px] italic leading-none shrink-0">ENG</span>
+              <span className="text-gray-900 text-[10px] italic font-semibold leading-none shrink-0">E</span>
               <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
-                <button type="button" title="Dual SOPs whose ENG slot is fully approved (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot fully approved (display)`, status: 'mcq_dual_slot_eng_all_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualSlotEngAllApprovedCount ?? 0}</button>
-                <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-                <button type="button" title="Dual SOPs whose ENG slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot partially approved (display)`, status: 'mcq_dual_slot_eng_partially_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqDualSlotEngPartiallyApprovedCount ?? 0}</button>
-                <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-                <button type="button" title="Dual SOPs whose ENG slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot zero approvals (display)`, status: 'mcq_dual_slot_eng_not_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualSlotEngNotApprovedCount ?? 0}</button>
+                <button type="button" title="Dual SOPs whose ENG slot is fully approved (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot fully approved (display)`, status: 'mcq_dual_slot_eng_all_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualSlotEngAllApprovedCount ?? 0}</button>
+                <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+                <button type="button" title="Dual SOPs whose ENG slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot partially approved (display)`, status: 'mcq_dual_slot_eng_partially_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqDualSlotEngPartiallyApprovedCount ?? 0}</button>
+                <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+                <button type="button" title="Dual SOPs whose ENG slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot zero approvals (display)`, status: 'mcq_dual_slot_eng_not_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualSlotEngNotApprovedCount ?? 0}</button>
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-px">
-              <span className="text-gray-400 text-[6px] italic leading-none shrink-0">GUJ</span>
+              <span className="text-gray-900 text-[10px] italic font-semibold leading-none shrink-0">G</span>
               <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
-                <button type="button" title="Dual SOPs whose GUJ slot is fully approved (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot fully approved (display)`, status: 'mcq_dual_slot_guj_all_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualSlotGujAllApprovedCount ?? 0}</button>
-                <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-                <button type="button" title="Dual SOPs whose GUJ slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot partially approved (display)`, status: 'mcq_dual_slot_guj_partially_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqDualSlotGujPartiallyApprovedCount ?? 0}</button>
-                <span className="select-none text-[6px] leading-none text-gray-300">|</span>
-                <button type="button" title="Dual SOPs whose GUJ slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot zero approvals (display)`, status: 'mcq_dual_slot_guj_not_approved' })} className="min-w-[0.7rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[7px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualSlotGujNotApprovedCount ?? 0}</button>
+                <button type="button" title="Dual SOPs whose GUJ slot is fully approved (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot fully approved (display)`, status: 'mcq_dual_slot_guj_all_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualSlotGujAllApprovedCount ?? 0}</button>
+                <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+                <button type="button" title="Dual SOPs whose GUJ slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot partially approved (display)`, status: 'mcq_dual_slot_guj_partially_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqDualSlotGujPartiallyApprovedCount ?? 0}</button>
+                <span className="select-none text-[9px] leading-none text-gray-300">|</span>
+                <button type="button" title="Dual SOPs whose GUJ slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot zero approvals (display)`, status: 'mcq_dual_slot_guj_not_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualSlotGujNotApprovedCount ?? 0}</button>
               </div>
             </div>
           </div>
@@ -4823,17 +4937,17 @@ export default function TrainingMatrixPage() {
         </SummaryTopic>
         <SummaryTopic>
         <SectionLabel>Trainers / SOP</SectionLabel>
-        <div className="flex w-full min-h-[22px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
+        <div className="flex w-full min-h-[22px] items-center justify-between gap-1 px-1 py-0 text-[10px]">
           <div className="flex items-center gap-0.5" title="SOPs with 2 or more trainers assigned">
-            <span className="text-gray-500 text-[9px] font-medium">2+</span>
+            <span className="text-gray-500 text-[10px] font-medium">2+</span>
             <button type="button" title="SOPs with 2 or more trainers" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · SOPs with 2+ Trainers`, status: 'sop_2plus_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400 tabular-nums">{deptTrainerBuckets.sop2Plus}</button>
           </div>
           <div className="flex items-center gap-0.5" title="SOPs with exactly 1 trainer assigned">
-            <span className="text-gray-500 text-[9px] font-medium">1</span>
+            <span className="text-gray-500 text-[10px] font-medium">1</span>
             <button type="button" title="SOPs with 1 trainer" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · SOPs with 1 Trainer`, status: 'sop_1_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-amber-600 shadow-sm transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400 tabular-nums">{deptTrainerBuckets.sop1}</button>
           </div>
           <div className="flex items-center gap-0.5" title="SOPs with no trainer assigned">
-            <span className="text-gray-500 text-[9px] font-medium">0</span>
+            <span className="text-gray-500 text-[10px] font-medium">0</span>
             <button type="button" title="SOPs with 0 trainers" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · SOPs with 0 Trainers`, status: 'sop_0_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-red-600 shadow-sm transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400 tabular-nums">{deptTrainerBuckets.sop0}</button>
           </div>
         </div>
@@ -4940,6 +5054,7 @@ export default function TrainingMatrixPage() {
     title,
     gujaratiName,
     isDualLanguage,
+    dbDept,
     dept,
     month,
     targetDate,
@@ -4949,6 +5064,9 @@ export default function TrainingMatrixPage() {
     bottom,
     onClick,
     isActiveMonth,
+    engDocxPath,
+    gujDocxPath,
+    docIdentifier,
   }: {
     accent: string;
     bgTint: DeptBgTint;
@@ -4957,6 +5075,7 @@ export default function TrainingMatrixPage() {
     title?: string;
     gujaratiName?: string;
     isDualLanguage?: boolean;
+    dbDept?: string;
     dept: string;
     month?: string;
     targetDate?: string | null;
@@ -4966,11 +5085,14 @@ export default function TrainingMatrixPage() {
     bottom?: React.ReactNode;
     onClick?: () => void;
     isActiveMonth?: boolean;
+    engDocxPath?: string;
+    gujDocxPath?: string;
+    docIdentifier?: string;
   }) {
     const tint = deptBgTintClass(bgTint);
 
     const expiryLabel = targetDate
-      ? new Date(targetDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+      ? new Date(targetDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })
       : '—';
 
     return (
@@ -4983,36 +5105,68 @@ export default function TrainingMatrixPage() {
         style={{ borderColor: `${accent}55` }}
       >
         <div
-          className="grid items-start gap-x-2 gap-y-1.5 px-4 py-2"
+          className="grid items-center gap-x-1.5 gap-y-0.5 px-3 py-1"
           style={{ gridTemplateColumns: SOP_TABLE_GRID_COLS }}
         >
-          <span className="text-[10px] font-bold text-gray-400 tabular-nums text-right">{sr != null ? sr : ''}</span>
-          <span className="font-mono text-[11px] font-black text-gray-900 truncate" title={sopCode}>{sopCode}</span>
+          <span className="text-[9px] font-bold text-gray-400 tabular-nums text-right">{sr != null ? sr : ''}</span>
+          <span className="font-mono text-[10px] font-black text-gray-900 truncate" title={sopCode}>{sopCode}</span>
           <div className="flex flex-col min-w-0">
             {title
-              ? <span className="text-[13px] font-extrabold text-gray-900 leading-snug break-words">{title}</span>
-              : <span className="text-[10px] text-gray-400 italic">—</span>}
+              ? <span className="text-[11px] font-extrabold text-gray-900 leading-tight break-words">{title}</span>
+              : <span className="text-[9px] text-gray-400 italic">—</span>}
             {isDualLanguage && gujaratiName && /[઀-૿]/.test(gujaratiName) && (
-              <span className="text-[11px] font-bold text-indigo-700 leading-snug break-words mt-0.5">{gujaratiName}</span>
+              <span className="text-[10px] font-bold text-indigo-700 leading-tight break-words">{gujaratiName}</span>
             )}
           </div>
-          <span className="text-[11px] font-black text-gray-900 truncate" title={dept}>{dept}</span>
-          <span className={`text-[10px] font-bold rounded-full px-2 py-0.5 border text-center truncate ${month ? (isActiveMonth ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white/60 text-gray-600 border-white/60') : 'text-gray-400'}`}>
+          <span className="text-[10px] font-semibold text-gray-600 truncate" title={dbDept ? `DB Dept: ${dbDept}` : 'DB Dept: —'}>{dbDept || '—'}</span>
+          <span className="text-[10px] font-black text-gray-900 truncate" title={dept}>{dept}</span>
+          <span className={`text-[9px] font-bold rounded-full px-1.5 py-0.5 border text-center truncate ${month ? (isActiveMonth ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white/60 text-gray-600 border-white/60') : 'text-gray-400'}`}>
             {month || '—'}
-          </span>
-          <span
-            className={`inline-flex items-center justify-center gap-1 text-[10px] font-bold rounded-full px-2 py-0.5 border ${targetDate
-              ? expired ? 'bg-red-100 text-red-700 border-red-300' : 'bg-emerald-100 text-emerald-700 border-emerald-300'
-              : 'bg-gray-100 text-gray-500 border-gray-300'}`}
-            title={targetDate ? (expired ? 'Expired' : 'Valid') : 'No date'}
-          >
-            {targetDate ? <span className="text-[9px]">{expired ? '⚠' : '✓'}</span> : null}
-            {expiryLabel}
           </span>
           <span className={`text-[10px] font-semibold truncate ${trainer ? 'text-emerald-700' : 'text-red-500'}`} title={trainer || 'No Trainer'}>
             {trainer || 'No Trainer'}
           </span>
+          <div className="flex flex-col items-start justify-center leading-none min-w-0">
+            {engDocxPath ? (
+              <a
+                href={buildViewDocHref(engDocxPath, docIdentifier || sopCode, 'English')}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-[9px] font-bold text-emerald-700 hover:underline whitespace-nowrap"
+                title={`Open ENG DOCX for ${sopCode}`}
+              >
+                ENG DOCX
+              </a>
+            ) : (
+              <span className="text-[9px] font-bold text-gray-400 whitespace-nowrap" title="No ENG DOCX">ENG —</span>
+            )}
+            {isDualLanguage ? (
+              gujDocxPath ? (
+                <a
+                  href={buildViewDocHref(gujDocxPath, docIdentifier || sopCode, 'Gujarati')}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-[9px] font-bold text-emerald-700 hover:underline whitespace-nowrap"
+                  title={`Open GUJ DOCX for ${sopCode}`}
+                >
+                  GUJ DOCX
+                </a>
+              ) : (
+                <span className="text-[9px] font-bold text-gray-400 whitespace-nowrap" title="No GUJ DOCX">GUJ —</span>
+              )
+            ) : null}
+          </div>
           {mcqMetrics}
+          <span
+            className={`text-[9px] font-semibold text-center truncate ${targetDate
+              ? expired ? 'text-red-600' : 'text-emerald-700'
+              : 'text-gray-400'}`}
+            title={targetDate ? (expired ? 'Expired' : 'Valid') : 'No date'}
+          >
+            {expiryLabel}
+          </span>
           {bottom ? (
             <div className="min-w-0 pb-1" style={{ gridColumn: SOP_EMP_BUBBLE_GRID_COL }}>
               {bottom}
@@ -5090,10 +5244,65 @@ export default function TrainingMatrixPage() {
     };
 
     const completed = sop.completedEmployees || [];
+
+    const openSopModal = () => {
+      if (!data) return;
+      const byName = new Map<string, { designation?: string }>();
+      const empDepts = dept === 'All' ? departments : [dept as Dept];
+      for (const d of empDepts) {
+        for (const e of data.perDept?.[d]?.employees || []) byName.set(e.name, { designation: e.designation });
+      }
+      // Due = √ (completed) + X (pending) — everyone scheduled to give the exam
+      const dueNames = [...(sop.completedEmployees || []), ...(sop.pendingEmployees || [])];
+      const due = dueNames.map((n) => ({ name: n, designation: byName.get(n)?.designation, department: dept }));
+      // Not Necessary = dept employees who have no training record for this SOP (NA)
+      const dueSet = new Set(dueNames);
+      const notNecessary: Array<{ name: string; designation?: string; department?: string }> = [];
+      for (const d of empDepts) {
+        for (const e of data.perDept?.[d]?.employees || []) {
+          if (dueSet.has(e.name)) continue;
+          notNecessary.push({ name: e.name, designation: e.designation, department: d });
+        }
+      }
+      const inExcelDepts = departments.filter((d) =>
+        (data.sopCodesByDept?.[d] || []).some((c: string) => c.toUpperCase() === sop.sopCode.toUpperCase())
+      );
+      setSopDetailSearch('');
+      setSopDetailSortField('name');
+      setSopDetailSortDir('asc');
+      setDetailModal({
+        kind: 'sop',
+        title: `${sop.sopCode}`,
+        sopTitle: sop.title || '',
+        subtitle: `${dept === 'All' ? 'All Departments' : dept}${sop.month ? ` · ${sop.month}` : ''}`,
+        sopCode: sop.sopCode,
+        department: dept,
+        monthLabel: sop.month,
+        trainer: sop.trainer || '',
+        targetDate: sop.targetDate,
+        expired: sop.expired,
+        completionPct: sop.completionPct,
+        totalApplicable: sop.totalApplicable,
+        inExcelDepts,
+        mcqTotal: sop.mcqTotal,
+        mcqApproved: sop.mcqApproved,
+        mcqEngTotal: sop.mcqEngTotal,
+        mcqEngApproved: sop.mcqEngApproved,
+        mcqGujTotal: sop.mcqGujTotal,
+        mcqGujApproved: sop.mcqGujApproved,
+        isDualLanguage: sop.isDualLanguage,
+        foundEmployees: due,
+        missingEmployees: notNecessary,
+      });
+    };
+
     const pendingBottom =
       completed.length > 0 ? (
-        <EmployeeBubbleRow names={completed} variant="due" onNameClick={openEmployee} />
+        <EmployeeBubbleRow names={completed} variant="due" onNameClick={openEmployee} onMoreClick={openSopModal} />
       ) : null;
+
+    const docPaths = data?.dbDocPathsByCode?.[stripVersion(sop.sopCode).toUpperCase()]
+      || data?.dbDocPathsByCode?.[stripVersion(sop.sopCode)];
 
     return (
       <SopRowGrid
@@ -5104,10 +5313,14 @@ export default function TrainingMatrixPage() {
         title={sop.title}
         gujaratiName={sop.gujaratiName}
         isDualLanguage={sop.isDualLanguage}
+        dbDept={dbDeptBySopCode.get(stripVersion(sop.sopCode).toUpperCase())}
         dept={dept}
         month={sop.month}
         targetDate={sop.targetDate}
         expired={sop.expired}
+        engDocxPath={docPaths?.eng}
+        gujDocxPath={docPaths?.guj}
+        docIdentifier={docPaths?.id}
         trainer={sop.trainer}
         isActiveMonth={!!isActiveMonth}
         mcqMetrics={
@@ -5123,46 +5336,7 @@ export default function TrainingMatrixPage() {
           />
         }
         bottom={pendingBottom}
-        onClick={() => {
-          if (!data) return;
-          const byName = new Map<string, { designation?: string }>();
-          const empDepts = dept === 'All' ? departments : [dept as Dept];
-          for (const d of empDepts) {
-            for (const e of data.perDept?.[d]?.employees || []) byName.set(e.name, { designation: e.designation });
-          }
-          const found = (sop.completedEmployees || []).map((n) => ({ name: n, designation: byName.get(n)?.designation, department: dept }));
-          const missing = (sop.pendingEmployees || []).map((n) => ({ name: n, designation: byName.get(n)?.designation, department: dept }));
-          const inExcelDepts = departments.filter((d) =>
-            (data.sopCodesByDept?.[d] || []).some((c: string) => c.toUpperCase() === sop.sopCode.toUpperCase())
-          );
-          setSopDetailSearch('');
-          setSopDetailSortField('name');
-          setSopDetailSortDir('asc');
-          setDetailModal({
-            kind: 'sop',
-            title: `${sop.sopCode}`,
-            sopTitle: sop.title || '',
-            subtitle: `${dept === 'All' ? 'All Departments' : dept}${sop.month ? ` · ${sop.month}` : ''}`,
-            sopCode: sop.sopCode,
-            department: dept,
-            monthLabel: sop.month,
-            trainer: sop.trainer || '',
-            targetDate: sop.targetDate,
-            expired: sop.expired,
-            completionPct: sop.completionPct,
-            totalApplicable: sop.totalApplicable,
-            inExcelDepts,
-            mcqTotal: sop.mcqTotal,
-            mcqApproved: sop.mcqApproved,
-            mcqEngTotal: sop.mcqEngTotal,
-            mcqEngApproved: sop.mcqEngApproved,
-            mcqGujTotal: sop.mcqGujTotal,
-            mcqGujApproved: sop.mcqGujApproved,
-            isDualLanguage: sop.isDualLanguage,
-            foundEmployees: found,
-            missingEmployees: missing,
-          });
-        }}
+        onClick={openSopModal}
       />
     );
   }
@@ -5305,16 +5479,16 @@ export default function TrainingMatrixPage() {
                     </div>
                     <div className="flex items-center gap-3 text-xs text-gray-500">
                       <span><span className="font-black text-emerald-700">{foundRows.length}</span> due</span>
-                      <span><span className="font-black text-slate-700">{missingRows.length}</span> not scheduled</span>
+                      <span><span className="font-black text-slate-700">{missingRows.length}</span> not necessary</span>
                     </div>
                   </div>
 
                   {/* ── two tables ── */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                    {/* Found / Due */}
+                    {/* Due — employees who need to give the exam (√ done + X pending) */}
                     <div className="rounded-xl border border-emerald-100 overflow-hidden">
                       <div className="px-4 py-2.5 bg-emerald-50 flex items-center justify-between">
-                        <div className="text-sm font-bold text-emerald-800">√ Exam Due ({dm.monthLabel || '—'})</div>
+                        <div className="text-sm font-bold text-emerald-800">Due{dm.monthLabel ? ` (${dm.monthLabel})` : ''}</div>
                         <div className="text-xs font-semibold text-emerald-700">{foundRows.length} / {(detailModal.foundEmployees || []).length}</div>
                       </div>
                       <div className="overflow-auto max-h-[50vh]">
@@ -5335,25 +5509,29 @@ export default function TrainingMatrixPage() {
                           </thead>
                           <tbody>
                             {foundRows.map((r, i) => (
-                              <tr key={`f-${r.name}-${i}`} className="border-b border-gray-50 hover:bg-emerald-50/30">
-                                <td className="px-3 py-2 font-semibold text-gray-900">{r.name}</td>
+                              <tr
+                                key={`f-${r.name}-${i}`}
+                                className="border-b border-gray-50 hover:bg-emerald-50/30 cursor-pointer"
+                                onClick={() => openEmployeeModal(r.name, r.department)}
+                              >
+                                <td className="px-3 py-2 font-semibold text-gray-900 hover:text-emerald-800">{r.name}</td>
                                 <td className="px-3 py-2 text-gray-600">{r.designation || '—'}</td>
                                 <td className="px-3 py-2 text-gray-600">{r.department || '—'}</td>
                                 <td className="px-3 py-2 font-bold text-emerald-700">{dm.monthLabel || '—'}</td>
                               </tr>
                             ))}
                             {foundRows.length === 0 && (
-                              <tr><td colSpan={4} className="px-3 py-10 text-center text-gray-400">No √ (due) employees.</td></tr>
+                              <tr><td colSpan={4} className="px-3 py-10 text-center text-gray-400">No due employees.</td></tr>
                             )}
                           </tbody>
                         </table>
                       </div>
                     </div>
 
-                    {/* Missing / X/NA */}
+                    {/* Not Necessary — employees with no training record for this SOP */}
                     <div className="rounded-xl border border-slate-200 overflow-hidden">
                       <div className="px-4 py-2.5 bg-slate-50 flex items-center justify-between">
-                        <div className="text-sm font-bold text-slate-800">X / NA (Not Scheduled)</div>
+                        <div className="text-sm font-bold text-slate-800">Not Necessary</div>
                         <div className="text-xs font-semibold text-slate-600">{missingRows.length} / {(detailModal.missingEmployees || []).length}</div>
                       </div>
                       <div className="overflow-auto max-h-[50vh]">
@@ -5373,14 +5551,18 @@ export default function TrainingMatrixPage() {
                           </thead>
                           <tbody>
                             {missingRows.map((r, i) => (
-                              <tr key={`m-${r.name}-${i}`} className="border-b border-gray-50 hover:bg-slate-50/60">
-                                <td className="px-3 py-2 font-semibold text-gray-900">{r.name}</td>
+                              <tr
+                                key={`m-${r.name}-${i}`}
+                                className="border-b border-gray-50 hover:bg-slate-50/60 cursor-pointer"
+                                onClick={() => openEmployeeModal(r.name, r.department)}
+                              >
+                                <td className="px-3 py-2 font-semibold text-gray-900 hover:text-slate-800">{r.name}</td>
                                 <td className="px-3 py-2 text-gray-600">{r.designation || '—'}</td>
                                 <td className="px-3 py-2 text-gray-600">{r.department || '—'}</td>
                               </tr>
                             ))}
                             {missingRows.length === 0 && (
-                              <tr><td colSpan={3} className="px-3 py-10 text-center text-gray-400">No X/NA employees.</td></tr>
+                              <tr><td colSpan={3} className="px-3 py-10 text-center text-gray-400">No "Not Necessary" employees.</td></tr>
                             )}
                           </tbody>
                         </table>
@@ -5393,14 +5575,15 @@ export default function TrainingMatrixPage() {
 
             {detailModal.kind === 'employee' && (() => {
               const allSops = detailModal.employeeSops || [];
-              const totalPending = allSops.filter((r) => r.symbol !== '√').length;
-              const totalCompleted = allSops.filter((r) => r.symbol === '√').length;
+              const totalDue = allSops.filter((r) => r.symbol !== '√').length;
+              const totalAssigned = allSops.filter((r) => r.symbol === '√').length;
+              const examCoveragePct = allSops.length > 0 ? Math.round((totalAssigned / allSops.length) * 100) : 0;
 
               // Search filter
               const q = empModalSearch.trim().toLowerCase();
               let filtered = allSops.filter((r) => {
-                if (empModalFilter === 'pending' && r.symbol === '√') return false;
-                if (empModalFilter === 'completed' && r.symbol !== '√') return false;
+                if (empModalFilter === 'due' && r.symbol === '√') return false;
+                if (empModalFilter === 'assigned' && r.symbol !== '√') return false;
                 if (q) {
                   const sopStatus = data?.sopStatusByCode?.[r.sopCode] || data?.sopStatusByCode?.[stripVersion(r.sopCode)];
                   const title = (sopStatus?.title || '').toLowerCase();
@@ -5423,7 +5606,7 @@ export default function TrainingMatrixPage() {
                 return empModalSort.dir === 'asc' ? cmp : -cmp;
               });
 
-              // When no status filter, keep pending-first grouping
+              // When no status filter, keep due-first grouping (exam pending before assigned)
               const displayRows = empModalFilter === 'all' && !q
                 ? [...filtered.filter((r) => r.symbol !== '√'), ...filtered.filter((r) => r.symbol === '√')]
                 : filtered;
@@ -5434,7 +5617,7 @@ export default function TrainingMatrixPage() {
                 );
               };
 
-              const toggleFilter = (f: 'pending' | 'completed') => {
+              const toggleFilter = (f: 'due' | 'assigned') => {
                 setEmpModalFilter((cur) => (cur === f ? 'all' : f));
               };
 
@@ -5453,32 +5636,32 @@ export default function TrainingMatrixPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => toggleFilter('pending')}
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition select-none ${empModalFilter === 'pending'
-                        ? 'bg-red-500 border-red-500 text-white shadow-sm'
-                        : 'bg-gray-100 border-gray-200 text-gray-500 hover:border-red-300 hover:text-red-600'
+                      onClick={() => toggleFilter('due')}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition select-none ${empModalFilter === 'due'
+                        ? 'bg-amber-500 border-amber-500 text-white shadow-sm'
+                        : 'bg-gray-100 border-gray-200 text-gray-500 hover:border-amber-300 hover:text-amber-700'
                         }`}
                     >
-                      <span className={`h-2 w-2 rounded-full ${empModalFilter === 'pending' ? 'bg-white' : 'bg-gray-400'}`} />
-                      Pending: {totalPending}
+                      <span className={`h-2 w-2 rounded-full ${empModalFilter === 'due' ? 'bg-white' : 'bg-gray-400'}`} />
+                      Due SOPs: {totalDue}
                     </button>
                     <button
                       type="button"
-                      onClick={() => toggleFilter('completed')}
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition select-none ${empModalFilter === 'completed'
+                      onClick={() => toggleFilter('assigned')}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition select-none ${empModalFilter === 'assigned'
                         ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm'
                         : 'bg-gray-100 border-gray-200 text-gray-500 hover:border-emerald-300 hover:text-emerald-600'
                         }`}
                     >
-                      <span className={`h-2 w-2 rounded-full ${empModalFilter === 'completed' ? 'bg-white' : 'bg-gray-400'}`} />
-                      Completed: {totalCompleted}
+                      <span className={`h-2 w-2 rounded-full ${empModalFilter === 'assigned' ? 'bg-white' : 'bg-gray-400'}`} />
+                      Assigned SOPs: {totalAssigned}
                     </button>
                     <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${empModalFilter === 'all' && !q ? 'bg-gray-100 border-gray-200 text-gray-600' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
-                      Total: {allSops.length}
+                      Scheduled: {allSops.length}
                     </span>
                     {allSops.length > 0 && (
                       <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-50 border border-purple-200 px-3 py-1 text-xs font-bold text-purple-700">
-                        {Math.round((totalCompleted / allSops.length) * 100)}% Complete
+                        Exam Coverage: {examCoveragePct}%
                       </span>
                     )}
                     {/* Search */}
@@ -5541,7 +5724,7 @@ export default function TrainingMatrixPage() {
                         </thead>
                         <tbody>
                           {displayRows.map((r, idx) => {
-                            const isPending = r.symbol !== '√';
+                            const isDue = r.symbol !== '√';
                             const sopStatus = data?.sopStatusByCode?.[r.sopCode] || data?.sopStatusByCode?.[stripVersion(r.sopCode)];
                             const sopTitle = sopStatus?.title || '—';
                             const isExpired = sopStatus?.expired;
@@ -5549,37 +5732,37 @@ export default function TrainingMatrixPage() {
                             const totalMcq = sopStatus?.totalQuestions ?? 0;
                             const approvedMcq = sopStatus?.approvedCount ?? 0;
 
-                            const pendingCount = displayRows.filter((x) => x.symbol !== '√').length;
-                            const showPendingHeader = showSections && idx === 0 && pendingCount > 0;
-                            const showCompletedHeader = showSections && idx === pendingCount && displayRows.filter((x) => x.symbol === '√').length > 0;
+                            const dueCount = displayRows.filter((x) => x.symbol !== '√').length;
+                            const showDueHeader = showSections && idx === 0 && dueCount > 0;
+                            const showAssignedHeader = showSections && idx === dueCount && displayRows.filter((x) => x.symbol === '√').length > 0;
 
                             return (
                               <Fragment key={`es-${r.sopCode}`}>
-                                {showPendingHeader && (
+                                {showDueHeader && (
                                   <tr>
-                                    <td colSpan={6} className="px-3 py-1.5 bg-red-50 border-b border-red-100">
-                                      <span className="text-[10px] font-black uppercase tracking-wider text-red-500">Pending ({pendingCount})</span>
+                                    <td colSpan={6} className="px-3 py-1.5 bg-amber-50 border-b border-amber-100">
+                                      <span className="text-[10px] font-black uppercase tracking-wider text-amber-700">Due — exam pending ({dueCount})</span>
                                     </td>
                                   </tr>
                                 )}
-                                {showCompletedHeader && (
+                                {showAssignedHeader && (
                                   <tr>
                                     <td colSpan={6} className="px-3 py-1.5 bg-emerald-50 border-b border-emerald-100">
-                                      <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600">Completed ({displayRows.filter((x) => x.symbol === '√').length})</span>
+                                      <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600">Assigned ({displayRows.filter((x) => x.symbol === '√').length})</span>
                                     </td>
                                   </tr>
                                 )}
-                                <tr className={`border-b border-gray-50 transition ${isPending ? 'bg-red-50/25 hover:bg-red-50/50' : 'hover:bg-emerald-50/20'}`}>
+                                <tr className={`border-b border-gray-50 transition ${isDue ? 'bg-amber-50/25 hover:bg-amber-50/50' : 'hover:bg-emerald-50/20'}`}>
                                   <td className="px-3 py-2">
-                                    {isPending ? (
-                                      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 border border-red-200 px-2 py-0.5 text-[10px] font-black text-red-700">
-                                        <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-                                        Pending
+                                    {isDue ? (
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 border border-amber-200 px-2 py-0.5 text-[10px] font-black text-amber-800">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                                        Due
                                       </span>
                                     ) : (
                                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 border border-emerald-200 px-2 py-0.5 text-[10px] font-black text-emerald-700">
                                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                                        Completed
+                                        Assigned
                                       </span>
                                     )}
                                   </td>
@@ -5708,25 +5891,7 @@ export default function TrainingMatrixPage() {
                         <tr
                           key={`${r.name}-${i}`}
                           className="border-b border-gray-50 hover:bg-purple-50/30 cursor-pointer"
-                          onClick={() => {
-                            const deptData = data?.perDept?.[r.department as Dept];
-                            const monthMap = (data?.sopMonthMapByDept as any)?.[r.department] || {};
-                            const empRow = deptData?.employees?.find((e: any) => e.name === r.name);
-                            const employeeSops: Array<{ sopCode: string; month: string; symbol: '√' | 'X' | 'NA' }> = [];
-                            if (empRow) {
-                              for (const [sopCode, v] of Object.entries(empRow.training || {})) {
-                                employeeSops.push({ sopCode, month: monthForCode(monthMap, sopCode) || '', symbol: (v as boolean) ? '√' : 'X' });
-                              }
-                              employeeSops.sort((a, b) => a.sopCode.localeCompare(b.sopCode));
-                            }
-                            setDetailModal({
-                              kind: 'employee',
-                              title: r.name,
-                              subtitle: `${r.department}${r.designation ? ` · ${r.designation}` : ''}`,
-                              employeeName: r.name,
-                              employeeSops,
-                            });
-                          }}
+                          onClick={() => openEmployeeModal(r.name, r.department)}
                         >
                           <td className="px-3 py-2 font-semibold text-gray-900">{r.name}</td>
                           <td className="px-3 py-2 text-gray-700">{r.designation || '—'}</td>
@@ -5891,12 +6056,13 @@ export default function TrainingMatrixPage() {
         </div>
       ) : null;
 
-      const sopSortFn = (a: { sopCode: string; title?: string; dept: string; month: string; targetDate?: string | null; trainer?: string; totalApplicable: number; mcqEngTotal?: number; mcqGujTotal?: number; mcqEngApproved?: number; mcqGujApproved?: number }, b: typeof a) => {
+      const sopSortFn = (a: { sopCode: string; title?: string; dept: string; dbDept?: string; month: string; targetDate?: string | null; trainer?: string; totalApplicable: number; mcqEngTotal?: number; mcqGujTotal?: number; mcqEngApproved?: number; mcqGujApproved?: number }, b: typeof a) => {
         let va: string | number = '';
         let vb: string | number = '';
         if (sopSortField === 'sopCode') { va = a.sopCode; vb = b.sopCode; }
         else if (sopSortField === 'title') { va = a.title || ''; vb = b.title || ''; }
         else if (sopSortField === 'dept') { va = a.dept; vb = b.dept; }
+        else if (sopSortField === 'dbDept') { va = a.dbDept || ''; vb = b.dbDept || ''; }
         else if (sopSortField === 'month') { va = MONTHS.indexOf(a.month); vb = MONTHS.indexOf(b.month); }
         else if (sopSortField === 'expiry') { va = a.targetDate ? new Date(a.targetDate).getTime() : 0; vb = b.targetDate ? new Date(b.targetDate).getTime() : 0; }
         else if (sopSortField === 'trainer') { va = a.trainer || ''; vb = b.trainer || ''; }
@@ -5933,14 +6099,16 @@ export default function TrainingMatrixPage() {
           <span className="text-[9px] font-bold text-gray-400 text-right">#</span>
           <HeaderCell label="Code" sortKey="sopCode" />
           <HeaderCell label="Title" sortKey="title" />
+          <HeaderCell label="Dept (DB)" sortKey="dbDept" />
           <HeaderCell label="Dept" sortKey="dept" />
           <HeaderCell label="Month" sortKey="month" />
-          <HeaderCell label="Expiry" sortKey="expiry" />
           <HeaderCell label="Trainer" sortKey="trainer" />
+          <HeaderCell label="Docs" />
           <HeaderCell label="ENG MCQs" sortKey="mcq_eng" />
           <HeaderCell label="ENG Appr" sortKey="mcq_eng_approved" />
           <HeaderCell label="GUJ MCQs" sortKey="mcq_guj" />
           <HeaderCell label="GUJ Appr" sortKey="mcq_guj_approved" />
+          <HeaderCell label="Expiry" sortKey="expiry" />
         </div>
       );
 
@@ -5980,8 +6148,8 @@ export default function TrainingMatrixPage() {
           }
         }
         const list = [...map.values()].sort((a, b) => {
-          const fa = { sopCode: a.sopCode, title: a.title, dept: a.items[0]?.dept || '', month: a.month, targetDate: (a.items[0] as any)?.targetDate, trainer: (a.items[0] as any)?.trainer || '', totalApplicable: a.items[0]?.totalApplicable || 0, mcqEngTotal: (a.items[0] as any)?.mcqEngTotal, mcqGujTotal: (a.items[0] as any)?.mcqGujTotal, mcqEngApproved: (a.items[0] as any)?.mcqEngApproved, mcqGujApproved: (a.items[0] as any)?.mcqGujApproved };
-          const fb = { sopCode: b.sopCode, title: b.title, dept: b.items[0]?.dept || '', month: b.month, targetDate: (b.items[0] as any)?.targetDate, trainer: (b.items[0] as any)?.trainer || '', totalApplicable: b.items[0]?.totalApplicable || 0, mcqEngTotal: (b.items[0] as any)?.mcqEngTotal, mcqGujTotal: (b.items[0] as any)?.mcqGujTotal, mcqEngApproved: (b.items[0] as any)?.mcqEngApproved, mcqGujApproved: (b.items[0] as any)?.mcqGujApproved };
+          const fa = { sopCode: a.sopCode, title: a.title, dept: a.items[0]?.dept || '', dbDept: dbDeptBySopCode.get(stripVersion(a.sopCode).toUpperCase()) || '', month: a.month, targetDate: (a.items[0] as any)?.targetDate, trainer: (a.items[0] as any)?.trainer || '', totalApplicable: a.items[0]?.totalApplicable || 0, mcqEngTotal: (a.items[0] as any)?.mcqEngTotal, mcqGujTotal: (a.items[0] as any)?.mcqGujTotal, mcqEngApproved: (a.items[0] as any)?.mcqEngApproved, mcqGujApproved: (a.items[0] as any)?.mcqGujApproved };
+          const fb = { sopCode: b.sopCode, title: b.title, dept: b.items[0]?.dept || '', dbDept: dbDeptBySopCode.get(stripVersion(b.sopCode).toUpperCase()) || '', month: b.month, targetDate: (b.items[0] as any)?.targetDate, trainer: (b.items[0] as any)?.trainer || '', totalApplicable: b.items[0]?.totalApplicable || 0, mcqEngTotal: (b.items[0] as any)?.mcqEngTotal, mcqGujTotal: (b.items[0] as any)?.mcqGujTotal, mcqEngApproved: (b.items[0] as any)?.mcqEngApproved, mcqGujApproved: (b.items[0] as any)?.mcqGujApproved };
           return sopSortFn(fa, fb);
         });
         const showAllRegistryRows = Boolean(capsuleSopFilter) || activeMonth !== 'All';
@@ -6046,6 +6214,7 @@ export default function TrainingMatrixPage() {
           return {
           key: capsuleSopFilter?.excelOccurrenceMeta ? `${dept}|${s.sopCode}|${rowIdx}` : `${dept}|${s.sopCode}`,
           dept,
+          dbDept: dbDeptBySopCode.get(stripVersion(s.sopCode).toUpperCase()) || '',
           accent: getDeptAccent((dept as Dept) || 'Total'),
           sopCode: s.sopCode,
           title: (s as any).title || '',
@@ -6437,16 +6606,16 @@ export default function TrainingMatrixPage() {
         {/* Cards row */}
         <section className="mb-5">
           {loading && !data ? (
-            <div className="flex gap-3.5 overflow-x-auto pb-2">
-              {Array.from({ length: 8 }).map((_, i) => (
+            <div className="grid gap-2 pb-2" style={{ gridTemplateColumns: `repeat(${departments.length + 1}, minmax(0, 1fr))` }}>
+              {Array.from({ length: departments.length + 1 }).map((_, i) => (
                 <div
                   key={i}
-                  className="h-[340px] min-w-[220px] animate-pulse rounded-xl bg-white"
+                  className="h-[340px] animate-pulse rounded-xl bg-white"
                 />
               ))}
             </div>
           ) : data ? (
-            <div className="flex gap-2 overflow-x-auto pb-2">
+            <div className="grid gap-2 pb-2" style={{ gridTemplateColumns: `repeat(${departments.length + 1}, minmax(0, 1fr))` }}>
               {renderTotalCard(data.totalCard)}
               {departments.map((dept) => (
                 <Fragment key={dept}>{renderDeptCard(dept, data.perDept[dept])}</Fragment>
@@ -6459,50 +6628,46 @@ export default function TrainingMatrixPage() {
 
         {/* Details panel disabled: summary clicks filter capsules instead */}
 
-        {/* Dept filter pills */}
-        {data && (
-          <section className="mb-3">
-            <div className="flex flex-wrap gap-2">
-              <Pill
-                label="All Depts"
-                active={activeDept === 'All'}
-                accent={getDeptAccent('Total')}
-                onClick={() => setActiveDept('All')}
-              />
-              {departments.map((d) => (
-                <Pill
-                  key={d}
-                  label={d}
-                  active={activeDept === d}
-                  accent={getDeptAccent(d)}
-                  onClick={() => setActiveDept(d)}
-                />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Month capsules */}
+        {/* Dept + Month filters — single line, depts left, months right */}
         {data && (
           <section className="mb-4">
-            <div className="flex flex-wrap gap-1.5">
-              <MonthCapsule
-                label="All"
-                count={totalUniqueSops}
-                active={activeMonth === 'All'}
-                accent={activeDept === 'All' ? getDeptAccent('Total') : getDeptAccent(activeDept)}
-                onClick={() => setActiveMonth('All')}
-              />
-              {MONTHS.map((m) => (
-                <MonthCapsule
-                  key={m}
-                  label={MONTH_SHORT[m]}
-                  count={monthCountsForGrid[m] || 0}
-                  active={activeMonth === m}
-                  accent={activeDept === 'All' ? getDeptAccent('Total') : getDeptAccent(activeDept)}
-                  onClick={() => setActiveMonth(m)}
+            <div className="flex w-full items-center justify-between gap-2 flex-nowrap overflow-x-auto">
+              <div className="flex items-center gap-1 flex-nowrap shrink-0">
+                <Pill
+                  label="All Depts"
+                  active={activeDept === 'All'}
+                  accent={getDeptAccent('Total')}
+                  onClick={() => setActiveDept('All')}
                 />
-              ))}
+                {departments.map((d) => (
+                  <Pill
+                    key={d}
+                    label={d}
+                    active={activeDept === d}
+                    accent={getDeptAccent(d)}
+                    onClick={() => setActiveDept(d)}
+                  />
+                ))}
+              </div>
+              <div className="flex items-center gap-1 flex-nowrap shrink-0">
+                <MonthCapsule
+                  label="All"
+                  count={totalUniqueSops}
+                  active={activeMonth === 'All'}
+                  accent={activeDept === 'All' ? getDeptAccent('Total') : getDeptAccent(activeDept)}
+                  onClick={() => setActiveMonth('All')}
+                />
+                {MONTHS.map((m) => (
+                  <MonthCapsule
+                    key={m}
+                    label={MONTH_SHORT[m]}
+                    count={monthCountsForGrid[m] || 0}
+                    active={activeMonth === m}
+                    accent={activeDept === 'All' ? getDeptAccent('Total') : getDeptAccent(activeDept)}
+                    onClick={() => setActiveMonth(m)}
+                  />
+                ))}
+              </div>
             </div>
           </section>
         )}
@@ -6665,7 +6830,7 @@ function Pill({
     <button
       type="button"
       onClick={onClick}
-      className="rounded-full px-4 py-1.5 text-[12px] font-medium transition"
+      className="rounded-full px-2 py-0.5 text-[10px] font-medium leading-none whitespace-nowrap transition"
       style={
         active
           ? { background: accent, color: '#fff' }
@@ -6694,7 +6859,7 @@ function MonthCapsule({
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-1 rounded-full px-2.5 py-[3px] text-[11px] font-medium transition"
+      className="flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none whitespace-nowrap transition"
       style={
         active
           ? { background: accent, color: '#fff' }
@@ -6703,7 +6868,7 @@ function MonthCapsule({
     >
       <span>{label}</span>
       <span
-        className="rounded-full px-1 text-[9px] font-semibold"
+        className="rounded-full px-1 text-[8px] font-semibold leading-none"
         style={
           active ? { background: 'rgba(255,255,255,0.25)', color: '#fff' } : { background: '#fff', color: '#6b7280' }
         }

@@ -228,15 +228,16 @@ export async function extractDatesFromBuffer(
     try {
       const { extractSOPHeaderTableData } = await import('./docxHeaderExtractor');
       const headerData = await extractSOPHeaderTableData(buffer);
-      if (headerData.reviewDate && !dates.reviewDate) {
+      // Header table (REVIEW DT. / EFF. DATE cells) is authoritative — prefer over body regex.
+      if (headerData.reviewDate) {
         const d = parseSOPDate(headerData.reviewDate);
         if (d) dates.reviewDate = d;
       }
-      if (headerData.effDate && !dates.effectiveDate) {
+      if (headerData.effDate) {
         const d = parseSOPDate(headerData.effDate);
         if (d) dates.effectiveDate = d;
       }
-      if (headerData.expiryDate && !dates.expiryDate) {
+      if (headerData.expiryDate) {
         const d = parseSOPDate(headerData.expiryDate);
         if (d) dates.expiryDate = d;
       }

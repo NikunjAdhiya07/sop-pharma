@@ -744,24 +744,167 @@ const EMPTY_HEADER_DATA: SOPHeaderTableData = {
  *  - Label and value in the same cell separated by a newline
  *  - Label in one cell, value in the adjacent/next cell
  */
+const HEADER_DATE_RE = /([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/;
+
+type TableGrid = string[][];
+
 /** Collect cell texts from up to `maxTables` tables in a parsed XML body/header object. */
 function collectCellTextsFromBody(body: any, maxTables = 3): string[] {
   const texts: string[] = [];
+  for (const grid of collectTableGridsFromBody(body, maxTables)) {
+    for (const row of grid) {
+      for (const cell of row) {
+        if (cell) texts.push(cell);
+      }
+    }
+  }
+  return texts;
+}
+
+/** Row/column grids — needed when labels and values are on separate rows. */
+function collectTableGridsFromBody(body: any, maxTables = 3): TableGrid[] {
+  const grids: TableGrid[] = [];
   const tblRaw = body['w:tbl'] ?? [];
   const tables = Array.isArray(tblRaw) ? tblRaw : tblRaw ? [tblRaw] : [];
   for (const tbl of tables.slice(0, maxTables)) {
     const trRaw = tbl['w:tr'] ?? [];
     const rows = Array.isArray(trRaw) ? trRaw : trRaw ? [trRaw] : [];
+    const grid: TableGrid = [];
     for (const tr of rows) {
       const tcRaw = tr['w:tc'] ?? [];
       const cells = Array.isArray(tcRaw) ? tcRaw : tcRaw ? [tcRaw] : [];
+      const rowCells: string[] = [];
       for (const tc of cells) {
-        const text = getAllCellText(tc).trim();
-        if (text) texts.push(text);
+        rowCells.push(getAllCellText(tc).trim());
+      }
+      if (rowCells.some((c) => c)) grid.push(rowCells);
+    }
+    if (grid.length > 0) grids.push(grid);
+  }
+  return grids;
+}
+
+function firstDateInText(text: string): string | null {
+  const t = (text || '').replace(/\s+/g, ' ').trim();
+  if (!t) return null;
+  const only = t.match(/^([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})$/);
+  if (only) return only[1];
+  const dm = t.match(HEADER_DATE_RE);
+  return dm ? dm[1] : null;
+}
+
+function cellLooksLikeLabel(text: string): boolean {
+  const t = (text || '').replace(/\s+/g, ' ').trim();
+  if (!t) return false;
+  if (HEADER_DATE_RE.test(t) && !/^(eff|review|expir|valid)/i.test(t)) return false;
+  return /^(eff|review|sop\s*no|super|page\s*no|subject|department|area|written|checked|approved|signature|name|date)\b/i.test(t);
+}
+
+/** Scan flat cell list forward for the next standalone date (skips label cells). */
+function findDateInFollowingCells(flat: string[], startIdx: number, maxLook = 12): string | null {
+  for (let j = startIdx + 1; j < Math.min(flat.length, startIdx + maxLook); j++) {
+    const t = flat[j].replace(/\s+/g, ' ').trim();
+    if (!t) continue;
+    const d = firstDateInText(t);
+    if (d) return d;
+    if (cellLooksLikeLabel(t)) continue;
+  }
+  return null;
+}
+
+function resolveLabelValueFromGrid(grid: TableGrid, labelRe: RegExp, valueRe?: RegExp): string | null {
+  const valRe = valueRe ?? HEADER_DATE_RE;
+  for (let r = 0; r < grid.length; r++) {
+    for (let c = 0; c < grid[r].length; c++) {
+      const raw = grid[r][c];
+      if (!raw) continue;
+      const norm = raw.replace(/\s+/g, ' ').trim();
+      const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean);
+      const isLabel =
+        labelRe.test(norm) ||
+        lines.some((l) => labelRe.test(l)) ||
+        /^[^0-9]*$/.test(norm) && labelRe.test(norm);
+
+      if (!isLabel) continue;
+
+      const inline = norm.match(
+        new RegExp(`${labelRe.source}\\s*[:\s]+(${valRe.source})`, 'i'),
+      );
+      if (inline?.[1]) return inline[1];
+
+      for (const line of lines) {
+        const sameLine = line.match(
+          new RegExp(`${labelRe.source}\\s*[:\s]+(${valRe.source})`, 'i'),
+        );
+        if (sameLine?.[1]) return sameLine[1];
+        const li = lines.findIndex((l) => labelRe.test(l));
+        if (li >= 0 && li + 1 < lines.length) {
+          const dm = lines[li + 1].match(valRe);
+          if (dm) return dm[1];
+        }
+      }
+
+      if (c + 1 < grid[r].length) {
+        const d = firstDateInText(grid[r][c + 1]);
+        if (d) return d;
+      }
+
+      if (r + 1 < grid.length && c < grid[r + 1].length) {
+        const d = firstDateInText(grid[r + 1][c]);
+        if (d) return d;
       }
     }
   }
-  return texts;
+  return null;
+}
+
+function extractMetadataFromGrids(grids: TableGrid[]): SOPHeaderTableData {
+  const result: SOPHeaderTableData = { ...EMPTY_HEADER_DATA };
+  const SOP_ID_RE = /\b([A-Z]{2,6}\d{1,4}-\d{1,4})\b/i;
+
+  for (const grid of grids) {
+    if (!result.effDate) {
+      result.effDate = resolveLabelValueFromGrid(grid, /eff\.?\s*(?:date|dt)/i);
+    }
+    if (!result.reviewDate) {
+      result.reviewDate = resolveLabelValueFromGrid(grid, /review\.?\s*(?:dt|date)/i);
+    }
+    if (!result.expiryDate) {
+      result.expiryDate = resolveLabelValueFromGrid(
+        grid,
+        /(?:expir(?:y|ation)|exp\.?|valid\s*(?:till|upto|up\s*to|until)|date\s*of\s*expir(?:y|ation))\s*(?:date|dt)?/i,
+      );
+    }
+    if (!result.sopNo) {
+      for (let r = 0; r < grid.length; r++) {
+        for (let c = 0; c < grid[r].length; c++) {
+          const norm = grid[r][c].replace(/\s+/g, ' ').trim();
+          if (!/sop\s*no/i.test(norm)) continue;
+          const inline = norm.match(/sop\s*no\.?\s*[:\s]+([A-Z]{2,6}\d{1,4}-\d{1,4})/i);
+          if (inline) {
+            result.sopNo = inline[1].toUpperCase();
+            break;
+          }
+          if (c + 1 < grid[r].length) {
+            const m = grid[r][c + 1].match(SOP_ID_RE);
+            if (m) {
+              result.sopNo = m[1].toUpperCase();
+              break;
+            }
+          }
+          if (r + 1 < grid.length && c < grid[r + 1].length) {
+            const m = grid[r + 1][c].match(SOP_ID_RE);
+            if (m) {
+              result.sopNo = m[1].toUpperCase();
+              break;
+            }
+          }
+        }
+        if (result.sopNo) break;
+      }
+    }
+  }
+  return result;
 }
 
 export async function extractSOPHeaderTableData(buffer: Buffer): Promise<SOPHeaderTableData> {
@@ -772,6 +915,7 @@ export async function extractSOPHeaderTableData(buffer: Buffer): Promise<SOPHead
     // Many SOPs put the metadata table (SOP NO., EFF. DATE, REVIEW DT.) in a
     // Word page-header (header1/2/3.xml) rather than the document body.
     const allCellTexts: string[] = [];
+    const allGrids: TableGrid[] = [];
 
     // 1. Read all header files referenced in the rels
     const relsXml = zip.readAsText('word/_rels/document.xml.rels');
@@ -797,6 +941,7 @@ export async function extractSOPHeaderTableData(buffer: Buffer): Promise<SOPHead
           const hdrRaw = rootKey ? parsed[rootKey] : undefined;
           const hdr = Array.isArray(hdrRaw) ? hdrRaw[0] : hdrRaw;
           if (hdr && typeof hdr === 'object') {
+            allGrids.push(...collectTableGridsFromBody(hdr, 5));
             allCellTexts.push(...collectCellTextsFromBody(hdr, 5));
           }
         } catch { /* skip malformed header */ }
@@ -820,17 +965,19 @@ export async function extractSOPHeaderTableData(buffer: Buffer): Promise<SOPHead
         const bodyRaw = bodyKey ? docObj[bodyKey] : undefined;
         const body = Array.isArray(bodyRaw) ? bodyRaw[0] : bodyRaw;
         if (body && typeof body === 'object') {
+          allGrids.push(...collectTableGridsFromBody(body, 3));
           allCellTexts.push(...collectCellTextsFromBody(body, 3));
         }
       } catch { /* skip */ }
     }
 
-    if (allCellTexts.length === 0) return EMPTY_HEADER_DATA;
+    if (allCellTexts.length === 0 && allGrids.length === 0) return EMPTY_HEADER_DATA;
 
-    const result: SOPHeaderTableData = { ...EMPTY_HEADER_DATA };
+    const result: SOPHeaderTableData =
+      allGrids.length > 0 ? extractMetadataFromGrids(allGrids) : { ...EMPTY_HEADER_DATA };
 
     const SOP_ID_RE = /\b([A-Z]{2,6}\d{1,4}-\d{1,4})\b/i;
-    const DATE_RE = /([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/;
+    const DATE_RE = HEADER_DATE_RE;
 
     for (let i = 0; i < allCellTexts.length; i++) {
       const raw = allCellTexts[i];
@@ -886,6 +1033,9 @@ export async function extractSOPHeaderTableData(buffer: Buffer): Promise<SOPHead
             const nm = next.match(/^([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/);
             if (nm) result.effDate = nm[1];
           }
+          if (!result.effDate) {
+            result.effDate = findDateInFollowingCells(allCellTexts, i);
+          }
         }
       }
 
@@ -912,6 +1062,9 @@ export async function extractSOPHeaderTableData(buffer: Buffer): Promise<SOPHead
           if (!result.reviewDate) {
             const nm = next.match(/^([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/);
             if (nm) result.reviewDate = nm[1];
+          }
+          if (!result.reviewDate) {
+            result.reviewDate = findDateInFollowingCells(allCellTexts, i);
           }
         }
       }
@@ -947,6 +1100,9 @@ export async function extractSOPHeaderTableData(buffer: Buffer): Promise<SOPHead
           if (!result.expiryDate) {
             const nm = next.match(/^([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/);
             if (nm) result.expiryDate = nm[1];
+          }
+          if (!result.expiryDate) {
+            result.expiryDate = findDateInFollowingCells(allCellTexts, i);
           }
         }
       }

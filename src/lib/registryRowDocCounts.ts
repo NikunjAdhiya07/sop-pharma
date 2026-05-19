@@ -85,6 +85,51 @@ export function scanRowLanguageFileSlots(row: any): RowLanguageFileSlots {
   return { engDocx, gujDocx, engPdf, gujPdf };
 }
 
+export type RowLanguageDocPaths = {
+  engDocx: string | null;
+  gujDocx: string | null;
+};
+
+/**
+ * Same per-language DOCX classification as {@link scanRowLanguageFileSlots}, but
+ * returns the first matching file path for each language slot. Used to build
+ * direct viewer links where the resolver can't reliably pick the right slot
+ * from `identifier+language` alone.
+ */
+export function scanRowLanguageDocPaths(row: any): RowLanguageDocPaths {
+  let engDocx: string | null = null;
+  let gujDocx: string | null = null;
+
+  const docList = [...(row?.sopFile ? [row.sopFile] : []), ...(row?.sopDocuments || [])];
+
+  const engPaths = new Set<string>();
+  for (const d of docList) {
+    const p = (d.filePath || d.fileUrl || '').trim();
+    if (!p) continue;
+    if (attachmentLanguage(d, row) === 'English') {
+      engPaths.add(p.replace(/\\/g, '/').toLowerCase());
+    }
+  }
+
+  for (const d of docList) {
+    const p = (d.filePath || d.fileUrl || '').trim();
+    if (!p) continue;
+    const k = fileKindFromStoredPath(p, d.fileType);
+    if (k !== 'docx' && k !== 'doc') continue;
+    let lang = attachmentLanguage(d, row);
+    if (lang === 'Gujarati' && engPaths.has(p.replace(/\\/g, '/').toLowerCase())) {
+      lang = 'English';
+    }
+    if (lang === 'Gujarati') {
+      if (!gujDocx) gujDocx = p;
+    } else {
+      if (!engDocx) engDocx = p;
+    }
+  }
+
+  return { engDocx, gujDocx };
+}
+
 /** Expected DOCX language slots (1 = single-language row, 2 = EN+GU both need a DOCX).
  *  `gujaratiFileMissing` (set by the API when the registry has EN+GU rows but no
  *  Gujarati file path) MUST also force 2 slots — otherwise dual rows whose

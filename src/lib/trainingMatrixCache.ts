@@ -6,7 +6,7 @@ import { getRedis, REDIS_TTL } from '@/lib/redis';
 // invalidation isn't enough, otherwise long-running dev servers kept serving
 // the previous compute logic from the in-memory map (which was the cause of
 // the "MCQ (100+ created)" top number drifting away from its ENG+GUJ rows).
-const CACHE_KEY = 'training-matrix-overview:v43';
+const CACHE_KEY = 'training-matrix-overview:v44';
 const MEMORY_CACHE_TTL_MS = 5 * 60 * 1000;
 
 type MemoryCacheEntry = { ts: number; key: string; payload: any };

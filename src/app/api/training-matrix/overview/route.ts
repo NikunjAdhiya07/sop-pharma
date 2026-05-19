@@ -9,7 +9,7 @@ import TrainingMatrix from '@/models/TrainingMatrix';
 import User from '@/models/User';
 import MCQBank from '@/models/MCQBank';
 import SOPLibrary from '@/models/SOPLibrary';
-import { expectedDocxSlotsForRow, scanRowLanguageFileSlots } from '@/lib/registryRowDocCounts';
+import { expectedDocxSlotsForRow, scanRowLanguageFileSlots, scanRowLanguageDocPaths } from '@/lib/registryRowDocCounts';
 import {
   getTrainingMatrixCached as getCached,
   setTrainingMatrixCached as setCached,
@@ -252,11 +252,18 @@ export async function GET(req: NextRequest) {
     const dbBaseSet = new Set<string>();
     const dbBaseMeta = new Map<string, { title: string; department: string; departmentCode: string; expired?: boolean; targetDate?: string | null; latestIdentifier?: string; isDualLanguage?: boolean; gujaratiName?: string }>();
     const dbBaseLangs = new Map<string, Set<LangKey>>();
+    const dbDocPathsByCode: Record<string, { eng?: string; guj?: string; id?: string }> = {};
     for (const row of familyUniqueRows as any[]) {
       const sopNo = String(row?.sopNo || row?.identifier || '').trim();
       const base = stripVersion(sopNo);
       if (!base) continue;
       dbBaseSet.add(base);
+
+      const docPaths = scanRowLanguageDocPaths(row);
+      if (!dbDocPathsByCode[base]) dbDocPathsByCode[base] = {};
+      if (docPaths.engDocx && !dbDocPathsByCode[base].eng) dbDocPathsByCode[base].eng = docPaths.engDocx;
+      if (docPaths.gujDocx && !dbDocPathsByCode[base].guj) dbDocPathsByCode[base].guj = docPaths.gujDocx;
+      if (sopNo && !dbDocPathsByCode[base].id) dbDocPathsByCode[base].id = sopNo;
 
       if (!dbBaseMeta.has(base)) {
         // Use the dashboard row's already-resolved expiryDate (includes MasterSOPRepository priority)
@@ -719,15 +726,16 @@ export async function GET(req: NextRequest) {
             if (engFull && gujFull) {
               b.mcqAllApprovedCount++; b.mcqAllApprovedList.push(code);
               b.mcqApprovedDualCount++; b.mcqApprovedDualList.push(code);
-            } else if (engNone || gujNone) {
-              // Missing: at least one language has zero approvals — by user's
-              // rule this means "approval is missing" for the SOP overall,
-              // even if the other language is fully approved.
+            } else if (engNone && gujNone) {
+              // Missing: BOTH languages have zero approvals — truly nothing done.
               b.mcqNotApprovedCount++; b.mcqNotApprovedList.push(code);
               b.mcqApprovalMissingDualCount++; b.mcqApprovalMissingDualList.push(code);
             } else {
-              // Partial: both languages have some approvals, but at least
-              // one isn't fully approved.
+              // Partial: at least one language has progress (approvals or full),
+              // but the SOP isn't fully approved across both languages. This
+              // includes the asymmetric case where one language is fully
+              // approved and the other has zero approvals — meaningful
+              // progress, not full failure.
               b.mcqPartiallyApprovedCount++; b.mcqPartiallyApprovedList.push(code);
               b.mcqApprovalPartialDualCount++; b.mcqApprovalPartialDualList.push(code);
             }
@@ -1533,6 +1541,7 @@ export async function GET(req: NextRequest) {
       sopMonthMapByDept: sopMonthMapAll,
       monthCountsByDept,
       sopStatusByCode,
+      dbDocPathsByCode,
     };
 
     if (!forceFresh) await setCached(payload);
