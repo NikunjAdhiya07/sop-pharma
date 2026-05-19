@@ -40,6 +40,7 @@ const buildPreviewHref = buildViewDocHref;
 import { cleanSOPName } from "@/lib/sopLibraryHelper";
 import { normalizeUnicodeHyphens } from "@/lib/sopIdentifierNormalize";
 import { pathSuggestsGujarati } from "@/lib/pathLanguageDetection";
+import { CAPSULE_DEPARTMENTS } from "@/lib/capsuleDepartments";
 
 const DEPT_ALL = "All";
 
@@ -56,6 +57,7 @@ export default function SOPTable({
   reviewingInBackground,
   onViewCompliance,
   onMarkObsolete,
+  onSopUpdated,
   onMarkVersionSuperseded,
   isObsoleteView,
   onRemoveObsolete,
@@ -64,6 +66,18 @@ export default function SOPTable({
   resetFiltersTrigger,
 }: any) {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
+
+  // Dynamic department list: union of canonical depts + every dept seen in the data
+  const availableDepartments = useMemo(() => {
+    const seen = new Set<string>();
+    const rows: any[] = Array.isArray(filterOptionsSource) ? filterOptionsSource : (Array.isArray(data) ? data : []);
+    for (const r of rows) {
+      const d = typeof r?.department === 'string' ? r.department.trim() : '';
+      if (d) seen.add(d);
+    }
+    for (const d of CAPSULE_DEPARTMENTS) seen.add(d);
+    return Array.from(seen).sort((a, b) => a.localeCompare(b));
+  }, [filterOptionsSource, data]);
 
 
   // Obsolete confirm modal state
@@ -97,6 +111,10 @@ export default function SOPTable({
     englishPdfLink: '',
     gujaratiDocxLink: '',
     gujaratiPdfLink: '',
+    englishVideoLink: '',
+    gujaratiVideoLink: '',
+    englishSlideLink: '',
+    gujaratiSlideLink: '',
   });
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState('');
@@ -252,12 +270,11 @@ export default function SOPTable({
   /** In-app preview for DOCX/PDF (including CDN https paths). Other URLs fall back to download/open. */
   const buildPreviewHref = (
     path: string,
-    fileType?: string,
     identifier?: string,
     language?: string,
   ) => {
     const trimmed = (path || "").trim();
-    const kind = fileKindFromStoredPath(trimmed, fileType);
+    const kind = fileKindFromStoredPath(trimmed);
     if (kind === "docx" || kind === "doc") {
       return buildViewDocHref(path, identifier, language);
     }
@@ -1088,6 +1105,17 @@ export default function SOPTable({
                   </select>
                 </div>
               </th>
+              <th className={`${thBase} w-28`}>
+                <div className="flex flex-col gap-px">
+                  <button
+                    type="button"
+                    className={sortBtn}
+                    onClick={() => onSort("createdAt")}
+                    title="Sort by upload date">
+                    Uploaded <SortIcon field="createdAt" />
+                  </button>
+                </div>
+              </th>
               <th className={`${thBase} w-36`}>
                 <div className="flex flex-col gap-px">
                   <button
@@ -1117,7 +1145,7 @@ export default function SOPTable({
           <tbody className="text-[10px] text-gray-700">
             {isObsoleteView && displayedData.length > 0 && (
               <tr className="bg-rose-50 border-b border-rose-200">
-                <td colSpan={13} className="px-3 py-1.5 text-[10px] font-semibold text-rose-700">
+                <td colSpan={14} className="px-3 py-1.5 text-[10px] font-semibold text-rose-700">
                   Showing {displayedData.length} obsolete SOP{displayedData.length !== 1 ? "s" : ""} — these have been removed from the active registry. Expand a row to restore.
                 </td>
               </tr>
@@ -1125,7 +1153,7 @@ export default function SOPTable({
             {displayedData.length === 0 ? (
               <tr>
                 <td
-                  colSpan={13}
+                  colSpan={14}
                   className="px-4 py-6 text-center text-gray-500">
                   <div className="flex flex-col items-center gap-1">
                     <FileText className="h-5 w-5 text-gray-300" />
@@ -1485,6 +1513,33 @@ export default function SOPTable({
                           );
                         })()}
                       </td>
+                      {/* Uploaded date + time */}
+                      <td className="px-1 py-px text-left align-middle whitespace-nowrap">
+                        {row.createdAt ? (() => {
+                          const d = new Date(row.createdAt);
+                          if (isNaN(d.getTime())) {
+                            return <span className="text-[9px] text-gray-400">—</span>;
+                          }
+                          const datePart = d.toLocaleDateString("en-GB", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                          });
+                          const timePart = d.toLocaleTimeString("en-GB", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            hour12: false,
+                          });
+                          return (
+                            <div className="flex flex-col leading-tight">
+                              <span className="text-[10px] font-semibold text-gray-700 tabular-nums">{datePart}</span>
+                              <span className="text-[9px] text-gray-500 tabular-nums">{timePart}</span>
+                            </div>
+                          );
+                        })() : (
+                          <span className="text-[9px] text-gray-400">—</span>
+                        )}
+                      </td>
                       {/* Expiry */}
                       <td className="px-1 py-px text-left align-middle">
                         <div className="flex items-center gap-0.5">
@@ -1514,6 +1569,10 @@ export default function SOPTable({
                                     englishPdfLink: links.engPdf,
                                     gujaratiDocxLink: links.gujDocx,
                                     gujaratiPdfLink: links.gujPdf,
+                                    englishVideoLink: '',
+                                    gujaratiVideoLink: '',
+                                    englishSlideLink: '',
+                                    gujaratiSlideLink: '',
                                   });
                                   setEditError("");
                                   setEditSuccess(false);
@@ -1557,7 +1616,7 @@ export default function SOPTable({
                     {/* Expanded detail panel */}
                     {isExpanded && (
                       <tr className="bg-purple-50 border-b border-purple-200">
-                        <td colSpan={13} className="px-4 py-3">
+                        <td colSpan={14} className="px-4 py-3">
                           <div className="grid grid-cols-3 gap-3">
                             <div className="space-y-2">
                               <h4 className="text-[10px] font-bold text-gray-700 uppercase tracking-wide border-b border-gray-300 pb-0.5">
@@ -1946,13 +2005,41 @@ export default function SOPTable({
 
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">Department</label>
-                  <input
-                    type="text"
-                    value={editForm.department}
-                    onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
-                    placeholder="e.g. Quality Assurance"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
-                  />
+                  {(() => {
+                    const inList = availableDepartments.includes(editForm.department);
+                    const isOther = !inList && editForm.department.length > 0;
+                    return (
+                      <>
+                        <select
+                          value={isOther ? "__other__" : editForm.department}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === "__other__") {
+                              setEditForm({ ...editForm, department: inList ? "" : editForm.department });
+                            } else {
+                              setEditForm({ ...editForm, department: v });
+                            }
+                          }}
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                        >
+                          <option value="" disabled>Select department…</option>
+                          {availableDepartments.map((d) => (
+                            <option key={d} value={d}>{d}</option>
+                          ))}
+                          <option value="__other__">Other (new department)…</option>
+                        </select>
+                        {isOther && (
+                          <input
+                            type="text"
+                            value={editForm.department}
+                            onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
+                            placeholder="Enter new department name"
+                            className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                          />
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
 
                 <div>
@@ -2090,6 +2177,58 @@ export default function SOPTable({
                         </div>
                       </>
                     ) : null}
+                  </div>
+                </div>
+
+                <div className="col-span-2 pt-2 border-t border-gray-200">
+                  <h4 className="text-xs font-bold text-gray-700 mb-3">Video Links</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-600 mb-1">English Video Link</label>
+                      <input
+                        type="text"
+                        value={editForm.englishVideoLink}
+                        onChange={(e) => setEditForm({ ...editForm, englishVideoLink: e.target.value })}
+                        placeholder="https://..."
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-600 mb-1">Gujarati Video Link</label>
+                      <input
+                        type="text"
+                        value={editForm.gujaratiVideoLink}
+                        onChange={(e) => setEditForm({ ...editForm, gujaratiVideoLink: e.target.value })}
+                        placeholder="https://..."
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="col-span-2 pt-2 border-t border-gray-200">
+                  <h4 className="text-xs font-bold text-gray-700 mb-3">Slide Links</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-600 mb-1">English Slide Link</label>
+                      <input
+                        type="text"
+                        value={editForm.englishSlideLink}
+                        onChange={(e) => setEditForm({ ...editForm, englishSlideLink: e.target.value })}
+                        placeholder="https://..."
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-600 mb-1">Gujarati Slide Link</label>
+                      <input
+                        type="text"
+                        value={editForm.gujaratiSlideLink}
+                        onChange={(e) => setEditForm({ ...editForm, gujaratiSlideLink: e.target.value })}
+                        placeholder="https://..."
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2313,6 +2452,9 @@ export default function SOPTable({
       if (editForm.gujaratiPdfLink !== undefined) upsertLocalDoc('Gujarati', 'pdf', editForm.gujaratiPdfLink, 'Gujarati PDF');
       
       editTarget.sopDocuments = updatedDocs;
+
+      // Notify the dashboard so it busts caches and reloads with the new department
+      try { onSopUpdated?.(); } catch { }
 
       setTimeout(() => setEditTarget(null), 1200);
     } catch {

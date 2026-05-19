@@ -209,24 +209,76 @@ export function parseStoragePath(storagePath: string): Parsed | null {
 
 // ── Public API ────────────────────────────────────────────────────────────
 
+// In-memory cache for the parsed Bunny version map. Independent of the
+// dashboard-sops payload cache so we don't re-crawl the entire CDN every time
+// the dashboard payload is rebuilt. Busted on any upload via
+// invalidateBunnyVersionMapCache(), which invalidateDashboardSopsCache() calls.
+const BUNNY_MAP_TTL_MS = (() => {
+  const raw = process.env.BUNNY_VERSION_MAP_TTL_MS;
+  if (raw === undefined || raw === '') return 5 * 60 * 1000;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : 5 * 60 * 1000;
+})();
+
+interface BunnyMapCacheEntry {
+  map: Map<string, BunnyVersionEntry[]>;
+  cachedAt: number;
+}
+
+const bg = global as typeof global & { __bunnyVersionMapCache?: BunnyMapCacheEntry | null; __bunnyVersionMapInFlight?: Promise<Map<string, BunnyVersionEntry[]>> | null };
+
+export function invalidateBunnyVersionMapCache(): void {
+  bg.__bunnyVersionMapCache = null;
+}
+
 /**
  * Returns a map of `versionArtifactsLookupKey(identifier)::language` → BunnyVersionEntry[].
  * Identical key format to `versionArtifactsByKey` used in the dashboard route, so the caller
  * can merge the two maps with `mergeVersionArtifactEntries`.
  *
+ * Cached in-memory for BUNNY_MAP_TTL_MS (default 5 min). Concurrent callers share one
+ * in-flight crawl. Busted on any upload via invalidateBunnyVersionMapCache().
+ *
  * Returns an empty map (never throws) if Bunny is not configured or the crawl fails.
  */
 export async function fetchBunnyVersionMap(): Promise<Map<string, BunnyVersionEntry[]>> {
-  const { storageZone, apiKey, cdnHostname, storageHostname } = getBunnyConfig();
-  if (!storageZone || !apiKey || !cdnHostname) return new Map();
-
-  let rawFiles: { storagePath: string; cdnUrl: string; ext: 'docx' | 'pdf' }[];
-  try {
-    rawFiles = await crawl(storageHostname, storageZone, apiKey, cdnHostname);
-  } catch {
-    return new Map();
+  if (BUNNY_MAP_TTL_MS > 0) {
+    const entry = bg.__bunnyVersionMapCache;
+    if (entry && Date.now() - entry.cachedAt <= BUNNY_MAP_TTL_MS) {
+      return entry.map;
+    }
+    if (bg.__bunnyVersionMapInFlight) return bg.__bunnyVersionMapInFlight;
   }
 
+  const promise = (async () => {
+    const { storageZone, apiKey, cdnHostname, storageHostname } = getBunnyConfig();
+    if (!storageZone || !apiKey || !cdnHostname) return new Map<string, BunnyVersionEntry[]>();
+
+    let rawFiles: { storagePath: string; cdnUrl: string; ext: 'docx' | 'pdf' }[];
+    try {
+      rawFiles = await crawl(storageHostname, storageZone, apiKey, cdnHostname);
+    } catch {
+      return new Map<string, BunnyVersionEntry[]>();
+    }
+    return buildVersionMapFromFiles(rawFiles);
+  })();
+
+  if (BUNNY_MAP_TTL_MS > 0) {
+    bg.__bunnyVersionMapInFlight = promise;
+    try {
+      const map = await promise;
+      bg.__bunnyVersionMapCache = { map, cachedAt: Date.now() };
+      return map;
+    } finally {
+      bg.__bunnyVersionMapInFlight = null;
+    }
+  }
+  return promise;
+}
+
+function buildVersionMapFromFiles(
+  rawFiles: { storagePath: string; cdnUrl: string; ext: 'docx' | 'pdf' }[],
+): Map<string, BunnyVersionEntry[]> {
   // Accumulate per (identifier, language, version)
   const acc = new Map<
     string,

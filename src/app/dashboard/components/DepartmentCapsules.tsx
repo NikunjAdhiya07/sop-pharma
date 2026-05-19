@@ -177,9 +177,13 @@ function foldRegistryRowIntoCapsuleAcc(
   s.videoAvailable += row.mediaStatus?.videoAvailable ?? 0;
   s.slideAvailable += row.mediaStatus?.slideAvailable ?? 0;
 
+  // Versions total counts language slots (dual rows = 2, single = 1) so the
+  // sum lines up with expectedDocx (e.g. 473 = 427 + 46 dual). Both languages
+  // of a dual row share the same registry row, so they classify identically.
   const vt = classifySopVersionCapsule(row);
-  if (vt === "allTwoFound") s.versionAllTwoFound++;
-  else s.versionNotFound++;
+  const versionSlots = expectedDocxSlotsForRow(row) >= 2 ? 2 : 1;
+  if (vt === "allTwoFound") s.versionAllTwoFound += versionSlots;
+  else s.versionNotFound += versionSlots;
 
   if (!row.expiryDate) s.missingExpiry++;
 
@@ -1219,8 +1223,14 @@ function DepartmentCapsuleCard({
         <CapsuleMetricAvailMissing
           label="DOCX"
           totalExpected={stat.expectedDocx}
-          available={stat.docxFoundRows}
-          missingCount={stat.missingDocxRows}
+          available={
+            (stat.langDocx.get("EN")?.found ?? 0) +
+            (stat.langDocx.get("GJ")?.found ?? 0)
+          }
+          missingCount={
+            (stat.langDocx.get("EN")?.missing ?? 0) +
+            (stat.langDocx.get("GJ")?.missing ?? 0)
+          }
           onFilterClick={() => apply("docx")}
           onAvailableClick={() =>
             applyCapsuleAvailMiss(deptForFilter, "docx", "available")
@@ -1289,8 +1299,14 @@ function DepartmentCapsuleCard({
         <CapsuleMetricAvailMissing
           label="PDF"
           totalExpected={stat.expectedPdf}
-          available={stat.pdfFoundRows}
-          missingCount={stat.missingPdfRows}
+          available={
+            (stat.langPdf.get("EN")?.found ?? 0) +
+            (stat.langPdf.get("GJ")?.found ?? 0)
+          }
+          missingCount={
+            (stat.langPdf.get("EN")?.missing ?? 0) +
+            (stat.langPdf.get("GJ")?.missing ?? 0)
+          }
           onFilterClick={() => apply("pdf")}
           onAvailableClick={() =>
             applyCapsuleAvailMiss(deptForFilter, "pdf", "available")

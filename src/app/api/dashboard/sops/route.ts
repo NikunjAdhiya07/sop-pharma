@@ -4,6 +4,7 @@ import { fetchBunnyVersionMap } from '@/lib/bunnyVersionSync';
 import {
   getDashboardSopsCache,
   invalidateDashboardSopsCache,
+  runDashboardSopsRebuildSingleflight,
   setDashboardSopsCache,
 } from '@/lib/dashboardSopsCache';
 import SOPLibrary from '@/models/SOPLibrary';
@@ -1288,42 +1289,141 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Single-flight: if another request is already rebuilding, await its result
+    // instead of starting a parallel rebuild. Prevents the 5x-concurrent-rebuild
+    // storm observed when `?refresh=1` lands alongside background polls.
+    const responsePayload = await runDashboardSopsRebuildSingleflight(async () => {
+    // Per-phase timing for the cold-cache rebuild. Set DASHBOARD_PERF_LOG=0 to disable.
+    const PERF_LOG = process.env.DASHBOARD_PERF_LOG !== '0';
+    const t = (label: string, start: number) => {
+      if (PERF_LOG) console.log(`[dashboard/sops] ${label}: ${(Date.now() - start).toFixed(0)}ms`);
+    };
+    const tTotal = Date.now();
+    const tConnect = Date.now();
     await connectDB();
+    t('connectDB', tConnect);
+    const tSources = Date.now();
 
-    // Run all independent DB queries AND Bunny CDN crawl in parallel.
-    // IMPORTANT: Use allSettled so one failing source doesn't crash the entire dashboard.
-    const settled = await Promise.allSettled([
-      SOP.find({})
-        .select(
-          '_id name identifier department fileUrl fileType originalFileName folderPath location metadata reviewDate expiryDate version language createdAt sopDocuments isObsolete pipelineStatus',
-        )
-        .lean(),
-      MasterSOPRepository.find({})
+    // Per-source timing. Each label is logged with elapsed-ms when its promise
+    // settles, plus the longest-pole summary at the end. Lets us see which of
+    // the 10 parallel sources is actually the bottleneck (DB scans vs. Bunny crawl).
+    const srcTimes: Record<string, number> = {};
+    // Concurrency cap: 10 unindexed find({}) scans hitting one Mongo pool at
+    // once contend heavily — each query slows the others down. Cap at 4 and
+    // each query gets a fair slice of the connection pool. Why: a single ?refresh=1
+    // was showing SOP=87s/MCQBank=57s/SOPVersionArtifacts=61s in parallel even
+    // though the same queries run in well under half that time standalone.
+    const SOURCE_CONCURRENCY = Number(process.env.DASHBOARD_SOURCE_CONCURRENCY) || 4;
+    const time = <T,>(label: string, factory: () => Promise<T>): () => Promise<T> => {
+      return () => {
+        const start = Date.now();
+        return factory().then(
+          (v) => {
+            const ms = Date.now() - start;
+            srcTimes[label] = ms;
+            if (PERF_LOG) console.log(`[dashboard/sops]   source[${label}]: ${ms}ms`);
+            return v;
+          },
+          (e) => {
+            const ms = Date.now() - start;
+            srcTimes[label] = ms;
+            if (PERF_LOG) console.log(`[dashboard/sops]   source[${label}] FAILED: ${ms}ms`);
+            throw e;
+          },
+        );
+      };
+    };
+
+    const runWithLimit = async (
+      limit: number,
+      tasks: Array<() => Promise<unknown>>,
+    ): Promise<PromiseSettledResult<unknown>[]> => {
+      const results: PromiseSettledResult<unknown>[] = new Array(tasks.length);
+      let next = 0;
+      const workers = Array.from({ length: Math.min(limit, tasks.length) }, async () => {
+        while (true) {
+          const i = next++;
+          if (i >= tasks.length) return;
+          try {
+            const value = await tasks[i]();
+            results[i] = { status: 'fulfilled', value };
+          } catch (reason) {
+            results[i] = { status: 'rejected', reason };
+          }
+        }
+      });
+      await Promise.all(workers);
+      return results;
+    };
+
+    // Run all independent DB queries AND Bunny CDN crawl with a concurrency cap.
+    // IMPORTANT: Use settled semantics so one failing source doesn't crash the entire dashboard.
+    const settled = await runWithLimit(SOURCE_CONCURRENCY, [
+      // Bypass Mongoose hydration entirely: with 2500+ docs even .lean() spends
+      // measurable time on per-doc casting/getters init. The native driver's
+      // find().toArray() returns plain BSON→JS objects with zero schema overhead.
+      // The downstream code already treats SOPs as untyped `any` objects, so the
+      // shape change is invisible. Projection matches the previous .select().
+      time('SOP', () => SOP.collection.find({}, {
+        projection: {
+          _id: 1, name: 1, identifier: 1, department: 1, fileUrl: 1, fileType: 1,
+          originalFileName: 1, folderPath: 1, location: 1, metadata: 1,
+          reviewDate: 1, expiryDate: 1, version: 1, language: 1, createdAt: 1,
+          sopDocuments: 1, isObsolete: 1, pipelineStatus: 1,
+        },
+      }).toArray()),
+      time('MasterSOPRepository', () => MasterSOPRepository.find({})
         .select(
           'sopIdentifier sopName englishName gujaratiName metadata.reviewDate metadata.expiryDate',
         )
-        .lean(),
-      User.find({}).lean(),
-      TrainingMatrix.find({ trainerName: { $exists: true, $nin: [null, ''] } })
+        .lean()),
+      // Only trainers contribute to the dashboard's trainer-by-department map
+      // (see allUsers.forEach below). Filtering + projecting drops the payload
+      // from "every user with password hashes and induction arrays" to a few
+      // hundred bytes per trainer.
+      time('User(trainers)', () => User.find({
+        $or: [{ role: 'trainer' }, { isTrainerEligible: true }],
+      })
+        .select('role isTrainerEligible allowedDepartments department name')
+        .lean()),
+      time('TrainingMatrix', () => TrainingMatrix.find({ trainerName: { $exists: true, $nin: [null, ''] } })
         .select('sopIdentifier department trainerName')
-        .lean(),
-      MatrixEntry.find({}).select('sopCode employeeName').lean(),
-      SOPLibrary.find({
+        .lean()),
+      // Aggregate server-side: returns ~hundreds of {_id: sopCode, employees: [...]} rows
+      // instead of millions of raw {sopCode, employeeName} docs. The dashboard's only
+      // use of this data is to build a Map<sopCode → Set<employeeName>>, so doing the
+      // group in Mongo skips wire-transfer + Node hydration cost. $match mirrors the
+      // forEach guard `if (entry.sopCode && entry.employeeName)`.
+      time('MatrixEntry', () => MatrixEntry.aggregate([
+        { $match: { sopCode: { $nin: [null, ''] }, employeeName: { $nin: [null, ''] } } },
+        { $group: { _id: '$sopCode', employees: { $addToSet: '$employeeName' } } },
+      ])),
+      time('SOPLibrary', () => SOPLibrary.find({
         sopIdentifier: { $regex: /^[A-Z]{1,6}\d{1,4}([-_]\d{1,3})?$/i },
       })
         .select(
           'sopIdentifier sopName sopDocuments videos slides completionStatus language location',
         )
-        .lean(),
-      SOPVersionArtifacts.find({})
+        .lean()),
+      time('SOPVersionArtifacts', () => SOPVersionArtifacts.find({})
         .select('identifier language entries sopName department updatedAt')
-        .lean(),
-      SupersedeSOPVersion.find({})
+        .lean()),
+      time('SupersedeSOPVersion', () => SupersedeSOPVersion.find({})
         .select('sopNo language version docxPath pdfPath')
-        .lean(),
-      MCQBank.find({}).select('sopIdentifier sopName').lean(),
-      fetchBunnyVersionMap(),
+        .lean()),
+      time('MCQBank', () => MCQBank.find({}).select('sopIdentifier sopName').lean()),
+      time('fetchBunnyVersionMap', () => fetchBunnyVersionMap()),
     ]);
+
+    if (PERF_LOG) {
+      const sorted = Object.entries(srcTimes).sort((a, b) => b[1] - a[1]);
+      const longest = sorted[0];
+      console.log(
+        `[dashboard/sops] sources summary — longest: ${longest?.[0]}=${longest?.[1]}ms; all: ${sorted
+          .map(([k, v]) => `${k}=${v}ms`)
+          .join(', ')}`,
+      );
+    }
 
     const unwrap = <T,>(
       idx: number,
@@ -1391,6 +1491,36 @@ export async function GET(request: NextRequest) {
       'BunnyVersionMap',
       new Map(),
     );
+    t('sources (DB + Bunny, parallel)', tSources);
+
+    // Diagnostic: SOP source is the long pole at ~30s standalone. Need to know
+    // whether it's payload bloat (large sopDocuments arrays) or just doc count.
+    // Logs total bytes + doc count + bytes/doc so we can decide between
+    // projection-narrowing vs. result caching.
+    if (PERF_LOG) {
+      try {
+        const sopBytes = JSON.stringify(allSOPsIncludingObsolete).length;
+        const n = allSOPsIncludingObsolete.length;
+        const avg = n > 0 ? Math.round(sopBytes / n) : 0;
+        console.log(
+          `[dashboard/sops] SOP payload: ${sopBytes} bytes, ${n} docs, avg ${avg} bytes/doc`,
+        );
+        // Also size the heaviest two subdoc fields to confirm where the bytes live.
+        let sopDocsBytes = 0;
+        let metadataBytes = 0;
+        for (const s of allSOPsIncludingObsolete as any[]) {
+          if (s?.sopDocuments) sopDocsBytes += JSON.stringify(s.sopDocuments).length;
+          if (s?.metadata) metadataBytes += JSON.stringify(s.metadata).length;
+        }
+        console.log(
+          `[dashboard/sops] SOP subdoc bytes: sopDocuments=${sopDocsBytes}, metadata=${metadataBytes}`,
+        );
+      } catch (e) {
+        console.log('[dashboard/sops] SOP payload sizing failed:', (e as Error).message);
+      }
+    }
+
+    const tBuild = Date.now();
 
     // Derived filtered list for current SOPs from the full collection in-memory.
     const allSOPs = allSOPsIncludingObsolete.filter((sop: any) =>
@@ -1682,13 +1812,16 @@ export async function GET(request: NextRequest) {
       sopToTrainersMap.get(code)!.add(entry.trainerName);
     });
 
+    // matrixEntries is now pre-grouped: [{ _id: sopCode, employees: [name, ...] }]
     const sopToUsersMap = new Map<string, Set<string>>();
-    matrixEntries.forEach((entry: any) => {
-      if (entry.sopCode && entry.employeeName) {
-        const code = normalizeSopIdentifierKey(entry.sopCode.trim().toUpperCase());
-        if (!sopToUsersMap.has(code)) sopToUsersMap.set(code, new Set());
-        sopToUsersMap.get(code)!.add(entry.employeeName);
-      }
+    matrixEntries.forEach((group: any) => {
+      const raw = group?._id;
+      if (!raw) return;
+      const code = normalizeSopIdentifierKey(String(raw).trim().toUpperCase());
+      const employees: string[] = Array.isArray(group.employees) ? group.employees : [];
+      if (!sopToUsersMap.has(code)) sopToUsersMap.set(code, new Set());
+      const bucket = sopToUsersMap.get(code)!;
+      for (const name of employees) if (name) bucket.add(name);
     });
 
     const fallbackTrainerMap: Record<string, string[]> = {
@@ -2394,12 +2527,16 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    t('build phase (SOP_DATA → MERGED_DATA → data[])', tBuild);
+    const tCollapse1 = Date.now();
     /** One row per SOP family; prior-version PDFs/DOCX stay under Prior versions, not in Files */
     data = collapsePrimaryRegistryRowsByFamily(
       data,
       versionArtifactsByKey,
       priorSopFilesByNormKey,
     );
+    t('collapsePrimaryRegistryRowsByFamily', tCollapse1);
+    const tArtifactRows = Date.now();
 
     const registryNormKeys = new Set(
       data.map((r: any) => normalizeSopIdentifierKey(String(r.sopNo || '').trim().toUpperCase())),
@@ -2628,11 +2765,15 @@ export async function GET(request: NextRequest) {
       artifactOnlyRowsAdded++;
     }
 
+    t('add artifact-only rows', tArtifactRows);
+    const tCollapse2 = Date.now();
     data = mergeRegistryRowsByDocumentFamily(
       data,
       versionArtifactsByKey,
       priorSopFilesByNormKey,
     );
+    t('mergeRegistryRowsByDocumentFamily', tCollapse2);
+    const tFinalize = Date.now();
 
     const supersedeOverrides = (supersedeOverridesRaw as any[]).map((o) => ({
       sopNo: normalizeSopIdentifierKey(String(o.sopNo || '').toUpperCase()),
@@ -2742,8 +2883,14 @@ export async function GET(request: NextRequest) {
       },
     };
 
+    t('finalize (overrides + enrich + stats)', tFinalize);
+    t('TOTAL cold rebuild', tTotal);
+
     // Store in server-side cache so subsequent requests within the TTL are instant.
     await setDashboardSopsCache(responsePayload);
+
+    return responsePayload;
+    });
 
     try {
       const response = NextResponse.json(responsePayload);

@@ -16,7 +16,27 @@ interface SOP {
   effectiveDate?: string;
   version?: string;
   owner?: string;
+  computedStatus?: string;
+  daysToExpiry?: number | null;
 }
+
+function toDateInputValue(value?: string): string {
+  if (!value) return '';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '';
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+const STATUS_RANK: Record<string, number> = {
+  expired: 0,
+  needsReview: 1,
+  expiringSoon: 2,
+  missingDates: 3,
+  valid: 4,
+};
 
 export default function BulkEditSOPsPage() {
   useAuthGuard({ allowedRoles: ['admin', 'qa-head'] });
@@ -38,10 +58,15 @@ export default function BulkEditSOPsPage() {
       const data = await response.json();
       
       if (data.success) {
-        setSOPs(data.data.allSOPs || []);
-        
-        // Extract unique departments
-        const depts = [...new Set(data.data.allSOPs.map((s: SOP) => s.department))];
+        const all: SOP[] = (data.data?.sops?.all || data.data?.allSOPs || []).map((s: SOP) => ({
+          ...s,
+          effectiveDate: toDateInputValue(s.effectiveDate),
+          reviewDate: toDateInputValue(s.reviewDate),
+          expiryDate: toDateInputValue(s.expiryDate),
+        }));
+        setSOPs(all);
+
+        const depts = [...new Set(all.map((s: SOP) => s.department).filter(Boolean))];
         setDepartments(depts as string[]);
       }
     } catch (error) {
@@ -87,16 +112,27 @@ export default function BulkEditSOPsPage() {
     }
   };
 
-  const filteredSOPs = sops.filter(sop => {
-    const matchesSearch = 
-      sop.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      sop.identifier.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesDepartment = 
-      departmentFilter === 'all' || sop.department === departmentFilter;
-    
-    return matchesSearch && matchesDepartment;
-  });
+  const filteredSOPs = sops
+    .filter(sop => {
+      const matchesSearch =
+        (sop.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (sop.identifier || '').toLowerCase().includes(searchTerm.toLowerCase());
+
+      const matchesDepartment =
+        departmentFilter === 'all' || sop.department === departmentFilter;
+
+      return matchesSearch && matchesDepartment;
+    })
+    .sort((a, b) => {
+      const ra = STATUS_RANK[a.computedStatus || 'valid'] ?? 99;
+      const rb = STATUS_RANK[b.computedStatus || 'valid'] ?? 99;
+      if (ra !== rb) return ra - rb;
+      const da = a.daysToExpiry ?? Number.POSITIVE_INFINITY;
+      const db = b.daysToExpiry ?? Number.POSITIVE_INFINITY;
+      return da - db;
+    });
+
+  const expiredCount = sops.filter(s => s.computedStatus === 'expired').length;
 
   if (loading) {
     return (
@@ -206,11 +242,32 @@ export default function BulkEditSOPsPage() {
                   <tr
                     key={sop._id}
                     className={`hover:bg-white/5 transition-colors ${
-                      editedSOPs.has(sop._id) ? 'bg-green-500/10' : ''
+                      editedSOPs.has(sop._id)
+                        ? 'bg-green-500/10'
+                        : sop.computedStatus === 'expired'
+                        ? 'bg-red-500/10'
+                        : ''
                     }`}
                   >
                     <td className="px-4 py-3">
-                      <div className="text-white font-semibold">{sop.identifier}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-white font-semibold">{sop.identifier}</div>
+                        {sop.computedStatus === 'expired' && (
+                          <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-red-500/20 text-red-300 border border-red-400/40">
+                            Expired{typeof sop.daysToExpiry === 'number' ? ` ${Math.abs(sop.daysToExpiry)}d` : ''}
+                          </span>
+                        )}
+                        {sop.computedStatus === 'needsReview' && (
+                          <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-orange-500/20 text-orange-300 border border-orange-400/40">
+                            Review Due
+                          </span>
+                        )}
+                        {sop.computedStatus === 'expiringSoon' && (
+                          <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-yellow-500/20 text-yellow-200 border border-yellow-400/40">
+                            Soon
+                          </span>
+                        )}
+                      </div>
                       <div className="text-gray-400 text-xs truncate max-w-xs">{sop.name}</div>
                     </td>
                     <td className="px-4 py-3">
@@ -277,6 +334,11 @@ export default function BulkEditSOPsPage() {
           <div className="flex items-center justify-between text-sm">
             <span className="text-gray-300">
               Showing {filteredSOPs.length} of {sops.length} SOPs
+              {expiredCount > 0 && (
+                <span className="ml-3 text-red-300 font-semibold">
+                  ({expiredCount} expired)
+                </span>
+              )}
             </span>
             {editedSOPs.size > 0 && (
               <span className="text-green-300 font-semibold">

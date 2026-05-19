@@ -86,7 +86,7 @@ export default function DashboardPageClient() {
   const [showSOPFolderUploadModal, setShowSOPFolderUploadModal] =
     useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-  const { tracked: trackedPipelines, trackUpload, untrack } = usePipelineTracker();
+  const { tracked: trackedPipelines, trackUpload, trackMany, untrack } = usePipelineTracker();
   const [recheckingFiles, setRecheckingFiles] = useState(false);
   const [fileAvailability, setFileAvailability] = useState<Record<string, boolean> | null>(null);
   const [recheckSummary, setRecheckSummary] = useState<{ checked: number; found: number; notFound: number; dbCleared: number; notFoundPaths?: string[] } | null>(null);
@@ -2269,6 +2269,7 @@ export default function DashboardPageClient() {
                 setWizardMinimized(false);
               }}
               onMarkObsolete={() => triggerRefresh()}
+              onSopUpdated={() => triggerRefresh(true)}
               onMarkVersionSuperseded={handleMarkVersionSuperseded}
               isObsoleteView={filterObsolete}
               onRemoveObsolete={handleRemoveFromObsolete}
@@ -2407,15 +2408,24 @@ export default function DashboardPageClient() {
         isOpen={showUploadModal}
         initialTab={uploadModalTab}
         onClose={() => setShowUploadModal(false)}
-        onSuccess={(_uploaded: UploadedSOPRef[]) => {
-          // Bulk upload SOP is now a pure file-upload tool (no MCQ pipeline).
-          // Skip `trackMany` — there's no pipeline to poll. Full reload onto
-          // ?refresh=1 so the new DOCX/PDF rows show up in the registry immediately.
-          try { sessionStorage.removeItem('dashboard_sops_cache'); } catch { /* ignore */ }
-          try { localStorage.removeItem('dashboard_sops_cache_persistent'); } catch { /* ignore */ }
-          const url = new URL(window.location.href);
-          url.searchParams.set('refresh', '1');
-          window.location.replace(url.toString());
+        onSuccess={(uploaded: UploadedSOPRef[], generateMcqs: boolean) => {
+          // When the user opts into MCQ generation, register each uploaded SOP with the
+          // pipeline tracker so the progress dock can poll status until completion.
+          // Without MCQs, there's no pipeline to poll — just bust caches and reload.
+          if (generateMcqs && uploaded.length > 0) {
+            trackMany(
+              uploaded.map((u) => ({
+                sopId: u.sopId,
+                sopIdentifier: u.sopIdentifier,
+                sopName: u.sopName,
+                department: u.department,
+                language: u.language,
+              })),
+            );
+          }
+          // Hard refresh via state — keeps React tree mounted (no full-page flash),
+          // busts both client caches and forces the server `?refresh=1` rebuild.
+          void triggerRefresh(true);
         }}
       />
       <UploadPDFModal
@@ -2427,16 +2437,10 @@ export default function DashboardPageClient() {
         isOpen={showSOPFolderUploadModal}
         onClose={() => setShowSOPFolderUploadModal(false)}
         onSuccess={() => {
-          // Bust every cache layer (sessionStorage, localStorage, in-memory) and force
-          // the dashboard to refetch with refresh=1 so Versions / DOCX / PDF capsule
-          // counts reflect the new uploads instead of the 5-min stale cached payload.
-          try { sessionStorage.removeItem('dashboard_sops_cache'); } catch { /* ignore */ }
-          try { localStorage.removeItem('dashboard_sops_cache_persistent'); } catch { /* ignore */ }
-          // Use a full reload onto refresh=1 — most reliable way to guarantee the
-          // server-side dashboard cache is bypassed even if Redis ack lagged the upsert.
-          const url = new URL(window.location.href);
-          url.searchParams.set('refresh', '1');
-          window.location.replace(url.toString());
+          // Hard refresh: clears client caches + forces server `?refresh=1` rebuild,
+          // but keeps the React tree mounted so the user sees an inline spinner
+          // instead of a full white-flash page reload.
+          void triggerRefresh(true);
         }}
       />
       <PipelineProgressDock
