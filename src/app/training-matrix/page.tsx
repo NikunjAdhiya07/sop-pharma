@@ -1035,17 +1035,22 @@ function RowB({
           <span className="min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700">{green}</span>
         )}
         <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
-        {onClickRed ? (
-          <button
-            type="button"
-            onClick={onClickRed}
-            className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-400/70"
-          >
-            {red}
-          </button>
-        ) : (
-          <span className="min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600">{red}</span>
-        )}
+        {(() => {
+          const isZero = red === 0;
+          const colorCls = isZero ? 'text-gray-400' : 'text-red-600';
+          const hoverCls = isZero ? 'hover:bg-gray-100 focus:ring-gray-400/70' : 'hover:bg-red-50 focus:ring-red-400/70';
+          return onClickRed ? (
+            <button
+              type="button"
+              onClick={onClickRed}
+              className={`min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none ${colorCls} transition-colors ${hoverCls} focus:z-10 focus:outline-none focus:ring-1`}
+            >
+              {red}
+            </button>
+          ) : (
+            <span className={`min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none ${colorCls}`}>{red}</span>
+          );
+        })()}
       </div>
     </div>
   );
@@ -1096,17 +1101,22 @@ function RowC({
           <span className="min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none text-amber-600">{amber}</span>
         )}
         <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
-        {onClickRed ? (
-          <button
-            type="button"
-            onClick={onClickRed}
-            className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-400/70"
-          >
-            {red}
-          </button>
-        ) : (
-          <span className="min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600">{red}</span>
-        )}
+        {(() => {
+          const isZero = red === 0;
+          const colorCls = isZero ? 'text-gray-400' : 'text-red-600';
+          const hoverCls = isZero ? 'hover:bg-gray-100 focus:ring-gray-400/70' : 'hover:bg-red-50 focus:ring-red-400/70';
+          return onClickRed ? (
+            <button
+              type="button"
+              onClick={onClickRed}
+              className={`min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none ${colorCls} transition-colors ${hoverCls} focus:z-10 focus:outline-none focus:ring-1`}
+            >
+              {red}
+            </button>
+          ) : (
+            <span className={`min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none ${colorCls}`}>{red}</span>
+          );
+        })()}
       </div>
     </div>
   );
@@ -1125,10 +1135,15 @@ function RowD({
   onClick?: () => void;
   tooltip?: string;
 }) {
+  const isZeroRed = color === 'red' && (typeof value === 'number' ? value === 0 : value === '0');
   const colorClass =
-    color === 'green' ? 'text-emerald-700' : color === 'red' ? 'text-red-600' : 'text-amber-600';
+    color === 'green' ? 'text-emerald-700'
+      : color === 'red' ? (isZeroRed ? 'text-gray-400' : 'text-red-600')
+      : 'text-amber-600';
   const hoverBg =
-    color === 'green' ? 'hover:bg-emerald-50' : color === 'red' ? 'hover:bg-red-50' : 'hover:bg-amber-50';
+    color === 'green' ? 'hover:bg-emerald-50'
+      : color === 'red' ? (isZeroRed ? 'hover:bg-gray-100' : 'hover:bg-red-50')
+      : 'hover:bg-amber-50';
   return (
     <div className="grid min-h-[24px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[4px] border border-transparent px-1 py-px text-[10px]">
       <span className="flex min-w-0 items-center gap-0.5 truncate text-[10px] font-semibold text-gray-700">
@@ -1167,7 +1182,10 @@ function RepetitiveSopsRow({
   return (
     <div className="flex w-full min-w-0 items-center justify-between gap-x-1 px-1 min-h-[22px]">
       {items.map(({ label, value, color, tooltip, onClick }) => {
-        const colorClass = color === 'red' ? 'text-red-600' : color === 'amber' ? 'text-amber-600' : 'text-emerald-700';
+        const isZeroRed = color === 'red' && (typeof value === 'number' ? value === 0 : value === '0');
+        const colorClass = color === 'red'
+          ? (isZeroRed ? 'text-gray-400' : 'text-red-600')
+          : color === 'amber' ? 'text-amber-600' : 'text-emerald-700';
         return (
           <span key={label} className="flex shrink-0 items-center gap-x-0.5 tabular-nums" title={tooltip}>
             <span className="shrink-0 cursor-default text-[10px] font-semibold text-gray-500">
@@ -1185,6 +1203,36 @@ function RepetitiveSopsRow({
         );
       })}
     </div>
+  );
+}
+
+function RedCountBtn({
+  value,
+  onClick,
+  title,
+  variant = 'lg',
+}: {
+  value: number;
+  onClick?: () => void;
+  title?: string;
+  variant?: 'lg' | 'sm';
+}) {
+  const isZero = (value ?? 0) === 0;
+  const sizeCls = variant === 'sm'
+    ? 'min-w-[1rem] rounded-sm px-0.5 py-px'
+    : 'min-w-[1.35rem] rounded px-1 py-0.5';
+  const colorCls = isZero
+    ? 'text-gray-400 hover:bg-gray-100 focus:ring-gray-400'
+    : 'text-red-600 hover:bg-red-50 focus:ring-red-400';
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className={`${sizeCls} cursor-pointer text-center text-[10px] font-bold leading-none transition-colors ${colorCls} focus:z-10 focus:outline-none focus:ring-1`}
+    >
+      {value ?? 0}
+    </button>
   );
 }
 
@@ -1245,17 +1293,23 @@ function ExpiryInlineRow({
         <span className={label} title="Expired">
           Ex.
         </span>
-        {onExpired ? (
-          <button
-            type="button"
-            onClick={onExpired}
-            className={`${btn} cursor-pointer text-red-600 hover:bg-red-50 focus:ring-red-400`}
-          >
-            {expired}
-          </button>
-        ) : (
-          <span className={`${btn} text-red-600`}>{expired}</span>
-        )}
+        {(() => {
+          const isZero = expired === 0;
+          const cls = isZero
+            ? 'text-gray-400 hover:bg-gray-100 focus:ring-gray-400'
+            : 'text-red-600 hover:bg-red-50 focus:ring-red-400';
+          return onExpired ? (
+            <button
+              type="button"
+              onClick={onExpired}
+              className={`${btn} cursor-pointer ${cls}`}
+            >
+              {expired}
+            </button>
+          ) : (
+            <span className={`${btn} ${isZero ? 'text-gray-400' : 'text-red-600'}`}>{expired}</span>
+          );
+        })()}
       </span>
       <span className="flex shrink-0 items-center gap-x-0.5">
         <span className={label} title="Near expiry (≤ 30 days)">
@@ -1311,23 +1365,32 @@ function DeptStrip({
   return (
     <div className="grid grid-cols-4 gap-x-1 gap-y-0.5">
       {visible.map((d) => (
-        <span key={d} className="flex flex-col items-center rounded-[4px] px-0.5 py-0.5">
-          <span className="text-[8px] font-medium text-gray-500 leading-none">{short(d)}</span>
-          <span className="flex items-center gap-0.5 leading-tight tabular-nums">
+        <span key={d} className="flex flex-col items-center gap-0.5 rounded-[4px] px-0.5 py-0.5">
+          <span className="text-[8px] font-medium text-gray-500 leading-none whitespace-nowrap">{short(d)}</span>
+          <span className="inline-flex shrink-0 flex-nowrap items-center gap-px rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm leading-none tabular-nums whitespace-nowrap">
             <button
               type="button"
               onClick={() => onSelectFound?.(d)}
-              className={`min-w-[1rem] rounded px-0.5 text-center text-[10px] font-bold text-emerald-700 ${onSelectFound ? 'cursor-pointer hover:bg-emerald-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-emerald-400' : ''}`}
+              className={`min-w-[1rem] rounded px-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 ${onSelectFound ? 'cursor-pointer hover:bg-emerald-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-emerald-400' : ''}`}
             >
               {foundCounts?.[d] ?? 0}
             </button>
-            <button
-              type="button"
-              onClick={() => onSelectMissing?.(d)}
-              className={`min-w-[1rem] rounded px-0.5 text-center text-[10px] font-bold text-red-600 ${onSelectMissing ? 'cursor-pointer hover:bg-red-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-400' : ''}`}
-            >
-              {missingCounts?.[d] ?? 0}
-            </button>
+            <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
+            {(() => {
+              const v = missingCounts?.[d] ?? 0;
+              const isZero = v === 0;
+              const colorCls = isZero ? 'text-gray-400' : 'text-red-600';
+              const hoverCls = isZero ? 'hover:bg-gray-100 focus:ring-gray-400' : 'hover:bg-red-50 focus:ring-red-400';
+              return (
+                <button
+                  type="button"
+                  onClick={() => onSelectMissing?.(d)}
+                  className={`min-w-[1rem] rounded px-0.5 text-center text-[10px] font-bold leading-none ${colorCls} ${onSelectMissing ? `cursor-pointer ${hoverCls} focus:z-10 focus:outline-none focus:ring-1` : ''}`}
+                >
+                  {v}
+                </button>
+              );
+            })()}
           </span>
         </span>
       ))}
@@ -4143,8 +4206,9 @@ export default function TrainingMatrixPage() {
               {t.excelSopCount}
             </button>
             <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
-            <button
-              type="button"
+            <RedCountBtn
+              value={t.missingSopCount ?? 0}
+              title="Missing"
               onClick={() =>
                 applySummaryCapsuleFilter({
                   dept: 'All',
@@ -4152,11 +4216,7 @@ export default function TrainingMatrixPage() {
                   title: 'Total · Missing (DB but not in Excel)',
                 })
               }
-              className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-400/70"
-              title="Missing"
-            >
-              {t.missingSopCount}
-            </button>
+            />
           </div>
         </div>
         {totalLangBreakdown.length > 0 && (
@@ -4232,14 +4292,11 @@ export default function TrainingMatrixPage() {
                   {totalExcelDeptFoundSum}
                 </button>
                 <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
-                <button
-                  type="button"
-                  onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'missing', title: 'Total · Missing (DB but not in Excel)' })}
-                  className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-400/70"
+                <RedCountBtn
+                  value={totalExcelDeptMissingSum}
                   title="Missing"
-                >
-                  {totalExcelDeptMissingSum}
-                </button>
+                  onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'missing', title: 'Total · Missing (DB but not in Excel)' })}
+                />
               </div>
             </div>
             <DeptStrip
@@ -4319,14 +4376,11 @@ export default function TrainingMatrixPage() {
                     {bucketSopSum}
                   </button>
                   <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
-                  <button
-                    type="button"
+                  <RedCountBtn
+                    value={totalExcelDeptMissingSum}
                     title="Missing SOPs (DB but not in Excel)"
                     onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'missing', title: 'Total · Missing (DB but not in Excel)' })}
-                    className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400/70"
-                  >
-                    {totalExcelDeptMissingSum}
-                  </button>
+                  />
                 </div>
               </div>
               <RepetitiveSopsRow
@@ -4375,7 +4429,7 @@ export default function TrainingMatrixPage() {
             <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
               <button type="button" title="Non-dual SOPs with 100+ ENG MCQs (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · Found (ENG ≥100)', status: 'mcq_eng_only_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqEngOnlyCreatedCount ?? 0}</button>
               <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <button type="button" title="Non-dual SOPs with <100 ENG MCQs (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · Missing (ENG <100)', status: 'mcq_eng_only_not_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqEngOnlyNotCreatedCount ?? 0}</button>
+              <RedCountBtn variant="sm" value={t.mcqEngOnlyNotCreatedCount ?? 0} title="Non-dual SOPs with <100 ENG MCQs (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · Missing (ENG <100)', status: 'mcq_eng_only_not_created' })} />
             </div>
           </div>
           <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
@@ -4383,7 +4437,7 @@ export default function TrainingMatrixPage() {
             <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
               <button type="button" title="Dual SOPs with 100+ MCQs in BOTH ENG and GUJ (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · Found (ENG ≥100 AND GUJ ≥100)', status: 'mcq_dual_both_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualBothCreatedCount ?? 0}</button>
               <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <button type="button" title="Dual SOPs missing 100+ MCQs in EITHER ENG or GUJ (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · Missing (ENG <100 OR GUJ <100)', status: 'mcq_dual_either_incomplete' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualEitherIncompleteCount ?? 0}</button>
+              <RedCountBtn variant="sm" value={t.mcqDualEitherIncompleteCount ?? 0} title="Dual SOPs missing 100+ MCQs in EITHER ENG or GUJ (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · Missing (ENG <100 OR GUJ <100)', status: 'mcq_dual_either_incomplete' })} />
             </div>
           </div>
           {/* Display-only per-language slot breakdown for Dual SOPs.
@@ -4395,7 +4449,7 @@ export default function TrainingMatrixPage() {
               <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
                 <button type="button" title="Dual SOPs whose ENG slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot ≥100 (display)', status: 'mcq_dual_eng_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualEngCreatedCount ?? 0}</button>
                 <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-                <button type="button" title="Dual SOPs whose ENG slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot <100 (display)', status: 'mcq_dual_eng_not_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualEngNotCreatedCount ?? 0}</button>
+                <RedCountBtn variant="sm" value={t.mcqDualEngNotCreatedCount ?? 0} title="Dual SOPs whose ENG slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot <100 (display)', status: 'mcq_dual_eng_not_created' })} />
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-px">
@@ -4403,7 +4457,7 @@ export default function TrainingMatrixPage() {
               <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
                 <button type="button" title="Dual SOPs whose GUJ slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot ≥100 (display)', status: 'mcq_dual_guj_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualGujCreatedCount ?? 0}</button>
                 <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-                <button type="button" title="Dual SOPs whose GUJ slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot <100 (display)', status: 'mcq_dual_guj_not_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualGujNotCreatedCount ?? 0}</button>
+                <RedCountBtn variant="sm" value={t.mcqDualGujNotCreatedCount ?? 0} title="Dual SOPs whose GUJ slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot <100 (display)', status: 'mcq_dual_guj_not_created' })} />
               </div>
             </div>
           </div>
@@ -4456,7 +4510,7 @@ export default function TrainingMatrixPage() {
               <span className="select-none text-[9px] leading-none text-gray-300">|</span>
               <button type="button" title="Non-dual SOPs with some ENG approval but not full" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · MCQ Partially Approved', status: 'mcq_approval_partial_nondual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqApprovalPartialNonDualCount ?? 0}</button>
               <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <button type="button" title="Non-dual SOPs with zero ENG approvals" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · MCQ Approval Missing (zero approvals)', status: 'mcq_approval_missing_nondual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqApprovalMissingNonDualCount ?? 0}</button>
+              <RedCountBtn variant="sm" value={t.mcqApprovalMissingNonDualCount ?? 0} title="Non-dual SOPs with zero ENG approvals" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · MCQ Approval Missing (zero approvals)', status: 'mcq_approval_missing_nondual' })} />
             </div>
           </div>
           <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
@@ -4466,7 +4520,7 @@ export default function TrainingMatrixPage() {
               <span className="select-none text-[9px] leading-none text-gray-300">|</span>
               <button type="button" title="Dual SOPs with partial progress — at least one language has approvals or is fully approved, but both aren't fully approved" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · MCQ Partially Approved (some progress on at least one language)', status: 'mcq_approval_partial_dual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqApprovalPartialDualCount ?? 0}</button>
               <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <button type="button" title="Dual SOPs where BOTH languages have zero approvals (fully missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · MCQ Approval Missing (both languages have zero approvals)', status: 'mcq_approval_missing_dual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqApprovalMissingDualCount ?? 0}</button>
+              <RedCountBtn variant="sm" value={t.mcqApprovalMissingDualCount ?? 0} title="Dual SOPs where BOTH languages have zero approvals (fully missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · MCQ Approval Missing (both languages have zero approvals)', status: 'mcq_approval_missing_dual' })} />
             </div>
           </div>
           <div className="flex w-full min-w-0 flex-nowrap items-center justify-between gap-x-2 opacity-80">
@@ -4477,7 +4531,7 @@ export default function TrainingMatrixPage() {
               <span className="select-none text-[9px] leading-none text-gray-300">|</span>
               <button type="button" title="Dual SOPs whose ENG slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot partially approved (display)', status: 'mcq_dual_slot_eng_partially_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqDualSlotEngPartiallyApprovedCount ?? 0}</button>
               <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <button type="button" title="Dual SOPs whose ENG slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot zero approvals (display)', status: 'mcq_dual_slot_eng_not_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualSlotEngNotApprovedCount ?? 0}</button>
+              <RedCountBtn variant="sm" value={t.mcqDualSlotEngNotApprovedCount ?? 0} title="Dual SOPs whose ENG slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot zero approvals (display)', status: 'mcq_dual_slot_eng_not_approved' })} />
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-px">
@@ -4487,7 +4541,7 @@ export default function TrainingMatrixPage() {
               <span className="select-none text-[9px] leading-none text-gray-300">|</span>
               <button type="button" title="Dual SOPs whose GUJ slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot partially approved (display)', status: 'mcq_dual_slot_guj_partially_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqDualSlotGujPartiallyApprovedCount ?? 0}</button>
               <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <button type="button" title="Dual SOPs whose GUJ slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot zero approvals (display)', status: 'mcq_dual_slot_guj_not_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{t.mcqDualSlotGujNotApprovedCount ?? 0}</button>
+              <RedCountBtn variant="sm" value={t.mcqDualSlotGujNotApprovedCount ?? 0} title="Dual SOPs whose GUJ slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot zero approvals (display)', status: 'mcq_dual_slot_guj_not_approved' })} />
               </div>
             </div>
           </div>
@@ -4506,7 +4560,7 @@ export default function TrainingMatrixPage() {
           </div>
           <div className="flex items-center gap-0.5" title="SOPs with no trainer assigned">
             <span className="text-gray-500 text-[10px] font-medium">0</span>
-            <button type="button" title="SOPs with 0 trainers" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'SOPs with 0 Trainers', status: 'sop_0_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-red-600 shadow-sm transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400 tabular-nums">{trainerBuckets.sop0}</button>
+            <button type="button" title="SOPs with 0 trainers" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'SOPs with 0 Trainers', status: 'sop_0_trainer' })} className={`min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight shadow-sm transition-colors focus:outline-none focus:ring-1 tabular-nums ${(trainerBuckets.sop0 ?? 0) === 0 ? 'text-gray-400 hover:bg-gray-100 focus:ring-gray-400' : 'text-red-600 hover:bg-red-50 focus:ring-red-400'}`}>{trainerBuckets.sop0}</button>
           </div>
         </div>
         </SummaryTopic>
@@ -4585,8 +4639,9 @@ export default function TrainingMatrixPage() {
               {d.foundInDb}
             </button>
             <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
-            <button
-              type="button"
+            <RedCountBtn
+              value={d.missingFromExcel ?? 0}
+              title="Missing"
               onClick={() =>
                 applySummaryCapsuleFilter({
                   dept,
@@ -4594,11 +4649,7 @@ export default function TrainingMatrixPage() {
                   title: `${dept} · Missing (DB but not in Excel)`,
                 })
               }
-              className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-400/70"
-              title="Missing"
-            >
-              {d.missingFromExcel}
-            </button>
+            />
           </div>
         </div>
         {(d.langBreakdown || []).length > 0 ? (
@@ -4679,14 +4730,11 @@ export default function TrainingMatrixPage() {
                   {Object.values(d.excelDeptSplit.foundByDept || {}).reduce((a: number, b: unknown) => a + (b as number), 0) + (d.excelDeptSplit.unknownFound ?? 0)}
                 </button>
                 <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
-                <button
-                  type="button"
-                  onClick={() => applySummaryCapsuleFilter({ dept, type: 'missing', title: `${dept} · Missing (DB but not in Excel)` })}
-                  className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-400/70"
+                <RedCountBtn
+                  value={Object.values(d.excelDeptSplit.missingByDept || {}).reduce((a: number, b: unknown) => a + (b as number), 0) + (d.excelDeptSplit.unknownMissing ?? 0)}
                   title="Missing"
-                >
-                  {Object.values(d.excelDeptSplit.missingByDept || {}).reduce((a: number, b: unknown) => a + (b as number), 0) + (d.excelDeptSplit.unknownMissing ?? 0)}
-                </button>
+                  onClick={() => applySummaryCapsuleFilter({ dept, type: 'missing', title: `${dept} · Missing (DB but not in Excel)` })}
+                />
               </div>
             </div>
             <DeptStrip
@@ -4771,14 +4819,11 @@ export default function TrainingMatrixPage() {
                     {bucketSopSum}
                   </button>
                   <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
-                  <button
-                    type="button"
+                  <RedCountBtn
+                    value={dMissingSum}
                     title="Missing SOPs (DB but not in Excel)"
                     onClick={() => applySummaryCapsuleFilter({ dept, type: 'missing', title: `${dept} · Missing (DB but not in Excel)` })}
-                    className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400/70"
-                  >
-                    {dMissingSum}
-                  </button>
+                  />
                 </div>
               </div>
               <RepetitiveSopsRow
@@ -4825,7 +4870,7 @@ export default function TrainingMatrixPage() {
             <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
               <button type="button" title="Non-dual SOPs with 100+ ENG MCQs (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · Found (ENG ≥100)`, status: 'mcq_eng_only_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqEngOnlyCreatedCount ?? 0}</button>
               <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <button type="button" title="Non-dual SOPs with <100 ENG MCQs (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · Missing (ENG <100)`, status: 'mcq_eng_only_not_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqEngOnlyNotCreatedCount ?? 0}</button>
+              <RedCountBtn variant="sm" value={d.mcqEngOnlyNotCreatedCount ?? 0} title="Non-dual SOPs with <100 ENG MCQs (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · Missing (ENG <100)`, status: 'mcq_eng_only_not_created' })} />
             </div>
           </div>
           <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
@@ -4833,7 +4878,7 @@ export default function TrainingMatrixPage() {
             <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
               <button type="button" title="Dual SOPs with 100+ MCQs in BOTH ENG and GUJ (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · Found (ENG ≥100 AND GUJ ≥100)`, status: 'mcq_dual_both_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualBothCreatedCount ?? 0}</button>
               <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <button type="button" title="Dual SOPs missing 100+ MCQs in EITHER ENG or GUJ (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · Missing (ENG <100 OR GUJ <100)`, status: 'mcq_dual_either_incomplete' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualEitherIncompleteCount ?? 0}</button>
+              <RedCountBtn variant="sm" value={d.mcqDualEitherIncompleteCount ?? 0} title="Dual SOPs missing 100+ MCQs in EITHER ENG or GUJ (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · Missing (ENG <100 OR GUJ <100)`, status: 'mcq_dual_either_incomplete' })} />
             </div>
           </div>
           <div className="flex w-full min-w-0 flex-nowrap items-center justify-between gap-x-2 opacity-80">
@@ -4842,7 +4887,7 @@ export default function TrainingMatrixPage() {
               <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
                 <button type="button" title="Dual SOPs whose ENG slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot ≥100 (display)`, status: 'mcq_dual_eng_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualEngCreatedCount ?? 0}</button>
                 <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-                <button type="button" title="Dual SOPs whose ENG slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot <100 (display)`, status: 'mcq_dual_eng_not_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualEngNotCreatedCount ?? 0}</button>
+                <RedCountBtn variant="sm" value={d.mcqDualEngNotCreatedCount ?? 0} title="Dual SOPs whose ENG slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot <100 (display)`, status: 'mcq_dual_eng_not_created' })} />
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-px">
@@ -4850,7 +4895,7 @@ export default function TrainingMatrixPage() {
               <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
                 <button type="button" title="Dual SOPs whose GUJ slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot ≥100 (display)`, status: 'mcq_dual_guj_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualGujCreatedCount ?? 0}</button>
                 <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-                <button type="button" title="Dual SOPs whose GUJ slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot <100 (display)`, status: 'mcq_dual_guj_not_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualGujNotCreatedCount ?? 0}</button>
+                <RedCountBtn variant="sm" value={d.mcqDualGujNotCreatedCount ?? 0} title="Dual SOPs whose GUJ slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot <100 (display)`, status: 'mcq_dual_guj_not_created' })} />
               </div>
             </div>
           </div>
@@ -4898,7 +4943,7 @@ export default function TrainingMatrixPage() {
               <span className="select-none text-[9px] leading-none text-gray-300">|</span>
               <button type="button" title="Non-dual SOPs with some ENG approval but not full" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · MCQ Partially Approved`, status: 'mcq_approval_partial_nondual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqApprovalPartialNonDualCount ?? 0}</button>
               <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <button type="button" title="Non-dual SOPs with zero ENG approvals" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · MCQ Approval Missing`, status: 'mcq_approval_missing_nondual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqApprovalMissingNonDualCount ?? 0}</button>
+              <RedCountBtn variant="sm" value={d.mcqApprovalMissingNonDualCount ?? 0} title="Non-dual SOPs with zero ENG approvals" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · MCQ Approval Missing`, status: 'mcq_approval_missing_nondual' })} />
             </div>
           </div>
           <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
@@ -4908,7 +4953,7 @@ export default function TrainingMatrixPage() {
               <span className="select-none text-[9px] leading-none text-gray-300">|</span>
               <button type="button" title="Dual SOPs with partial progress — at least one language has approvals or is fully approved, but both aren't fully approved" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · MCQ Partially Approved`, status: 'mcq_approval_partial_dual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqApprovalPartialDualCount ?? 0}</button>
               <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <button type="button" title="Dual SOPs where BOTH languages have zero approvals (fully missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · MCQ Approval Missing`, status: 'mcq_approval_missing_dual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqApprovalMissingDualCount ?? 0}</button>
+              <RedCountBtn variant="sm" value={d.mcqApprovalMissingDualCount ?? 0} title="Dual SOPs where BOTH languages have zero approvals (fully missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · MCQ Approval Missing`, status: 'mcq_approval_missing_dual' })} />
             </div>
           </div>
           <div className="flex w-full min-w-0 flex-nowrap items-center justify-between gap-x-2 opacity-80">
@@ -4919,7 +4964,7 @@ export default function TrainingMatrixPage() {
                 <span className="select-none text-[9px] leading-none text-gray-300">|</span>
                 <button type="button" title="Dual SOPs whose ENG slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot partially approved (display)`, status: 'mcq_dual_slot_eng_partially_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqDualSlotEngPartiallyApprovedCount ?? 0}</button>
                 <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-                <button type="button" title="Dual SOPs whose ENG slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot zero approvals (display)`, status: 'mcq_dual_slot_eng_not_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualSlotEngNotApprovedCount ?? 0}</button>
+                <RedCountBtn variant="sm" value={d.mcqDualSlotEngNotApprovedCount ?? 0} title="Dual SOPs whose ENG slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot zero approvals (display)`, status: 'mcq_dual_slot_eng_not_approved' })} />
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-px">
@@ -4929,7 +4974,7 @@ export default function TrainingMatrixPage() {
                 <span className="select-none text-[9px] leading-none text-gray-300">|</span>
                 <button type="button" title="Dual SOPs whose GUJ slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot partially approved (display)`, status: 'mcq_dual_slot_guj_partially_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqDualSlotGujPartiallyApprovedCount ?? 0}</button>
                 <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-                <button type="button" title="Dual SOPs whose GUJ slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot zero approvals (display)`, status: 'mcq_dual_slot_guj_not_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400">{d.mcqDualSlotGujNotApprovedCount ?? 0}</button>
+                <RedCountBtn variant="sm" value={d.mcqDualSlotGujNotApprovedCount ?? 0} title="Dual SOPs whose GUJ slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot zero approvals (display)`, status: 'mcq_dual_slot_guj_not_approved' })} />
               </div>
             </div>
           </div>
@@ -4948,7 +4993,7 @@ export default function TrainingMatrixPage() {
           </div>
           <div className="flex items-center gap-0.5" title="SOPs with no trainer assigned">
             <span className="text-gray-500 text-[10px] font-medium">0</span>
-            <button type="button" title="SOPs with 0 trainers" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · SOPs with 0 Trainers`, status: 'sop_0_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-red-600 shadow-sm transition-colors hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400 tabular-nums">{deptTrainerBuckets.sop0}</button>
+            <button type="button" title="SOPs with 0 trainers" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · SOPs with 0 Trainers`, status: 'sop_0_trainer' })} className={`min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight shadow-sm transition-colors focus:outline-none focus:ring-1 tabular-nums ${(deptTrainerBuckets.sop0 ?? 0) === 0 ? 'text-gray-400 hover:bg-gray-100 focus:ring-gray-400' : 'text-red-600 hover:bg-red-50 focus:ring-red-400'}`}>{deptTrainerBuckets.sop0}</button>
           </div>
         </div>
         </SummaryTopic>
@@ -6604,9 +6649,9 @@ export default function TrainingMatrixPage() {
 
       <main className="mx-auto max-w-[1600px] px-5 py-5">
         {/* Cards row */}
-        <section className="mb-5">
+        <section className="mb-5 overflow-x-auto">
           {loading && !data ? (
-            <div className="grid gap-2 pb-2" style={{ gridTemplateColumns: `repeat(${departments.length + 1}, minmax(0, 1fr))` }}>
+            <div className="grid gap-2 pb-2" style={{ gridTemplateColumns: `repeat(${departments.length + 1}, minmax(190px, 1fr))` }}>
               {Array.from({ length: departments.length + 1 }).map((_, i) => (
                 <div
                   key={i}
@@ -6615,7 +6660,7 @@ export default function TrainingMatrixPage() {
               ))}
             </div>
           ) : data ? (
-            <div className="grid gap-2 pb-2" style={{ gridTemplateColumns: `repeat(${departments.length + 1}, minmax(0, 1fr))` }}>
+            <div className="grid gap-2 pb-2" style={{ gridTemplateColumns: `repeat(${departments.length + 1}, minmax(190px, 1fr))` }}>
               {renderTotalCard(data.totalCard)}
               {departments.map((dept) => (
                 <Fragment key={dept}>{renderDeptCard(dept, data.perDept[dept])}</Fragment>

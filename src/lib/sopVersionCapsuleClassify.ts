@@ -1,13 +1,13 @@
 /**
  * Dashboard version status — exactly 2 user-facing buckets:
  *
- *  - "allTwoFound" : Version-0 SOPs (no prior versions expected), OR all
- *                    expected prior versions have actual files (DOCX or PDF) → green
- *  - "notFound"    : Expected prior versions exist but not all have files → red
+ *  - "allTwoFound" : Version-0 SOPs (no prior versions expected), OR every expected
+ *                    prior version has BOTH DOCX and PDF for every required language → green
+ *  - "notFound"    : At least one required (lang, format) artifact is missing for some
+ *                    expected prior version → red
  *
- * "Available" means the version slot has at least one actual file (docxPath or pdfPath).
- * A prior SOP record that exists in the DB but has no files is NOT counted as found.
- * For dual-language rows, a version is only fully found when BOTH ENG and GUJ have files.
+ * Strict semantics: a single-language SOP needs EN DOCX AND EN PDF; a dual-language
+ * SOP additionally needs GJ DOCX AND GJ PDF. Any one missing file flips the SOP to red.
  */
 import { parseRevisionFromSopIdentifier } from "./sopIdentifierNormalize";
 import { expectedDocxSlotsForRow } from "./registryRowDocCounts";
@@ -15,11 +15,6 @@ import { expectedDocxSlotsForRow } from "./registryRowDocCounts";
 export type SopVersionCapsuleTier = "allTwoFound" | "notFound";
 
 export type SopVersionFilterSegment = "allTwov" | "notFoundv";
-
-/** Returns true if a VersionArtifactEntry has at least one actual file path. */
-function artifactHasFiles(e: { docxPath?: string; pdfPath?: string }): boolean {
-  return !!(e.docxPath?.trim()) || !!(e.pdfPath?.trim());
-}
 
 /**
  * Classify a primary registry row for the Version capsule (2 mutually exclusive buckets).
@@ -44,12 +39,13 @@ export function classifySopVersionCapsule(row: any): SopVersionCapsuleTier {
   const gjArtifacts: { version: number; docxPath?: string; pdfPath?: string }[] =
     Array.isArray(row?.versionArtifactsGujarati) ? row.versionArtifactsGujarati : [];
 
-  // "Found" must mean **a real file is attached for that prior version** — the same
-  // source the registry "Prior Versions" column uses to render DOCX/PDF links vs the
-  // red X. We never fall back to `previousVersionsStatus` here because that field
-  // marks slots available whenever a legacy SOP identifier exists in any catalog,
-  // even when no file artifact has been uploaded — which made the green bucket pull
-  // in rows whose Prior Versions column was clearly showing missing files.
+  // Strict rule: a prior version slot is "found" only when EVERY required
+  // (lang, format) artifact has a real file path. Single-lang SOP needs EN DOCX
+  // AND EN PDF; dual-lang SOP additionally needs GJ DOCX AND GJ PDF. Any one
+  // missing piece flips the whole SOP to "notFound". `previousVersionsStatus`
+  // is intentionally not consulted — it can mark slots available purely because
+  // a legacy identifier exists in some catalog, which desyncs from the visible
+  // Prior Versions DOCX/PDF/X markers.
   let foundCount = 0;
   for (let i = 1; i <= expectedSlots; i++) {
     const prev = currentVer - i;
@@ -57,13 +53,18 @@ export function classifySopVersionCapsule(row: any): SopVersionCapsuleTier {
     const enEntry = enArtifacts.find((e) => Number(e.version) === prev);
     const gjEntry = gjArtifacts.find((e) => Number(e.version) === prev);
 
-    const enHasFiles = !!(enEntry && artifactHasFiles(enEntry));
-    const gjHasFiles = !!(gjEntry && artifactHasFiles(gjEntry));
+    const enDocx = !!enEntry?.docxPath?.trim();
+    const enPdf  = !!enEntry?.pdfPath?.trim();
+    const gjDocx = !!gjEntry?.docxPath?.trim();
+    const gjPdf  = !!gjEntry?.pdfPath?.trim();
+
+    const enComplete = enDocx && enPdf;
+    const gjComplete = gjDocx && gjPdf;
 
     if (isDual) {
-      if (enHasFiles && gjHasFiles) foundCount++;
+      if (enComplete && gjComplete) foundCount++;
     } else {
-      if (enHasFiles || gjHasFiles) foundCount++;
+      if (enComplete) foundCount++;
     }
   }
 
