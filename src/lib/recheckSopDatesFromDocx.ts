@@ -188,7 +188,18 @@ export async function recheckSopDatesFromDocx(
     };
     if (effectiveDate) update.effectiveDate = effectiveDate;
 
-    await SOP.updateOne({ _id: sop._id }, { $set: update });
+    // Update all SOP records sharing this identifier (EN + GU siblings).
+    // Review date is identifier-wide, not language-specific — so updating only
+    // the single record passed in would leave the sibling expired, making the
+    // expired-sops list still show the SOP after a successful upload.
+    const idRegex = new RegExp(
+      `^${idUpper.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')}$`,
+      'i',
+    );
+    await SOP.updateMany(
+      { $or: [{ _id: sop._id }, { identifier: { $regex: idRegex } }] },
+      { $set: update },
+    );
 
     const masterUpdate: Record<string, unknown> = {
       'metadata.reviewDate': reviewDate,

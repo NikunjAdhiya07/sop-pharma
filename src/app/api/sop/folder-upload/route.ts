@@ -36,7 +36,9 @@ function isAnnexureLikePath(relativePath: string): boolean {
   // `QAGE08-09_VENDOR QUALITY AUDIT.docx`). Even if its descriptive title later
   // contains "annex" or "appendix" the file IS the SOP version and must not be
   // filtered out — otherwise the prior version is silently dropped from the upload.
-  if (/^[A-Z]{2,6}\d{1,4}-\d{1,3}\b/i.test(fileName)) return false;
+  // Negative lookahead instead of \b so `_` counts as a separator after the code
+  // (e.g. `QAGE74-2_FORMAT, ANNEXURE, …docx` is a main file, not an annexure).
+  if (/^[A-Z]{2,6}\d{1,4}-\d{1,3}(?![A-Za-z0-9])/i.test(fileName)) return false;
   // Skip annexure/appendix/support docs; keep only main SOP version DOCX/PDF files.
   return /\b(annexure|annex|appendix)\b/i.test(fileName);
 }
@@ -682,6 +684,22 @@ function parseRelativePath(relativePath: string): Parsed | null {
   /** Dept/Code.pdf — version from file stem when no nested folders */
   if (parts.length === 2) {
     const folderSeg = parts[0];
+    // Code-version folders like `PRAA05-3` MUST be parsed as base=PRAA05 + rev=3
+    // BEFORE the doc-number-only fallback. Otherwise `parseSopDocNumberPrefix`
+    // strips the `-3` and stores everything as `PRAA05` v1 — the canonical lookup
+    // never matches the registry's `PRAA05-05` row and uploads appear to do nothing.
+    const folderCodeVer = parseSopCodeVersionFromSegment(folderSeg);
+    if (folderCodeVer) {
+      return {
+        department,
+        version: folderCodeVer.version,
+        ext,
+        relativePath,
+        versionGroupPath: parts[0].toLowerCase(),
+        versionGroupBase: folderCodeVer.base,
+        sopTitle: extractSopTitleFromFolderName(folderSeg),
+      };
+    }
     const folderDocId = parseSopDocNumberPrefix(folderSeg);
     if (folderDocId) {
       return {

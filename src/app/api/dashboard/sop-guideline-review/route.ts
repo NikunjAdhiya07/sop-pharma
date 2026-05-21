@@ -379,11 +379,16 @@ export async function GET(request: NextRequest) {
       // Use compliance reports to: (a) fill in findings for wizard results that have none,
       // (b) add entries for SOPs that have no wizard result at all.
       try {
+        // Force a single batch round-trip so the server-side cursor is closed
+        // immediately. Without this the driver opens a cursor that's drained
+        // in chunks (default 101 docs); if downstream awaits delay the next
+        // getMore by >10 min the server reaps the cursor → CursorNotFound (43).
         const complianceReports = await ComplianceReport
           .find({ analysisStatus: 'completed' })
           .select('sopIdentifier sopName overallScore compliancePercentage scoreBreakdown guidelinesUsed findings analysisCompletedAt')
           .sort({ analysisCompletedAt: -1 })
           .limit(500)
+          .batchSize(1000)
           .allowDiskUse(true)
           .lean();
 

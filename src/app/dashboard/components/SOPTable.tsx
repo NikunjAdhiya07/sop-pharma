@@ -80,6 +80,21 @@ export default function SOPTable({
   }, [filterOptionsSource, data]);
 
 
+  // Inline training-video preview modal state. Opened from the Video column
+  // when the user clicks a training-video link on a row.
+  type RowTrainingVideo = {
+    url: string;
+    title: string;
+    fileName?: string;
+    thumbnailUrl?: string;
+    kind: 'brief' | 'explainer' | 'unknown';
+    language: 'English' | 'Gujarati';
+  };
+  const [previewVideo, setPreviewVideo] = useState<
+    | (RowTrainingVideo & { sopNo?: string; department?: string })
+    | null
+  >(null);
+
   // Obsolete confirm modal state
   const [obsoleteTarget, setObsoleteTarget] = useState<{ sopNo: string; sopName: string } | null>(null);
   const [obsoletePassword, setObsoletePassword] = useState("");
@@ -399,8 +414,14 @@ export default function SOPTable({
                     className="text-green-600 hover:underline">
                     DOCX
                   </a>
-                ) : null}
-                {e.docxPath && e.pdfPath ? (
+                ) : (e.pdfPath ? (
+                  <span
+                    className="text-red-500"
+                    title="DOCX file is missing for this version">
+                    DOCX
+                  </span>
+                ) : null)}
+                {(e.docxPath || e.pdfPath) ? (
                   <span className="text-gray-300 select-none">/</span>
                 ) : null}
                 {e.pdfPath ? (
@@ -412,7 +433,13 @@ export default function SOPTable({
                     className="text-green-600 hover:underline">
                     PDF
                   </a>
-                ) : null}
+                ) : (e.docxPath ? (
+                  <span
+                    className="text-red-500"
+                    title="PDF file is missing for this version">
+                    PDF
+                  </span>
+                ) : null)}
                 {!e.docxPath && !e.pdfPath ? (
                   <span className="text-gray-400">—</span>
                 ) : null}
@@ -1483,33 +1510,125 @@ export default function SOPTable({
                       <td className="px-1 py-px align-middle text-left">
                         {getFileTypes(row)}
                       </td>
-                      {/* Video count */}
-                      <td className="px-1 py-px text-center whitespace-nowrap align-middle">
+                      {/* Video links — clickable per-video chips that open
+                          an in-app preview. Falls back to a count when only
+                          the legacy library video flag is set. */}
+                      <td className="px-1 py-px text-left whitespace-nowrap align-middle">
                         {(() => {
-                          const n =
-                            row.mediaStatus?.videoCount ??
-                            (row.mediaStatus?.videos ? 1 : 0);
-                          return n > 0 ? (
-                            <span className="text-[10px] font-bold tabular-nums text-emerald-700">
-                              {n}
-                            </span>
-                          ) : (
-                            <span className="text-gray-400 text-[9px]">0</span>
+                          const tvs = Array.isArray(row.trainingVideos) ? row.trainingVideos : [];
+                          if (tvs.length === 0) {
+                            const n =
+                              row.mediaStatus?.videoCount ??
+                              (row.mediaStatus?.videos ? 1 : 0);
+                            return n > 0 ? (
+                              <span className="text-[10px] font-bold tabular-nums text-emerald-700">
+                                {n}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 text-[9px]">0</span>
+                            );
+                          }
+                          const labelFor = (v: any) => {
+                            if (v?.kind === 'brief') return 'Brief';
+                            if (v?.kind === 'explainer') return 'Explainer';
+                            return 'Video';
+                          };
+                          const isGuj = (v: any) => isGujaratiLanguage(v?.language);
+                          const engVids = tvs.filter((v: any) => !isGuj(v));
+                          const gujVids = tvs.filter((v: any) => isGuj(v));
+                          const showGujRow =
+                            gujVids.length > 0 ||
+                            Boolean(row.isDualLanguage) ||
+                            (Boolean(row.englishVersion) && Boolean(row.gujaratiVersion));
+
+                          const renderChip = (v: any, i: number) => (
+                            <button
+                              key={`${v.url}-${i}`}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPreviewVideo({
+                                  ...(v as RowTrainingVideo),
+                                  sopNo: row.sopNo,
+                                  department: row.department,
+                                });
+                              }}
+                              title={`Preview ${v.title || v.fileName || 'video'}${v.language ? ` (${v.language})` : ''}`}
+                              className="inline-flex items-center gap-0.5 rounded border border-emerald-200 bg-emerald-50 px-1 py-px text-[9px] font-semibold text-emerald-700 hover:bg-emerald-100"
+                            >
+                              <Video className="h-2.5 w-2.5" aria-hidden />
+                              {labelFor(v)}
+                            </button>
+                          );
+
+                          const renderLangRow = (
+                            langLabel: string,
+                            vids: any[],
+                          ) => (
+                            <div className="flex items-center gap-1 text-left leading-none min-h-[10px]">
+                              <span className="w-[24px] shrink-0 text-[8px] font-bold text-gray-500">
+                                {langLabel}
+                              </span>
+                              {vids.length > 0 ? (
+                                <div className="inline-flex flex-col items-start gap-px">
+                                  {vids.map((v, i) => renderChip(v, i))}
+                                </div>
+                              ) : (
+                                <span
+                                  className="text-[8px] font-bold leading-none text-red-600 whitespace-nowrap"
+                                  title={`No ${langLabel} training video uploaded`}>
+                                  Video&nbsp;✗
+                                </span>
+                              )}
+                            </div>
+                          );
+
+                          return (
+                            <div className="flex w-max flex-col gap-px text-left leading-none">
+                              {renderLangRow("ENG", engVids)}
+                              {showGujRow ? renderLangRow("GUJ", gujVids) : null}
+                            </div>
                           );
                         })()}
                       </td>
-                      {/* Slides count */}
+                      {/* Slide links — clickable per-PDF chips that open in a
+                          new tab using the existing Bunny CDN URL. Falls back
+                          to a count when only library slides exist. */}
                       <td className="px-1 py-px text-center whitespace-nowrap align-middle">
                         {(() => {
-                          const n =
-                            row.mediaStatus?.slideCount ??
-                            (row.mediaStatus?.slides ? 1 : 0);
-                          return n > 0 ? (
-                            <span className="text-[10px] font-bold tabular-nums text-indigo-700">
-                              {n}
-                            </span>
-                          ) : (
-                            <span className="text-gray-400 text-[9px]">0</span>
+                          const tss = Array.isArray(row.trainingSlides) ? row.trainingSlides : [];
+                          if (tss.length === 0) {
+                            const n =
+                              row.mediaStatus?.slideCount ??
+                              (row.mediaStatus?.slides ? 1 : 0);
+                            return n > 0 ? (
+                              <span className="text-[10px] font-bold tabular-nums text-indigo-700">
+                                {n}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 text-[9px]">0</span>
+                            );
+                          }
+                          return (
+                            <div className="inline-flex flex-wrap items-center justify-center gap-0.5">
+                              {tss.map((s: any, i: number) => (
+                                <a
+                                  key={`${s.url}-${i}`}
+                                  href={s.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  title={`Open ${s.title || s.fileName || 'slide'}${s.language ? ` (${s.language})` : ''}`}
+                                  className="inline-flex items-center gap-0.5 rounded border border-indigo-200 bg-indigo-50 px-1 py-px text-[9px] font-semibold text-indigo-700 hover:bg-indigo-100"
+                                >
+                                  <FileText className="h-2.5 w-2.5" aria-hidden />
+                                  PDF
+                                  {s.language === 'Gujarati' ? (
+                                    <span className="ml-0.5 rounded bg-amber-100 px-0.5 text-amber-700">GU</span>
+                                  ) : null}
+                                </a>
+                              ))}
+                            </div>
                           );
                         })()}
                       </td>
@@ -2376,6 +2495,56 @@ export default function SOPTable({
                 className="flex-1 rounded-md bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed">
                 {obsoleteBusy ? "Processing…" : "Confirm Obsolete"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Inline training-video preview — opened by clicking a video chip
+          in the Video column. Streams directly from Bunny CDN, no download. */}
+      {previewVideo && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4"
+          onClick={() => setPreviewVideo(null)}
+        >
+          <div
+            className="w-full max-w-4xl rounded-xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between border-b border-gray-200 px-4 py-2.5">
+              <div className="min-w-0">
+                <h2 className="truncate text-sm font-semibold text-gray-800">
+                  {previewVideo.title || previewVideo.fileName || 'Training video'}
+                </h2>
+                <p className="mt-0.5 text-[11px] text-gray-500">
+                  {previewVideo.sopNo ? previewVideo.sopNo : ''}
+                  {previewVideo.kind && previewVideo.kind !== 'unknown'
+                    ? ` • ${previewVideo.kind === 'brief' ? 'Brief' : 'Explainer'}`
+                    : ''}
+                  {previewVideo.language ? ` • ${previewVideo.language}` : ''}
+                  {previewVideo.department ? ` • ${previewVideo.department}` : ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewVideo(null)}
+                className="rounded p-1 text-gray-500 hover:bg-gray-100"
+                aria-label="Close preview"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="bg-black">
+              <video
+                src={previewVideo.url}
+                controls
+                autoPlay
+                preload="metadata"
+                playsInline
+                controlsList="nodownload"
+                onContextMenu={(e) => e.preventDefault()}
+                className="mx-auto max-h-[70vh] w-full"
+              />
             </div>
           </div>
         </div>

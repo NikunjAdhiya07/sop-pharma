@@ -746,6 +746,27 @@ const EMPTY_HEADER_DATA: SOPHeaderTableData = {
  */
 const HEADER_DATE_RE = /([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/;
 
+// Gujarati label aliases for the SOP header table. Gujarati SOPs use these in
+// place of the English "EFF. DATE", "REVIEW DT.", etc. — without these the
+// header parser returns null and the expired-sops uploader rejects the file.
+const GUJ_EFF_LABEL = 'લાગુ\\s*પડેલ\\s*તારીખ';
+const GUJ_REVIEW_LABEL = 'ફેર\\s*ચકાસણી\\s*તારીખ';
+const GUJ_EXPIRY_LABEL = '(?:માન્ય\\s*તારીખ|મુદત\\s*પૂરી|મુદત\\s*પુરી)';
+const GUJ_SOP_NO_LABEL = 'એસ\\s*\\.?\\s*ઓ\\s*\\.?\\s*પી\\s*\\.?\\s*નં\\.?';
+
+const EFF_LABEL_RE = new RegExp(`(?:eff\\.?\\s*(?:date|dt)|${GUJ_EFF_LABEL})`, 'i');
+const REVIEW_LABEL_RE = new RegExp(`(?:review\\.?\\s*(?:dt|date)|${GUJ_REVIEW_LABEL})`, 'i');
+const EXPIRY_LABEL_RE = new RegExp(
+  `(?:expir(?:y|ation)|exp\\.?|valid\\s*(?:till|upto|up\\s*to|until)|date\\s*of\\s*expir(?:y|ation)|${GUJ_EXPIRY_LABEL})\\s*(?:date|dt)?`,
+  'i',
+);
+
+// Gujarati digits → ASCII so HEADER_DATE_RE matches "૨૫/૧૨/૨૦૨૫" too.
+function normalizeDigits(s: string): string {
+  if (!s) return s;
+  return s.replace(/[૦-૯]/g, (c) => String(c.charCodeAt(0) - 0x0AE6));
+}
+
 type TableGrid = string[][];
 
 /** Collect cell texts from up to `maxTables` tables in a parsed XML body/header object. */
@@ -775,7 +796,7 @@ function collectTableGridsFromBody(body: any, maxTables = 3): TableGrid[] {
       const cells = Array.isArray(tcRaw) ? tcRaw : tcRaw ? [tcRaw] : [];
       const rowCells: string[] = [];
       for (const tc of cells) {
-        rowCells.push(getAllCellText(tc).trim());
+        rowCells.push(normalizeDigits(getAllCellText(tc).trim()));
       }
       if (rowCells.some((c) => c)) grid.push(rowCells);
     }
@@ -797,7 +818,9 @@ function cellLooksLikeLabel(text: string): boolean {
   const t = (text || '').replace(/\s+/g, ' ').trim();
   if (!t) return false;
   if (HEADER_DATE_RE.test(t) && !/^(eff|review|expir|valid)/i.test(t)) return false;
-  return /^(eff|review|sop\s*no|super|page\s*no|subject|department|area|written|checked|approved|signature|name|date)\b/i.test(t);
+  if (/^(eff|review|sop\s*no|super|page\s*no|subject|department|area|written|checked|approved|signature|name|date)\b/i.test(t)) return true;
+  // Gujarati labels (review/eff/sop-no/expiry)
+  return new RegExp(`^(?:${GUJ_REVIEW_LABEL}|${GUJ_EFF_LABEL}|${GUJ_SOP_NO_LABEL}|${GUJ_EXPIRY_LABEL})`).test(t);
 }
 
 /** Scan flat cell list forward for the next standalone date (skips label cells). */
@@ -864,16 +887,13 @@ function extractMetadataFromGrids(grids: TableGrid[]): SOPHeaderTableData {
 
   for (const grid of grids) {
     if (!result.effDate) {
-      result.effDate = resolveLabelValueFromGrid(grid, /eff\.?\s*(?:date|dt)/i);
+      result.effDate = resolveLabelValueFromGrid(grid, EFF_LABEL_RE);
     }
     if (!result.reviewDate) {
-      result.reviewDate = resolveLabelValueFromGrid(grid, /review\.?\s*(?:dt|date)/i);
+      result.reviewDate = resolveLabelValueFromGrid(grid, REVIEW_LABEL_RE);
     }
     if (!result.expiryDate) {
-      result.expiryDate = resolveLabelValueFromGrid(
-        grid,
-        /(?:expir(?:y|ation)|exp\.?|valid\s*(?:till|upto|up\s*to|until)|date\s*of\s*expir(?:y|ation))\s*(?:date|dt)?/i,
-      );
+      result.expiryDate = resolveLabelValueFromGrid(grid, EXPIRY_LABEL_RE);
     }
     if (!result.sopNo) {
       for (let r = 0; r < grid.length; r++) {
@@ -1008,18 +1028,18 @@ export async function extractSOPHeaderTableData(buffer: Buffer): Promise<SOPHead
       }
 
       // ── EFF DATE ─────────────────────────────────────────────────────────────
-      if (!result.effDate && /eff\.?\s*(?:date|dt)\.?/i.test(norm)) {
+      if (!result.effDate && EFF_LABEL_RE.test(norm)) {
         const inline = norm.match(
-          /eff\.?\s*(?:date|dt)\.?\s*[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/i,
+          new RegExp(`${EFF_LABEL_RE.source}\\.?\\s*[:\\s]+([0-9]{1,2}[\\/\\-\\.][0-9]{1,2}[\\/\\-\\.][0-9]{2,4})`, 'i'),
         );
         if (inline) {
           result.effDate = inline[1];
         } else {
           // Check next line within same cell
-          const li = lines.findIndex((l) => /eff\.?\s*(?:date|dt)/i.test(l));
+          const li = lines.findIndex((l) => EFF_LABEL_RE.test(l));
           if (li >= 0) {
             const sameLine = lines[li].match(
-              /eff\.?\s*(?:date|dt)\.?\s*[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/i,
+              new RegExp(`${EFF_LABEL_RE.source}\\.?\\s*[:\\s]+([0-9]{1,2}[\\/\\-\\.][0-9]{1,2}[\\/\\-\\.][0-9]{2,4})`, 'i'),
             );
             if (sameLine) {
               result.effDate = sameLine[1];
@@ -1040,17 +1060,17 @@ export async function extractSOPHeaderTableData(buffer: Buffer): Promise<SOPHead
       }
 
       // ── REVIEW DATE ──────────────────────────────────────────────────────────
-      if (!result.reviewDate && /review\.?\s*(?:dt|date)\.?/i.test(norm)) {
+      if (!result.reviewDate && REVIEW_LABEL_RE.test(norm)) {
         const inline = norm.match(
-          /review\.?\s*(?:dt|date)\.?\s*[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/i,
+          new RegExp(`${REVIEW_LABEL_RE.source}\\.?\\s*[:\\s]+([0-9]{1,2}[\\/\\-\\.][0-9]{1,2}[\\/\\-\\.][0-9]{2,4})`, 'i'),
         );
         if (inline) {
           result.reviewDate = inline[1];
         } else {
-          const li = lines.findIndex((l) => /review\.?\s*(?:dt|date)/i.test(l));
+          const li = lines.findIndex((l) => REVIEW_LABEL_RE.test(l));
           if (li >= 0) {
             const sameLine = lines[li].match(
-              /review\.?\s*(?:dt|date)\.?\s*[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/i,
+              new RegExp(`${REVIEW_LABEL_RE.source}\\.?\\s*[:\\s]+([0-9]{1,2}[\\/\\-\\.][0-9]{1,2}[\\/\\-\\.][0-9]{2,4})`, 'i'),
             );
             if (sameLine) {
               result.reviewDate = sameLine[1];
@@ -1071,24 +1091,17 @@ export async function extractSOPHeaderTableData(buffer: Buffer): Promise<SOPHead
 
       // ── EXPIRY DATE ──────────────────────────────────────────────────────────
       // Match "EXPIRY DATE", "DATE OF EXPIRY", "VALID TILL/UPTO/UNTIL", "EXP. DATE"
-      if (
-        !result.expiryDate &&
-        (
-          /(?:^|\b)(?:expir(?:y|ation)|exp\.?|valid\s*(?:till|upto|up\s*to|until)|date\s*of\s*expir(?:y|ation))\s*(?:date|dt)?\.?/i.test(norm)
-        )
-      ) {
+      if (!result.expiryDate && EXPIRY_LABEL_RE.test(norm)) {
         const inlineExp = norm.match(
-          /(?:expir(?:y|ation)|exp\.?|valid\s*(?:till|upto|up\s*to|until)|date\s*of\s*expir(?:y|ation))\s*(?:date|dt)?\.?\s*[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/i,
+          new RegExp(`${EXPIRY_LABEL_RE.source}\\.?\\s*[:\\s]+([0-9]{1,2}[\\/\\-\\.][0-9]{1,2}[\\/\\-\\.][0-9]{2,4})`, 'i'),
         );
         if (inlineExp) {
           result.expiryDate = inlineExp[1];
         } else {
-          const li = lines.findIndex((l) =>
-            /(?:expir(?:y|ation)|exp\.?|valid\s*(?:till|upto|up\s*to|until)|date\s*of\s*expir(?:y|ation))\s*(?:date|dt)?/i.test(l),
-          );
+          const li = lines.findIndex((l) => EXPIRY_LABEL_RE.test(l));
           if (li >= 0) {
             const sameLine = lines[li].match(
-              /(?:expir(?:y|ation)|exp\.?|valid\s*(?:till|upto|up\s*to|until)|date\s*of\s*expir(?:y|ation))\s*(?:date|dt)?\.?\s*[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/i,
+              new RegExp(`${EXPIRY_LABEL_RE.source}\\.?\\s*[:\\s]+([0-9]{1,2}[\\/\\-\\.][0-9]{1,2}[\\/\\-\\.][0-9]{2,4})`, 'i'),
             );
             if (sameLine) {
               result.expiryDate = sameLine[1];
