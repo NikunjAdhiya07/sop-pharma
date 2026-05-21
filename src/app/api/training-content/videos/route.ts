@@ -28,14 +28,19 @@ function inferMetaFromFileName(name: string): {
   const m = stem.match(/([A-Z]{2,6}\d{1,4}-\d{1,3})/i);
   const sopNo = m ? normalizeSopIdentifierKey(m[1].toUpperCase()) : undefined;
 
+  // Use non-letter separators (so `_GUJ-`, `-BRIEF.`, `MAGE07-04_GUJ-Brief`
+  // all match). \b treats `_` as a word char, which silently broke detection
+  // for header-style names like `MAGE07-04_GUJ-Brief`.
+  const sep = '(?:^|[^A-Za-z])';
+  const sepEnd = '(?:$|[^A-Za-z])';
   const lower = stem.toLowerCase();
   let videoKind: 'brief' | 'explainer' | undefined;
-  if (/\bbrief\b/.test(lower)) videoKind = 'brief';
-  else if (/\bexplainer\b/.test(lower)) videoKind = 'explainer';
+  if (new RegExp(`${sep}brief${sepEnd}`, 'i').test(lower)) videoKind = 'brief';
+  else if (new RegExp(`${sep}explainer${sepEnd}`, 'i').test(lower)) videoKind = 'explainer';
 
   let language: 'English' | 'Gujarati' | undefined;
-  if (/[઀-૿]/.test(stem) || /\b(guj|gujarati)\b/i.test(stem)) language = 'Gujarati';
-  else if (/\b(eng|english)\b/i.test(stem)) language = 'English';
+  if (/[઀-૿]/.test(stem) || new RegExp(`${sep}(guj|gujarati)${sepEnd}`, 'i').test(stem)) language = 'Gujarati';
+  else if (new RegExp(`${sep}(eng|english)${sepEnd}`, 'i').test(stem)) language = 'English';
 
   return { sopNo, videoKind, language };
 }
