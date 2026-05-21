@@ -9,12 +9,19 @@ import {
   scanRowLanguageFileSlots,
 } from "@/lib/registryRowDocCounts";
 import { isStandardRegistrySopNumber, isArtifactOnlyRegistryRow } from "@/lib/registryPrimaryRows";
-import { CAPSULE_DEPARTMENTS } from "@/lib/capsuleDepartments";
+import {
+  CAPSULE_DEPARTMENTS,
+  resolveRowCapsuleDept,
+} from "@/lib/capsuleDepartments";
 import {
   classifySopVersionCapsule,
   classifySopVersionPerLangFormat,
   type SopVersionFilterSegment,
 } from "@/lib/sopVersionCapsuleClassify";
+import {
+  countVersionDatesPerLang,
+  type VersionDateSegment,
+} from "@/lib/sopVersionDateClassify";
 
 export { CAPSULE_DEPARTMENTS } from "@/lib/capsuleDepartments";
 
@@ -52,6 +59,10 @@ type CapsuleAcc = {
   docxVersionNotFound: number;
   pdfVersionAllTwoFound: number;
   pdfVersionNotFound: number;
+  /** Version-Date capsule: across every expected (lang × version) slot for the row. */
+  versionDateFound: number;
+  versionDateNotFound: number;
+  langVersionDate: Map<string, { found: number; notFound: number }>;
 };
 
 function emptyCapsuleAcc(): CapsuleAcc {
@@ -89,6 +100,9 @@ function emptyCapsuleAcc(): CapsuleAcc {
     docxVersionNotFound: 0,
     pdfVersionAllTwoFound: 0,
     pdfVersionNotFound: 0,
+    versionDateFound: 0,
+    versionDateNotFound: 0,
+    langVersionDate: new Map(),
   };
 }
 
@@ -280,6 +294,27 @@ function foldRegistryRowIntoCapsuleAcc(
     if (t === "allTwoFound") s.pdfVersionAllTwoFound++;
     else if (t === "notFound") s.pdfVersionNotFound++;
   }
+
+  // Version-Date capsule: count every (lang × version) slot where BOTH reviewDate
+  // AND effectiveDate are stored. Single-language rows contribute only EN; dual
+  // rows contribute EN + GJ (countVersionDatesPerLang returns 0/0 when GJ is
+  // out of scope for the row).
+  const enDates = countVersionDatesPerLang(row, "EN");
+  const gjDates = countVersionDatesPerLang(row, "GJ");
+  s.versionDateFound += enDates.found + gjDates.found;
+  s.versionDateNotFound += enDates.notFound + gjDates.notFound;
+  if (enDates.found + enDates.notFound > 0) {
+    if (!s.langVersionDate.has("EN")) s.langVersionDate.set("EN", { found: 0, notFound: 0 });
+    const e = s.langVersionDate.get("EN")!;
+    e.found += enDates.found;
+    e.notFound += enDates.notFound;
+  }
+  if (gjDates.found + gjDates.notFound > 0) {
+    if (!s.langVersionDate.has("GJ")) s.langVersionDate.set("GJ", { found: 0, notFound: 0 });
+    const g = s.langVersionDate.get("GJ")!;
+    g.found += gjDates.found;
+    g.notFound += gjDates.notFound;
+  }
 }
 
 function accToDeptCapsuleStats(department: string, s: CapsuleAcc): DeptCapsuleStats {
@@ -318,6 +353,9 @@ function accToDeptCapsuleStats(department: string, s: CapsuleAcc): DeptCapsuleSt
     docxVersionNotFound: s.docxVersionNotFound,
     pdfVersionAllTwoFound: s.pdfVersionAllTwoFound,
     pdfVersionNotFound: s.pdfVersionNotFound,
+    versionDateFound: s.versionDateFound,
+    versionDateNotFound: s.versionDateNotFound,
+    langVersionDate: s.langVersionDate,
   };
 }
 
@@ -375,6 +413,10 @@ export interface DeptCapsuleStats {
   docxVersionNotFound: number;
   pdfVersionAllTwoFound: number;
   pdfVersionNotFound: number;
+  /** Version-Date capsule: slot-level (lang × version) Date Found / Date Not Found. */
+  versionDateFound: number;
+  versionDateNotFound: number;
+  langVersionDate: Map<string, { found: number; notFound: number }>;
 }
 
 function computeDepartmentStats(data: any[]): DeptCapsuleStats[] {
@@ -390,55 +432,11 @@ function computeDepartmentStats(data: any[]): DeptCapsuleStats[] {
   });
   const extraDepartments = new Set<string>();
 
-  const normalizeDept = (raw: string): string => {
-    if (!raw) return "";
-    const lower = raw.toLowerCase().trim();
-    if (lower === "total") return "";
-    if (lower === "qa" || lower.includes("quality assurance")) return "QA";
-    if (lower === "qc" || lower.includes("quality control")) return "QC";
-    if (lower.includes("micro")) return "Microbiology";
-    if (lower.includes("engineer")) return "Engineering and Maintenance";
-    if (lower.includes("person") || lower.includes("hr")) return "Personnel";
-    if (lower.includes("store")) return "Store";
-    if (lower.includes("prod")) return "Production";
-    const exact = defaultOrder.find((d) => d === raw);
-    if (exact) return exact;
-    return String(raw).trim();
-  };
-
-  /** Infer department from sopNo prefix when the stored department is unknown. */
-  const PREFIX_TO_DEPT: Record<string, string> = {
-    QAGE: 'QA', ANNE: 'QA',
-    QCGE: 'QC', QAIC: 'QC', QAIO: 'QC',
-    QAMI: 'Microbiology', QCMI: 'Microbiology',
-    PRAA: 'Production', PRCL: 'Production', PRED: 'Production',
-    PREO: 'Production', PREP: 'Production', PRGE: 'Production',
-    PRMA: 'Production', PRPA: 'Production',
-    BSGE: 'Store', STCL: 'Store', STGE: 'Store',
-    STOP: 'Store', STPA: 'Store', STRM: 'Store',
-    MAGE: 'Engineering and Maintenance', PREG: 'Engineering and Maintenance',
-    PEGE: 'Personnel',
-  };
-
-  const deptFromSopNo = (sopNo: string): string => {
-    const code = (sopNo || '').toUpperCase().trim().match(/^([A-Z]{2,6})\d/)?.[1] ?? '';
-    return PREFIX_TO_DEPT[code] ?? '';
-  };
-
   data.forEach((row: any) => {
     if (!isStandardRegistrySopNumber(row)) return;
-    // Exclude all artifact-only rows — per-dept capsule counts must match the SOP
-    // table (which uses `filterPrimaryRegistryRows`), so both always show the same
-    // number.
     if (isArtifactOnlyRegistryRow(row)) return;
 
-    const rawDept = row.department || "";
-    let dept = normalizeDept(rawDept);
-    // If the stored department isn't a known capsule department, try to infer
-    // from the SOP number prefix (handles SOPs tagged as "Other" in the DB)
-    if (!dept || /^other$/i.test(dept) || /^general$/i.test(dept)) {
-      dept = deptFromSopNo(row.sopNo || '');
-    }
+    const dept = resolveRowCapsuleDept(row);
     if (!dept) return;
     if (!byDept.has(dept)) {
       byDept.set(dept, emptyCapsuleAcc());
@@ -857,6 +855,8 @@ export type CapsuleFilterSnapshot = {
   filterVersionStatus: "all" | SopVersionFilterSegment;
   /** Optional file-format scope for the active version filter ("docx" or "pdf"). */
   filterVersionFormat?: "all" | "docx" | "pdf";
+  /** Version-Date capsule active segment ("all" | "dateFoundv" | "dateNotFoundv"). */
+  filterVersionDateStatus?: "all" | VersionDateSegment;
 };
 
 export type CapsuleVersionFormat = "any" | "docx" | "pdf";
@@ -893,6 +893,30 @@ function capsuleVersionSegmentMatches(
   if (opts?.requireLanguage) {
     if (f.filterLanguage !== opts.requireLanguage) return false;
   } else if (!opts?.requireFormat) {
+    if (f.filterLanguage !== "all") return false;
+  }
+  return true;
+}
+
+function capsuleVersionDateSegmentMatches(
+  deptScope: string,
+  segment: VersionDateSegment,
+  f: CapsuleFilterSnapshot,
+  opts?: { requireLanguage?: "ENG" | "GUJ" },
+): boolean {
+  if (f.filterDept !== deptScope) return false;
+  if (
+    f.filterDualLang ||
+    f.filterExpiry !== "all" ||
+    f.filterMedia !== "all" ||
+    f.filterFileType !== "all" ||
+    f.filterVersionStatus !== "all"
+  )
+    return false;
+  if ((f.filterVersionDateStatus ?? "all") !== segment) return false;
+  if (opts?.requireLanguage) {
+    if (f.filterLanguage !== opts.requireLanguage) return false;
+  } else {
     if (f.filterLanguage !== "all") return false;
   }
   return true;
@@ -1056,6 +1080,7 @@ function DepartmentCapsuleCard({
   applyCapsuleFilter,
   applyCapsuleAvailMiss,
   applyCapsuleVersionSegment,
+  applyCapsuleVersionDateSegment,
   filterSnapshot,
   variant = "department",
 }: {
@@ -1072,6 +1097,11 @@ function DepartmentCapsuleCard({
     segment: SopVersionFilterSegment,
     lang?: "ENG" | "GUJ",
     format?: "docx" | "pdf",
+  ) => void;
+  applyCapsuleVersionDateSegment: (
+    dept: string,
+    segment: VersionDateSegment,
+    lang?: "ENG" | "GUJ",
   ) => void;
   filterSnapshot: CapsuleFilterSnapshot;
   variant?: "department" | "grand";
@@ -1451,6 +1481,65 @@ function DepartmentCapsuleCard({
           />
         </div>
 
+        {/* Version Date Section — green = both reviewDate AND effectiveDate present
+            for the (lang × version) slot; red = at least one missing. Mirrors the
+            Versions section layout: row-level capsule + EN/GU sub-row. */}
+        <div className="h-1" />
+        <CapsuleMetricVersionPair
+          totalSOPs={stat.totalSOPs}
+          allTwoFoundV={stat.versionDateFound}
+          notFoundV={stat.versionDateNotFound}
+          label="Version Date"
+          onLabelClick={() => applyCapsuleVersionDateSegment(deptForFilter, "dateNotFoundv")}
+          onGreenClick={() => applyCapsuleVersionDateSegment(deptForFilter, "dateFoundv")}
+          onRedClick={() => applyCapsuleVersionDateSegment(deptForFilter, "dateNotFoundv")}
+          highlightGreen={capsuleVersionDateSegmentMatches(deptForFilter, "dateFoundv", filterSnapshot)}
+          highlightRed={capsuleVersionDateSegmentMatches(deptForFilter, "dateNotFoundv", filterSnapshot)}
+          filterRowActive={
+            capsuleVersionDateSegmentMatches(deptForFilter, "dateFoundv", filterSnapshot) ||
+            capsuleVersionDateSegmentMatches(deptForFilter, "dateNotFoundv", filterSnapshot)
+          }
+          titleSummary={
+            isGrand
+              ? "Green = (lang × version) slots with BOTH reviewDate AND effectiveDate stored; red = at least one date missing."
+              : `Version Date in ${scopeHint} · green = Date Found (both dates), red = Date Not Found (one or both missing)`
+          }
+        />
+        {/* Per-language Version Date sub-row (EN, GU) */}
+        <div className="mt-0.5 flex w-full min-h-[20px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
+          <span className="text-gray-400 font-medium inline-block w-[30px] shrink-0">DATE</span>
+          <div className="flex w-full min-h-[22px] items-center justify-between gap-1 px-1 py-0 text-[9px]">
+            {(["EN", "GJ"] as const).map((lang) => {
+              const data = stat.langVersionDate.get(lang) ?? { found: 0, notFound: 0 };
+              const langFilter = (lang === "EN" ? "ENG" : "GUJ") as "ENG" | "GUJ";
+              const highlightGreen = capsuleVersionDateSegmentMatches(
+                deptForFilter,
+                "dateFoundv",
+                filterSnapshot,
+                { requireLanguage: langFilter },
+              );
+              const highlightRed = capsuleVersionDateSegmentMatches(
+                deptForFilter,
+                "dateNotFoundv",
+                filterSnapshot,
+                { requireLanguage: langFilter },
+              );
+              return (
+                <CompactVersionPairForLang
+                  key={lang}
+                  lang={lang}
+                  allTwoFoundV={data.found}
+                  notFoundV={data.notFound}
+                  onGreenClick={() => applyCapsuleVersionDateSegment(deptForFilter, "dateFoundv", langFilter)}
+                  onRedClick={() => applyCapsuleVersionDateSegment(deptForFilter, "dateNotFoundv", langFilter)}
+                  highlightGreen={highlightGreen}
+                  highlightRed={highlightRed}
+                />
+              );
+            })}
+          </div>
+        </div>
+
         {/* Videos Section — with spacing */}
         <div className="h-1" />
         <CapsuleMetricAvailMissing
@@ -1565,6 +1654,7 @@ export default function DepartmentCapsules({
   applyCapsuleFilter,
   applyCapsuleAvailMiss,
   applyCapsuleVersionSegment,
+  applyCapsuleVersionDateSegment,
   filterSnapshot,
 }: {
   data: any[];
@@ -1581,6 +1671,11 @@ export default function DepartmentCapsules({
     segment: SopVersionFilterSegment,
     lang?: "ENG" | "GUJ",
     format?: "docx" | "pdf",
+  ) => void;
+  applyCapsuleVersionDateSegment: (
+    dept: string,
+    segment: VersionDateSegment,
+    lang?: "ENG" | "GUJ",
   ) => void;
   filterSnapshot: CapsuleFilterSnapshot;
 }) {
@@ -1602,6 +1697,7 @@ export default function DepartmentCapsules({
             applyCapsuleFilter={applyCapsuleFilter}
             applyCapsuleAvailMiss={applyCapsuleAvailMiss}
             applyCapsuleVersionSegment={applyCapsuleVersionSegment}
+            applyCapsuleVersionDateSegment={applyCapsuleVersionDateSegment}
             filterSnapshot={filterSnapshot}
             variant="grand"
           />
@@ -1613,6 +1709,7 @@ export default function DepartmentCapsules({
             applyCapsuleFilter={applyCapsuleFilter}
             applyCapsuleAvailMiss={applyCapsuleAvailMiss}
             applyCapsuleVersionSegment={applyCapsuleVersionSegment}
+            applyCapsuleVersionDateSegment={applyCapsuleVersionDateSegment}
             filterSnapshot={filterSnapshot}
           />
         ))}

@@ -30,6 +30,7 @@ import {
   CheckCircle2,
   Clock,
   Loader2,
+  Film,
 } from "lucide-react";
 
 
@@ -46,6 +47,7 @@ import UploadSOPModal, {
 } from "./components/UploadSOPModal";
 import UploadPDFModal from "./components/UploadPDFModal";
 import SOPFolderUploadModal from "./components/SOPFolderUploadModal";
+import VideoUploadModal from "@/app/training-content/components/VideoUploadModal";
 import PipelineProgressDock from "./components/PipelineProgressDock";
 import { usePipelineTracker } from "./hooks/usePipelineTracker";
 import SupersededVersionsPanel from "./components/SupersededVersionsPanel";
@@ -63,11 +65,13 @@ import {
   scanRowLanguageFileSlots,
 } from "@/lib/registryRowDocCounts";
 import { filterPrimaryRegistryRowsUniqueByFamily } from "@/lib/registryPrimaryRows";
+import { resolveRowCapsuleDept } from "@/lib/capsuleDepartments";
 import {
   classifySopVersionCapsule,
   classifySopVersionPerLangFormat,
   type SopVersionFilterSegment,
 } from "@/lib/sopVersionCapsuleClassify";
+import { countVersionDatesPerLang } from "@/lib/sopVersionDateClassify";
 import { normalizeSopIdentifierKey } from "@/lib/sopIdentifierNormalize";
 import { detectMissingCategory, buildMissingExportRows } from "@/lib/missingExportRows";
 
@@ -86,6 +90,7 @@ export default function DashboardPageClient() {
   const [showSOPFolderUploadModal, setShowSOPFolderUploadModal] =
     useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [showTrainingVideoModal, setShowTrainingVideoModal] = useState(false);
   const { tracked: trackedPipelines, trackUpload, trackMany, untrack } = usePipelineTracker();
   const [recheckingFiles, setRecheckingFiles] = useState(false);
   const [fileAvailability, setFileAvailability] = useState<Record<string, boolean> | null>(null);
@@ -125,6 +130,9 @@ export default function DashboardPageClient() {
   const [dateTo, setDateTo] = useState("");
   const [filterVersionStatus, setFilterVersionStatus] = useState<
     "all" | SopVersionFilterSegment
+  >("all");
+  const [filterVersionDateStatus, setFilterVersionDateStatus] = useState<
+    "all" | "dateFoundv" | "dateNotFoundv"
   >("all");
   const [sortConfig, setSortConfig] = useState({
     key: "sopNo",
@@ -807,9 +815,11 @@ export default function DashboardPageClient() {
       });
     }
 
-    // Filter Department
+    // Filter Department — use the same normalize + sopNo-prefix inference the
+    // capsule uses, so the table filter and capsule counts always agree
+    // (otherwise rows tagged "Other"/with prefix-mapped depts diverge).
     if (filterDept !== "All") {
-      result = result.filter((d: any) => d.department === filterDept);
+      result = result.filter((d: any) => resolveRowCapsuleDept(d) === filterDept);
     }
 
     // Dual-language: match capsule "Dual" — rows that expect two EN+GU document slots (same as expectedDocxSlotsForRow === 2)
@@ -951,6 +961,31 @@ export default function DashboardPageClient() {
           (d: any) => classifySopVersionCapsule(d) === tier,
         );
       }
+    }
+
+    // Filter: Version Date (capsule) — green keeps rows with ALL slots dated;
+    // red keeps rows missing at least one date. When a language is co-active,
+    // restrict the check to that language's slots only.
+    if (filterVersionDateStatus !== "all") {
+      const wantFound = filterVersionDateStatus === "dateFoundv";
+      const langScope: "EN" | "GJ" | null =
+        filterLanguage === "ENG" ? "EN" : filterLanguage === "GUJ" ? "GJ" : null;
+      result = result.filter((d: any) => {
+        const en = countVersionDatesPerLang(d, "EN");
+        const gj = countVersionDatesPerLang(d, "GJ");
+        if (langScope === "EN") {
+          if (wantFound) return en.found > 0 && en.notFound === 0;
+          return en.notFound > 0;
+        }
+        if (langScope === "GJ") {
+          if (wantFound) return gj.found > 0 && gj.notFound === 0;
+          return gj.notFound > 0;
+        }
+        const totalFound = en.found + gj.found;
+        const totalMissing = en.notFound + gj.notFound;
+        if (wantFound) return totalFound > 0 && totalMissing === 0;
+        return totalMissing > 0;
+      });
     }
 
     // Filter Expiry alerts
@@ -1201,6 +1236,7 @@ export default function DashboardPageClient() {
     filterFileType,
     filterLanguage,
     filterVersionStatus,
+    filterVersionDateStatus,
     filterAbsoluteSop,
     dateFrom,
     dateTo,
@@ -1265,6 +1301,7 @@ export default function DashboardPageClient() {
       filterLanguage,
       filterMedia,
       filterVersionStatus,
+      filterVersionDateStatus,
     }),
     [
       filterDept,
@@ -1274,6 +1311,7 @@ export default function DashboardPageClient() {
       filterLanguage,
       filterMedia,
       filterVersionStatus,
+      filterVersionDateStatus,
     ],
   );
 
@@ -1290,6 +1328,7 @@ export default function DashboardPageClient() {
       setFilterExpiry("all");
       setFilterLanguage(lang ?? "all");
       setFilterVersionStatus("all");
+      setFilterVersionDateStatus("all");
       const direction = side === "available" ? "desc" : "asc";
       if (metric === "docx") {
         setFilterMedia("all");
@@ -1334,6 +1373,7 @@ export default function DashboardPageClient() {
       setFilterFileType(format === "docx" ? "DOCX" : format === "pdf" ? "PDF" : "all");
       setFilterLanguage(lang ?? "all");
       setFilterVersionStatus(segment);
+      setFilterVersionDateStatus("all");
       // Green (allTwov) sorts highest-found first; red (notFoundv) sorts lowest-found first.
       // Use sopNo for stable secondary ordering when no count column applies.
       const direction = segment === "allTwov" ? "desc" : "asc";
@@ -1354,6 +1394,28 @@ export default function DashboardPageClient() {
     [],
   );
 
+  const applyCapsuleVersionDateSegment = useCallback(
+    (
+      dept: string,
+      segment: "dateFoundv" | "dateNotFoundv",
+      lang?: "ENG" | "GUJ",
+    ) => {
+      setFilterDept(dept);
+      setFilterDualLang(false);
+      setFilterExpiry("all");
+      setFilterMedia("all");
+      setFilterFileType("all");
+      setFilterLanguage(lang ?? "all");
+      setFilterVersionStatus("all");
+      setFilterVersionDateStatus(segment);
+      setSortConfig({ key: "sopNo", direction: "asc" });
+      requestAnimationFrame(() => {
+        sopRegistryRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
+    },
+    [],
+  );
+
   /** Chart → registry: expiry windows (optional `department` keeps dept filter for stacked chart clicks). */
   const applyChartExpiryFilter = useCallback(
     (
@@ -1366,6 +1428,7 @@ export default function DashboardPageClient() {
       setFilterFileType("all");
       setFilterLanguage("all");
       setFilterVersionStatus("all");
+      setFilterVersionDateStatus("all");
       setSearch("");
       setFilterExpiry(key);
       setSortConfig({ key: "expiryDate", direction: "asc" });
@@ -1390,6 +1453,7 @@ export default function DashboardPageClient() {
         setFilterFileType("all");
         setFilterLanguage("all");
         setFilterVersionStatus("all");
+        setFilterVersionDateStatus("all");
         setSortConfig({ key: "sopNo", direction: "asc" });
       };
       switch (mode) {
@@ -1404,6 +1468,7 @@ export default function DashboardPageClient() {
           setFilterFileType("all");
           setFilterLanguage("all");
           setFilterVersionStatus("all");
+          setFilterVersionDateStatus("all");
           setSortConfig({ key: "sopNo", direction: "asc" });
           break;
         case "eng":
@@ -1509,6 +1574,7 @@ export default function DashboardPageClient() {
     setFilterFileType("all");
     setFilterLanguage("all");
     setFilterVersionStatus("all");
+    setFilterVersionDateStatus("all");
     setFilterAbsoluteSop(false);
     setDateFrom("");
     setDateTo("");
@@ -1661,6 +1727,14 @@ export default function DashboardPageClient() {
               <Upload className="h-3.5 w-3.5" />
               Version Fetch Upload
             </button>
+            <button
+              type="button"
+              onClick={() => setShowTrainingVideoModal(true)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-purple-300 bg-purple-50 px-2.5 py-1 text-[11px] font-semibold text-purple-900 shadow-sm transition-colors hover:bg-purple-100 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              title="Upload training videos (MP4/MOV/WEBM). Slides upload coming soon.">
+              <Film className="h-3.5 w-3.5" />
+              Upload Videos &amp; Slides
+            </button>
             <div className="flex items-center gap-2 rounded-md border border-purple-200 bg-white/80 px-1.5 py-1">
               <span className="px-1 text-[9px] font-bold uppercase tracking-wide text-purple-700">
                 Bulk
@@ -1794,6 +1868,7 @@ export default function DashboardPageClient() {
                 applyCapsuleFilter={applyCapsuleFilter}
                 applyCapsuleAvailMiss={applyCapsuleAvailMiss}
                 applyCapsuleVersionSegment={applyCapsuleVersionSegment}
+                applyCapsuleVersionDateSegment={applyCapsuleVersionDateSegment}
                 filterSnapshot={capsuleFilterSnapshot}
               />
             </div>
@@ -2440,6 +2515,16 @@ export default function DashboardPageClient() {
           // Hard refresh: clears client caches + forces server `?refresh=1` rebuild,
           // but keeps the React tree mounted so the user sees an inline spinner
           // instead of a full white-flash page reload.
+          void triggerRefresh(true);
+        }}
+      />
+      <VideoUploadModal
+        isOpen={showTrainingVideoModal}
+        onClose={() => setShowTrainingVideoModal(false)}
+        onSuccess={() => {
+          setShowTrainingVideoModal(false);
+          // Full refresh so the Videos capsule picks up the new training-video
+          // uploads (counted via filename → SOP code linkage server-side).
           void triggerRefresh(true);
         }}
       />

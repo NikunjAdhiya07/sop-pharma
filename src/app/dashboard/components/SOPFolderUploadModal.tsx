@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { X, Upload, Loader2, CheckCircle, AlertCircle, FolderOpen, Layers } from 'lucide-react';
+import { X, Upload, Loader2, CheckCircle, AlertCircle, FolderOpen, Layers, FileText } from 'lucide-react';
 
 interface SOPFolderUploadModalProps {
   isOpen: boolean;
@@ -36,6 +36,7 @@ export default function SOPFolderUploadModal({ isOpen, onClose, onSuccess }: SOP
     priorVersionsUnlimited: boolean;
   } | null>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const filesInputRef = useRef<HTMLInputElement>(null);
 
   const setFolderRef = useCallback((el: HTMLInputElement | null) => {
     folderInputRef.current = el;
@@ -77,7 +78,9 @@ export default function SOPFolderUploadModal({ isOpen, onClose, onSuccess }: SOP
     const fileName = s.split(/[\\/]/).pop() || s;
     // Main SOP files start with `<CODE><digits>-<digits>` (e.g. QAGE08-09_…, BSGE1-4 …).
     // If the basename matches this pattern, it's the SOP version file, not an annexure.
-    if (/^[A-Z]{2,6}\d{1,4}-\d{1,3}\b/i.test(fileName)) return false;
+    // Use a negative lookahead instead of \b so `_` counts as a separator
+    // (e.g. `QAGE74-2_FORMAT, ANNEXURE…docx` is a main file, not an annexure).
+    if (/^[A-Z]{2,6}\d{1,4}-\d{1,3}(?![A-Za-z0-9])/i.test(fileName)) return false;
     return /\b(annexure|annex|appendix)\b/i.test(fileName);
   };
 
@@ -530,6 +533,19 @@ export default function SOPFolderUploadModal({ isOpen, onClose, onSuccess }: SOP
               }}
             />
 
+            <input
+              ref={filesInputRef}
+              type="file"
+              multiple
+              accept=".doc,.docx,.pdf"
+              className="hidden"
+              onChange={(e) => {
+                const list = e.target.files;
+                if (list) addFilesFromList(Array.from(list));
+                e.target.value = '';
+              }}
+            />
+
             <div
               onDragOver={(e) => {
                 e.preventDefault();
@@ -542,14 +558,26 @@ export default function SOPFolderUploadModal({ isOpen, onClose, onSuccess }: SOP
               }`}
             >
               <Upload className="h-8 w-8 mx-auto mb-2 text-teal-500" />
-              <p className="text-xs font-medium text-gray-700 mb-2">Drag department folder(s) here or</p>
-              <button
-                type="button"
-                onClick={() => folderInputRef.current?.click()}
-                className="inline-flex items-center gap-1 rounded-lg border border-gray-400 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
-              >
-                <FolderOpen className="h-3.5 w-3.5" /> Select folder
-              </button>
+              <p className="text-xs font-medium text-gray-700 mb-2">Drag department folder(s) or file(s) here or</p>
+              <div className="flex items-center justify-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => folderInputRef.current?.click()}
+                  className="inline-flex items-center gap-1 rounded-lg border border-gray-400 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                >
+                  <FolderOpen className="h-3.5 w-3.5" /> Select folder
+                </button>
+                <button
+                  type="button"
+                  onClick={() => filesInputRef.current?.click()}
+                  className="inline-flex items-center gap-1 rounded-lg border border-gray-400 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                >
+                  <FileText className="h-3.5 w-3.5" /> Select files
+                </button>
+              </div>
+              <p className="mt-1.5 text-[10px] text-gray-500">
+                Folder preserves structure; files alone are uploaded by filename (must start with SOP code like <code>QAGE08-09…</code>).
+              </p>
             </div>
 
             <label className="flex items-center gap-2 text-xs">

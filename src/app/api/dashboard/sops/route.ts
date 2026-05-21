@@ -9,6 +9,7 @@ import {
 } from '@/lib/dashboardSopsCache';
 import SOPLibrary from '@/models/SOPLibrary';
 import SOP from '@/models/SOP';
+import ArchivedSOP from '@/models/ArchivedSOP';
 import User from '@/models/User';
 import MatrixEntry from '@/models/MatrixEntry';
 import TrainingMatrix from '@/models/TrainingMatrix';
@@ -16,6 +17,8 @@ import MasterSOPRepository from '@/models/MasterSOPRepository';
 import SOPVersionArtifacts from '@/models/SOPVersionArtifacts';
 import SupersedeSOPVersion from '@/models/SupersedeSOPVersion';
 import MCQBank from '@/models/MCQBank';
+import TrainingVideo from '@/models/TrainingVideo';
+import TrainingSlide from '@/models/TrainingSlide';
 import { fileKindFromStoredPath } from '@/lib/filePathFileKind';
 import { inferSopIdentifiersFromStoredPath } from '@/lib/inferSopIdentifierFromStoredPath';
 import { getDepartmentForSubcategory, extractSubcategoryFromIdentifier } from '@/lib/mcqTreeBuilder';
@@ -1368,7 +1371,7 @@ export async function GET(request: NextRequest) {
         projection: {
           _id: 1, name: 1, identifier: 1, department: 1, fileUrl: 1, fileType: 1,
           originalFileName: 1, folderPath: 1, location: 1, metadata: 1,
-          reviewDate: 1, expiryDate: 1, version: 1, language: 1, createdAt: 1,
+          reviewDate: 1, expiryDate: 1, effectiveDate: 1, version: 1, language: 1, createdAt: 1,
           sopDocuments: 1, isObsolete: 1, pipelineStatus: 1,
         },
       }).toArray()),
@@ -1413,6 +1416,23 @@ export async function GET(request: NextRequest) {
         .lean()),
       time('MCQBank', () => MCQBank.find({}).select('sopIdentifier sopName').lean()),
       time('fetchBunnyVersionMap', () => fetchBunnyVersionMap()),
+      // ArchivedSOP — needed to know which prior version revisions have reviewDate/effectiveDate
+      // stored. Used by the Version Date capsule (Date Found / Date Not Found per language).
+      time('ArchivedSOP', () => ArchivedSOP.find({})
+        .select('identifier version language reviewDate effectiveDate')
+        .lean()),
+      // TrainingVideo — uploaded brief/explainer videos that count toward the
+      // Videos capsule available-slots and are surfaced in the SOPTable Video
+      // column as clickable links. Linked to SOPs via sopNo (inferred from
+      // filename at upload time).
+      time('TrainingVideo', () => TrainingVideo.find({ active: true })
+        .select('sopNo language videoKind fileName title bunnyCdnUrl thumbnailUrl')
+        .lean()),
+      // TrainingSlide — uploaded PDF slides, surfaced in the SOPTable Slides
+      // column as clickable PDF links and counted toward the Slides capsule.
+      time('TrainingSlide', () => TrainingSlide.find({ active: true })
+        .select('sopNo language fileName title bunnyCdnUrl')
+        .lean()),
     ]);
 
     if (PERF_LOG) {
@@ -1491,7 +1511,129 @@ export async function GET(request: NextRequest) {
       'BunnyVersionMap',
       new Map(),
     );
+    const archivedSOPs = unwrap<any[]>(
+      10,
+      'ArchivedSOP',
+      [],
+    );
+    const trainingVideos = unwrap<any[]>(
+      11,
+      'TrainingVideo',
+      [],
+    );
+    const trainingSlides = unwrap<any[]>(
+      12,
+      'TrainingSlide',
+      [],
+    );
     t('sources (DB + Bunny, parallel)', tSources);
+
+    /**
+     * Build a lookup: normalized SOP key → { eng/guj × brief/explainer/unknown }.
+     * The dashboard Videos capsule OR's these flags onto the per-SOP library
+     * data so uploaded training videos automatically credit the right slot.
+     */
+    type TrainingVideoSlots = {
+      engBrief: boolean;
+      engExplainer: boolean;
+      gujBrief: boolean;
+      gujExplainer: boolean;
+      engUnknown: number;
+      gujUnknown: number;
+    };
+    const emptyTvSlots = (): TrainingVideoSlots => ({
+      engBrief: false,
+      engExplainer: false,
+      gujBrief: false,
+      gujExplainer: false,
+      engUnknown: 0,
+      gujUnknown: 0,
+    });
+    type TrainingVideoRef = {
+      url: string;
+      title: string;
+      fileName: string;
+      thumbnailUrl?: string;
+      kind: 'brief' | 'explainer' | 'unknown';
+      language: 'English' | 'Gujarati';
+    };
+    const trainingVideoSlotsByKey = new Map<string, TrainingVideoSlots>();
+    const trainingVideosByKey = new Map<string, TrainingVideoRef[]>();
+    for (const tv of trainingVideos as any[]) {
+      const raw = String(tv?.sopNo || '').trim();
+      if (!raw) continue;
+      const nk = normalizeSopIdentifierKey(raw.toUpperCase());
+      if (!nk) continue;
+      const slots = trainingVideoSlotsByKey.get(nk) || emptyTvSlots();
+      const lang: 'English' | 'Gujarati' =
+        String(tv?.language || '').toLowerCase() === 'gujarati' ? 'Gujarati' : 'English';
+      // Trust persisted videoKind first; otherwise re-infer from filename/title.
+      let kind: 'brief' | 'explainer' | 'unknown';
+      if (tv?.videoKind === 'brief' || tv?.videoKind === 'explainer') {
+        kind = tv.videoKind;
+      } else {
+        const name = `${tv?.title || ''} ${tv?.fileName || ''}`.toLowerCase();
+        if (/\bbrief\b/.test(name)) kind = 'brief';
+        else if (/\bexplainer\b/.test(name)) kind = 'explainer';
+        else kind = 'unknown';
+      }
+      if (lang === 'Gujarati') {
+        if (kind === 'brief') slots.gujBrief = true;
+        else if (kind === 'explainer') slots.gujExplainer = true;
+        else slots.gujUnknown += 1;
+      } else {
+        if (kind === 'brief') slots.engBrief = true;
+        else if (kind === 'explainer') slots.engExplainer = true;
+        else slots.engUnknown += 1;
+      }
+      trainingVideoSlotsByKey.set(nk, slots);
+
+      const url = String(tv?.bunnyCdnUrl || '').trim();
+      if (url) {
+        const list = trainingVideosByKey.get(nk) || [];
+        list.push({
+          url,
+          title: String(tv?.title || tv?.fileName || '').trim() || 'Training video',
+          fileName: String(tv?.fileName || '').trim(),
+          thumbnailUrl: tv?.thumbnailUrl ? String(tv.thumbnailUrl) : undefined,
+          kind,
+          language: lang,
+        });
+        trainingVideosByKey.set(nk, list);
+      }
+    }
+
+    /** Per-SOP TrainingSlide links — same pattern as the video map above. */
+    type TrainingSlideRef = {
+      url: string;
+      title: string;
+      fileName: string;
+      language: 'English' | 'Gujarati';
+    };
+    const trainingSlidesByKey = new Map<string, TrainingSlideRef[]>();
+    const trainingSlideLangSlots = new Map<string, { english: boolean; gujarati: boolean }>();
+    for (const ts of trainingSlides as any[]) {
+      const raw = String(ts?.sopNo || '').trim();
+      if (!raw) continue;
+      const nk = normalizeSopIdentifierKey(raw.toUpperCase());
+      if (!nk) continue;
+      const url = String(ts?.bunnyCdnUrl || '').trim();
+      if (!url) continue;
+      const lang: 'English' | 'Gujarati' =
+        String(ts?.language || '').toLowerCase() === 'gujarati' ? 'Gujarati' : 'English';
+      const list = trainingSlidesByKey.get(nk) || [];
+      list.push({
+        url,
+        title: String(ts?.title || ts?.fileName || '').trim() || 'Training slide',
+        fileName: String(ts?.fileName || '').trim(),
+        language: lang,
+      });
+      trainingSlidesByKey.set(nk, list);
+      const slots = trainingSlideLangSlots.get(nk) || { english: false, gujarati: false };
+      if (lang === 'Gujarati') slots.gujarati = true;
+      else slots.english = true;
+      trainingSlideLangSlots.set(nk, slots);
+    }
 
     // Diagnostic: SOP source is the long pole at ~30s standalone. Need to know
     // whether it's payload bloat (large sopDocuments arrays) or just doc count.
@@ -2001,6 +2143,65 @@ export async function GET(request: NextRequest) {
       versionArtifactsByKey.set(key, existing ? mergeVersionArtifactEntries(existing, bunnyEntries) : bunnyEntries);
     }
 
+    /**
+     * Version-date lookup: `${normKey}::${lang}::${version}` → { reviewDate?, effectiveDate? }
+     *
+     * Built from BOTH ArchivedSOP (prior revisions) and the current SOP collection
+     * (which carries dates for the current version on each row). A version counts
+     * as "Date Found" only when BOTH reviewDate AND effectiveDate exist on the
+     * matching record.
+     */
+    type VersionDateEntry = { reviewDate?: string; effectiveDate?: string };
+    const versionDatesByKey = new Map<string, VersionDateEntry>();
+    const recordVersionDate = (
+      rawIdentifier: string,
+      rawLanguage: any,
+      rawVersion: any,
+      reviewDate: any,
+      effectiveDate: any,
+    ) => {
+      const id = String(rawIdentifier || '').trim().toUpperCase();
+      if (!id) return;
+      const nk = normalizeSopIdentifierKey(id);
+      // Parse version: prefer numeric; fall back to the SOP identifier's -NN suffix.
+      let v: number | null = null;
+      if (typeof rawVersion === 'number' && Number.isFinite(rawVersion)) v = rawVersion;
+      else if (rawVersion != null && String(rawVersion).trim() !== '') {
+        const n = parseInt(String(rawVersion).trim(), 10);
+        if (Number.isFinite(n)) v = n;
+      }
+      if (v == null) v = parseRevisionFromSopIdentifier(id);
+      if (v == null) return;
+      const langRaw = String(rawLanguage || '').trim().toLowerCase();
+      const lang: 'English' | 'Gujarati' = langRaw === 'gujarati' || langRaw === 'guj' ? 'Gujarati' : 'English';
+      const key = `${nk}::${lang}::${v}`;
+      const prev = versionDatesByKey.get(key) || {};
+      const rIso = reviewDate ? new Date(reviewDate).toISOString() : undefined;
+      const eIso = effectiveDate ? new Date(effectiveDate).toISOString() : undefined;
+      versionDatesByKey.set(key, {
+        reviewDate: prev.reviewDate || (rIso && !isNaN(new Date(rIso).getTime()) ? rIso : prev.reviewDate),
+        effectiveDate: prev.effectiveDate || (eIso && !isNaN(new Date(eIso).getTime()) ? eIso : prev.effectiveDate),
+      });
+    };
+    for (const sop of allSOPsIncludingObsolete as any[]) {
+      recordVersionDate(
+        sop.identifier,
+        sop.language,
+        sop.version,
+        (sop as any).reviewDate,
+        (sop as any).effectiveDate,
+      );
+    }
+    for (const a of archivedSOPs as any[]) {
+      recordVersionDate(
+        a.identifier,
+        a.language,
+        a.version,
+        a.reviewDate,
+        a.effectiveDate,
+      );
+    }
+
     // REMOVED: artifactsMergedByFamilyLang was causing cross-contamination between different SOP revisions.
     // See versionArtifactsForRow() for explanation. Family-level merge is no longer needed since
     // expandSopIdentifierVariants() + exact key matching is both correct and sufficient.
@@ -2045,21 +2246,37 @@ export async function GET(request: NextRequest) {
       const gujFlagVideos = gujLibs.some((l: any) => l.completionStatus?.hasVideos);
       const gujFlagSlides = gujLibs.some((l: any) => l.completionStatus?.hasSlides);
 
+      // Include training-video uploads (filename → SOP code) so the Videos
+      // capsule + the "video available" filter row both find rows that have
+      // only a Training Content upload (no library video yet).
+      const rowNk = normalizeSopIdentifierKey(idUpper);
+      const tvSlotsForCount = trainingVideoSlotsByKey.get(rowNk);
+      const tsSlideSlots = trainingSlideLangSlots.get(rowNk);
+      const tsSlideRefs = trainingSlidesByKey.get(rowNk) || [];
+      const tvEngVideoCount = tvSlotsForCount
+        ? (tvSlotsForCount.engBrief ? 1 : 0) + (tvSlotsForCount.engExplainer ? 1 : 0) + tvSlotsForCount.engUnknown
+        : 0;
+      const tvGujVideoCount = tvSlotsForCount
+        ? (tvSlotsForCount.gujBrief ? 1 : 0) + (tvSlotsForCount.gujExplainer ? 1 : 0) + tvSlotsForCount.gujUnknown
+        : 0;
+
       // Combine English and Gujarati media counts — if either language has media, show it
-      const engHasVideos = engVideoCount > 0 || engFlagVideos;
-      const engHasSlides = engSlideCount > 0 || engFlagSlides;
-      const gujHasVideos = gujVideoCount > 0 || gujFlagVideos;
-      const gujHasSlides = gujSlideCount > 0 || gujFlagSlides;
+      const tsEngSlideCount = tsSlideRefs.filter((s) => s.language === 'English').length;
+      const tsGujSlideCount = tsSlideRefs.filter((s) => s.language === 'Gujarati').length;
+      const engHasVideos = engVideoCount > 0 || engFlagVideos || tvEngVideoCount > 0;
+      const engHasSlides = engSlideCount > 0 || engFlagSlides || (tsSlideSlots?.english ?? false);
+      const gujHasVideos = gujVideoCount > 0 || gujFlagVideos || tvGujVideoCount > 0;
+      const gujHasSlides = gujSlideCount > 0 || gujFlagSlides || (tsSlideSlots?.gujarati ?? false);
 
       const hasVideos = engHasVideos || gujHasVideos;
       const hasSlides = engHasSlides || gujHasSlides;
       const videoCount = Math.max(
-        engVideoCount > 0 ? engVideoCount : engFlagVideos ? 1 : 0,
-        gujVideoCount > 0 ? gujVideoCount : gujFlagVideos ? 1 : 0
+        engVideoCount + tvEngVideoCount > 0 ? engVideoCount + tvEngVideoCount : engFlagVideos ? 1 : 0,
+        gujVideoCount + tvGujVideoCount > 0 ? gujVideoCount + tvGujVideoCount : gujFlagVideos ? 1 : 0
       );
       const slideCount = Math.max(
-        engSlideCount > 0 ? engSlideCount : engFlagSlides ? 1 : 0,
-        gujSlideCount > 0 ? gujSlideCount : gujFlagSlides ? 1 : 0
+        engSlideCount + tsEngSlideCount > 0 ? engSlideCount + tsEngSlideCount : engFlagSlides ? 1 : 0,
+        gujSlideCount + tsGujSlideCount > 0 ? gujSlideCount + tsGujSlideCount : gujFlagSlides ? 1 : 0
       );
       const sopDocuments = libs.flatMap((l: any) =>
         (l.sopDocuments || []).map((doc: any) => ({
@@ -2173,25 +2390,45 @@ export async function GET(request: NextRequest) {
       // Available video slots: count distinct (lang × type) combos found
       let videoAvailable = 0;
 
+      // Pull in matching training-video uploads (filename → SOP code) so the
+      // dashboard Videos count reflects uploads made via /api/training-content.
+      const tvSlots = tvSlotsForCount || {
+        engBrief: false, engExplainer: false,
+        gujBrief: false, gujExplainer: false,
+        engUnknown: 0, gujUnknown: 0,
+      };
+
       // English library: check for brief and explainer separately
-      const engBrief = engLibs.some(l => (l.videos || []).some((v: any) => inferVideoType(v) === 'brief'));
-      const engExplainer = engLibs.some(l => (l.videos || []).some((v: any) => inferVideoType(v) === 'explainer'));
+      const engBrief =
+        engLibs.some(l => (l.videos || []).some((v: any) => inferVideoType(v) === 'brief')) ||
+        tvSlots.engBrief;
+      const engExplainer =
+        engLibs.some(l => (l.videos || []).some((v: any) => inferVideoType(v) === 'explainer')) ||
+        tvSlots.engExplainer;
       if (engBrief) videoAvailable++;
       if (engExplainer) videoAvailable++;
 
       let gujBrief = false;
       let gujExplainer = false;
       if (isDualLanguage) {
-        gujBrief = gujLibs.some(l => (l.videos || []).some((v: any) => inferVideoType(v) === 'brief'));
-        gujExplainer = gujLibs.some(l => (l.videos || []).some((v: any) => inferVideoType(v) === 'explainer'));
+        gujBrief =
+          gujLibs.some(l => (l.videos || []).some((v: any) => inferVideoType(v) === 'brief')) ||
+          tvSlots.gujBrief;
+        gujExplainer =
+          gujLibs.some(l => (l.videos || []).some((v: any) => inferVideoType(v) === 'explainer')) ||
+          tvSlots.gujExplainer;
         if (gujBrief) videoAvailable++;
         if (gujExplainer) videoAvailable++;
       }
 
       // For 'unknown' type videos: count them as filling slots in order (first fills brief if missing, second fills explainer)
       // This handles legacy uploads without naming convention
-      const engUnknown = engLibs.reduce((n: number, l: any) => n + (l.videos || []).filter((v: any) => inferVideoType(v) === 'unknown').length, 0);
-      const gujUnknown = gujLibs.reduce((n: number, l: any) => n + (l.videos || []).filter((v: any) => inferVideoType(v) === 'unknown').length, 0);
+      const engUnknown =
+        engLibs.reduce((n: number, l: any) => n + (l.videos || []).filter((v: any) => inferVideoType(v) === 'unknown').length, 0) +
+        tvSlots.engUnknown;
+      const gujUnknown =
+        gujLibs.reduce((n: number, l: any) => n + (l.videos || []).filter((v: any) => inferVideoType(v) === 'unknown').length, 0) +
+        tvSlots.gujUnknown;
       if (!engBrief && engUnknown >= 1) videoAvailable++;
       if (!engExplainer && engUnknown >= 2) videoAvailable++;
       if (isDualLanguage) {
@@ -2501,6 +2738,11 @@ export async function GET(request: NextRequest) {
           videoAvailable,
           slideAvailable,
         },
+        // Per-row training-video links surfaced in the SOPTable Video column
+        // so users can click to preview without leaving the dashboard.
+        trainingVideos: trainingVideosByKey.get(normalizeSopIdentifierKey(idUpper)) || [],
+        // Per-row training-slide PDF links surfaced in the SOPTable Slides column.
+        trainingSlides: trainingSlidesByKey.get(normalizeSopIdentifierKey(idUpper)) || [],
         expiryDate: row.expiryDate,
         sopDocuments: currentRevisionDocs.map(d => ({
           filePath: d.filePath,
@@ -2521,6 +2763,28 @@ export async function GET(request: NextRequest) {
             versionArtifactsSuperseded: enS.superseded.slice(0, 1), // Limit superseded to 1
             versionArtifactsGujaratiSuperseded: gjS.superseded.slice(0, 1), // Limit superseded to 1
           };
+        })(),
+        // Per-version date lookup keyed by `${lang}::${version}` for the Version Date capsule.
+        // Each entry is { reviewDate?, effectiveDate? }. Both required to count as "Date Found".
+        versionDates: (() => {
+          const nk = normalizeSopIdentifierKey(idUpper);
+          const out: Record<string, { reviewDate?: string; effectiveDate?: string }> = {};
+          const collect = (lang: 'English' | 'Gujarati', versions: number[]) => {
+            for (const v of versions) {
+              const k = `${nk}::${lang}::${v}`;
+              const e = versionDatesByKey.get(k);
+              if (e) out[`${lang === 'Gujarati' ? 'GJ' : 'EN'}::${v}`] = { reviewDate: e.reviewDate, effectiveDate: e.effectiveDate };
+              else out[`${lang === 'Gujarati' ? 'GJ' : 'EN'}::${v}`] = {};
+            }
+          };
+          const verSet = new Set<number>();
+          if (currentRevision != null) verSet.add(currentRevision);
+          for (const e of rawEnFull) verSet.add(Number(e.version));
+          for (const e of rawGjFull) verSet.add(Number(e.version));
+          const versions = [...verSet].filter((n) => Number.isFinite(n));
+          collect('English', versions);
+          collect('Gujarati', versions);
+          return out;
         })(),
         createdAt: row.createdAt,
         registryRowKind: 'primary' as const,
