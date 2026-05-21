@@ -1559,22 +1559,43 @@ export async function GET(request: NextRequest) {
     };
     const trainingVideoSlotsByKey = new Map<string, TrainingVideoSlots>();
     const trainingVideosByKey = new Map<string, TrainingVideoRef[]>();
+    // Header-format names like `MAGE07-04_GUJ-Brief.mp4` need non-letter
+    // separators (not \b — `_` is a word char and silently breaks matching).
+    const SEP = '(?:^|[^A-Za-z])';
+    const END = '(?:$|[^A-Za-z])';
+    const RX_BRIEF = new RegExp(`${SEP}brief${END}`, 'i');
+    const RX_EXPLAINER = new RegExp(`${SEP}explainer${END}`, 'i');
+    const RX_GUJ = new RegExp(`${SEP}(guj|gujarati)${END}`, 'i');
+    const RX_ENG = new RegExp(`${SEP}(eng|english)${END}`, 'i');
+    const inferLangFromName = (name: string): 'English' | 'Gujarati' | null => {
+      if (/[઀-૿]/.test(name)) return 'Gujarati';
+      if (RX_GUJ.test(name)) return 'Gujarati';
+      if (RX_ENG.test(name)) return 'English';
+      return null;
+    };
     for (const tv of trainingVideos as any[]) {
       const raw = String(tv?.sopNo || '').trim();
       if (!raw) continue;
       const nk = normalizeSopIdentifierKey(raw.toUpperCase());
       if (!nk) continue;
       const slots = trainingVideoSlotsByKey.get(nk) || emptyTvSlots();
-      const lang: 'English' | 'Gujarati' =
-        String(tv?.language || '').toLowerCase() === 'gujarati' ? 'Gujarati' : 'English';
+      const nameForInfer = `${tv?.title || ''} ${tv?.fileName || ''}`;
+      // Trust persisted language only when it's a real value; otherwise
+      // re-infer from filename/title so legacy rows uploaded before the
+      // detector fix still bucket correctly.
+      const persistedLang = String(tv?.language || '').toLowerCase();
+      let lang: 'English' | 'Gujarati';
+      if (persistedLang === 'gujarati') lang = 'Gujarati';
+      else if (persistedLang === 'english') lang = 'English';
+      else lang = inferLangFromName(nameForInfer) ?? 'English';
       // Trust persisted videoKind first; otherwise re-infer from filename/title.
       let kind: 'brief' | 'explainer' | 'unknown';
       if (tv?.videoKind === 'brief' || tv?.videoKind === 'explainer') {
         kind = tv.videoKind;
       } else {
-        const name = `${tv?.title || ''} ${tv?.fileName || ''}`.toLowerCase();
-        if (/\bbrief\b/.test(name)) kind = 'brief';
-        else if (/\bexplainer\b/.test(name)) kind = 'explainer';
+        const name = nameForInfer.toLowerCase();
+        if (RX_BRIEF.test(name)) kind = 'brief';
+        else if (RX_EXPLAINER.test(name)) kind = 'explainer';
         else kind = 'unknown';
       }
       if (lang === 'Gujarati') {
@@ -1619,8 +1640,11 @@ export async function GET(request: NextRequest) {
       if (!nk) continue;
       const url = String(ts?.bunnyCdnUrl || '').trim();
       if (!url) continue;
-      const lang: 'English' | 'Gujarati' =
-        String(ts?.language || '').toLowerCase() === 'gujarati' ? 'Gujarati' : 'English';
+      const persistedLang = String(ts?.language || '').toLowerCase();
+      let lang: 'English' | 'Gujarati';
+      if (persistedLang === 'gujarati') lang = 'Gujarati';
+      else if (persistedLang === 'english') lang = 'English';
+      else lang = inferLangFromName(`${ts?.title || ''} ${ts?.fileName || ''}`) ?? 'English';
       const list = trainingSlidesByKey.get(nk) || [];
       list.push({
         url,

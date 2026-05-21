@@ -24,9 +24,14 @@ function inferMetaFromFileName(name: string): {
   const stem = name.replace(/\.[^.]+$/, '');
   const m = stem.match(/([A-Z]{2,6}\d{1,4}-\d{1,3})/i);
   const sopNo = m ? normalizeSopIdentifierKey(m[1].toUpperCase()) : undefined;
+  // Use non-letter separators (matches `_GUJ-`, `-ENG_`, etc.) — \b treats
+  // `_` as a word char, which silently broke detection for names like
+  // `MAGE07-04_GUJ-Brief`.
+  const sep = '(?:^|[^A-Za-z])';
+  const sepEnd = '(?:$|[^A-Za-z])';
   let language: 'English' | 'Gujarati' | undefined;
-  if (/[઀-૿]/.test(stem) || /\b(guj|gujarati)\b/i.test(stem)) language = 'Gujarati';
-  else if (/\b(eng|english)\b/i.test(stem)) language = 'English';
+  if (/[઀-૿]/.test(stem) || new RegExp(`${sep}(guj|gujarati)${sepEnd}`, 'i').test(stem)) language = 'Gujarati';
+  else if (new RegExp(`${sep}(eng|english)${sepEnd}`, 'i').test(stem)) language = 'English';
   return { sopNo, language };
 }
 

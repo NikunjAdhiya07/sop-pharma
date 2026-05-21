@@ -558,7 +558,7 @@ export default function SOPTable({
     if (rawDocs.length === 0) {
       const isDual = Boolean(row.isDualLanguage) || Boolean(row.gujaratiFileMissing);
       const missingRow = (langLabel: string) => (
-        <div className="grid grid-cols-[24px_58px_6px_50px] items-center gap-x-0.5 text-left leading-none min-h-[10px]">
+        <div className="grid grid-cols-[20px_50px_4px_42px] items-center gap-x-0.5 text-left leading-none min-h-[10px]">
           <span className="text-[8px] font-bold text-gray-500">{langLabel}</span>
           <span className="text-[8px] font-bold leading-none text-red-600 whitespace-nowrap" title="DOCX link cleared — file missing">DOCX&nbsp;✗</span>
           <div className="flex justify-center text-gray-300 text-[9px] select-none" />
@@ -698,7 +698,7 @@ export default function SOPTable({
       const pdfDoc = docs.find((d) => d.type === "PDF");
 
       return (
-        <div className="grid grid-cols-[24px_58px_6px_50px] items-center gap-x-0.5 text-left leading-none min-h-[10px]">
+        <div className="grid grid-cols-[20px_50px_4px_42px] items-center gap-x-0.5 text-left leading-none min-h-[10px]">
           <span className="text-[8px] font-bold text-gray-500">
             {langLabel}
           </span>
@@ -1060,7 +1060,7 @@ export default function SOPTable({
                 </div>
               </th>
               <th
-                className={thBase}
+                className={`${thBase} w-32 pr-3`}
                 title="Current approved files: English first, then Gujarati when dual">
                 <div className="flex flex-col gap-px">
                   <button
@@ -1084,7 +1084,7 @@ export default function SOPTable({
                   </select>
                 </div>
               </th>
-              <th className={`${thBase} w-20`}>
+              <th className={`${thBase} w-24 pr-3`}>
                 <div className="flex flex-col gap-px">
                   <button
                     type="button"
@@ -1507,13 +1507,13 @@ export default function SOPTable({
                         )}
                       </td>
                       {/* File */}
-                      <td className="px-1 py-px align-middle text-left">
+                      <td className="pl-1 pr-3 py-px align-middle text-left">
                         {getFileTypes(row)}
                       </td>
                       {/* Video links — clickable per-video chips that open
                           an in-app preview. Falls back to a count when only
                           the legacy library video flag is set. */}
-                      <td className="px-1 py-px text-left whitespace-nowrap align-middle">
+                      <td className="pl-1 pr-3 py-px text-left whitespace-nowrap align-middle">
                         {(() => {
                           const tvs = Array.isArray(row.trainingVideos) ? row.trainingVideos : [];
                           if (tvs.length === 0) {
@@ -1541,6 +1541,11 @@ export default function SOPTable({
                             Boolean(row.isDualLanguage) ||
                             (Boolean(row.englishVersion) && Boolean(row.gujaratiVersion));
 
+                          const shortLabel = (v: any) => {
+                            if (v?.kind === 'brief') return 'Br';
+                            if (v?.kind === 'explainer') return 'Ex';
+                            return 'Vid';
+                          };
                           const renderChip = (v: any, i: number) => (
                             <button
                               key={`${v.url}-${i}`}
@@ -1553,11 +1558,11 @@ export default function SOPTable({
                                   department: row.department,
                                 });
                               }}
-                              title={`Preview ${v.title || v.fileName || 'video'}${v.language ? ` (${v.language})` : ''}`}
-                              className="inline-flex items-center gap-0.5 rounded border border-emerald-200 bg-emerald-50 px-1 py-px text-[9px] font-semibold text-emerald-700 hover:bg-emerald-100"
+                              title={`Preview ${labelFor(v)} — ${v.title || v.fileName || 'video'}${v.language ? ` (${v.language})` : ''}`}
+                              className="inline-flex items-center gap-0.5 rounded border border-emerald-200 bg-emerald-50 px-0.5 py-px text-[8px] font-semibold text-emerald-700 hover:bg-emerald-100"
                             >
-                              <Video className="h-2.5 w-2.5" aria-hidden />
-                              {labelFor(v)}
+                              <Video className="h-2 w-2" aria-hidden />
+                              {shortLabel(v)}
                             </button>
                           );
 
@@ -1570,7 +1575,7 @@ export default function SOPTable({
                                 {langLabel}
                               </span>
                               {vids.length > 0 ? (
-                                <div className="inline-flex flex-col items-start gap-px">
+                                <div className="inline-flex flex-row flex-wrap items-center gap-0.5">
                                   {vids.map((v, i) => renderChip(v, i))}
                                 </div>
                               ) : (
@@ -1594,7 +1599,7 @@ export default function SOPTable({
                       {/* Slide links — clickable per-PDF chips that open in a
                           new tab using the existing Bunny CDN URL. Falls back
                           to a count when only library slides exist. */}
-                      <td className="px-1 py-px text-center whitespace-nowrap align-middle">
+                      <td className="px-1 py-px text-left whitespace-nowrap align-middle">
                         {(() => {
                           const tss = Array.isArray(row.trainingSlides) ? row.trainingSlides : [];
                           if (tss.length === 0) {
@@ -1609,25 +1614,55 @@ export default function SOPTable({
                               <span className="text-gray-400 text-[9px]">0</span>
                             );
                           }
+                          const isGuj = (s: any) => isGujaratiLanguage(s?.language);
+                          const engSlides = tss.filter((s: any) => !isGuj(s));
+                          const gujSlides = tss.filter((s: any) => isGuj(s));
+                          const showGujRow =
+                            gujSlides.length > 0 ||
+                            Boolean(row.isDualLanguage) ||
+                            (Boolean(row.englishVersion) && Boolean(row.gujaratiVersion));
+
+                          const renderChip = (s: any, i: number) => (
+                            <a
+                              key={`${s.url}-${i}`}
+                              href={s.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              title={`Open ${s.title || s.fileName || 'slide'}${s.language ? ` (${s.language})` : ''}`}
+                              className="inline-flex items-center gap-0.5 rounded border border-indigo-200 bg-indigo-50 px-1 py-px text-[9px] font-semibold text-indigo-700 hover:bg-indigo-100"
+                            >
+                              <FileText className="h-2.5 w-2.5" aria-hidden />
+                              PDF
+                            </a>
+                          );
+
+                          const renderLangRow = (
+                            langLabel: string,
+                            slides: any[],
+                          ) => (
+                            <div className="flex items-center gap-1 text-left leading-none min-h-[10px]">
+                              <span className="w-[24px] shrink-0 text-[8px] font-bold text-gray-500">
+                                {langLabel}
+                              </span>
+                              {slides.length > 0 ? (
+                                <div className="inline-flex flex-row flex-wrap items-center gap-0.5">
+                                  {slides.map((s, i) => renderChip(s, i))}
+                                </div>
+                              ) : (
+                                <span
+                                  className="text-[8px] font-bold leading-none text-red-600 whitespace-nowrap"
+                                  title={`No ${langLabel} training slide uploaded`}>
+                                  PDF&nbsp;✗
+                                </span>
+                              )}
+                            </div>
+                          );
+
                           return (
-                            <div className="inline-flex flex-wrap items-center justify-center gap-0.5">
-                              {tss.map((s: any, i: number) => (
-                                <a
-                                  key={`${s.url}-${i}`}
-                                  href={s.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
-                                  title={`Open ${s.title || s.fileName || 'slide'}${s.language ? ` (${s.language})` : ''}`}
-                                  className="inline-flex items-center gap-0.5 rounded border border-indigo-200 bg-indigo-50 px-1 py-px text-[9px] font-semibold text-indigo-700 hover:bg-indigo-100"
-                                >
-                                  <FileText className="h-2.5 w-2.5" aria-hidden />
-                                  PDF
-                                  {s.language === 'Gujarati' ? (
-                                    <span className="ml-0.5 rounded bg-amber-100 px-0.5 text-amber-700">GU</span>
-                                  ) : null}
-                                </a>
-                              ))}
+                            <div className="flex w-max flex-col gap-px text-left leading-none">
+                              {renderLangRow("ENG", engSlides)}
+                              {showGujRow ? renderLangRow("GUJ", gujSlides) : null}
                             </div>
                           );
                         })()}
