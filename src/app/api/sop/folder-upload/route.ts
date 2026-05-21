@@ -255,15 +255,21 @@ function fallbackParseRelativePath(relativePath: string): Parsed | null {
     parseSopCodeVersionPrefix(stem)?.base || parseSopDocNumberPrefix(stem) || null;
   const department = detectDepartmentFromPathParts(parts, codeHint ?? undefined);
 
-  // Try code-version prefix from stem (e.g. MAGE01-07)
+  // Try code-version prefix from stem (e.g. MAGE01-07, PRED02-3_…).
+  // Use versionGroupBase (NOT a hardcoded identifier) so `resolveCanonicalIdentifier`
+  // can upgrade the base to the registry's current revision. Otherwise a single
+  // file uploaded via "Select files" stores under the OLD revision id (e.g.
+  // PRED02-03) and the dashboard, which looks up artifacts under the current
+  // revision (PRED02-05), never sees the upload.
   const fromStem = parseSopCodeVersionPrefix(stem);
   if (fromStem) {
     return {
-      identifier: `${fromStem.base}-${padVersionSuffix(fromStem.version)}`,
       department,
       version: fromStem.version,
       ext,
       relativePath,
+      versionGroupPath: (parts[parts.length - 1] || stem).toLowerCase(),
+      versionGroupBase: fromStem.base,
     };
   }
 
