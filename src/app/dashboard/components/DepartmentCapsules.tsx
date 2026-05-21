@@ -295,10 +295,14 @@ function foldRegistryRowIntoCapsuleAcc(
     else if (t === "notFound") s.pdfVersionNotFound++;
   }
 
-  // Version-Date capsule: count every (lang × version) slot where BOTH reviewDate
-  // AND effectiveDate are stored. Single-language rows contribute only EN; dual
-  // rows contribute EN + GJ (countVersionDatesPerLang returns 0/0 when GJ is
-  // out of scope for the row).
+  // Version-Date capsule: SLOT-level counts so the parent total matches the
+  // total (lang × version) slot count (same axis as the Versions/DOCX/PDF
+  // capsules). Each row contributes its own per-language slot tallies.
+  //   - parent  found    = sum over rows of (EN found slots + GJ found slots)
+  //   - parent  notFound = sum over rows of (EN notFound slots + GJ notFound slots)
+  //   - DATE EN found/notFound = sum of EN slots only across rows
+  //   - DATE GJ found/notFound = sum of GJ slots only across rows
+  // Parent = EN + GJ by construction, so parent ≥ each child.
   const enDates = countVersionDatesPerLang(row, "EN");
   const gjDates = countVersionDatesPerLang(row, "GJ");
   s.versionDateFound += enDates.found + gjDates.found;

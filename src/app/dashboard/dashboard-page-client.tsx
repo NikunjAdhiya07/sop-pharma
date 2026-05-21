@@ -981,10 +981,16 @@ export default function DashboardPageClient() {
           if (wantFound) return gj.found > 0 && gj.notFound === 0;
           return gj.notFound > 0;
         }
-        const totalFound = en.found + gj.found;
-        const totalMissing = en.notFound + gj.notFound;
-        if (wantFound) return totalFound > 0 && totalMissing === 0;
-        return totalMissing > 0;
+        // Parent semantic: a row is "Found" if AT LEAST ONE language present
+        // on the row has all of its expected slots dated. Mirrors the capsule
+        // counter so parent ≥ each per-language sub-row.
+        const enHasSlots = en.found + en.notFound > 0;
+        const gjHasSlots = gj.found + gj.notFound > 0;
+        const enFullyFound = enHasSlots && en.notFound === 0;
+        const gjFullyFound = gjHasSlots && gj.notFound === 0;
+        if (!enHasSlots && !gjHasSlots) return false;
+        if (wantFound) return enFullyFound || gjFullyFound;
+        return !enFullyFound && !gjFullyFound;
       });
     }
 
