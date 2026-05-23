@@ -107,6 +107,9 @@ export default function DashboardPageClient() {
   >({ status: 'idle' });
   /** API metadata from `/api/dashboard/sops` (not shown in UI; avoids stale `setDashboardMeta` reference errors). */
   const [, setDashboardMeta] = useState<Record<string, unknown> | null>(null);
+  // Global SOP video stats
+  const [sopsWithVideos, setSopsWithVideos] = useState(0);
+  const [sopsWithoutVideos, setSopsWithoutVideos] = useState(0);
   // User State
   const [user, setUser] = useState<any>(null);
 
@@ -285,6 +288,19 @@ export default function DashboardPageClient() {
           try {
             localStorage.setItem(CACHE_KEY, JSON.stringify({ data: j.guidelines, timestamp: Date.now() }));
           } catch { /* quota */ }
+        }
+      })
+      .catch(() => { /* non-fatal */ });
+  }, []);
+
+  // ── Fetch global SOP video stats ────────────────────────────────────────────────
+  useEffect(() => {
+    fetch('/api/dashboard/stats')
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.success && j.stats) {
+          setSopsWithVideos(j.stats.sopsWithVideos ?? 0);
+          setSopsWithoutVideos(j.stats.sopsWithoutVideos ?? 0);
         }
       })
       .catch(() => { /* non-fatal */ });
@@ -1876,6 +1892,8 @@ export default function DashboardPageClient() {
                 applyCapsuleVersionSegment={applyCapsuleVersionSegment}
                 applyCapsuleVersionDateSegment={applyCapsuleVersionDateSegment}
                 filterSnapshot={capsuleFilterSnapshot}
+                sopsWithVideos={sopsWithVideos}
+                sopsWithoutVideos={sopsWithoutVideos}
               />
             </div>
           </div>
