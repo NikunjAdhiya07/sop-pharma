@@ -1087,6 +1087,8 @@ function DepartmentCapsuleCard({
   applyCapsuleVersionDateSegment,
   filterSnapshot,
   variant = "department",
+  sopsWithVideos,
+  sopsWithoutVideos,
 }: {
   stat: DeptCapsuleStats;
   applyCapsuleFilter: (dept: string, mode: CapsuleFilterMode) => void;
@@ -1109,6 +1111,8 @@ function DepartmentCapsuleCard({
   ) => void;
   filterSnapshot: CapsuleFilterSnapshot;
   variant?: "department" | "grand";
+  sopsWithVideos?: number;
+  sopsWithoutVideos?: number;
 }) {
   const isGrand = variant === "grand";
   const label = isGrand ? "Total" : (stat.department ?? "Other");
@@ -1596,6 +1600,29 @@ function DepartmentCapsuleCard({
           }
         />
 
+        {/* SOP Video Status (Found vs Not Found) — displayed only in Total capsule */}
+        {isGrand && (sopsWithVideos !== undefined || sopsWithoutVideos !== undefined) && (
+          <>
+            <div className="h-1" />
+            <CapsuleMetricAvailMissing
+              label="SOP Videos"
+              totalExpected={stat.totalSOPs}
+              available={sopsWithVideos ?? 0}
+              missingCount={sopsWithoutVideos ?? 0}
+              onFilterClick={() => apply("video")}
+              onAvailableClick={() => applyCapsuleAvailMiss(deptForFilter, "video", "available")}
+              onMissingClick={() => applyCapsuleAvailMiss(deptForFilter, "video", "missing")}
+              highlightAvailable={capsuleAvailMissMatches(deptForFilter, "video", "available", filterSnapshot)}
+              highlightMissing={capsuleAvailMissMatches(deptForFilter, "video", "missing", filterSnapshot)}
+              filterRowActive={
+                capsuleAvailMissMatches(deptForFilter, "video", "available", filterSnapshot) ||
+                capsuleAvailMissMatches(deptForFilter, "video", "missing", filterSnapshot)
+              }
+              titleSummary={`${sopsWithVideos ?? 0} SOPs with videos · ${sopsWithoutVideos ?? 0} SOPs without videos`}
+            />
+          </>
+        )}
+
         {/* Slides Section — with spacing */}
         <div className="h-1" />
         <CapsuleMetricAvailMissing
@@ -1660,6 +1687,8 @@ export default function DepartmentCapsules({
   applyCapsuleVersionSegment,
   applyCapsuleVersionDateSegment,
   filterSnapshot,
+  sopsWithVideos,
+  sopsWithoutVideos,
 }: {
   data: any[];
   showTotalCapsule?: boolean;
@@ -1682,6 +1711,8 @@ export default function DepartmentCapsules({
     lang?: "ENG" | "GUJ",
   ) => void;
   filterSnapshot: CapsuleFilterSnapshot;
+  sopsWithVideos?: number;
+  sopsWithoutVideos?: number;
 }) {
   const stats = useMemo(() => computeDepartmentStats(data), [data]);
 
@@ -1704,6 +1735,8 @@ export default function DepartmentCapsules({
             applyCapsuleVersionDateSegment={applyCapsuleVersionDateSegment}
             filterSnapshot={filterSnapshot}
             variant="grand"
+            sopsWithVideos={sopsWithVideos}
+            sopsWithoutVideos={sopsWithoutVideos}
           />
         ) : null}
         {stats.map((s, idx) => (
@@ -1715,6 +1748,8 @@ export default function DepartmentCapsules({
             applyCapsuleVersionSegment={applyCapsuleVersionSegment}
             applyCapsuleVersionDateSegment={applyCapsuleVersionDateSegment}
             filterSnapshot={filterSnapshot}
+            sopsWithVideos={sopsWithVideos}
+            sopsWithoutVideos={sopsWithoutVideos}
           />
         ))}
       </div>
