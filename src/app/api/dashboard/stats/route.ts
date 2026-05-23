@@ -191,17 +191,9 @@ export async function GET() {
       return code.replace(/-\d+$/, '').trim().toUpperCase();
     };
 
-    // Build set of SOPs with slides
-    const sopsWithSlidesSet = new Set<string>();
-    allSlides.forEach((s: any) => {
-      const sopCode = String(s.sopNo || '').toUpperCase().trim();
-      const baseCode = normalizeSopCode(sopCode);
-      if (baseCode) sopsWithSlidesSet.add(baseCode);
-    });
-
     const sopVideoKinds = new Map<string, Set<string>>();
 
-    console.log(`[SOP Videos] SOPs with slides:`, Array.from(sopsWithSlidesSet).sort());
+    console.log(`[SOP Videos] Total videos in DB: ${allVideos.length}`);
 
     allVideos.forEach((v: any, idx: number) => {
       // Skip Gujarati versions (they're duplicates of English versions)
@@ -233,13 +225,7 @@ export async function GET() {
         }
       }
 
-      const hasSlides = sopsWithSlidesSet.has(baseCode);
-      console.log(`  [${idx + 1}] ${v.title} → baseCode: ${baseCode}, kind: ${videoKind}, hasSlides: ${hasSlides}`);
-
-      // Only count videos for SOPs that have slides
-      if (!hasSlides) {
-        return;
-      }
+      console.log(`  [${idx + 1}] ${v.title} → baseCode: ${baseCode}, kind: ${videoKind}`);
 
       if (baseCode && videoKind) {
         if (!sopVideoKinds.has(baseCode)) {
@@ -260,7 +246,7 @@ export async function GET() {
     const sopsWithoutVideosCount = totalSOPsDistinct - sopsWithVideosCount;
     const sopsWithBriefNotFound = totalSOPsDistinct - sopsWithBrief;
     const sopsWithExplainerNotFound = totalSOPsDistinct - sopsWithExplainer;
-    let videosFound = sopsWithSlidesSet.size;  // Match slide count
+    let videosFound = sopsWithVideosCount;
     let videosExpected = totalSOPsDistinct;
 
     console.log(`[SOP Videos] Total SOPs: ${totalSOPsDistinct}, Brief: ${sopsWithBrief}/${sopsWithBriefNotFound}, Explainer: ${sopsWithExplainer}/${sopsWithExplainerNotFound}, Both: ${sopsWithBoth}/${sopsWithoutVideosCount}`);
