@@ -143,9 +143,9 @@ function deptToBgTint(dept: string, expired?: boolean): DeptBgTint {
   return 'slate';
 }
 
-/** Grid columns: #, code, title, dept(DB), dept, month, trainer, docs, ENG MCQs, ENG appr, GUJ MCQs, GUJ appr, expiry */
+/** Grid columns: #, code, title, dept(DB), dept, month, trainer, docs, ENG MCQs, ENG appr, GUJ MCQs, GUJ appr, expiry, action */
 const SOP_TABLE_GRID_COLS =
-  '1.25rem 4.5rem minmax(7rem,1fr) 4.5rem 4.5rem 4rem 7rem 4rem repeat(4, minmax(3rem, 4rem)) 5.5rem';
+  '1.25rem 4.5rem minmax(7rem,1fr) 4.5rem 4.5rem 4rem 7rem 4rem repeat(4, minmax(3rem, 4rem)) 5.5rem 2.25rem';
 
 /** Employee bubbles sit in cols 1–3 (#, code, title) — must not extend under Dept (DB) / Dept / Month / Trainer. */
 const SOP_EMP_BUBBLE_GRID_COL = '1 / 4';
@@ -173,7 +173,7 @@ function EmployeeBubbleRow({
   const bubbleClass =
     variant === 'due'
       ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300'
-      : 'bg-white/70 text-gray-800 border-white/70 hover:bg-purple-50 hover:border-purple-200 hover:text-purple-800';
+      : 'bg-white/70 text-black border-white/70 hover:bg-purple-50 hover:border-purple-200 hover:text-purple-800';
 
   const recomputeVisible = useCallback(() => {
     const container = containerRef.current;
@@ -287,15 +287,15 @@ function EmployeeBubbleRow({
   );
 }
 
-/** MCQ count columns: green when any MCQs exist, gray when none. */
+/** MCQ count columns: green when any MCQs exist, red zero when none. */
 function mcqCountTone(total: number): string {
-  if (total <= 0) return 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100';
+  if (total <= 0) return 'bg-gray-50 text-red-600 border-gray-200 hover:bg-gray-100';
   return 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100';
 }
 
 /** Approval columns: red / amber / green by approval progress. */
 function mcqApprovalTone(approved: number, total: number): string {
-  if (total <= 0) return 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100';
+  if (total <= 0) return 'bg-gray-50 text-red-600 border-gray-200 hover:bg-gray-100';
   if (approved >= total) return 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100';
   if (approved > 0) return 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100';
   return 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100';
@@ -316,7 +316,7 @@ function McqMetricColumn({
     'flex items-center justify-center rounded-lg border min-h-[2rem] w-full px-1 py-1 text-[10px] font-bold tabular-nums leading-tight transition';
   if (!enabled) {
     return (
-      <span className={`${base} bg-gray-50/80 text-gray-400 border-gray-200`} title="Not applicable">
+      <span className={`${base} bg-gray-50/80 text-black border-gray-200`} title="Not applicable">
         {display}
       </span>
     );
@@ -357,10 +357,10 @@ function SopMcqMetrics({
   if (mcqTotal === undefined && mcqEngTotal === undefined) {
     return (
       <>
-        <span className="flex items-center justify-center text-[10px] text-gray-400 font-semibold">NA</span>
-        <span className="flex items-center justify-center text-[10px] text-gray-400 font-semibold">NA</span>
-        <span className="flex items-center justify-center text-[10px] text-gray-400 font-semibold">NA</span>
-        <span className="flex items-center justify-center text-[10px] text-gray-400 font-semibold">NA</span>
+        <span className="flex items-center justify-center text-[10px] text-black font-semibold">NA</span>
+        <span className="flex items-center justify-center text-[10px] text-black font-semibold">NA</span>
+        <span className="flex items-center justify-center text-[10px] text-black font-semibold">NA</span>
+        <span className="flex items-center justify-center text-[10px] text-black font-semibold">NA</span>
       </>
     );
   }
@@ -369,7 +369,7 @@ function SopMcqMetrics({
   const engAppr = isDualLanguage ? (mcqEngApproved ?? 0) : (mcqApproved ?? 0);
   const gujTotal = isDualLanguage ? (mcqGujTotal ?? 0) : 0;
   const gujAppr = isDualLanguage ? (mcqGujApproved ?? 0) : 0;
-  const neutral = 'bg-gray-50 text-gray-400 border-gray-200';
+  const neutral = 'bg-gray-50 text-black border-gray-200';
 
   return (
     <>
@@ -677,7 +677,7 @@ function UploadModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100">
               <FileSpreadsheet className="h-4 w-4 text-purple-600" />
             </div>
-            <h2 className="font-bold text-gray-800">Upload Training Matrix</h2>
+            <h2 className="font-bold text-black">Upload Training Matrix</h2>
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-gray-100">
             <X className="h-4 w-4" />
@@ -700,8 +700,8 @@ function UploadModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
             className="cursor-pointer rounded-xl border-2 border-dashed border-purple-300 bg-purple-50/50 p-6 text-center transition hover:border-purple-400"
           >
             <Upload className="mx-auto mb-2 h-8 w-8 text-purple-400" />
-            <p className="text-sm font-medium text-gray-700">Click or drop Excel files here</p>
-            <p className="mt-1 text-xs text-gray-500">Supports .xlsx — one file per department</p>
+            <p className="text-sm font-medium text-black">Click or drop Excel files here</p>
+            <p className="mt-1 text-xs text-black">Supports .xlsx — one file per department</p>
             <input
               ref={inputRef}
               type="file"
@@ -719,10 +719,10 @@ function UploadModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
             <div className="space-y-1 max-h-40 overflow-y-auto">
               {files.map((f, i) => (
                 <div key={`${f.name}-${i}`} className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 text-xs">
-                  <span className="truncate text-gray-700">{f.name}</span>
+                  <span className="truncate text-black">{f.name}</span>
                   <button
                     onClick={() => setFiles(files.filter((_, idx) => idx !== i))}
-                    className="text-gray-400 hover:text-red-500"
+                    className="text-black hover:text-red-500"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -757,9 +757,9 @@ function UploadModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
 
         {confirming ? (
           <div className="border-t px-5 py-3 space-y-2">
-            <p className="text-xs text-gray-700 font-medium">Are you sure? This will delete all existing training matrix data and replace it with the selected {files.length} file{files.length !== 1 ? 's' : ''}.</p>
+            <p className="text-xs text-black font-medium">Are you sure? This will delete all existing training matrix data and replace it with the selected {files.length} file{files.length !== 1 ? 's' : ''}.</p>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setConfirming(false)} className="rounded-lg border px-4 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50">
+              <button onClick={() => setConfirming(false)} className="rounded-lg border px-4 py-1.5 text-sm font-medium text-black hover:bg-gray-50">
                 Cancel
               </button>
               <button
@@ -773,7 +773,7 @@ function UploadModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
           </div>
         ) : (
           <div className="flex justify-end gap-2 border-t px-5 py-3">
-            <button onClick={onClose} className="rounded-lg border px-4 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50">
+            <button onClick={onClose} className="rounded-lg border px-4 py-1.5 text-sm font-medium text-black hover:bg-gray-50">
               Close
             </button>
             <button
@@ -813,14 +813,14 @@ function ListModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-3xl rounded-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b px-5 py-4">
-          <h2 className="font-bold text-gray-800">{title}</h2>
+          <h2 className="font-bold text-black">{title}</h2>
           <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-gray-100">
             <X className="h-4 w-4" />
           </button>
         </div>
         <div className="max-h-[70vh] overflow-auto p-4">
           {rows.length === 0 ? (
-            <p className="py-8 text-center text-sm text-gray-500">Nothing to show.</p>
+            <p className="py-8 text-center text-sm text-black">Nothing to show.</p>
           ) : (
             <table className="w-full text-left text-xs">
               <thead className="bg-gray-50">
@@ -828,7 +828,7 @@ function ListModal({
                   {columns.map((c) => (
                     <th
                       key={c.key}
-                      className="border-b border-gray-200 px-3 py-2 font-semibold text-gray-600"
+                      className="border-b border-gray-200 px-3 py-2 font-semibold text-black"
                       style={{ width: c.width }}
                     >
                       {c.label}
@@ -840,7 +840,7 @@ function ListModal({
                 {rows.map((r, i) => (
                   <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
                     {columns.map((c) => (
-                      <td key={c.key} className="px-3 py-2 text-gray-700">
+                      <td key={c.key} className="px-3 py-2 text-black">
                         {r[c.key] ?? '—'}
                       </td>
                     ))}
@@ -883,8 +883,8 @@ function DbSopModal({
       <div className="w-full max-w-5xl rounded-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b px-5 py-4">
           <div>
-            <h2 className="font-bold text-gray-800">DB SOPs (Department-wise)</h2>
-            <div className="mt-0.5 text-xs text-gray-500">Total SOPs in DB: {total}</div>
+            <h2 className="font-bold text-black">DB SOPs (Department-wise)</h2>
+            <div className="mt-0.5 text-xs text-black">Total SOPs in DB: {total}</div>
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-gray-100">
             <X className="h-4 w-4" />
@@ -894,7 +894,7 @@ function DbSopModal({
         <div className="grid grid-cols-12 gap-0">
           <aside className="col-span-4 border-r bg-gray-50 p-4">
             <div className="mb-3 flex items-center gap-2">
-              <Search className="h-4 w-4 text-gray-400" />
+              <Search className="h-4 w-4 text-black" />
               <input
                 value={term}
                 onChange={(e) => setTerm(e.target.value)}
@@ -919,8 +919,8 @@ function DbSopModal({
                         : { background: '#fff', border: '1px solid #e5e7eb' }
                     }
                   >
-                    <span className={`font-semibold ${active ? 'text-purple-700' : 'text-gray-700'}`}>{d}</span>
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${active ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                    <span className={`font-semibold ${active ? 'text-purple-700' : 'text-black'}`}>{d}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${active ? 'bg-purple-600 text-white' : 'bg-gray-100 text-black'}`}>
                       {count}
                     </span>
                   </button>
@@ -931,8 +931,8 @@ function DbSopModal({
 
           <section className="col-span-8 p-4">
             <div className="mb-2 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-800">{activeDept}</div>
-              <div className="text-xs text-gray-500">
+              <div className="text-sm font-semibold text-black">{activeDept}</div>
+              <div className="text-xs text-black">
                 Showing {rows.length} / {(dbSopsByDept?.[activeDept]?.length || 0)}
               </div>
             </div>
@@ -941,22 +941,22 @@ function DbSopModal({
               <table className="w-full text-left text-xs">
                 <thead className="sticky top-0 bg-gray-50">
                   <tr>
-                    <th className="border-b border-gray-200 px-3 py-2 font-semibold text-gray-600" style={{ width: 160 }}>
+                    <th className="border-b border-gray-200 px-3 py-2 font-semibold text-black" style={{ width: 160 }}>
                       SOP Code
                     </th>
-                    <th className="border-b border-gray-200 px-3 py-2 font-semibold text-gray-600">Title</th>
+                    <th className="border-b border-gray-200 px-3 py-2 font-semibold text-black">Title</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((r) => (
                     <tr key={r.sopCode} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="px-3 py-2 font-semibold text-gray-800">{r.sopCode}</td>
-                      <td className="px-3 py-2 text-gray-700">{r.title || '—'}</td>
+                      <td className="px-3 py-2 font-semibold text-black">{r.sopCode}</td>
+                      <td className="px-3 py-2 text-black">{r.title || '—'}</td>
                     </tr>
                   ))}
                   {rows.length === 0 && (
                     <tr>
-                      <td colSpan={2} className="px-3 py-8 text-center text-sm text-gray-500">
+                      <td colSpan={2} className="px-3 py-8 text-center text-sm text-black">
                         No SOPs found.
                       </td>
                     </tr>
@@ -984,7 +984,7 @@ function RowA({
 }) {
   const content = (
     <>
-      <span className="min-w-0 shrink font-semibold text-gray-700 whitespace-nowrap overflow-hidden text-ellipsis">{label}</span>
+      <span className="min-w-0 shrink font-semibold text-black whitespace-nowrap overflow-hidden text-ellipsis">{label}</span>
       <span className="font-bold tabular-nums shrink-0 leading-tight text-gray-900">{value}</span>
     </>
   );
@@ -993,14 +993,14 @@ function RowA({
       <button
         type="button"
         onClick={onClick}
-        className="flex w-full min-h-[24px] cursor-pointer items-center justify-between gap-1.5 rounded-[4px] border border-transparent px-1 py-0.5 text-left text-[10px] transition-colors hover:bg-purple-100/80 active:bg-purple-200/60 focus:z-10 focus:outline-none focus:ring-1 focus:ring-purple-400"
+        className="flex w-full min-h-[24px] cursor-pointer items-center justify-between gap-1.5 rounded-[4px] border border-transparent px-1 py-0.5 text-left text-[11px] transition-colors hover:bg-purple-100/80 active:bg-purple-200/60 focus:z-10 focus:outline-none focus:ring-1 focus:ring-purple-400"
       >
         {content}
       </button>
     );
   }
   return (
-    <div className="flex w-full min-h-[24px] items-center justify-between gap-1.5 rounded-[4px] border border-transparent px-1 py-0.5 text-[10px]">
+    <div className="flex w-full min-h-[24px] items-center justify-between gap-1.5 rounded-[4px] border border-transparent px-1 py-0.5 text-[11px]">
       {content}
     </div>
   );
@@ -1020,8 +1020,8 @@ function RowB({
   onClickRed?: () => void;
 }) {
   return (
-    <div className="grid min-h-[26px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[5px] border border-transparent px-1 py-px text-[10px]">
-      <span className="min-w-0 truncate text-left font-semibold text-gray-700">{label}</span>
+    <div className="grid min-h-[26px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[5px] border border-transparent px-1 py-px text-[11px]">
+      <span className="min-w-0 truncate text-left font-semibold text-black">{label}</span>
       <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
         {onClickGreen ? (
           <button
@@ -1034,23 +1034,18 @@ function RowB({
         ) : (
           <span className="min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700">{green}</span>
         )}
-        <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
-        {(() => {
-          const isZero = red === 0;
-          const colorCls = isZero ? 'text-gray-400' : 'text-red-600';
-          const hoverCls = isZero ? 'hover:bg-gray-100 focus:ring-gray-400/70' : 'hover:bg-red-50 focus:ring-red-400/70';
-          return onClickRed ? (
-            <button
-              type="button"
-              onClick={onClickRed}
-              className={`min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none ${colorCls} transition-colors ${hoverCls} focus:z-10 focus:outline-none focus:ring-1`}
-            >
-              {red}
-            </button>
-          ) : (
-            <span className={`min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none ${colorCls}`}>{red}</span>
-          );
-        })()}
+        <span className="select-none text-[8px] font-light text-black/30" aria-hidden>|</span>
+        {onClickRed ? (
+          <button
+            type="button"
+            onClick={onClickRed}
+            className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-400/70"
+          >
+            {red}
+          </button>
+        ) : (
+          <span className="min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600">{red}</span>
+        )}
       </div>
     </div>
   );
@@ -1074,8 +1069,8 @@ function RowC({
   onClickRed?: () => void;
 }) {
   return (
-    <div className="grid min-h-[26px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[5px] border border-transparent px-1 py-px text-[10px]">
-      <span className="min-w-0 truncate text-left font-semibold text-gray-700">{label}</span>
+    <div className="grid min-h-[26px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[5px] border border-transparent px-1 py-px text-[11px]">
+      <span className="min-w-0 truncate text-left font-semibold text-black">{label}</span>
       <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
         {onClickGreen ? (
           <button
@@ -1088,7 +1083,7 @@ function RowC({
         ) : (
           <span className="min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700">{green}</span>
         )}
-        <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
+        <span className="select-none text-[8px] font-light text-black/30" aria-hidden>|</span>
         {onClickAmber ? (
           <button
             type="button"
@@ -1100,23 +1095,18 @@ function RowC({
         ) : (
           <span className="min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none text-amber-600">{amber}</span>
         )}
-        <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
-        {(() => {
-          const isZero = red === 0;
-          const colorCls = isZero ? 'text-gray-400' : 'text-red-600';
-          const hoverCls = isZero ? 'hover:bg-gray-100 focus:ring-gray-400/70' : 'hover:bg-red-50 focus:ring-red-400/70';
-          return onClickRed ? (
-            <button
-              type="button"
-              onClick={onClickRed}
-              className={`min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none ${colorCls} transition-colors ${hoverCls} focus:z-10 focus:outline-none focus:ring-1`}
-            >
-              {red}
-            </button>
-          ) : (
-            <span className={`min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none ${colorCls}`}>{red}</span>
-          );
-        })()}
+        <span className="select-none text-[8px] font-light text-black/30" aria-hidden>|</span>
+        {onClickRed ? (
+          <button
+            type="button"
+            onClick={onClickRed}
+            className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600 transition-colors hover:bg-red-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-400/70"
+          >
+            {red}
+          </button>
+        ) : (
+          <span className="min-w-[1.35rem] px-1 py-0.5 text-center text-[10px] font-bold leading-none text-red-600">{red}</span>
+        )}
       </div>
     </div>
   );
@@ -1135,23 +1125,22 @@ function RowD({
   onClick?: () => void;
   tooltip?: string;
 }) {
-  const isZeroRed = color === 'red' && (typeof value === 'number' ? value === 0 : value === '0');
   const colorClass =
     color === 'green' ? 'text-emerald-700'
-      : color === 'red' ? (isZeroRed ? 'text-gray-400' : 'text-red-600')
+      : color === 'red' ? 'text-red-600'
       : 'text-amber-600';
   const hoverBg =
     color === 'green' ? 'hover:bg-emerald-50'
-      : color === 'red' ? (isZeroRed ? 'hover:bg-gray-100' : 'hover:bg-red-50')
+      : color === 'red' ? 'hover:bg-red-50'
       : 'hover:bg-amber-50';
   return (
     <div className="grid min-h-[24px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[4px] border border-transparent px-1 py-px text-[10px]">
-      <span className="flex min-w-0 items-center gap-0.5 truncate text-[10px] font-semibold text-gray-700">
+      <span className="flex min-w-0 items-center gap-0.5 truncate text-[10px] font-semibold text-black">
         {label}
         {tooltip && (
           <span className="group/tip relative inline-flex items-center">
             <svg
-              className="h-2.5 w-2.5 cursor-default text-gray-300 transition-colors group-hover/tip:text-gray-500"
+              className="h-2.5 w-2.5 cursor-default text-black/35 transition-colors group-hover/tip:text-black"
               viewBox="0 0 16 16"
               fill="currentColor"
             >
@@ -1182,23 +1171,24 @@ function RepetitiveSopsRow({
   return (
     <div className="flex w-full min-w-0 items-center justify-between gap-x-1 px-1 min-h-[22px]">
       {items.map(({ label, value, color, tooltip, onClick }) => {
-        const isZeroRed = color === 'red' && (typeof value === 'number' ? value === 0 : value === '0');
         const colorClass = color === 'red'
-          ? (isZeroRed ? 'text-gray-400' : 'text-red-600')
+          ? 'text-red-600'
           : color === 'amber' ? 'text-amber-600' : 'text-emerald-700';
         return (
           <span key={label} className="flex shrink-0 items-center gap-x-0.5 tabular-nums" title={tooltip}>
-            <span className="shrink-0 cursor-default text-[10px] font-semibold text-gray-500">
+            <span className="shrink-0 cursor-default text-[10px] font-semibold text-black">
               {label}
             </span>
-            <button
-              type="button"
-              onClick={onClick}
-              title={tooltip}
-              className={`shrink-0 rounded px-0.5 text-center text-[10px] font-bold leading-none ${colorClass} ${onClick ? 'cursor-pointer hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-purple-400' : ''}`}
-            >
-              {value}
-            </button>
+            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
+              <button
+                type="button"
+                onClick={onClick}
+                title={tooltip}
+                className={`min-w-[1.35rem] text-center text-[10px] font-bold leading-none rounded px-1 py-0.5 ${colorClass} ${onClick ? 'cursor-pointer hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-purple-400' : ''}`}
+              >
+                {value}
+              </button>
+            </div>
           </span>
         );
       })}
@@ -1217,13 +1207,10 @@ function RedCountBtn({
   title?: string;
   variant?: 'lg' | 'sm';
 }) {
-  const isZero = (value ?? 0) === 0;
   const sizeCls = variant === 'sm'
     ? 'min-w-[1rem] rounded-sm px-0.5 py-px'
     : 'min-w-[1.35rem] rounded px-1 py-0.5';
-  const colorCls = isZero
-    ? 'text-gray-400 hover:bg-gray-100 focus:ring-gray-400'
-    : 'text-red-600 hover:bg-red-50 focus:ring-red-400';
+  const colorCls = 'text-red-600 hover:bg-red-50 focus:ring-red-400';
   return (
     <button
       type="button"
@@ -1252,10 +1239,41 @@ function MonthStrip({
           onClick={() => onSelectMonth?.(m)}
           className={`flex flex-col items-center rounded-[4px] border border-transparent px-0.5 py-0.5 transition-colors ${onSelectMonth ? 'hover:bg-purple-100/80 focus:z-10 focus:outline-none focus:ring-1 focus:ring-purple-400' : ''}`}
         >
-          <span className="text-[10px] font-medium text-gray-500 leading-none">{MONTH_SHORT[m]}</span>
+          <span className="text-[10px] font-medium text-black leading-none">{MONTH_SHORT[m]}</span>
           <span className="text-[11px] font-bold text-gray-900 leading-tight tabular-nums">{monthCounts[m] ?? 0}</span>
         </button>
       ))}
+    </div>
+  );
+}
+
+/** Title + monthly sum on the left; small “dept” + upload fraction on the right. */
+function SopsMonthHeaderRow({
+  monthSum,
+  deptNumerator,
+  deptDenominator,
+  title,
+}: {
+  monthSum: number;
+  deptNumerator: number;
+  deptDenominator: number;
+  title?: string;
+}) {
+  return (
+    <div className="flex w-full items-baseline justify-between gap-3 px-1 pb-1 pt-px">
+      <div className="flex min-w-0 items-baseline gap-2">
+        <span className="shrink-0 text-[11px] font-semibold leading-none text-black">SOPs / Month</span>
+        <span className="shrink-0 text-[11px] font-semibold tabular-nums leading-none text-black">{monthSum}</span>
+      </div>
+      <div
+        className="flex shrink-0 items-baseline gap-2.5 text-[11px] leading-none text-black tabular-nums"
+        title={title ?? 'Departments with matrix uploads / total departments'}
+      >
+        <span className="font-normal">dept</span>
+        <span className="font-semibold">
+          {deptNumerator}/{deptDenominator}
+        </span>
+      </div>
     </div>
   );
 }
@@ -1285,8 +1303,8 @@ function ExpiryInlineRow({
   onNoDate?: () => void;
 }) {
   const btn =
-    'min-w-[1rem] rounded px-0.5 text-[10px] font-bold leading-none tabular-nums focus:outline-none focus:ring-1';
-  const label = 'shrink-0 text-[10px] font-medium leading-none text-gray-500';
+    'min-w-[1rem] rounded px-0.5 text-[11px] font-bold leading-none tabular-nums focus:outline-none focus:ring-1';
+  const label = 'shrink-0 text-[11px] font-medium leading-none text-black';
   return (
     <div className="flex w-full min-w-0 flex-nowrap items-center justify-between gap-x-1 px-1 py-0.5">
       <span className="flex shrink-0 items-center gap-x-0.5">
@@ -1294,10 +1312,7 @@ function ExpiryInlineRow({
           Ex.
         </span>
         {(() => {
-          const isZero = expired === 0;
-          const cls = isZero
-            ? 'text-gray-400 hover:bg-gray-100 focus:ring-gray-400'
-            : 'text-red-600 hover:bg-red-50 focus:ring-red-400';
+          const cls = 'text-red-600 hover:bg-red-50 focus:ring-red-400';
           return onExpired ? (
             <button
               type="button"
@@ -1307,7 +1322,7 @@ function ExpiryInlineRow({
               {expired}
             </button>
           ) : (
-            <span className={`${btn} ${isZero ? 'text-gray-400' : 'text-red-600'}`}>{expired}</span>
+            <span className={`${btn} text-red-600`}>{expired}</span>
           );
         })()}
       </span>
@@ -1335,12 +1350,12 @@ function ExpiryInlineRow({
           <button
             type="button"
             onClick={onNoDate}
-            className={`${btn} cursor-pointer text-gray-800 hover:bg-gray-100 focus:ring-gray-400`}
+            className={`${btn} cursor-pointer ${noDate === 0 ? 'text-red-600 hover:bg-red-50 focus:ring-red-400' : 'text-black hover:bg-gray-100 focus:ring-gray-400'}`}
           >
             {noDate}
           </button>
         ) : (
-          <span className={`${btn} text-gray-800`}>{noDate}</span>
+          <span className={`${btn} ${noDate === 0 ? 'text-red-600' : 'text-black'}`}>{noDate}</span>
         )}
       </span>
     </div>
@@ -1363,29 +1378,28 @@ function DeptStrip({
   const short = deptStripShort;
   const visible = order;
   return (
-    <div className="grid grid-cols-4 gap-x-1 gap-y-0.5">
+    <div className="grid grid-cols-4 gap-x-1 gap-y-0.5 px-2">
       {visible.map((d) => (
-        <span key={d} className="flex flex-col items-center gap-0.5 rounded-[4px] px-0.5 py-0.5">
-          <span className="text-[8px] font-medium text-gray-500 leading-none whitespace-nowrap">{short(d)}</span>
-          <span className="inline-flex shrink-0 flex-nowrap items-center gap-px rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm leading-none tabular-nums whitespace-nowrap">
+        <span key={d} className="flex flex-col items-center gap-px rounded-[4px] py-px">
+          <span className="flex h-[9px] items-center text-[8px] font-medium text-black leading-none whitespace-nowrap">{short(d)}</span>
+          <span className="inline-flex h-[16px] shrink-0 flex-nowrap items-center gap-px rounded-md border border-gray-200/90 bg-white/95 px-0.5 shadow-sm leading-none tabular-nums whitespace-nowrap">
             <button
               type="button"
               onClick={() => onSelectFound?.(d)}
-              className={`min-w-[1rem] rounded px-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 ${onSelectFound ? 'cursor-pointer hover:bg-emerald-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-emerald-400' : ''}`}
+              className={`inline-flex h-full min-w-[1rem] items-center justify-center rounded px-px text-[10px] font-bold leading-none text-emerald-700 ${onSelectFound ? 'cursor-pointer hover:bg-emerald-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-emerald-400' : ''}`}
             >
               {foundCounts?.[d] ?? 0}
             </button>
-            <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
+            <span className="inline-flex h-full items-center select-none text-[8px] font-light text-black/30" aria-hidden>|</span>
             {(() => {
               const v = missingCounts?.[d] ?? 0;
-              const isZero = v === 0;
-              const colorCls = isZero ? 'text-gray-400' : 'text-red-600';
-              const hoverCls = isZero ? 'hover:bg-gray-100 focus:ring-gray-400' : 'hover:bg-red-50 focus:ring-red-400';
+              const colorCls = 'text-red-600';
+              const hoverCls = 'hover:bg-red-50 focus:ring-red-400';
               return (
                 <button
                   type="button"
                   onClick={() => onSelectMissing?.(d)}
-                  className={`min-w-[1rem] rounded px-0.5 text-center text-[10px] font-bold leading-none ${colorCls} ${onSelectMissing ? `cursor-pointer ${hoverCls} focus:z-10 focus:outline-none focus:ring-1` : ''}`}
+                  className={`inline-flex h-full min-w-[1rem] items-center justify-center rounded px-px text-[10px] font-bold leading-none ${colorCls} ${onSelectMissing ? `cursor-pointer ${hoverCls} focus:z-10 focus:outline-none focus:ring-1` : ''}`}
                 >
                   {v}
                 </button>
@@ -1419,7 +1433,7 @@ function SummaryTopic({ children }: { children: React.ReactNode }) {
   const stripe = nextStripe ? nextStripe() : 0;
   const bg = stripe % 2 === 0 ? 'bg-gray-100' : 'bg-white';
   return (
-    <div className={`flex flex-col gap-0 rounded-sm px-0.5 py-0.5 ${bg}`}>{children}</div>
+    <div className={`flex flex-col gap-0 rounded-sm pr-0.5 py-0.5 ${bg}`}>{children}</div>
   );
 }
 
@@ -1436,11 +1450,11 @@ function CardShell({
 }) {
   return (
     <div
-      className="flex w-full min-w-0 flex-col overflow-hidden rounded-[10px] bg-white px-2 py-1 text-left"
+      className="flex w-full min-w-0 flex-col overflow-hidden rounded-[10px] bg-white py-1 px-1 text-left"
     >
       <div className="flex w-full items-center gap-1.5 pb-px">
         <Icon className="h-3.5 w-3.5 shrink-0" style={{ color: accent }} />
-        <span className="min-w-0 flex-1 text-[11px] font-bold leading-tight text-gray-800 break-words">{title}</span>
+        <span className="min-w-0 flex-1 text-[11px] font-semibold leading-tight text-black break-words">{title}</span>
       </div>
       <SummaryTopics>{children}</SummaryTopics>
     </div>
@@ -1449,15 +1463,15 @@ function CardShell({
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-1 text-[10px] font-semibold leading-none text-gray-500">{children}</div>
+    <div className="px-1 text-[11px] font-semibold leading-none text-black">{children}</div>
   );
 }
 
 const mcqCompactPill =
-  'inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums';
-const mcqCompactSep = 'select-none text-[9px] leading-none text-gray-300';
+  'inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums';
+const mcqCompactSep = 'select-none text-[8px] font-light text-black/30';
 const mcqCompactBtn =
-  'min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none transition-colors focus:outline-none focus:ring-1';
+  'min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none transition-colors focus:outline-none focus:ring-1';
 
 function McqCompactRow2({
   label,
@@ -1476,7 +1490,7 @@ function McqCompactRow2({
 }) {
   return (
     <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
-      <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-gray-500" title={labelTitle ?? label}>
+      <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-black" title={labelTitle ?? label}>
         {label}
       </span>
       <div className={mcqCompactPill}>
@@ -1513,7 +1527,7 @@ function McqCompactRow3({
 }) {
   return (
     <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
-      <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-gray-500" title={labelTitle ?? label}>
+      <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-black" title={labelTitle ?? label}>
         {label}
       </span>
       <div className={mcqCompactPill}>
@@ -1765,24 +1779,24 @@ function SopDetailsInline({
             <span className="rounded-full bg-purple-100 text-purple-700 border border-purple-200 px-2 py-0.5 text-[11px] font-bold">
               {dept}
             </span>
-            <span className="rounded-full bg-gray-100 text-gray-700 border border-gray-200 px-2 py-0.5 text-[11px] font-bold">
+            <span className="rounded-full bg-gray-100 text-black border border-gray-200 px-2 py-0.5 text-[11px] font-bold">
               {badge}
             </span>
-            <span className="text-xs text-gray-500">Showing {sorted.length} / {(rows || []).length}</span>
-            <span className="text-[11px] text-gray-500">
+            <span className="text-xs text-black">Showing {sorted.length} / {(rows || []).length}</span>
+            <span className="text-[11px] text-black">
               Found: <span className="font-bold text-emerald-700">{summary.found}</span>
-              <span className="mx-1 text-gray-300">·</span>
+              <span className="mx-1 text-black/35">·</span>
               Obsolete: <span className="font-bold text-purple-700">{summary.foundObsolete}</span>
-              <span className="mx-1 text-gray-300">·</span>
+              <span className="mx-1 text-black/35">·</span>
               DB-only: <span className="font-bold text-amber-700">{summary.dbOnly}</span>
-              <span className="mx-1 text-gray-300">·</span>
+              <span className="mx-1 text-black/35">·</span>
               Excel-only: <span className="font-bold text-red-700">{summary.excelOnly}</span>
-              <span className="mx-1 text-gray-300">·</span>
+              <span className="mx-1 text-black/35">·</span>
               Ver missing: <span className="font-bold text-red-700">{summary.versionMissing}</span>
             </span>
           </div>
           <div className="mt-2 flex items-center gap-2">
-            <Search className="h-4 w-4 text-gray-400" />
+            <Search className="h-4 w-4 text-black" />
             <input
               value={term}
               onChange={(e) => setTerm(e.target.value)}
@@ -1794,7 +1808,7 @@ function SopDetailsInline({
         <button
           type="button"
           onClick={onClear}
-          className="shrink-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+          className="shrink-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-black hover:bg-gray-50"
         >
           Clear
         </button>
@@ -1802,7 +1816,7 @@ function SopDetailsInline({
 
       <div className="p-4">
         {loading ? (
-          <div className="flex items-center justify-center py-10 text-gray-400">
+          <div className="flex items-center justify-center py-10 text-black">
             <RefreshCw className="h-5 w-5 animate-spin mr-2" /> Loading SOP details…
           </div>
         ) : error ? (
@@ -1828,7 +1842,7 @@ function SopDetailsInline({
                       return (
                         <th
                           key={h.key}
-                          className="border-b border-gray-200 px-3 py-2 font-semibold text-gray-600"
+                          className="border-b border-gray-200 px-3 py-2 font-semibold text-black"
                           style={h.w ? { width: h.w } : undefined}
                         >
                           {h.label}
@@ -1840,7 +1854,7 @@ function SopDetailsInline({
                       <th
                         key={h.key}
                         style={h.w ? { width: h.w } : undefined}
-                        className="border-b border-gray-200 px-3 py-2 font-semibold text-gray-600"
+                        className="border-b border-gray-200 px-3 py-2 font-semibold text-black"
                       >
                         <button
                           type="button"
@@ -1904,21 +1918,21 @@ function SopDetailsInline({
                         <td className="px-3 py-2 font-mono font-bold text-gray-900">
                           {r?.sopCode}
                         </td>
-                        <td className="px-3 py-2 text-gray-800">
+                        <td className="px-3 py-2 text-black">
                           <div className="font-semibold">{r?.title || '—'}</div>
                           {db?.isDualLanguage && r?.raw?.registryRow?.gujaratiName && (
                             <div className="mt-0.5 text-[11px] text-indigo-700 font-medium">{r.raw.registryRow.gujaratiName}</div>
                           )}
                           {(db?.location || db?.trainer) && (
-                            <div className="mt-0.5 text-[11px] text-gray-500">
+                            <div className="mt-0.5 text-[11px] text-black">
                               {db?.location ? <span>Loc: {db.location}</span> : null}
                               {db?.location && db?.trainer ? <span className="mx-1">·</span> : null}
                               {db?.trainer ? <span>Trainer: {db.trainer}</span> : null}
                             </div>
                           )}
                         </td>
-                        <td className="px-3 py-2 font-mono font-semibold text-gray-700">{displaySopNo || '—'}</td>
-                        <td className="px-3 py-2 font-bold text-gray-700">{displayVersion ?? '—'}</td>
+                        <td className="px-3 py-2 font-mono font-semibold text-black">{displaySopNo || '—'}</td>
+                        <td className="px-3 py-2 font-bold text-black">{displayVersion ?? '—'}</td>
                         <td className="px-3 py-2">
                           {!versionAvailable ? (
                             <span className="inline-flex items-center rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-700">
@@ -1930,7 +1944,7 @@ function SopDetailsInline({
                             </span>
                           )}
                         </td>
-                        <td className="px-3 py-2 font-semibold text-gray-700">{excel?.month || '—'}</td>
+                        <td className="px-3 py-2 font-semibold text-black">{excel?.month || '—'}</td>
                         <td className="px-3 py-2">
                           {isFound ? (
                             <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
@@ -1949,7 +1963,7 @@ function SopDetailsInline({
                               Not found
                             </span>
                           ) : (
-                            <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-bold text-gray-600">
+                            <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-bold text-black">
                               —
                             </span>
                           )}
@@ -1969,14 +1983,14 @@ function SopDetailsInline({
                           <td colSpan={8} className="px-3 py-3">
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                               <div className="rounded-xl border border-gray-200 bg-white p-3">
-                                <div className="text-[11px] font-bold text-gray-700 mb-2">DB (registry row)</div>
-                                <pre className="max-h-[260px] overflow-auto text-[10px] leading-snug text-gray-700 whitespace-pre-wrap">
+                                <div className="text-[11px] font-bold text-black mb-2">DB (registry row)</div>
+                                <pre className="max-h-[260px] overflow-auto text-[10px] leading-snug text-black whitespace-pre-wrap">
                                   {JSON.stringify(r?.raw?.registryRow ?? null, null, 2)}
                                 </pre>
                               </div>
                               <div className="rounded-xl border border-gray-200 bg-white p-3">
-                                <div className="text-[11px] font-bold text-gray-700 mb-2">Excel upload (stored in DB)</div>
-                                <pre className="max-h-[260px] overflow-auto text-[10px] leading-snug text-gray-700 whitespace-pre-wrap">
+                                <div className="text-[11px] font-bold text-black mb-2">Excel upload (stored in DB)</div>
+                                <pre className="max-h-[260px] overflow-auto text-[10px] leading-snug text-black whitespace-pre-wrap">
                                   {JSON.stringify(r?.raw?.upload ?? null, null, 2)}
                                 </pre>
                               </div>
@@ -1989,7 +2003,7 @@ function SopDetailsInline({
                 })}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-3 py-10 text-center text-sm text-gray-500">
+                    <td colSpan={8} className="px-3 py-10 text-center text-sm text-black">
                       No SOPs found.
                     </td>
                   </tr>
@@ -2077,8 +2091,8 @@ function AssignSOPModal({
       <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b px-5 py-4">
           <div>
-            <h2 className="font-bold text-gray-800">Assign SOP to Matrix</h2>
-            <p className="mt-0.5 text-xs text-gray-500">SOPs are sourced from the master SOP database — no manual entry.</p>
+            <h2 className="font-bold text-black">Assign SOP to Matrix</h2>
+            <p className="mt-0.5 text-xs text-black">SOPs are sourced from the master SOP database — no manual entry.</p>
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-gray-100"><X className="h-4 w-4" /></button>
         </div>
@@ -2096,7 +2110,7 @@ function AssignSOPModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Department *</label>
+              <label className="mb-1 block text-xs font-medium text-black">Department *</label>
               <select
                 value={department}
                 onChange={(e) => { setDepartment(e.target.value); setSelectedSop(null); setSopSearch(''); setSopOptions([]); }}
@@ -2106,7 +2120,7 @@ function AssignSOPModal({
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Effective Month/Year *</label>
+              <label className="mb-1 block text-xs font-medium text-black">Effective Month/Year *</label>
               <div className="flex gap-1">
                 <select
                   value={month}
@@ -2128,16 +2142,16 @@ function AssignSOPModal({
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-600">Search SOP (master DB) *</label>
+            <label className="mb-1 block text-xs font-medium text-black">Search SOP (master DB) *</label>
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-black" />
               <input
                 value={sopSearch}
                 onChange={(e) => { setSopSearch(e.target.value); setSelectedSop(null); }}
                 placeholder="Type SOP code or name…"
                 className="w-full rounded-lg border border-gray-200 py-2 pl-8 pr-3 text-xs focus:border-purple-300 focus:outline-none"
               />
-              {searching && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">searching…</span>}
+              {searching && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-black">searching…</span>}
             </div>
             {sopOptions.length > 0 && !selectedSop && (
               <div className="mt-1 max-h-44 overflow-auto rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -2149,8 +2163,8 @@ function AssignSOPModal({
                     className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs hover:bg-purple-50"
                   >
                     <span className="font-mono font-semibold text-purple-700 shrink-0">{s.identifier}</span>
-                    <span className="text-gray-600 line-clamp-1">{s.name}</span>
-                    <span className="ml-auto shrink-0 text-[10px] text-gray-400">{s.department}</span>
+                    <span className="text-black line-clamp-1">{s.name}</span>
+                    <span className="ml-auto shrink-0 text-[10px] text-black">{s.department}</span>
                   </button>
                 ))}
               </div>
@@ -2159,7 +2173,7 @@ function AssignSOPModal({
               <div className="mt-1 flex items-center gap-2 rounded-lg bg-purple-50 px-3 py-2 text-xs text-purple-800">
                 <CheckCircle className="h-3.5 w-3.5 shrink-0 text-purple-600" />
                 <span className="font-semibold">{selectedSop.identifier}</span>
-                <span className="text-gray-600">{selectedSop.name}</span>
+                <span className="text-black">{selectedSop.name}</span>
                 <button type="button" onClick={() => { setSelectedSop(null); setSopSearch(''); }} className="ml-auto text-purple-400 hover:text-purple-700">
                   <X className="h-3.5 w-3.5" />
                 </button>
@@ -2168,7 +2182,7 @@ function AssignSOPModal({
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-600">Designation Applicability (optional, comma-separated)</label>
+            <label className="mb-1 block text-xs font-medium text-black">Designation Applicability (optional, comma-separated)</label>
             <input
               value={designations}
               onChange={(e) => setDesignations(e.target.value)}
@@ -2178,7 +2192,7 @@ function AssignSOPModal({
           </div>
         </div>
         <div className="flex justify-end gap-2 border-t px-5 py-3">
-          <button onClick={onClose} className="rounded-lg border px-4 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
+          <button onClick={onClose} className="rounded-lg border px-4 py-1.5 text-sm font-medium text-black hover:bg-gray-50">Cancel</button>
           <button
             onClick={handleAssign}
             disabled={loading || !selectedSop}
@@ -2253,7 +2267,7 @@ function EditMatrixEntryModal({
     }
   };
 
-  const labelCls = 'mb-1 block text-xs font-medium text-gray-600';
+  const labelCls = 'mb-1 block text-xs font-medium text-black';
   const inputCls = 'w-full rounded-lg border border-gray-200 px-3 py-2 text-xs focus:border-purple-300 focus:outline-none';
 
   return (
@@ -2261,8 +2275,8 @@ function EditMatrixEntryModal({
       <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b px-5 py-4">
           <div>
-            <h2 className="font-bold text-gray-800">{form._id ? 'Edit' : 'Add'} Matrix Entry</h2>
-            <p className="mt-0.5 text-xs text-gray-500">{entry.employeeName} — {entry.sopCode} — {MONTHS[entry.month - 1]} {entry.year}</p>
+            <h2 className="font-bold text-black">{form._id ? 'Edit' : 'Add'} Matrix Entry</h2>
+            <p className="mt-0.5 text-xs text-black">{entry.employeeName} — {entry.sopCode} — {MONTHS[entry.month - 1]} {entry.year}</p>
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-gray-100"><X className="h-4 w-4" /></button>
         </div>
@@ -2315,10 +2329,10 @@ function EditMatrixEntryModal({
             </div>
           </div>
 
-          <p className="mt-4 text-[10px] text-gray-400">SOP master data (ID, name, version) is read-only and cannot be changed here.</p>
+          <p className="mt-4 text-[10px] text-black">SOP master data (ID, name, version) is read-only and cannot be changed here.</p>
         </div>
         <div className="flex justify-end gap-2 border-t px-5 py-3">
-          <button onClick={onClose} className="rounded-lg border px-4 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
+          <button onClick={onClose} className="rounded-lg border px-4 py-1.5 text-sm font-medium text-black hover:bg-gray-50">Cancel</button>
           <button
             onClick={handleSave}
             disabled={loading}
@@ -2369,7 +2383,7 @@ function RemoveSOPModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b px-5 py-4">
-          <h2 className="font-bold text-gray-800">Remove SOP from Matrix</h2>
+          <h2 className="font-bold text-black">Remove SOP from Matrix</h2>
           <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-gray-100"><X className="h-4 w-4" /></button>
         </div>
         <div className="p-5">
@@ -2383,7 +2397,7 @@ function RemoveSOPModal({
           {error && <div className="mb-3 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700"><AlertTriangle className="h-3.5 w-3.5" /> {error}</div>}
         </div>
         <div className="flex justify-end gap-2 border-t px-5 py-3">
-          <button onClick={onClose} className="rounded-lg border px-4 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
+          <button onClick={onClose} className="rounded-lg border px-4 py-1.5 text-sm font-medium text-black hover:bg-gray-50">Cancel</button>
           <button
             onClick={handleRemove}
             disabled={loading}
@@ -2403,14 +2417,14 @@ function RemoveSOPModal({
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     pending: 'bg-amber-100 text-amber-700',
-    not_required: 'bg-gray-100 text-gray-500',
+    not_required: 'bg-gray-100 text-black',
   };
   const label: Record<string, string> = {
     pending: 'Training required',
     not_required: 'Not required',
   };
   return (
-    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${map[status] || 'bg-gray-100 text-gray-400'}`}>
+    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${map[status] || 'bg-gray-100 text-black'}`}>
       {label[status] || status}
     </span>
   );
@@ -2418,7 +2432,8 @@ function StatusBadge({ status }: { status: string }) {
 
 type MasterEmployee = { name: string; designation: string; department: string };
 
-// Step 2 of the assign flow — fill training data for each employee
+// ─── Redesigned Assign SOP Data Form ─────────────────────────────────────────
+// Hierarchy: Departments → Designations → Employees → Monthly Schedule
 function AssignSOPDataForm({
   sop,
   dept,
@@ -2432,55 +2447,84 @@ function AssignSOPDataForm({
   onBack: () => void;
   onSuccess: () => void;
 }) {
-  const currentMonth = uploadContext?.month ?? new Date().getMonth() + 1;
-  const currentYear = uploadContext?.year ?? new Date().getFullYear();
+  const initMonth = uploadContext?.month ?? new Date().getMonth() + 1;
+  const initYear  = uploadContext?.year  ?? new Date().getFullYear();
 
-  const [masterEmployees, setMasterEmployees] = useState<MasterEmployee[]>([]);
+  // Raw employee list from API
+  const [allEmployees, setAllEmployees] = useState<MasterEmployee[]>([]);
   const [employeesLoading, setEmployeesLoading] = useState(true);
-  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
-  const [expandedDepartments, setExpandedDepartments] = useState<Set<string>>(new Set());
-  const [expandedDesignations, setExpandedDesignations] = useState<Set<string>>(new Set());
-  const [month, setMonth] = useState(currentMonth);
-  const [year, setYear] = useState(currentYear);
+  const [scheduleLoading, setScheduleLoading] = useState(true);
+
+  // Selection — flat sets with composite keys to avoid nested Map complexity
+  // "dept::designation" for designations, "dept::empName" for employees
+  const [selectedDepts, setSelectedDepts]   = useState<Set<string>>(() => new Set([dept]));
+  const [selectedDesigs, setSelectedDesigs] = useState<Set<string>>(new Set());
+  const [selectedEmps,   setSelectedEmps]   = useState<Set<string>>(new Set());
+
+  // Monthly schedule: "month-year" → editable count
+  const [schedule, setSchedule]             = useState<Record<string, number>>({});
+  const [effectiveMonth, setEffectiveMonth] = useState(initMonth);
+  const [effectiveYear,  setEffectiveYear]  = useState(initYear);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error,   setError]   = useState('');
 
-  const empKey = (e: { department: string; name: string }) => `${e.department}::${e.name}`;
+  const dk  = (d: string, desig: string) => `${d}::${desig}`;
+  const ek  = (d: string, name:  string) => `${d}::${name}`;
+  const sk  = (m: number, y: number)     => `${m}-${y}`;
 
+  // Build hierarchy: dept → designation → employees
+  const deptGroups = useMemo(() => {
+    const map = new Map<string, Map<string, MasterEmployee[]>>();
+    for (const emp of allEmployees) {
+      if (!map.has(emp.department)) map.set(emp.department, new Map());
+      const dm = map.get(emp.department)!;
+      const desig = emp.designation || 'Unassigned';
+      if (!dm.has(desig)) dm.set(desig, []);
+      dm.get(desig)!.push(emp);
+    }
+    return Array.from(map.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([department, dm]) => ({
+        department,
+        designations: Array.from(dm.entries())
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([designation, employees]) => ({ designation, employees })),
+        allEmployees: Array.from(dm.values()).flat(),
+      }));
+  }, [allEmployees]);
+
+  const allDepts = useMemo(() => deptGroups.map((g) => g.department), [deptGroups]);
+
+  // ── Load employees from master ─────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setEmployeesLoading(true);
       try {
-        const res = await fetch(`/api/employees`);
+        const res  = await fetch('/api/employees');
         const json = await res.json();
         if (cancelled) return;
         const emps: MasterEmployee[] = (json.employees || [])
-          .filter((e: { name?: string; isActive?: boolean; department?: string }) => e.name && e.isActive !== false && e.department)
-          .map((e: { name: string; designation?: string; department: string }) => ({
-            name: e.name,
+          .filter((e: any) => e.name && e.isActive !== false && e.department)
+          .map((e: any) => ({
+            name:        e.name,
             designation: e.designation || 'Unassigned',
-            department: e.department,
-          }))
-          .sort((a: MasterEmployee, b: MasterEmployee) =>
-            a.department.localeCompare(b.department) || a.name.localeCompare(b.name),
-          );
-        setMasterEmployees(emps);
-        // Pre-select employees in the SOP's target department only, by default
-        const preselected = emps.filter((e) => e.department.toLowerCase() === dept.toLowerCase());
-        setSelectedKeys(new Set(preselected.map(empKey)));
-        const departments = Array.from(new Set(emps.map((e) => e.department)));
-        // Expand the target department by default; collapse others
-        setExpandedDepartments(new Set(
-          departments.filter((d) => d.toLowerCase() === dept.toLowerCase()),
-        ));
-        setExpandedDesignations(new Set(emps.map((e) => `${e.department}::${e.designation}`)));
+            department:  e.department,
+          }));
+        setAllEmployees(emps);
+
+        // Pre-select target department's designations + employees
+        const actualDept = emps.find((e) => e.department.toLowerCase() === dept.toLowerCase())?.department || dept;
+        const targetEmps = emps.filter((e) => e.department.toLowerCase() === dept.toLowerCase());
+        setSelectedDepts(new Set([actualDept]));
+        setSelectedDesigs(new Set(targetEmps.map((e) => dk(e.department, e.designation))));
+        setSelectedEmps(new Set(targetEmps.map((e) => ek(e.department, e.name))));
       } catch {
         if (!cancelled) {
-          setMasterEmployees([]);
-          setSelectedKeys(new Set());
-          setExpandedDepartments(new Set());
-          setExpandedDesignations(new Set());
+          setAllEmployees([]);
+          setSelectedDepts(new Set([dept]));
+          setSelectedDesigs(new Set());
+          setSelectedEmps(new Set());
         }
       } finally {
         if (!cancelled) setEmployeesLoading(false);
@@ -2489,100 +2533,114 @@ function AssignSOPDataForm({
     return () => { cancelled = true; };
   }, [dept]);
 
-  // Group: department → designation → employees
-  const departmentGroups = useMemo(() => {
-    const byDept = new Map<string, Map<string, MasterEmployee[]>>();
-    for (const emp of masterEmployees) {
-      if (!byDept.has(emp.department)) byDept.set(emp.department, new Map());
-      const desigMap = byDept.get(emp.department)!;
-      const desigKey = emp.designation || 'Unassigned';
-      if (!desigMap.has(desigKey)) desigMap.set(desigKey, []);
-      desigMap.get(desigKey)!.push(emp);
-    }
-    return Array.from(byDept.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([department, desigMap]) => ({
-        department,
-        designations: Array.from(desigMap.entries())
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([designation, emps]) => ({ designation, employees: emps })),
-        employees: Array.from(desigMap.values()).flat(),
-      }));
-  }, [masterEmployees]);
+  // ── Load monthly schedule from TrainingMatrixRecord ────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setScheduleLoading(true);
+      try {
+        const code = stripVersion(String(sop.identifier || ''));
+        const res  = await fetch(`/api/training-matrix/monthly-schedule?sopCode=${encodeURIComponent(code)}`);
+        const json = await res.json();
+        if (cancelled) return;
+        const init: Record<string, number> = {};
+        for (const item of (json.schedule || [])) {
+          init[sk(item.month, item.year)] = item.count;
+        }
+        setSchedule(init);
+      } catch {
+        // leave schedule empty — non-critical
+      } finally {
+        if (!cancelled) setScheduleLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [sop.identifier]);
 
-  const toggleEmployee = (emp: MasterEmployee) => {
-    setSelectedKeys((prev) => {
-      const next = new Set(prev);
-      const k = empKey(emp);
-      if (next.has(k)) next.delete(k);
-      else next.add(k);
-      return next;
-    });
-  };
-
-  const toggleDesignation = (department: string, designation: string) => {
-    const group = departmentGroups.find((g) => g.department === department);
-    const emps = group?.designations.find((d) => d.designation === designation)?.employees || [];
-    const allSelected = emps.length > 0 && emps.every((e) => selectedKeys.has(empKey(e)));
-    setSelectedKeys((prev) => {
-      const next = new Set(prev);
-      if (allSelected) emps.forEach((e) => next.delete(empKey(e)));
-      else emps.forEach((e) => next.add(empKey(e)));
-      return next;
-    });
-  };
-
-  const toggleDepartment = (department: string) => {
-    const group = departmentGroups.find((g) => g.department === department);
-    const emps = group?.employees || [];
-    const allSelected = emps.length > 0 && emps.every((e) => selectedKeys.has(empKey(e)));
-    setSelectedKeys((prev) => {
-      const next = new Set(prev);
-      if (allSelected) emps.forEach((e) => next.delete(empKey(e)));
-      else emps.forEach((e) => next.add(empKey(e)));
-      return next;
-    });
-  };
-
-  const toggleDepartmentExpand = (department: string) => {
-    setExpandedDepartments((prev) => {
-      const next = new Set(prev);
-      if (next.has(department)) next.delete(department);
-      else next.add(department);
-      return next;
-    });
-  };
-
-  const toggleDesignationExpand = (department: string, designation: string) => {
-    const k = `${department}::${designation}`;
-    setExpandedDesignations((prev) => {
-      const next = new Set(prev);
-      if (next.has(k)) next.delete(k);
-      else next.add(k);
-      return next;
-    });
-  };
-
-  const selectedCount = selectedKeys.size;
-  const selectedDepartmentCount = useMemo(() => {
-    const set = new Set<string>();
-    for (const k of selectedKeys) set.add(k.split('::')[0]);
-    return set.size;
-  }, [selectedKeys]);
-
-  const handleSave = async () => {
-    // Bucket selected employees by department
-    const byDept = new Map<string, Array<{ name: string; designation: string; trainingStatus: string }>>();
-    for (const emp of masterEmployees) {
-      if (!selectedKeys.has(empKey(emp))) continue;
-      if (!byDept.has(emp.department)) byDept.set(emp.department, []);
-      byDept.get(emp.department)!.push({
-        name: emp.name,
-        designation: emp.designation,
-        trainingStatus: 'pending',
+  // ── Toggle handlers ────────────────────────────────────────────────────────
+  const toggleDept = (d: string) => {
+    const group = deptGroups.find((g) => g.department === d);
+    if (!group) return;
+    if (selectedDepts.has(d)) {
+      // Uncheck: cascade-remove designations + employees
+      setSelectedDepts((p)  => { const s = new Set(p); s.delete(d); return s; });
+      setSelectedDesigs((p) => {
+        const s = new Set(p);
+        group.designations.forEach((dg) => s.delete(dk(d, dg.designation)));
+        return s;
+      });
+      setSelectedEmps((p) => {
+        const s = new Set(p);
+        group.allEmployees.forEach((e) => s.delete(ek(d, e.name)));
+        return s;
+      });
+    } else {
+      // Check: auto-select all designations + employees for this dept
+      setSelectedDepts((p)  => { const s = new Set(p); s.add(d); return s; });
+      setSelectedDesigs((p) => {
+        const s = new Set(p);
+        group.designations.forEach((dg) => s.add(dk(d, dg.designation)));
+        return s;
+      });
+      setSelectedEmps((p) => {
+        const s = new Set(p);
+        group.allEmployees.forEach((e) => s.add(ek(d, e.name)));
+        return s;
       });
     }
+  };
 
+  const toggleDesig = (d: string, designation: string) => {
+    const group      = deptGroups.find((g) => g.department === d);
+    const desigGroup = group?.designations.find((dg) => dg.designation === designation);
+    if (!desigGroup) return;
+    const key = dk(d, designation);
+    if (selectedDesigs.has(key)) {
+      setSelectedDesigs((p) => { const s = new Set(p); s.delete(key); return s; });
+      setSelectedEmps((p) => {
+        const s = new Set(p);
+        desigGroup.employees.forEach((e) => s.delete(ek(d, e.name)));
+        return s;
+      });
+    } else {
+      setSelectedDesigs((p) => { const s = new Set(p); s.add(key); return s; });
+      setSelectedEmps((p) => {
+        const s = new Set(p);
+        desigGroup.employees.forEach((e) => s.add(ek(d, e.name)));
+        return s;
+      });
+    }
+  };
+
+  const toggleEmp = (d: string, name: string) => {
+    const key = ek(d, name);
+    setSelectedEmps((p) => {
+      const s = new Set(p);
+      if (s.has(key)) s.delete(key); else s.add(key);
+      return s;
+    });
+  };
+
+  const selectedEmpCount  = selectedEmps.size;
+  const selectedDeptCount = selectedDepts.size;
+
+  // 12-month grid starting from effectiveMonth
+  const monthsGrid = useMemo(() =>
+    Array.from({ length: 12 }, (_, i) => {
+      const m = ((effectiveMonth - 1 + i) % 12) + 1;
+      const y = effectiveYear + Math.floor((effectiveMonth - 1 + i) / 12);
+      return { month: m, year: y, key: sk(m, y), label: MONTHS[m - 1].slice(0, 3), yr: String(y).slice(2) };
+    }),
+  [effectiveMonth, effectiveYear]);
+
+  // ── Submit ─────────────────────────────────────────────────────────────────
+  const handleSave = async () => {
+    const byDept = new Map<string, Array<{ name: string; designation: string; trainingStatus: string }>>();
+    for (const emp of allEmployees) {
+      if (!selectedEmps.has(ek(emp.department, emp.name))) continue;
+      if (!byDept.has(emp.department)) byDept.set(emp.department, []);
+      byDept.get(emp.department)!.push({ name: emp.name, designation: emp.designation, trainingStatus: 'pending' });
+    }
     if (byDept.size === 0) { setError('Select at least one employee.'); return; }
 
     setLoading(true);
@@ -2590,17 +2648,10 @@ function AssignSOPDataForm({
     try {
       const results = await Promise.all(
         Array.from(byDept.entries()).map(async ([department, employees]) => {
-          const res = await fetch('/api/training-matrix/assign-sop-to-matrix', {
-            method: 'POST',
+          const res  = await fetch('/api/training-matrix/assign-sop-to-matrix', {
+            method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              department,
-              sopId: sop._id,
-              month,
-              year,
-              employees,
-              createdBy: 'admin',
-            }),
+            body:    JSON.stringify({ department, sopId: sop._id, month: effectiveMonth, year: effectiveYear, employees, createdBy: 'admin' }),
           });
           const json = await res.json();
           return { department, ok: res.ok, error: json?.error };
@@ -2621,275 +2672,565 @@ function AssignSOPDataForm({
   const inputCls = 'rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-purple-300 focus:outline-none';
 
   return (
-    <div className="flex flex-col" style={{ maxHeight: '80vh' }}>
-      {/* Header */}
-      <div className="flex items-center gap-3 border-b px-5 py-4">
+    <div className="flex flex-col" style={{ maxHeight: '88vh' }}>
+
+      {/* ── Header ── */}
+      <div className="flex shrink-0 items-center gap-3 border-b px-5 py-4">
         <button onClick={onBack} className="rounded-lg p-1.5 hover:bg-gray-100 text-gray-500">
           <ArrowLeft className="h-4 w-4" />
         </button>
         <div className="flex-1 min-w-0">
-          <h2 className="font-bold text-gray-800">Assign <span className="font-mono text-purple-700">{sop.identifier}</span> to employees</h2>
-          <p className="mt-0.5 text-xs text-gray-500 truncate">{sop.name}</p>
+          <h2 className="text-sm font-bold text-gray-900">Assign SOP to Training Matrix</h2>
+          <p className="mt-0.5 text-[11px] text-gray-500">Configure departments, designations, employees &amp; monthly schedule</p>
         </div>
       </div>
 
-      {/* Month/year selector */}
-      <div className="flex items-center gap-3 border-b bg-gray-50 px-5 py-3">
-        <span className="text-xs font-medium text-gray-600">Effective month:</span>
-        <select
-          value={month}
-          onChange={(e) => setMonth(Number(e.target.value))}
-          className={inputCls}
-        >
-          {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-        </select>
-        <input
-          type="number"
-          value={year}
-          onChange={(e) => setYear(Number(e.target.value))}
-          className={`w-20 ${inputCls}`}
-          min={2020} max={2099}
-        />
-        {uploadContext && (
-          <span className="text-[10px] text-gray-400">Latest upload: {uploadContext.monthName} {uploadContext.year}</span>
-        )}
-      </div>
+      <div className="flex-1 overflow-auto divide-y divide-gray-100">
 
-      {/* Department → Designations → Employees */}
-      <div className="flex-1 overflow-auto px-5 py-4">
-        {error && (
-          <div className="mb-3 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
-            <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> {error}
+        {/* ── 1. SOP Details ── */}
+        <div className="px-5 py-4 bg-purple-50/50">
+          <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-widest text-purple-500">SOP Details</p>
+          <div className="flex flex-wrap gap-6">
+            <div>
+              <p className="mb-0.5 text-[10px] text-gray-400">SOP No.</p>
+              <p className="font-mono text-base font-bold text-purple-700">{sop.identifier}</p>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="mb-0.5 text-[10px] text-gray-400">SOP Name</p>
+              <p className="text-sm font-medium text-gray-900 leading-snug">{sop.name}</p>
+            </div>
           </div>
-        )}
-
-        <div className="mb-3 flex items-center justify-between">
-          <p className="text-xs font-medium text-gray-600">
-            Select employees by department & designation
-            {employeesLoading && <span className="ml-1 text-gray-400">— loading from employee master…</span>}
-          </p>
-          <span className="text-[11px] font-medium text-purple-700">
-            {selectedCount} selected · {selectedDepartmentCount} dept{selectedDepartmentCount === 1 ? '' : 's'}
-          </span>
         </div>
 
-        {employeesLoading ? (
-          <p className="py-6 text-center text-xs text-gray-400">Loading employees from master…</p>
-        ) : masterEmployees.length === 0 ? (
-          <p className="mt-2 text-xs text-amber-700">
-            No employees found in the master. Add them on the{' '}
-            <a href="/employees" className="font-medium underline" target="_blank" rel="noreferrer">Employees</a> page.
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {departmentGroups.map((dg) => {
-              const deptSelectedCount = dg.employees.filter((e) => selectedKeys.has(empKey(e))).length;
-              const deptAllSelected = deptSelectedCount === dg.employees.length;
-              const deptSomeSelected = deptSelectedCount > 0 && !deptAllSelected;
-              const deptExpanded = expandedDepartments.has(dg.department);
-              const isTargetDept = dg.department.toLowerCase() === dept.toLowerCase();
-              return (
-                <div key={dg.department} className="overflow-hidden rounded-lg border border-gray-200">
-                  {/* Department header */}
-                  <div className={`flex items-center gap-2 px-4 py-2.5 border-b ${isTargetDept ? 'bg-purple-50 border-purple-100' : 'bg-gray-50 border-gray-100'}`}>
+        {/* ── 2. Departments ── */}
+        <div className="px-5 py-4">
+          <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-gray-400">Departments</p>
+          {employeesLoading ? (
+            <p className="text-xs text-gray-400">Loading…</p>
+          ) : allDepts.length === 0 ? (
+            <p className="text-xs text-amber-600">No departments found. Add employees first.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {allDepts.map((d) => {
+                const checked    = selectedDepts.has(d);
+                const isDefault  = d.toLowerCase() === dept.toLowerCase();
+                return (
+                  <label
+                    key={d}
+                    className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-semibold transition-all select-none ${
+                      checked
+                        ? 'border-purple-400 bg-purple-100 text-purple-800 shadow-sm'
+                        : 'border-gray-200 bg-white text-gray-500 hover:border-purple-200 hover:bg-purple-50/60'
+                    }`}
+                  >
                     <input
                       type="checkbox"
-                      checked={deptAllSelected}
-                      ref={(el) => { if (el) el.indeterminate = deptSomeSelected; }}
-                      onChange={() => toggleDepartment(dg.department)}
-                      className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                      checked={checked}
+                      onChange={() => toggleDept(d)}
+                      className="h-3.5 w-3.5 cursor-pointer rounded border-gray-300 text-purple-600 focus:ring-purple-500"
                     />
-                    <button
-                      type="button"
-                      onClick={() => toggleDepartmentExpand(dg.department)}
-                      className="flex items-center gap-1.5 text-sm font-bold text-gray-800 hover:text-purple-700"
-                    >
-                      <ChevronRight className={`h-3.5 w-3.5 transition-transform ${deptExpanded ? 'rotate-90' : ''}`} />
-                      {dg.department}
-                      {isTargetDept && (
-                        <span className="rounded-full bg-purple-200 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-purple-800">
-                          target
-                        </span>
-                      )}
-                    </button>
-                    <span className="ml-auto text-[11px] text-gray-500">
-                      {deptSelectedCount}/{dg.employees.length} · {dg.designations.length} designation{dg.designations.length === 1 ? '' : 's'}
-                    </span>
-                  </div>
+                    {d}
+                    {isDefault && (
+                      <span className="rounded-full bg-purple-300/60 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-purple-700">
+                        default
+                      </span>
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
-                  {/* Designations */}
-                  {deptExpanded && (
-                    <div className="divide-y divide-gray-100">
-                      {dg.designations.map(({ designation, employees }) => {
-                        const selInGroup = employees.filter((e) => selectedKeys.has(empKey(e))).length;
-                        const allSel = selInGroup === employees.length;
-                        const someSel = selInGroup > 0 && !allSel;
-                        const desigKey = `${dg.department}::${designation}`;
-                        const desigExpanded = expandedDesignations.has(desigKey);
+        {/* ── 3. Designations (auto-fetched per selected dept) ── */}
+        {!employeesLoading && selectedDepts.size > 0 && (
+          <div className="px-5 py-4">
+            <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-gray-400">Designations</p>
+            <div className="space-y-3">
+              {deptGroups
+                .filter((g) => selectedDepts.has(g.department))
+                .map((g) => (
+                  <div key={g.department}>
+                    <p className="mb-1.5 text-[11px] font-bold text-gray-700">{g.department}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {g.designations.map(({ designation }) => {
+                        const key     = dk(g.department, designation);
+                        const checked = selectedDesigs.has(key);
                         return (
-                          <div key={designation}>
-                            <div className="flex items-center gap-2 bg-white px-4 py-2 pl-6">
-                              <input
-                                type="checkbox"
-                                checked={allSel}
-                                ref={(el) => { if (el) el.indeterminate = someSel; }}
-                                onChange={() => toggleDesignation(dg.department, designation)}
-                                className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => toggleDesignationExpand(dg.department, designation)}
-                                className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 hover:text-purple-700"
-                              >
-                                <ChevronRight className={`h-3 w-3 transition-transform ${desigExpanded ? 'rotate-90' : ''}`} />
-                                {designation}
-                              </button>
-                              <span className="text-[11px] text-gray-500">
-                                ({selInGroup}/{employees.length})
-                              </span>
-                            </div>
-
-                            {desigExpanded && (
-                              <div className="bg-gray-50/50 py-1">
-                                {employees.map((emp) => (
-                                  <label
-                                    key={empKey(emp)}
-                                    className="flex items-center gap-2 pl-16 pr-4 py-1.5 cursor-pointer hover:bg-purple-50/60"
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedKeys.has(empKey(emp))}
-                                      onChange={() => toggleEmployee(emp)}
-                                      className="h-3.5 w-3.5 rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
-                                    />
-                                    <span className="text-xs text-gray-700">{emp.name}</span>
-                                  </label>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                          <label
+                            key={key}
+                            className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-medium transition-all select-none ${
+                              checked
+                                ? 'border-indigo-300 bg-indigo-100 text-indigo-800'
+                                : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-indigo-200 hover:bg-indigo-50'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleDesig(g.department, designation)}
+                              className="h-3 w-3 cursor-pointer rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            {designation}
+                          </label>
                         );
                       })}
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                  </div>
+                ))}
+            </div>
           </div>
         )}
 
-        <p className="mt-4 rounded-lg bg-blue-50 px-3 py-2 text-[11px] text-blue-700">
-          <strong>Note:</strong> Selected employees will be added to their respective department training matrices with status <em>Training required</em>. SOP master data (ID, name) is read-only and comes from the central SOP database.
-        </p>
+        {/* ── 4. Employees ── */}
+        {!employeesLoading && selectedDepts.size > 0 && (
+          <div className="px-5 py-4">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Employees</p>
+              <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-[11px] font-bold text-purple-700">
+                {selectedEmpCount} selected
+              </span>
+            </div>
+
+            {allEmployees.length === 0 ? (
+              <p className="text-xs text-amber-600">
+                No employees found.{' '}
+                <a href="/employees" className="font-medium underline" target="_blank" rel="noreferrer">Add employees</a> first.
+              </p>
+            ) : (
+              <div className="space-y-5">
+                {deptGroups
+                  .filter((g) => selectedDepts.has(g.department))
+                  .map((g) => {
+                    const visibleDesigs = g.designations.filter(
+                      (dg) => selectedDesigs.has(dk(g.department, dg.designation)),
+                    );
+                    if (visibleDesigs.length === 0) return null;
+                    return (
+                      <div key={g.department}>
+                        <p className="mb-2 text-xs font-bold text-gray-800">{g.department}</p>
+                        <div className="space-y-2">
+                          {visibleDesigs.map(({ designation, employees }) => {
+                            const selCount = employees.filter((e) => selectedEmps.has(ek(g.department, e.name))).length;
+                            return (
+                              <div key={designation} className="overflow-hidden rounded-xl border border-gray-100">
+                                <div className="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-3 py-1.5">
+                                  <span className="text-[11px] font-semibold text-gray-600">{designation}</span>
+                                  <span className="ml-1 rounded-full bg-white border border-gray-200 px-2 py-0.5 text-[10px] font-medium text-gray-500">
+                                    {selCount}/{employees.length}
+                                  </span>
+                                </div>
+                                <div className="flex flex-wrap gap-x-5 gap-y-1.5 px-3 py-2.5">
+                                  {employees.map((emp) => {
+                                    const eKey    = ek(g.department, emp.name);
+                                    const empSel  = selectedEmps.has(eKey);
+                                    return (
+                                      <label
+                                        key={eKey}
+                                        className="flex cursor-pointer items-center gap-1.5 hover:text-purple-700"
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={empSel}
+                                          onChange={() => toggleEmp(g.department, emp.name)}
+                                          className="h-3.5 w-3.5 cursor-pointer rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                                        />
+                                        <span className={`text-xs ${empSel ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
+                                          {emp.name}
+                                        </span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── 5. Monthly Training Schedule ── */}
+        <div className="px-5 py-4">
+          <div className="mb-3 flex items-center gap-3">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Monthly Training Schedule</p>
+            {scheduleLoading && (
+              <span className="text-[10px] text-gray-400">fetching from matrix…</span>
+            )}
+          </div>
+
+          {/* Effective from picker */}
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-gray-600 font-medium">Effective from:</span>
+            <select
+              value={effectiveMonth}
+              onChange={(e) => setEffectiveMonth(Number(e.target.value))}
+              className={inputCls}
+            >
+              {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+            </select>
+            <input
+              type="number"
+              value={effectiveYear}
+              onChange={(e) => setEffectiveYear(Number(e.target.value))}
+              className={`w-20 ${inputCls}`}
+              min={2020}
+              max={2099}
+            />
+            {uploadContext && (
+              <span className="text-[10px] text-gray-400">
+                Latest upload: {uploadContext.monthName} {uploadContext.year}
+              </span>
+            )}
+          </div>
+
+          {/* 12-month grid */}
+          <div className="grid grid-cols-6 gap-2 sm:grid-cols-12">
+            {monthsGrid.map(({ month: m, year: y, key, label, yr }) => (
+              <div key={key} className="text-center">
+                <p className="mb-1 text-[10px] font-semibold text-gray-500">
+                  {label}
+                  <span className="text-[8px] text-gray-400"> &apos;{yr}</span>
+                </p>
+                <input
+                  type="number"
+                  value={schedule[key] ?? 0}
+                  onChange={(e) =>
+                    setSchedule((prev) => ({ ...prev, [key]: Math.max(0, Number(e.target.value)) }))
+                  }
+                  className="w-full rounded-lg border border-gray-200 px-1 py-1.5 text-center text-xs font-semibold text-gray-800 focus:border-purple-300 focus:outline-none"
+                  min={0}
+                />
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-[10px] text-gray-400">
+            Counts are auto-fetched from the Training Matrix and are editable for future planning.
+          </p>
+        </div>
+
       </div>
 
-      <div className="flex justify-end gap-2 border-t px-5 py-3">
-        <button onClick={onBack} className="rounded-lg border px-4 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50">Back</button>
-        <button
-          onClick={handleSave}
-          disabled={loading || employeesLoading || selectedCount === 0}
-          className="flex items-center gap-1.5 rounded-lg bg-purple-600 px-4 py-1.5 text-sm font-medium text-white shadow hover:bg-purple-700 disabled:opacity-50"
-        >
-          <CheckCircle className="h-3.5 w-3.5" /> {loading ? 'Saving…' : `Add to Matrix (${selectedCount} employee${selectedCount === 1 ? '' : 's'} · ${selectedDepartmentCount} dept${selectedDepartmentCount === 1 ? '' : 's'})`}
-        </button>
+      {/* ── Footer ── */}
+      <div className="shrink-0 border-t bg-white px-5 py-3">
+        {error && (
+          <div className="mb-2 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> {error}
+          </div>
+        )}
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onBack}
+            className="rounded-lg border px-4 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Back
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={loading || employeesLoading || selectedEmpCount === 0}
+            className="flex items-center gap-1.5 rounded-lg bg-purple-600 px-4 py-1.5 text-sm font-medium text-white shadow hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <CheckCircle className="h-3.5 w-3.5" />
+            {loading
+              ? 'Saving…'
+              : `Add to Matrix (${selectedEmpCount} emp · ${selectedDeptCount} dept${selectedDeptCount !== 1 ? 's' : ''})`
+            }
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-// Main Manage SOPs Modal — shows unassigned SOPs, drives the 2-step assign flow
+const MONTH_NAME_TO_NUM: Record<string, number> = {
+  january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
+  july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
+};
+
+// ─── Manage SOPs Modal — table layout ────────────────────────────────────────
 function ManageMatrixSOPsModal({
   defaultDept,
   departments,
+  sopMonthMapByDept,
   onClose,
   onRefresh,
 }: {
   defaultDept?: string;
   departments?: string[];
+  sopMonthMapByDept?: Record<string, Record<string, string>>;
   onClose: () => void;
   onRefresh: () => void;
 }) {
+  const MONTH_COLS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
   const deptOptions = departments?.length ? departments : [...DEFAULT_DEPARTMENTS];
-  const [dept, setDept] = useState(
-    defaultDept && deptOptions.includes(defaultDept) ? defaultDept : (deptOptions[0] || 'QA')
-  );
-  const [search, setSearch] = useState('');
-  const [unassigned, setUnassigned] = useState<any[]>([]);
-  const [uploadContext, setUploadContext] = useState<{ month: number; year: number; monthName: string } | null>(null);
-  const [loading, setLoading] = useState(false);
-  // Step: 'list' | 'form'
-  const [step, setStep] = useState<'list' | 'form'>('list');
-  const [selectedSop, setSelectedSop] = useState<any | null>(null);
-  const [saved, setSaved] = useState<string[]>([]); // sopCodes successfully assigned this session
+  const initDept    = defaultDept && deptOptions.includes(defaultDept) ? defaultDept : (deptOptions[0] || 'QA');
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const [filterDept,       setFilterDept]       = useState(initDept);
+  const [search,           setSearch]           = useState('');
+  const [sopList,          setSopList]          = useState<any[]>([]);
+  const [sopLoading,       setSopLoading]       = useState(false);
+  const [allEmployees,     setAllEmployees]     = useState<MasterEmployee[]>([]);
+  const [employeesLoading, setEmployeesLoading] = useState(false);
+
+  // Per-row state (keyed by sop._id)
+  const [rowDepts,    setRowDepts]    = useState<Record<string, string[]>>({});
+  const [rowDesigs,   setRowDesigs]   = useState<Record<string, string[]>>({});
+  const [rowSchedule, setRowSchedule] = useState<Record<string, Record<number, number>>>({});
+
+  const [selectedMonth,  setSelectedMonth]  = useState(new Date().getMonth() + 1);
+  const [savedIds,       setSavedIds]       = useState<Set<string>>(new Set());
+  const [recentlySaved,  setRecentlySaved]  = useState<string | null>(null);
+  const [savingId,       setSavingId]       = useState<string | null>(null);
+  const [rowErrors,      setRowErrors]      = useState<Record<string, string>>({});
+
+  // History panel
+  const [showHistory,    setShowHistory]    = useState(false);
+  const [historyList,    setHistoryList]    = useState<Array<{ _id: string; sopCode: string; sopName: string; department: string; effectiveMonth: number; effectiveYear: number; createdBy: string; createdAt: string }>>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const MONTH_NAMES_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  const loadHistory = async () => {
+    setHistoryLoading(true);
     try {
-      const url = `/api/training-matrix/unassigned-sops?department=${encodeURIComponent(dept)}${search ? `&search=${encodeURIComponent(search)}` : ''}`;
-      const res = await fetch(url);
+      const res  = await fetch('/api/training-matrix/assignment-history?limit=50');
       const json = await res.json();
-      setUnassigned(json.unassigned || []);
-      setUploadContext(json.uploadContext || null);
+      setHistoryList(json.assignments || []);
     } finally {
-      setLoading(false);
+      setHistoryLoading(false);
     }
-  }, [dept, search]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const handleAssignClick = (sop: any) => {
-    setSelectedSop(sop);
-    setStep('form');
   };
 
-  const handleAssignSuccess = () => {
-    if (selectedSop) setSaved((s) => [...s, selectedSop.identifier]);
-    setStep('list');
-    setSelectedSop(null);
-    load();
-    onRefresh();
+  useEffect(() => {
+    if (showHistory) loadHistory();
+  }, [showHistory]);
+
+  // Build dept → designation → employees hierarchy
+  const deptGroups = useMemo(() => {
+    const map = new Map<string, Map<string, MasterEmployee[]>>();
+    for (const emp of allEmployees) {
+      if (!map.has(emp.department)) map.set(emp.department, new Map());
+      const dm = map.get(emp.department)!;
+      const desig = emp.designation || 'Unassigned';
+      if (!dm.has(desig)) dm.set(desig, []);
+      dm.get(desig)!.push(emp);
+    }
+    return Array.from(map.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([department, dm]) => ({
+        department,
+        designations: Array.from(dm.entries())
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([designation, emps]) => ({ designation, employees: emps })),
+        allEmployees: Array.from(dm.values()).flat(),
+      }));
+  }, [allEmployees]);
+
+  // Load unassigned SOPs
+  useEffect(() => {
+    let cancelled = false;
+    setSopLoading(true);
+    const t = setTimeout(async () => {
+      try {
+        const url = `/api/training-matrix/unassigned-sops?department=${encodeURIComponent(filterDept)}${search ? `&search=${encodeURIComponent(search)}` : ''}`;
+        const res  = await fetch(url);
+        const json = await res.json();
+        if (cancelled) return;
+        setSopList(json.unassigned || []);
+      } finally {
+        if (!cancelled) setSopLoading(false);
+      }
+    }, search ? 300 : 0);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [filterDept, search]);
+
+  // Load employees once
+  useEffect(() => {
+    let cancelled = false;
+    setEmployeesLoading(true);
+    (async () => {
+      try {
+        const res  = await fetch('/api/employees');
+        const json = await res.json();
+        if (cancelled) return;
+        const emps: MasterEmployee[] = (json.employees || [])
+          .filter((e: any) => e.name && e.isActive !== false && e.department)
+          .map((e: any) => ({ name: e.name, designation: e.designation || 'Unassigned', department: e.department }));
+        setAllEmployees(emps);
+      } finally {
+        if (!cancelled) setEmployeesLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Initialize per-row dept/desig when sopList or deptGroups change
+  useEffect(() => {
+    if (sopList.length === 0 || deptGroups.length === 0) return;
+    const actualGroup = deptGroups.find((g) => g.department.toLowerCase() === initDept.toLowerCase());
+    setRowDepts((prev) => {
+      const next = { ...prev };
+      for (const sop of sopList) {
+        if (next[sop._id] !== undefined) continue;
+        next[sop._id] = actualGroup ? [actualGroup.department] : [];
+      }
+      return next;
+    });
+    setRowDesigs((prev) => {
+      const next = { ...prev };
+      for (const sop of sopList) {
+        if (next[sop._id] !== undefined) continue;
+        next[sop._id] = actualGroup
+          ? actualGroup.designations.map((d) => `${actualGroup.department}::${d.designation}`)
+          : [];
+      }
+      return next;
+    });
+    setRowSchedule((prev) => {
+      const next = { ...prev };
+      for (const sop of sopList) {
+        if (next[sop._id] !== undefined) continue;
+        next[sop._id] = {};
+      }
+      return next;
+    });
+  }, [sopList, deptGroups, initDept]);
+
+  // Derive monthly schedule counts from sopMonthMapByDept (overview data).
+  // Each month cell shows how many departments have this SOP scheduled in that month,
+  // so column totals equal the training matrix's per-month SOP counts (matching the overview).
+  useEffect(() => {
+    if (sopList.length === 0 || !sopMonthMapByDept) return;
+    setRowSchedule((prev) => {
+      const next = { ...prev };
+      for (const sop of sopList) {
+        const id = sop._id;
+        const counts: Record<number, number> = {};
+        for (const monthMap of Object.values(sopMonthMapByDept)) {
+          const monthName = monthForCode(monthMap, sop.identifier || '');
+          if (!monthName) continue;
+          const monthNum = MONTH_NAME_TO_NUM[monthName.toLowerCase()];
+          if (!monthNum) continue;
+          counts[monthNum] = (counts[monthNum] ?? 0) + 1;
+        }
+        // Merge so user edits to other months are preserved; sopMonthMapByDept values win.
+        next[id] = { ...(next[id] ?? {}), ...counts };
+      }
+      return next;
+    });
+  }, [sopList, sopMonthMapByDept]);
+
+  const toggleRowDept = (id: string, dept: string) => {
+    const group    = deptGroups.find((g) => g.department === dept);
+    const curDepts = rowDepts[id] ?? [];
+    if (curDepts.includes(dept)) {
+      setRowDepts((p)  => ({ ...p, [id]: curDepts.filter((d) => d !== dept) }));
+      setRowDesigs((p) => ({ ...p, [id]: (rowDesigs[id] ?? []).filter((k) => !k.startsWith(`${dept}::`)) }));
+    } else {
+      const newDesigs = group?.designations.map((d) => `${dept}::${d.designation}`) ?? [];
+      setRowDepts((p)  => ({ ...p, [id]: [...curDepts, dept] }));
+      setRowDesigs((p) => ({ ...p, [id]: [...(rowDesigs[id] ?? []), ...newDesigs] }));
+    }
   };
 
-  if (step === 'form' && selectedSop) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl">
-          <AssignSOPDataForm
-            sop={selectedSop}
-            dept={dept}
-            uploadContext={uploadContext}
-            onBack={() => { setStep('list'); setSelectedSop(null); }}
-            onSuccess={handleAssignSuccess}
-          />
-        </div>
-      </div>
-    );
-  }
+  const toggleRowDesig = (id: string, dept: string, desig: string) => {
+    const key = `${dept}::${desig}`;
+    const cur = rowDesigs[id] ?? [];
+    setRowDesigs((p) => ({ ...p, [id]: cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key] }));
+  };
+
+  const updateSchedule = (id: string, month: number, val: string) => {
+    setRowSchedule((p) => ({ ...p, [id]: { ...(p[id] ?? {}), [month]: Math.max(0, Number(val) || 0) } }));
+  };
+
+  const handleSaveRow = async (sop: any) => {
+    const id     = sop._id;
+    const depts  = rowDepts[id]  ?? [];
+    const desigs = rowDesigs[id] ?? [];
+    if (depts.length === 0) {
+      setRowErrors((p) => ({ ...p, [id]: 'Select at least one department.' }));
+      return;
+    }
+    const byDept = new Map<string, Array<{ name: string; designation: string; trainingStatus: string }>>();
+    for (const emp of allEmployees) {
+      const dk = `${emp.department}::${emp.designation}`;
+      if (!depts.includes(emp.department) || !desigs.includes(dk)) continue;
+      if (!byDept.has(emp.department)) byDept.set(emp.department, []);
+      byDept.get(emp.department)!.push({ name: emp.name, designation: emp.designation, trainingStatus: 'pending' });
+    }
+    if (byDept.size === 0) {
+      setRowErrors((p) => ({ ...p, [id]: 'No employees found for selected designations.' }));
+      return;
+    }
+    setSavingId(id);
+    setRowErrors((p) => { const n = { ...p }; delete n[id]; return n; });
+    try {
+      const year = new Date().getFullYear();
+      const results = await Promise.all(
+        Array.from(byDept.entries()).map(async ([department, employees]) => {
+          const res  = await fetch('/api/training-matrix/assign-sop-to-matrix', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ department, sopId: id, month: selectedMonth, year, employees, createdBy: 'admin' }),
+          });
+          const json = await res.json();
+          return { department, ok: res.ok, error: json?.error };
+        }),
+      );
+      const failed = results.filter((r) => !r.ok);
+      if (failed.length) {
+        setRowErrors((p) => ({ ...p, [id]: `Failed: ${failed.map((f) => `${f.department} (${f.error || 'unknown'})`).join(', ')}` }));
+      } else {
+        // Increment this month's count in the table and mark row saved
+        setRowSchedule((p) => ({
+          ...p,
+          [id]: { ...(p[id] ?? {}), [selectedMonth]: ((p[id] ?? {})[selectedMonth] ?? 0) + 1 },
+        }));
+        setSavedIds((p) => new Set([...p, id]));
+        setRecentlySaved(id);
+        setTimeout(() => setRecentlySaved(null), 2000);
+        if (showHistory) loadHistory();
+        onRefresh();
+      }
+    } finally {
+      setSavingId(null);
+    }
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="flex w-full max-w-2xl flex-col rounded-2xl bg-white shadow-2xl" style={{ maxHeight: '85vh' }}>
-        {/* Header */}
-        <div className="flex items-center justify-between border-b px-5 py-4">
-          <div>
-            <h2 className="font-bold text-gray-800">Assign SOP to Matrix</h2>
-            <p className="mt-0.5 text-xs text-gray-500">
-              SOPs listed here are in the master DB but <strong>not yet in the {dept} Excel matrix</strong>. Click Assign to add one.
-            </p>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-black/60 p-4 pt-6">
+      <div className="flex w-full flex-col rounded-2xl bg-white shadow-2xl" style={{ maxWidth: '96vw', maxHeight: '90vh' }}>
+
+        {/* ── Header ── */}
+        <div className="flex shrink-0 items-center justify-between border-b px-5 py-4">
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 shadow">
+              <ClipboardList className="h-5 w-5 text-white" />
+            </span>
+            <div>
+              <h2 className="text-sm font-bold text-gray-900">Assign SOP to Training Matrix</h2>
+              <p className="text-[11px] text-gray-400">Configure departments, designations &amp; monthly schedule per SOP</p>
+            </div>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-gray-100"><X className="h-4 w-4" /></button>
+          <button onClick={onClose} className="rounded-xl p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+            <X className="h-4 w-4" />
+          </button>
         </div>
 
-        {/* Toolbar */}
-        <div className="flex items-center gap-2 border-b bg-gray-50 px-5 py-3">
+        {/* ── Filter bar ── */}
+        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b bg-gray-50/60 px-5 py-3">
           <select
-            value={dept}
-            onChange={(e) => { setDept(e.target.value); setSaved([]); }}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs focus:border-purple-300 focus:outline-none"
+            value={filterDept}
+            onChange={(e) => { setFilterDept(e.target.value); setSavedIds(new Set()); }}
+            className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-purple-300 focus:outline-none"
           >
             {deptOptions.map((d) => <option key={d} value={d}>{d}</option>)}
           </select>
-          <div className="relative flex-1">
+          <div className="relative max-w-xs flex-1">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
             <input
               value={search}
@@ -2898,54 +3239,172 @@ function ManageMatrixSOPsModal({
               className="w-full rounded-lg border border-gray-200 py-1.5 pl-8 pr-3 text-xs focus:border-purple-300 focus:outline-none"
             />
           </div>
-          <button onClick={load} className="flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-white">
-            <RefreshCw className="h-3 w-3" />
-          </button>
-          <span className="shrink-0 text-[11px] text-gray-400">
-            {loading ? 'loading…' : `${unassigned.length} unassigned`}
+          <span className="text-[11px] text-gray-400">
+            {sopLoading ? 'Loading…' : `${sopList.length} SOP${sopList.length !== 1 ? 's' : ''}`}
+            {savedIds.size > 0 && <span className="ml-1.5 font-semibold text-green-600">· {savedIds.size} added</span>}
           </span>
         </div>
 
-        {/* SOP list */}
-        <div className="flex-1 overflow-auto">
-          {loading ? (
-            <div className="py-16 text-center text-sm text-gray-400">Loading SOPs…</div>
-          ) : unassigned.length === 0 ? (
-            <div className="py-16 text-center">
-              <CheckCircle className="mx-auto mb-2 h-8 w-8 text-green-400" />
-              <p className="text-sm font-medium text-gray-600">All SOPs are already in the {dept} matrix!</p>
-              <p className="mt-1 text-xs text-gray-400">Upload a new Excel file to add more SOPs.</p>
+        {/* ── Table + Month Sidebar ── */}
+        <div className="flex flex-1 overflow-hidden">
+
+          {/* ── Table area ── */}
+          <div className="flex-1 overflow-auto">
+          {sopLoading ? (
+            <div className="flex h-40 items-center justify-center text-xs text-gray-400">Loading SOPs…</div>
+          ) : sopList.length === 0 ? (
+            <div className="m-6 flex h-32 items-center justify-center rounded-xl border border-dashed border-gray-200 text-xs text-gray-400">
+              {search ? 'No SOPs match your search.' : `All SOPs are already assigned for ${filterDept}.`}
             </div>
           ) : (
-            <table className="w-full text-left text-xs">
-              <thead className="sticky top-0 bg-gray-50">
-                <tr>
-                  <th className="border-b px-4 py-2.5 font-semibold text-gray-600">SOP Code</th>
-                  <th className="border-b px-4 py-2.5 font-semibold text-gray-600">SOP Name</th>
-                  <th className="border-b px-4 py-2.5 font-semibold text-gray-600 w-28">Action</th>
+            <table className="w-full border-collapse text-xs" style={{ minWidth: '1400px' }}>
+              <thead>
+                <tr className="border-b-2 border-gray-200 bg-gray-50 text-left">
+                  <th className="sticky left-0 z-20 w-10 border-r border-gray-200 bg-gray-50 px-3 py-3 text-center text-[11px] font-bold uppercase tracking-wide text-gray-500">
+                    #
+                  </th>
+                  <th className="sticky left-10 z-20 w-28 border-r border-gray-200 bg-gray-50 px-3 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-500">
+                    SOP No
+                  </th>
+                  <th className="sticky left-[7.5rem] z-20 w-52 border-r border-gray-200 bg-gray-50 px-3 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-500">
+                    SOP Name
+                  </th>
+                  <th className="min-w-[320px] border-r border-gray-200 px-4 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-500">
+                    Department &amp; Designation
+                  </th>
+                  {MONTH_COLS.map((m) => (
+                    <th key={m} className="w-[52px] border-r border-gray-200 px-1 py-3 text-center text-[11px] font-bold uppercase tracking-wide text-gray-500">
+                      {m}
+                    </th>
+                  ))}
+                  <th className="w-20 px-2 py-3 text-center text-[11px] font-bold uppercase tracking-wide text-gray-500">
+                    Action
+                  </th>
                 </tr>
               </thead>
-              <tbody>
-                {unassigned.map((s: any) => {
-                  const alreadySaved = saved.includes(s.identifier);
+              <tbody className="divide-y divide-gray-100">
+                {sopList.map((sop, idx) => {
+                  const id       = sop._id;
+                  const depts    = rowDepts[id]    ?? [];
+                  const desigs   = rowDesigs[id]   ?? [];
+                  const schedule = rowSchedule[id] ?? {};
+                  const isSaved  = savedIds.has(id);
+                  const isSaving = savingId === id;
+                  const rowErr   = rowErrors[id];
+
                   return (
-                    <tr key={s._id} className={`border-b border-gray-100 ${alreadySaved ? 'bg-green-50' : 'hover:bg-purple-50/40'}`}>
-                      <td className="px-4 py-2.5 font-mono font-semibold text-purple-700">{s.identifier}</td>
-                      <td className="px-4 py-2.5 text-gray-700 max-w-[280px]">
-                        <span className="line-clamp-2">{s.name}</span>
+                    <tr key={id} className={`align-top transition-colors ${isSaved ? 'bg-green-50/50' : 'hover:bg-gray-50/40'}`}>
+
+                      {/* Sr No */}
+                      <td className="sticky left-0 z-10 border-r border-gray-100 bg-white px-3 py-3 text-center">
+                        {isSaved
+                          ? <CheckCircle className="mx-auto h-3.5 w-3.5 text-green-500" />
+                          : <span className="font-mono text-[11px] text-gray-400">{idx + 1}</span>
+                        }
                       </td>
-                      <td className="px-4 py-2.5">
-                        {alreadySaved ? (
-                          <span className="flex items-center gap-1 text-green-600 text-[11px] font-medium">
-                            <CheckCircle className="h-3.5 w-3.5" /> Added
+
+                      {/* SOP No */}
+                      <td className="sticky left-10 z-10 border-r border-gray-100 bg-white px-3 py-3">
+                        <span className="font-mono text-[11px] font-bold text-purple-700 leading-tight">{sop.identifier}</span>
+                      </td>
+
+                      {/* SOP Name */}
+                      <td className="sticky left-[7.5rem] z-10 border-r border-gray-100 bg-white px-3 py-3">
+                        <span className="line-clamp-2 text-[11px] leading-snug text-gray-700">{sop.name}</span>
+                      </td>
+
+                      {/* Department & Designation */}
+                      <td className="border-r border-gray-100 px-4 py-3">
+                        {employeesLoading ? (
+                          <p className="text-[11px] text-gray-400">Loading…</p>
+                        ) : (
+                          <div>
+                            {/* Department checkboxes */}
+                            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                              {deptGroups.map(({ department: d }) => (
+                                <label key={d} className={`flex cursor-pointer items-center gap-1.5 ${isSaved ? 'cursor-default opacity-60' : ''}`}>
+                                  <input
+                                    type="checkbox"
+                                    checked={depts.includes(d)}
+                                    onChange={() => !isSaved && toggleRowDept(id, d)}
+                                    disabled={isSaved}
+                                    className="h-3 w-3 rounded border-gray-300 text-purple-600 focus:ring-0 focus:ring-offset-0"
+                                  />
+                                  <span className={`text-[11px] font-medium ${depts.includes(d) ? 'text-purple-700' : 'text-gray-500'}`}>
+                                    {d}
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
+
+                            {/* Designation pills per selected dept */}
+                            {depts.length > 0 && (
+                              <div className="mt-2.5 space-y-2">
+                                {depts.map((dept) => {
+                                  const group = deptGroups.find((g) => g.department === dept);
+                                  if (!group) return null;
+                                  return (
+                                    <div key={dept} className="rounded-lg border border-indigo-100 bg-indigo-50/50 px-2.5 py-2">
+                                      <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-indigo-500">{dept}</p>
+                                      <div className="flex flex-wrap gap-x-3 gap-y-1">
+                                        {group.designations.map(({ designation }) => {
+                                          const dk = `${dept}::${designation}`;
+                                          return (
+                                            <label key={dk} className={`flex cursor-pointer items-center gap-1 ${isSaved ? 'cursor-default opacity-60' : ''}`}>
+                                              <input
+                                                type="checkbox"
+                                                checked={desigs.includes(dk)}
+                                                onChange={() => !isSaved && toggleRowDesig(id, dept, designation)}
+                                                disabled={isSaved}
+                                                className="h-3 w-3 rounded border-gray-300 text-indigo-600 focus:ring-0 focus:ring-offset-0"
+                                              />
+                                              <span className={`text-[11px] ${desigs.includes(dk) ? 'font-medium text-indigo-700' : 'text-gray-500'}`}>
+                                                {designation}
+                                              </span>
+                                            </label>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Month input columns (JAN–DEC = months 1–12) */}
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                        <td key={m} className="border-r border-gray-100 px-1 py-3 text-center align-middle">
+                          <input
+                            type="number"
+                            value={schedule[m] ?? 0}
+                            onChange={(e) => updateSchedule(id, m, e.target.value)}
+                            disabled={isSaved}
+                            min={0}
+                            className="w-11 rounded border border-gray-200 px-1 py-1.5 text-center text-[11px] font-semibold text-gray-800 focus:border-purple-400 focus:outline-none disabled:bg-gray-50 disabled:text-gray-400"
+                          />
+                        </td>
+                      ))}
+
+                      {/* Action */}
+                      <td className="px-2 py-3 text-center align-middle">
+                        {isSaved ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-600">
+                            <CheckCircle className="h-3 w-3" /> Added
                           </span>
                         ) : (
                           <button
-                            onClick={() => handleAssignClick(s)}
-                            className="flex items-center gap-1 rounded-lg bg-purple-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-purple-700"
+                            onClick={() => handleSaveRow(sop)}
+                            disabled={isSaving || depts.length === 0}
+                            className={`rounded-lg px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${recentlySaved === id ? 'bg-green-600 hover:bg-green-700' : 'bg-purple-600 hover:bg-purple-700'}`}
                           >
-                            <Plus className="h-3 w-3" /> Assign
+                            {isSaving ? '…' : recentlySaved === id ? '✓ Saved' : savedIds.has(id) ? 'Add Again' : 'Add'}
                           </button>
+                        )}
+                        {rowErr && (
+                          <p className="mt-1 max-w-[76px] text-[10px] leading-tight text-red-500">{rowErr}</p>
                         )}
                       </td>
                     </tr>
@@ -2954,14 +3413,107 @@ function ManageMatrixSOPsModal({
               </tbody>
             </table>
           )}
+          </div>{/* end table scroll area */}
+
+          {/* ── Month Sidebar ── */}
+          <div className="flex w-[52px] shrink-0 flex-col overflow-y-auto border-l border-gray-200 bg-gray-50">
+            <div className="sticky top-0 z-10 bg-purple-600 px-1 py-2 text-center">
+              <p className="text-[8px] font-bold uppercase tracking-widest text-white">Month</p>
+            </div>
+            {MONTH_COLS.map((m, i) => {
+              const mn = i + 1;
+              const isActive = selectedMonth === mn;
+              return (
+                <button
+                  key={m}
+                  onClick={() => setSelectedMonth(mn)}
+                  className={`flex-shrink-0 py-2.5 text-center text-[11px] font-bold tracking-wide transition-colors ${
+                    isActive
+                      ? 'bg-purple-600 text-white'
+                      : 'text-gray-500 hover:bg-purple-100 hover:text-purple-700'
+                  }`}
+                >
+                  {m}
+                </button>
+              );
+            })}
+          </div>
+
+        </div>{/* end flex table+sidebar */}
+
+        {/* ── Assignment History Panel ── */}
+        {showHistory && (
+          <div className="shrink-0 border-t border-indigo-100 bg-indigo-50/40 px-5 py-3" style={{ maxHeight: '220px', overflowY: 'auto' }}>
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-[11px] font-bold text-indigo-700">Assignment History (last 50)</p>
+              <button onClick={() => loadHistory()} className="text-[10px] text-indigo-500 underline hover:text-indigo-700">
+                {historyLoading ? 'Refreshing…' : 'Refresh'}
+              </button>
+            </div>
+            {historyLoading ? (
+              <p className="text-[11px] text-gray-400">Loading…</p>
+            ) : historyList.length === 0 ? (
+              <p className="text-[11px] text-gray-400">No assignments recorded yet.</p>
+            ) : (
+              <table className="w-full border-collapse text-[11px]">
+                <thead>
+                  <tr className="text-left text-[10px] font-bold uppercase tracking-wide text-indigo-500">
+                    <th className="pb-1 pr-4">SOP Code</th>
+                    <th className="pb-1 pr-4">SOP Name</th>
+                    <th className="pb-1 pr-4">Department</th>
+                    <th className="pb-1 pr-4">Month / Year</th>
+                    <th className="pb-1 pr-4">Assigned By</th>
+                    <th className="pb-1">Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-indigo-100">
+                  {historyList.map((h) => (
+                    <tr key={h._id} className={`transition-colors ${savedIds.size > 0 && historyList[0]?._id === h._id ? 'bg-green-50' : ''}`}>
+                      <td className="py-1 pr-4 font-mono font-bold text-purple-700">{h.sopCode}</td>
+                      <td className="py-1 pr-4 max-w-[200px] truncate text-gray-700">{h.sopName}</td>
+                      <td className="py-1 pr-4 text-gray-600">{h.department}</td>
+                      <td className="py-1 pr-4 text-gray-600">{MONTH_NAMES_SHORT[(h.effectiveMonth ?? 1) - 1]} {h.effectiveYear}</td>
+                      <td className="py-1 pr-4 text-gray-500">{h.createdBy}</td>
+                      <td className="py-1 text-gray-400 whitespace-nowrap">{new Date(h.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {/* ── Footer ── */}
+        <div className="shrink-0 border-t bg-white px-5 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <p className="text-[11px] text-gray-400">
+                {savedIds.size > 0
+                  ? `${savedIds.size} SOP${savedIds.size !== 1 ? 's' : ''} added to matrix`
+                  : 'Check departments &amp; designations for each row, then click Add'
+                }
+              </p>
+              <button
+                onClick={() => setShowHistory((v) => !v)}
+                className={`flex items-center gap-1 rounded-lg border px-3 py-1 text-[11px] font-medium transition-colors ${
+                  showHistory
+                    ? 'border-indigo-300 bg-indigo-100 text-indigo-700'
+                    : 'border-gray-200 text-gray-500 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600'
+                }`}
+              >
+                <ClipboardList className="h-3 w-3" />
+                History
+              </button>
+            </div>
+            <button
+              onClick={onClose}
+              className="rounded-lg border border-gray-200 px-4 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            >
+              {savedIds.size > 0 ? 'Done' : 'Close'}
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center justify-between border-t px-5 py-3">
-          <p className="text-[11px] text-gray-400">
-            SOPs already in the matrix come from the uploaded Excel files.
-          </p>
-          <button onClick={onClose} className="rounded-lg border px-4 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50">Close</button>
-        </div>
       </div>
     </div>
   );
@@ -3477,10 +4029,37 @@ export default function TrainingMatrixPage() {
             }
           }
         } else if (opts.type === 'found' || opts.type === 'excel' || opts.type === 'found_any') {
-          // Match API dbBaseSet.has(c) — includes SOPs whose DB owner is outside known depts.
-          const allDbCodes =
+          // For found_any, treat "in DB" like the overview API: any SOP in dbSopsByDept
+          // plus anything the status map knows about (covers edge registry shapes).
+          const registryDbCodes =
             opts.type === 'found_any'
-              ? new Set(Object.keys(data.sopStatusByCode || {}).map((c) => stripVersion(c)))
+              ? (() => {
+                  const s = new Set<string>();
+                  const byDept = (data.totalCard as any)?.dbSopsByDept || {};
+                  for (const list of Object.values(byDept)) {
+                    for (const x of (list as any[]) || []) {
+                      if (x?.sopCode) s.add(stripVersion(String(x.sopCode)));
+                    }
+                  }
+                  for (const k of Object.keys(data.sopStatusByCode || {})) {
+                    s.add(stripVersion(k));
+                  }
+                  return s;
+                })()
+              : null;
+
+          const codesInKnownDeptBuckets =
+            opts.type === 'found_any'
+              ? (() => {
+                  const s = new Set<string>();
+                  const byDept = (data.totalCard as any)?.dbSopsByDept || {};
+                  for (const dep of departments) {
+                    for (const x of (byDept[dep] || []) as any[]) {
+                      if (x?.sopCode) s.add(stripVersion(String(x.sopCode)));
+                    }
+                  }
+                  return s;
+                })()
               : null;
 
           // Excel-dept-split counts each Excel row per upload; preserve occurrences for the table.
@@ -3491,14 +4070,18 @@ export default function TrainingMatrixPage() {
               if (!deptData?.uploaded) continue;
               for (const c of deptData.sopCodes || []) {
                 const base = stripVersion(c);
-                if (!allDbCodes!.has(base)) continue;
+                if (!registryDbCodes!.has(base)) continue;
                 if (opts.dbDept && opts.dbDept !== 'All') {
-                  const targetDbCodes = new Set(
-                    ((data.totalCard as any)?.dbSopsByDept?.[opts.dbDept] || []).map((x: any) =>
-                      stripVersion(x.sopCode),
-                    ),
-                  );
-                  if (!targetDbCodes.has(base)) continue;
+                  if (opts.dbDept === 'NA') {
+                    if (codesInKnownDeptBuckets!.has(base)) continue;
+                  } else {
+                    const targetDbCodes = new Set(
+                      ((data.totalCard as any)?.dbSopsByDept?.[opts.dbDept] || []).map((x: any) =>
+                        stripVersion(x.sopCode),
+                      ),
+                    );
+                    if (!targetDbCodes.has(base)) continue;
+                  }
                 }
                 occurrences.push({ sopCode: base, uploadDept: d });
               }
@@ -3574,7 +4157,7 @@ export default function TrainingMatrixPage() {
         return;
       }
     },
-    [data],
+    [data, departments],
   );
 
   const clearCapsuleFilter = useCallback(() => {
@@ -4152,7 +4735,6 @@ export default function TrainingMatrixPage() {
         totalExcelDeptMissingByDept[d] = (totalExcelDeptMissingByDept[d] || 0) + (split.missingByDept?.[d] || 0);
       }
     }
-    const totalExcelDeptFoundSum = Object.values(totalExcelDeptFoundByDept).reduce((a, b) => a + b, 0) + totalExcelDeptUnknownFound;
     const totalExcelDeptMissingSum = Object.values(totalExcelDeptMissingByDept).reduce((a, b) => a + b, 0) + totalExcelDeptUnknownMissing;
     const hasTotalExcelDeptSplit = totalExcelDeptTotal > 0;
 
@@ -4170,6 +4752,8 @@ export default function TrainingMatrixPage() {
       ).length;
     }
 
+    const totalSopsMonthSum = MONTHS.reduce((sum, m) => sum + (totalMonthCounts[m] ?? 0), 0);
+
     return (
       <CardShell accent={getDeptAccent('Total')} icon={TotalIcon} title="Total">
         <SummaryTopic>
@@ -4183,13 +4767,13 @@ export default function TrainingMatrixPage() {
               status: 'all_db',
             })
           }
-          className="flex w-full min-h-[24px] cursor-pointer items-center justify-between gap-1.5 rounded-[4px] border border-transparent px-1 py-0.5 text-left text-[10px] transition-colors hover:bg-purple-100/80 active:bg-purple-200/60 focus:z-10 focus:outline-none focus:ring-1 focus:ring-purple-400"
+          className="flex w-full min-h-[24px] cursor-pointer items-center justify-between gap-1.5 rounded-[4px] border border-transparent px-1 py-0.5 text-left text-[11px] transition-colors hover:bg-purple-100/80 active:bg-purple-200/60 focus:z-10 focus:outline-none focus:ring-1 focus:ring-purple-400"
         >
-          <span className="min-w-0 shrink font-semibold text-gray-700 whitespace-nowrap overflow-hidden text-ellipsis">SOPs (DB)</span>
+          <span className="min-w-0 shrink font-semibold text-black whitespace-nowrap overflow-hidden text-ellipsis">SOPs (DB)</span>
           <span className="font-bold tabular-nums shrink-0 leading-tight text-gray-900">{t.dbSopCount}</span>
         </button>
-        <div className="grid min-h-[26px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[5px] border border-transparent px-1 py-px text-[10px]">
-          <span className="min-w-0 truncate text-left font-semibold text-gray-700">In Excel</span>
+        <div className="grid min-h-[26px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[5px] border border-transparent bg-gray-100 px-1 py-px text-[11px]">
+          <span className="min-w-0 truncate text-left font-semibold text-black">In Excel</span>
           <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
             <button
               type="button"
@@ -4205,7 +4789,7 @@ export default function TrainingMatrixPage() {
             >
               {t.excelSopCount}
             </button>
-            <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
+            <span className="select-none text-[8px] font-light text-black/35" aria-hidden>|</span>
             <RedCountBtn
               value={t.missingSopCount ?? 0}
               title="Missing"
@@ -4220,14 +4804,14 @@ export default function TrainingMatrixPage() {
           </div>
         </div>
         {totalLangBreakdown.length > 0 && (
-          <div className="flex min-h-[24px] w-full items-center justify-between gap-1 rounded-[4px] border border-transparent px-1 py-0.5 text-[10px]">
-            <span className="min-w-0 shrink truncate font-semibold text-gray-700">Lang (DB)</span>
+          <div className="flex min-h-[24px] w-full items-center justify-between gap-1 rounded-[4px] border border-transparent px-1 py-0.5 text-[11px]">
+            <span className="min-w-0 shrink truncate font-semibold text-black">Lang (DB)</span>
             <div className="flex items-center gap-2 tabular-nums">
               {totalLangBreakdown.map((lr) => {
                 const dbTotal = lr.found + lr.missing;
                 return (
                   <span key={lr.key} className="inline-flex items-center gap-1">
-                    <span className="text-[9px] font-medium text-gray-500">{lr.label}</span>
+                    <span className="text-[9px] font-medium text-black">{lr.label}</span>
                     <button
                       type="button"
                       onClick={() =>
@@ -4279,19 +4863,19 @@ export default function TrainingMatrixPage() {
           }
         />
         {hasTotalExcelDeptSplit && (
-          <>
-            <div className="grid min-h-[26px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[5px] border border-transparent px-1 py-px text-[10px]">
-              <span className="min-w-0 truncate text-left font-semibold text-gray-700">Excel SOP</span>
+          <div className="flex flex-col rounded-sm bg-gray-100 px-0.5 py-0.5">
+            <div className="grid min-h-[26px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[5px] border border-transparent px-1 py-px text-[11px]">
+              <span className="min-w-0 truncate text-left font-semibold text-black">Excel SOP</span>
               <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
                 <button
                   type="button"
-                  onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found_any', title: 'Total · Found in Excel' })}
+                  onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found_any', title: 'Total · Excel SOPs (uploaded)' })}
                   className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
-                  title="Found"
+                  title="Excel SOPs (uploaded)"
                 >
-                  {totalExcelDeptFoundSum}
+                  {totalExcelDeptTotal}
                 </button>
-                <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
+                <span className="select-none text-[8px] font-light text-black/35" aria-hidden>|</span>
                 <RedCountBtn
                   value={totalExcelDeptMissingSum}
                   title="Missing"
@@ -4316,7 +4900,7 @@ export default function TrainingMatrixPage() {
               onSelectFound={(dbDept) =>
                 applySummaryCapsuleFilter({
                   dept: 'All',
-                  dbDept: dbDept === 'NA' ? 'All' : dbDept,
+                  dbDept: dbDept === 'NA' ? 'NA' : dbDept,
                   type: 'found_any',
                   title: `Total · Found (DB Dept: ${dbDept})`,
                 })
@@ -4330,31 +4914,8 @@ export default function TrainingMatrixPage() {
                 })
               }
             />
-          </>
+          </div>
         )}
-        </SummaryTopic>
-        <SummaryTopic>
-        <RowB
-          label="SOP wise Trainers"
-          green={t.sopTrainersAssigned ?? t.trainersAssigned}
-          red={t.sopTrainersMissing ?? t.trainersMissing}
-          onClickGreen={() =>
-            applySummaryCapsuleFilter({
-              dept: 'All',
-              type: 'db',
-              title: 'All SOPs · Trainer Assigned',
-              status: 'all_db',
-            })
-          }
-          onClickRed={() =>
-            applySummaryCapsuleFilter({
-              dept: 'All',
-              type: 'db',
-              title: 'All SOPs · Trainer Missing',
-              status: 'all_db',
-            })
-          }
-        />
         </SummaryTopic>
         <SummaryTopic>
         {(() => {
@@ -4364,7 +4925,7 @@ export default function TrainingMatrixPage() {
           const bucketSopSum = totalRepeat3PlusList.length + totalRepeat2List.length + totalRepeatOnceList.length;
           return (
             <>
-              <div className="flex w-full min-h-[24px] items-center justify-between gap-1 px-1 py-0.5 text-[10px]">
+              <div className="flex w-full min-h-[24px] items-center justify-between gap-1 px-1 py-0.5 text-[11px]">
                 <SectionLabel>Repetitive SOPs</SectionLabel>
                 <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
                   <button
@@ -4375,7 +4936,7 @@ export default function TrainingMatrixPage() {
                   >
                     {bucketSopSum}
                   </button>
-                  <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
+                  <span className="select-none text-[8px] font-light text-black/35" aria-hidden>|</span>
                   <RedCountBtn
                     value={totalExcelDeptMissingSum}
                     title="Missing SOPs (DB but not in Excel)"
@@ -4395,6 +4956,7 @@ export default function TrainingMatrixPage() {
         })()}
         </SummaryTopic>
         <SummaryTopic>
+        <div className="flex flex-col rounded-sm bg-gray-100 px-0.5 py-0.5">
         <RowB
           label={`MCQ (100+ created) · ${(t.mcqCreatedCount ?? 0) + (t.mcqNotCreatedCount ?? 0)}`}
           green={t.mcqCreatedCount}
@@ -4423,44 +4985,45 @@ export default function TrainingMatrixPage() {
               NonDual.Missing + Dual.Missing ≡ Overall.Missing
             The ENG / GUJ slot rows under "Dual SOPs" are display-only and do
             not feed the reconciliation. */}
-        <div className="flex w-full flex-col gap-px px-1 py-0">
+        <div className="flex w-full flex-col  pr-1 py-0">
           <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
-            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-gray-500">{`ENG·${(t.mcqEngOnlyCreatedCount ?? 0) + (t.mcqEngOnlyNotCreatedCount ?? 0)}`}</span>
-            <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
-              <button type="button" title="Non-dual SOPs with 100+ ENG MCQs (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · Found (ENG ≥100)', status: 'mcq_eng_only_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqEngOnlyCreatedCount ?? 0}</button>
-              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <RedCountBtn variant="sm" value={t.mcqEngOnlyNotCreatedCount ?? 0} title="Non-dual SOPs with <100 ENG MCQs (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · Missing (ENG <100)', status: 'mcq_eng_only_not_created' })} />
+            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-black">{`ENG·${(t.mcqEngOnlyCreatedCount ?? 0) + (t.mcqEngOnlyNotCreatedCount ?? 0)}`}</span>
+            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
+              <button type="button" title="Non-dual SOPs with 100+ ENG MCQs (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · Found (ENG ≥100)', status: 'mcq_eng_only_created' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqEngOnlyCreatedCount ?? 0}</button>
+              <span className="select-none text-[8px] font-light text-black/35">|</span>
+              <RedCountBtn value={t.mcqEngOnlyNotCreatedCount ?? 0} title="Non-dual SOPs with <100 ENG MCQs (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · Missing (ENG <100)', status: 'mcq_eng_only_not_created' })} />
             </div>
           </div>
           <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
-            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-gray-500" title="(ENG + GUJ)">{`(E+G)·${t.mcqDualSopCount ?? 0}`}</span>
-            <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
-              <button type="button" title="Dual SOPs with 100+ MCQs in BOTH ENG and GUJ (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · Found (ENG ≥100 AND GUJ ≥100)', status: 'mcq_dual_both_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualBothCreatedCount ?? 0}</button>
-              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <RedCountBtn variant="sm" value={t.mcqDualEitherIncompleteCount ?? 0} title="Dual SOPs missing 100+ MCQs in EITHER ENG or GUJ (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · Missing (ENG <100 OR GUJ <100)', status: 'mcq_dual_either_incomplete' })} />
+            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-black" title="(ENG + GUJ)">{`(E+G)·${t.mcqDualSopCount ?? 0}`}</span>
+            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
+              <button type="button" title="Dual SOPs with 100+ MCQs in BOTH ENG and GUJ (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · Found (ENG ≥100 AND GUJ ≥100)', status: 'mcq_dual_both_created' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualBothCreatedCount ?? 0}</button>
+              <span className="select-none text-[8px] font-light text-black/35">|</span>
+              <RedCountBtn value={t.mcqDualEitherIncompleteCount ?? 0} title="Dual SOPs missing 100+ MCQs in EITHER ENG or GUJ (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · Missing (ENG <100 OR GUJ <100)', status: 'mcq_dual_either_incomplete' })} />
             </div>
           </div>
           {/* Display-only per-language slot breakdown for Dual SOPs.
               These do NOT reconcile to the Dual Found/Missing row above — they
               describe individual language slots, not whole SOPs. */}
-          <div className="flex w-full min-w-0 flex-nowrap items-center justify-between gap-x-2 opacity-80">
-            <div className="flex shrink-0 items-center gap-px">
-              <span className="text-gray-900 text-[10px] italic font-semibold leading-none shrink-0">E</span>
-              <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
-                <button type="button" title="Dual SOPs whose ENG slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot ≥100 (display)', status: 'mcq_dual_eng_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualEngCreatedCount ?? 0}</button>
-                <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-                <RedCountBtn variant="sm" value={t.mcqDualEngNotCreatedCount ?? 0} title="Dual SOPs whose ENG slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot <100 (display)', status: 'mcq_dual_eng_not_created' })} />
+          <div className="grid min-w-0 w-full grid-cols-2 items-center gap-2">
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
+              <span className="min-w-0 truncate text-[10px] italic font-semibold leading-none text-gray-900">E</span>
+              <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
+                <button type="button" title="Dual SOPs whose ENG slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot ≥100 (display)', status: 'mcq_dual_eng_created' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualEngCreatedCount ?? 0}</button>
+                <span className="select-none text-[8px] font-light text-black/35">|</span>
+                <RedCountBtn value={t.mcqDualEngNotCreatedCount ?? 0} title="Dual SOPs whose ENG slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot <100 (display)', status: 'mcq_dual_eng_not_created' })} />
               </div>
             </div>
-            <div className="flex shrink-0 items-center gap-px">
-              <span className="text-gray-900 text-[10px] italic font-semibold leading-none shrink-0">G</span>
-              <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
-                <button type="button" title="Dual SOPs whose GUJ slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot ≥100 (display)', status: 'mcq_dual_guj_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualGujCreatedCount ?? 0}</button>
-                <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-                <RedCountBtn variant="sm" value={t.mcqDualGujNotCreatedCount ?? 0} title="Dual SOPs whose GUJ slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot <100 (display)', status: 'mcq_dual_guj_not_created' })} />
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
+              <span className="min-w-0 truncate text-[10px] italic font-semibold leading-none text-gray-900">G</span>
+              <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
+                <button type="button" title="Dual SOPs whose GUJ slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot ≥100 (display)', status: 'mcq_dual_guj_created' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualGujCreatedCount ?? 0}</button>
+                <span className="select-none text-[8px] font-light text-black/35">|</span>
+                <RedCountBtn value={t.mcqDualGujNotCreatedCount ?? 0} title="Dual SOPs whose GUJ slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot <100 (display)', status: 'mcq_dual_guj_not_created' })} />
               </div>
             </div>
           </div>
+        </div>
         </div>
         </SummaryTopic>
         <SummaryTopic>
@@ -4502,70 +5065,98 @@ export default function TrainingMatrixPage() {
               Top.(Approved+Partial+Missing)     === mcqCreatedCount
             The ENG slot / GUJ slot rows under "Dual SOPs" are display-only and
             do NOT reconcile to the Dual primary row above them. */}
-        <div className="flex w-full flex-col gap-px px-1 py-0">
+        <div className="flex w-full flex-col gap-px pr-1 py-0">
           <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
-            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-gray-500">{`ENG·${t.mcqEngOnlyCreatedCount ?? 0}`}</span>
-            <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
-              <button type="button" title="Non-dual SOPs whose ENG MCQs are fully approved" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · MCQ Approved (ENG fully approved)', status: 'mcq_approved_nondual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqApprovedNonDualCount ?? 0}</button>
-              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <button type="button" title="Non-dual SOPs with some ENG approval but not full" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · MCQ Partially Approved', status: 'mcq_approval_partial_nondual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqApprovalPartialNonDualCount ?? 0}</button>
-              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <RedCountBtn variant="sm" value={t.mcqApprovalMissingNonDualCount ?? 0} title="Non-dual SOPs with zero ENG approvals" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · MCQ Approval Missing (zero approvals)', status: 'mcq_approval_missing_nondual' })} />
+            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-black">{`ENG·${t.mcqEngOnlyCreatedCount ?? 0}`}</span>
+            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
+              <button type="button" title="Non-dual SOPs whose ENG MCQs are fully approved" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · MCQ Approved (ENG fully approved)', status: 'mcq_approved_nondual' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqApprovedNonDualCount ?? 0}</button>
+              <span className="select-none text-[8px] font-light text-black/35">|</span>
+              <button type="button" title="Non-dual SOPs with some ENG approval but not full" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · MCQ Partially Approved', status: 'mcq_approval_partial_nondual' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqApprovalPartialNonDualCount ?? 0}</button>
+              <span className="select-none text-[8px] font-light text-black/35">|</span>
+              <RedCountBtn value={t.mcqApprovalMissingNonDualCount ?? 0} title="Non-dual SOPs with zero ENG approvals" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Non-Dual SOPs · MCQ Approval Missing (zero approvals)', status: 'mcq_approval_missing_nondual' })} />
             </div>
           </div>
           <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
-            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-gray-500" title="(ENG + GUJ)">{`(E+G)·${t.mcqDualBothCreatedCount ?? 0}`}</span>
-            <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
-              <button type="button" title="Dual SOPs with BOTH ENG and GUJ fully approved (SOP-level Approved)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · MCQ Approved (ENG fully + GUJ fully)', status: 'mcq_approved_dual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqApprovedDualCount ?? 0}</button>
-              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <button type="button" title="Dual SOPs with partial progress — at least one language has approvals or is fully approved, but both aren't fully approved" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · MCQ Partially Approved (some progress on at least one language)', status: 'mcq_approval_partial_dual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqApprovalPartialDualCount ?? 0}</button>
-              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <RedCountBtn variant="sm" value={t.mcqApprovalMissingDualCount ?? 0} title="Dual SOPs where BOTH languages have zero approvals (fully missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · MCQ Approval Missing (both languages have zero approvals)', status: 'mcq_approval_missing_dual' })} />
+            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-black" title="(ENG + GUJ)">{`(E+G)·${t.mcqDualBothCreatedCount ?? 0}`}</span>
+            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
+              <button type="button" title="Dual SOPs with BOTH ENG and GUJ fully approved (SOP-level Approved)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · MCQ Approved (ENG fully + GUJ fully)', status: 'mcq_approved_dual' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqApprovedDualCount ?? 0}</button>
+              <span className="select-none text-[8px] font-light text-black/35">|</span>
+              <button type="button" title="Dual SOPs with partial progress — at least one language has approvals or is fully approved, but both aren't fully approved" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · MCQ Partially Approved (some progress on at least one language)', status: 'mcq_approval_partial_dual' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqApprovalPartialDualCount ?? 0}</button>
+              <span className="select-none text-[8px] font-light text-black/35">|</span>
+              <RedCountBtn value={t.mcqApprovalMissingDualCount ?? 0} title="Dual SOPs where BOTH languages have zero approvals (fully missing)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · MCQ Approval Missing (both languages have zero approvals)', status: 'mcq_approval_missing_dual' })} />
             </div>
           </div>
-          <div className="flex w-full min-w-0 flex-nowrap items-center justify-between gap-x-2 opacity-80">
-            <div className="flex shrink-0 items-center gap-px">
-              <span className="text-gray-900 text-[10px] italic font-semibold leading-none shrink-0">E</span>
-              <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
-                <button type="button" title="Dual SOPs whose ENG slot is fully approved (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot fully approved (display)', status: 'mcq_dual_slot_eng_all_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualSlotEngAllApprovedCount ?? 0}</button>
-              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <button type="button" title="Dual SOPs whose ENG slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot partially approved (display)', status: 'mcq_dual_slot_eng_partially_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqDualSlotEngPartiallyApprovedCount ?? 0}</button>
-              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <RedCountBtn variant="sm" value={t.mcqDualSlotEngNotApprovedCount ?? 0} title="Dual SOPs whose ENG slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot zero approvals (display)', status: 'mcq_dual_slot_eng_not_approved' })} />
+          <div className="grid min-w-0 w-full grid-cols-2 items-center gap-2">
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
+              <span className="min-w-0 truncate text-[10px] italic font-semibold leading-none text-gray-900">E</span>
+              <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
+                <button type="button" title="Dual SOPs whose ENG slot is fully approved (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot fully approved (display)', status: 'mcq_dual_slot_eng_all_approved' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualSlotEngAllApprovedCount ?? 0}</button>
+                <span className="select-none text-[8px] font-light text-black/35">|</span>
+                <button type="button" title="Dual SOPs whose ENG slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot partially approved (display)', status: 'mcq_dual_slot_eng_partially_approved' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqDualSlotEngPartiallyApprovedCount ?? 0}</button>
+                <span className="select-none text-[8px] font-light text-black/35">|</span>
+                <RedCountBtn value={t.mcqDualSlotEngNotApprovedCount ?? 0} title="Dual SOPs whose ENG slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · ENG slot zero approvals (display)', status: 'mcq_dual_slot_eng_not_approved' })} />
               </div>
             </div>
-            <div className="flex shrink-0 items-center gap-px">
-              <span className="text-gray-900 text-[10px] italic font-semibold leading-none shrink-0">G</span>
-              <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
-                <button type="button" title="Dual SOPs whose GUJ slot is fully approved (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot fully approved (display)', status: 'mcq_dual_slot_guj_all_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualSlotGujAllApprovedCount ?? 0}</button>
-              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <button type="button" title="Dual SOPs whose GUJ slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot partially approved (display)', status: 'mcq_dual_slot_guj_partially_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqDualSlotGujPartiallyApprovedCount ?? 0}</button>
-              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <RedCountBtn variant="sm" value={t.mcqDualSlotGujNotApprovedCount ?? 0} title="Dual SOPs whose GUJ slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot zero approvals (display)', status: 'mcq_dual_slot_guj_not_approved' })} />
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
+              <span className="min-w-0 truncate text-[10px] italic font-semibold leading-none text-gray-900">G</span>
+              <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
+                <button type="button" title="Dual SOPs whose GUJ slot is fully approved (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot fully approved (display)', status: 'mcq_dual_slot_guj_all_approved' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{t.mcqDualSlotGujAllApprovedCount ?? 0}</button>
+                <span className="select-none text-[8px] font-light text-black/35">|</span>
+                <button type="button" title="Dual SOPs whose GUJ slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot partially approved (display)', status: 'mcq_dual_slot_guj_partially_approved' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{t.mcqDualSlotGujPartiallyApprovedCount ?? 0}</button>
+                <span className="select-none text-[8px] font-light text-black/35">|</span>
+                <RedCountBtn value={t.mcqDualSlotGujNotApprovedCount ?? 0} title="Dual SOPs whose GUJ slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'Dual SOPs · GUJ slot zero approvals (display)', status: 'mcq_dual_slot_guj_not_approved' })} />
               </div>
             </div>
           </div>
         </div>
         </SummaryTopic>
         <SummaryTopic>
+        <div className="flex flex-col rounded-sm bg-gray-100 px-0.5 py-0.5">
+        <RowB
+          label="SOP wise Trainers"
+          green={t.sopTrainersAssigned ?? t.trainersAssigned}
+          red={t.sopTrainersMissing ?? t.trainersMissing}
+          onClickGreen={() =>
+            applySummaryCapsuleFilter({
+              dept: 'All',
+              type: 'db',
+              title: 'All SOPs · Trainer Assigned',
+              status: 'all_db',
+            })
+          }
+          onClickRed={() =>
+            applySummaryCapsuleFilter({
+              dept: 'All',
+              type: 'db',
+              title: 'All SOPs · Trainer Missing',
+              status: 'all_db',
+            })
+          }
+        />
         <SectionLabel>Trainers / SOP</SectionLabel>
         <div className="flex w-full min-h-[22px] items-center justify-between gap-1 px-1 py-0 text-[10px]">
           <div className="flex items-center gap-0.5" title="SOPs with 2 or more trainers assigned">
-            <span className="text-gray-500 text-[10px] font-medium">2+</span>
+            <span className="text-black text-[10px] font-medium">2+</span>
             <button type="button" title="SOPs with 2 or more trainers" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'SOPs with 2+ Trainers', status: 'sop_2plus_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400 tabular-nums">{trainerBuckets.sop2Plus}</button>
           </div>
           <div className="flex items-center gap-0.5" title="SOPs with exactly 1 trainer assigned">
-            <span className="text-gray-500 text-[10px] font-medium">1</span>
+            <span className="text-black text-[10px] font-medium">1</span>
             <button type="button" title="SOPs with 1 trainer" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'SOPs with 1 Trainer', status: 'sop_1_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-amber-600 shadow-sm transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400 tabular-nums">{trainerBuckets.sop1}</button>
           </div>
           <div className="flex items-center gap-0.5" title="SOPs with no trainer assigned">
-            <span className="text-gray-500 text-[10px] font-medium">0</span>
-            <button type="button" title="SOPs with 0 trainers" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'SOPs with 0 Trainers', status: 'sop_0_trainer' })} className={`min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight shadow-sm transition-colors focus:outline-none focus:ring-1 tabular-nums ${(trainerBuckets.sop0 ?? 0) === 0 ? 'text-gray-400 hover:bg-gray-100 focus:ring-gray-400' : 'text-red-600 hover:bg-red-50 focus:ring-red-400'}`}>{trainerBuckets.sop0}</button>
+            <span className="text-black text-[10px] font-medium">0</span>
+            <button type="button" title="SOPs with 0 trainers" onClick={() => applySummaryCapsuleFilter({ dept: 'All', type: 'found', title: 'SOPs with 0 Trainers', status: 'sop_0_trainer' })} className={`min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight shadow-sm transition-colors focus:outline-none focus:ring-1 tabular-nums text-red-600 hover:bg-red-50 focus:ring-red-400`}>{trainerBuckets.sop0}</button>
           </div>
+        </div>
         </div>
         </SummaryTopic>
         <SummaryTopic>
-        <SectionLabel>SOPs / Month</SectionLabel>
+        <SopsMonthHeaderRow
+          monthSum={totalSopsMonthSum}
+          deptNumerator={t.departmentCount}
+          deptDenominator={t.totalDepartments}
+          title="Sum of monthly SOP counts (this card). Dept: uploads / configured departments."
+        />
         <MonthStrip
           monthCounts={totalMonthCounts}
           onSelectMonth={(m) => {
@@ -4581,14 +5172,12 @@ export default function TrainingMatrixPage() {
           }}
         />
         </SummaryTopic>
-        <SummaryTopic>
-        <RowA label="Departments" value={`${t.departmentCount}/${t.totalDepartments}`} />
-        </SummaryTopic>
       </CardShell>
     );
   };
 
   const renderDeptCard = (dept: Dept, d: DeptCardData) => {
+    const deptMonthSum = MONTHS.reduce((sum, m) => sum + (d.monthCounts?.[m] ?? 0), 0);
     const deptTrainerBuckets = resolveTrainerBucketCounts(d);
     const Icon = getDeptIcon(dept);
     const dbDeptCount =
@@ -4616,13 +5205,13 @@ export default function TrainingMatrixPage() {
               tableSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }, 80);
           }}
-          className="flex w-full min-h-[24px] cursor-pointer items-center justify-between gap-1.5 rounded-[4px] border border-transparent px-1 py-0.5 text-left text-[10px] transition-colors hover:bg-purple-100/80 active:bg-purple-200/60 focus:z-10 focus:outline-none focus:ring-1 focus:ring-purple-400"
+          className="flex w-full min-h-[24px] cursor-pointer items-center justify-between gap-1.5 rounded-[4px] border border-transparent px-1 py-0.5 text-left text-[11px] transition-colors hover:bg-purple-100/80 active:bg-purple-200/60 focus:z-10 focus:outline-none focus:ring-1 focus:ring-purple-400"
         >
-          <span className="min-w-0 shrink font-semibold text-gray-700 whitespace-nowrap overflow-hidden text-ellipsis">SOPs (DB)</span>
+          <span className="min-w-0 shrink font-semibold text-black whitespace-nowrap overflow-hidden text-ellipsis">SOPs (DB)</span>
           <span className="font-bold tabular-nums shrink-0 leading-tight text-gray-900">{dbDeptCount}</span>
         </button>
-        <div className="grid min-h-[26px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[5px] border border-transparent px-1 py-px text-[10px]">
-          <span className="min-w-0 truncate text-left font-semibold text-gray-700">In Excel</span>
+        <div className="grid min-h-[26px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[5px] border border-transparent bg-gray-100 px-1 py-px text-[11px]">
+          <span className="min-w-0 truncate text-left font-semibold text-black">In Excel</span>
           <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
             <button
               type="button"
@@ -4638,7 +5227,7 @@ export default function TrainingMatrixPage() {
             >
               {d.foundInDb}
             </button>
-            <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
+            <span className="select-none text-[8px] font-light text-black/35" aria-hidden>|</span>
             <RedCountBtn
               value={d.missingFromExcel ?? 0}
               title="Missing"
@@ -4653,8 +5242,8 @@ export default function TrainingMatrixPage() {
           </div>
         </div>
         {(d.langBreakdown || []).length > 0 ? (
-          <div className="flex min-h-[24px] w-full items-center justify-between gap-1 rounded-[4px] border border-transparent px-1 py-0.5 text-[10px]">
-            <span className="min-w-0 shrink truncate font-semibold text-gray-700">Lang (DB)</span>
+          <div className="flex min-h-[24px] w-full items-center justify-between gap-1 rounded-[4px] border border-transparent px-1 py-0.5 text-[11px]">
+            <span className="min-w-0 shrink truncate font-semibold text-black">Lang (DB)</span>
             <div className="flex items-center gap-2 tabular-nums">
               {(d.langBreakdown || [])
                 .slice()
@@ -4663,7 +5252,7 @@ export default function TrainingMatrixPage() {
                   const dbTotal = lr.found + lr.missing;
                   return (
                     <span key={lr.key} className="inline-flex items-center gap-1">
-                      <span className="text-[9px] font-medium text-gray-500">{lr.label}</span>
+                      <span className="text-[9px] font-medium text-black">{lr.label}</span>
                       <button
                         type="button"
                         onClick={() =>
@@ -4717,19 +5306,19 @@ export default function TrainingMatrixPage() {
         />
 
         {d.excelDeptSplit?.foundByDept ? (
-          <>
-            <div className="grid min-h-[26px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[5px] border border-transparent px-1 py-px text-[10px]">
-              <span className="min-w-0 truncate text-left font-semibold text-gray-700">Excel SOP</span>
+          <div className="flex flex-col rounded-sm bg-gray-100 px-0.5 py-0.5">
+            <div className="grid min-h-[26px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-[5px] border border-transparent px-1 py-px text-[11px]">
+              <span className="min-w-0 truncate text-left font-semibold text-black">Excel SOP</span>
               <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
                 <button
                   type="button"
-                  onClick={() => applySummaryCapsuleFilter({ dept, type: 'found_any', title: `${dept} · Found in Excel` })}
+                  onClick={() => applySummaryCapsuleFilter({ dept, type: 'found_any', title: `${dept} · Excel SOPs (uploaded)` })}
                   className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
-                  title="Found"
+                  title="Excel SOPs (uploaded)"
                 >
-                  {Object.values(d.excelDeptSplit.foundByDept || {}).reduce((a: number, b: unknown) => a + (b as number), 0) + (d.excelDeptSplit.unknownFound ?? 0)}
+                  {d.excelDeptSplit.total ?? 0}
                 </button>
-                <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
+                <span className="select-none text-[8px] font-light text-black/35" aria-hidden>|</span>
                 <RedCountBtn
                   value={Object.values(d.excelDeptSplit.missingByDept || {}).reduce((a: number, b: unknown) => a + (b as number), 0) + (d.excelDeptSplit.unknownMissing ?? 0)}
                   title="Missing"
@@ -4754,7 +5343,7 @@ export default function TrainingMatrixPage() {
               onSelectFound={(dbDept) =>
                 applySummaryCapsuleFilter({
                   dept,
-                  dbDept: dbDept === 'NA' ? 'All' : dbDept,
+                  dbDept: dbDept === 'NA' ? 'NA' : dbDept,
                   type: 'found_any',
                   title: `${dept} · Found (DB Dept: ${dbDept})`,
                 })
@@ -4768,32 +5357,9 @@ export default function TrainingMatrixPage() {
                 })
               }
             />
-          </>
+          </div>
         ) : null}
 
-        </SummaryTopic>
-        <SummaryTopic>
-        <RowB
-          label="SOP wise Trainers"
-          green={d.sopTrainersAssigned ?? d.trainersAssigned}
-          red={d.sopTrainersMissing ?? d.trainersMissing}
-          onClickGreen={() =>
-            applySummaryCapsuleFilter({
-              dept,
-              type: 'db',
-              title: `${dept} · SOP wise Trainer assigned`,
-              status: 'all_db',
-            })
-          }
-          onClickRed={() =>
-            applySummaryCapsuleFilter({
-              dept,
-              type: 'db',
-              title: `${dept} · SOP wise Trainer missing`,
-              status: 'all_db',
-            })
-          }
-        />
         </SummaryTopic>
         <SummaryTopic>
         {(() => {
@@ -4807,7 +5373,7 @@ export default function TrainingMatrixPage() {
           const bucketSopSum = r3Count + r2Count + r1Count;
           return (
             <>
-              <div className="flex w-full min-h-[24px] items-center justify-between gap-1 px-1 py-0.5 text-[10px]">
+              <div className="flex w-full min-h-[24px] items-center justify-between gap-1 px-1 py-0.5 text-[11px]">
                 <SectionLabel>Repetitive SOPs</SectionLabel>
                 <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
                   <button
@@ -4818,7 +5384,7 @@ export default function TrainingMatrixPage() {
                   >
                     {bucketSopSum}
                   </button>
-                  <span className="select-none text-[8px] font-light text-gray-300" aria-hidden>|</span>
+                  <span className="select-none text-[8px] font-light text-black/35" aria-hidden>|</span>
                   <RedCountBtn
                     value={dMissingSum}
                     title="Missing SOPs (DB but not in Excel)"
@@ -4838,6 +5404,7 @@ export default function TrainingMatrixPage() {
         })()}
         </SummaryTopic>
         <SummaryTopic>
+        <div className="flex flex-col rounded-sm bg-gray-100 px-0.5 py-0.5">
         <RowB
           label={`MCQ (100+ created) · ${(d.mcqCreatedCount ?? 0) + (d.mcqNotCreatedCount ?? 0)}`}
           green={d.mcqCreatedCount ?? 0}
@@ -4864,41 +5431,42 @@ export default function TrainingMatrixPage() {
             rows under "Dual SOPs" are display-only and intentionally do NOT
             reconcile to the Dual Found/Missing row (they describe individual
             language slots, not whole SOPs). */}
-        <div className="flex w-full flex-col gap-px px-1 py-0">
+        <div className="flex w-full flex-col gap-px pr-1 py-0">
           <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
-            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-gray-500">{`ENG·${(d.mcqEngOnlyCreatedCount ?? 0) + (d.mcqEngOnlyNotCreatedCount ?? 0)}`}</span>
-            <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
-              <button type="button" title="Non-dual SOPs with 100+ ENG MCQs (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · Found (ENG ≥100)`, status: 'mcq_eng_only_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqEngOnlyCreatedCount ?? 0}</button>
-              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <RedCountBtn variant="sm" value={d.mcqEngOnlyNotCreatedCount ?? 0} title="Non-dual SOPs with <100 ENG MCQs (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · Missing (ENG <100)`, status: 'mcq_eng_only_not_created' })} />
+            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-black">{`ENG·${(d.mcqEngOnlyCreatedCount ?? 0) + (d.mcqEngOnlyNotCreatedCount ?? 0)}`}</span>
+            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
+              <button type="button" title="Non-dual SOPs with 100+ ENG MCQs (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · Found (ENG ≥100)`, status: 'mcq_eng_only_created' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqEngOnlyCreatedCount ?? 0}</button>
+              <span className="select-none text-[8px] font-light text-black/35">|</span>
+              <RedCountBtn value={d.mcqEngOnlyNotCreatedCount ?? 0} title="Non-dual SOPs with <100 ENG MCQs (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · Missing (ENG <100)`, status: 'mcq_eng_only_not_created' })} />
             </div>
           </div>
           <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
-            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-gray-500" title="(ENG + GUJ)">{`(E+G)·${d.mcqDualSopCount ?? 0}`}</span>
-            <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
-              <button type="button" title="Dual SOPs with 100+ MCQs in BOTH ENG and GUJ (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · Found (ENG ≥100 AND GUJ ≥100)`, status: 'mcq_dual_both_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualBothCreatedCount ?? 0}</button>
-              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <RedCountBtn variant="sm" value={d.mcqDualEitherIncompleteCount ?? 0} title="Dual SOPs missing 100+ MCQs in EITHER ENG or GUJ (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · Missing (ENG <100 OR GUJ <100)`, status: 'mcq_dual_either_incomplete' })} />
+            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-black" title="(ENG + GUJ)">{`(E+G)·${d.mcqDualSopCount ?? 0}`}</span>
+            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
+              <button type="button" title="Dual SOPs with 100+ MCQs in BOTH ENG and GUJ (SOP-level Found)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · Found (ENG ≥100 AND GUJ ≥100)`, status: 'mcq_dual_both_created' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualBothCreatedCount ?? 0}</button>
+              <span className="select-none text-[8px] font-light text-black/35">|</span>
+              <RedCountBtn value={d.mcqDualEitherIncompleteCount ?? 0} title="Dual SOPs missing 100+ MCQs in EITHER ENG or GUJ (SOP-level Missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · Missing (ENG <100 OR GUJ <100)`, status: 'mcq_dual_either_incomplete' })} />
             </div>
           </div>
-          <div className="flex w-full min-w-0 flex-nowrap items-center justify-between gap-x-2 opacity-80">
-            <div className="flex shrink-0 items-center gap-px">
-              <span className="text-gray-900 text-[10px] italic font-semibold leading-none shrink-0">E</span>
-              <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
-                <button type="button" title="Dual SOPs whose ENG slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot ≥100 (display)`, status: 'mcq_dual_eng_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualEngCreatedCount ?? 0}</button>
-                <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-                <RedCountBtn variant="sm" value={d.mcqDualEngNotCreatedCount ?? 0} title="Dual SOPs whose ENG slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot <100 (display)`, status: 'mcq_dual_eng_not_created' })} />
+          <div className="grid min-w-0 w-full grid-cols-2 items-center gap-2">
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
+              <span className="min-w-0 truncate text-[10px] italic font-semibold leading-none text-gray-900">E</span>
+              <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
+                <button type="button" title="Dual SOPs whose ENG slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot ≥100 (display)`, status: 'mcq_dual_eng_created' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualEngCreatedCount ?? 0}</button>
+                <span className="select-none text-[8px] font-light text-black/35">|</span>
+                <RedCountBtn value={d.mcqDualEngNotCreatedCount ?? 0} title="Dual SOPs whose ENG slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot <100 (display)`, status: 'mcq_dual_eng_not_created' })} />
               </div>
             </div>
-            <div className="flex shrink-0 items-center gap-px">
-              <span className="text-gray-900 text-[10px] italic font-semibold leading-none shrink-0">G</span>
-              <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
-                <button type="button" title="Dual SOPs whose GUJ slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot ≥100 (display)`, status: 'mcq_dual_guj_created' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualGujCreatedCount ?? 0}</button>
-                <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-                <RedCountBtn variant="sm" value={d.mcqDualGujNotCreatedCount ?? 0} title="Dual SOPs whose GUJ slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot <100 (display)`, status: 'mcq_dual_guj_not_created' })} />
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
+              <span className="min-w-0 truncate text-[10px] italic font-semibold leading-none text-gray-900">G</span>
+              <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
+                <button type="button" title="Dual SOPs whose GUJ slot has 100+ MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot ≥100 (display)`, status: 'mcq_dual_guj_created' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualGujCreatedCount ?? 0}</button>
+                <span className="select-none text-[8px] font-light text-black/35">|</span>
+                <RedCountBtn value={d.mcqDualGujNotCreatedCount ?? 0} title="Dual SOPs whose GUJ slot has <100 MCQs (display only — not for reconciliation)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot <100 (display)`, status: 'mcq_dual_guj_not_created' })} />
               </div>
             </div>
           </div>
+        </div>
         </div>
         </SummaryTopic>
         <SummaryTopic>
@@ -4935,70 +5503,98 @@ export default function TrainingMatrixPage() {
         {/* SOP-based approval breakdown (department scope) — universe is the
             "MCQ (100+ created) · Found" SOPs in this department. NonDual+Dual
             sub-totals always sum to the top primary row above. */}
-        <div className="flex w-full flex-col gap-px px-1 py-0">
+        <div className="flex w-full flex-col gap-px pr-1 py-0">
           <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
-            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-gray-500">{`ENG·${d.mcqEngOnlyCreatedCount ?? 0}`}</span>
-            <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
-              <button type="button" title="Non-dual SOPs whose ENG MCQs are fully approved" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · MCQ Approved (ENG fully approved)`, status: 'mcq_approved_nondual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqApprovedNonDualCount ?? 0}</button>
-              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <button type="button" title="Non-dual SOPs with some ENG approval but not full" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · MCQ Partially Approved`, status: 'mcq_approval_partial_nondual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqApprovalPartialNonDualCount ?? 0}</button>
-              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <RedCountBtn variant="sm" value={d.mcqApprovalMissingNonDualCount ?? 0} title="Non-dual SOPs with zero ENG approvals" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · MCQ Approval Missing`, status: 'mcq_approval_missing_nondual' })} />
+            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-black">{`ENG·${d.mcqEngOnlyCreatedCount ?? 0}`}</span>
+            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
+              <button type="button" title="Non-dual SOPs whose ENG MCQs are fully approved" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · MCQ Approved (ENG fully approved)`, status: 'mcq_approved_nondual' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqApprovedNonDualCount ?? 0}</button>
+              <span className="select-none text-[8px] font-light text-black/35">|</span>
+              <button type="button" title="Non-dual SOPs with some ENG approval but not full" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · MCQ Partially Approved`, status: 'mcq_approval_partial_nondual' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqApprovalPartialNonDualCount ?? 0}</button>
+              <span className="select-none text-[8px] font-light text-black/35">|</span>
+              <RedCountBtn value={d.mcqApprovalMissingNonDualCount ?? 0} title="Non-dual SOPs with zero ENG approvals" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Non-Dual SOPs · MCQ Approval Missing`, status: 'mcq_approval_missing_nondual' })} />
             </div>
           </div>
           <div className="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
-            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-gray-500" title="(ENG + GUJ)">{`(E+G)·${d.mcqDualBothCreatedCount ?? 0}`}</span>
-            <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/90 px-px tabular-nums">
-              <button type="button" title="Dual SOPs with BOTH ENG and GUJ fully approved (SOP-level Approved)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · MCQ Approved (ENG fully + GUJ fully)`, status: 'mcq_approved_dual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqApprovedDualCount ?? 0}</button>
-              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <button type="button" title="Dual SOPs with partial progress — at least one language has approvals or is fully approved, but both aren't fully approved" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · MCQ Partially Approved`, status: 'mcq_approval_partial_dual' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqApprovalPartialDualCount ?? 0}</button>
-              <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-              <RedCountBtn variant="sm" value={d.mcqApprovalMissingDualCount ?? 0} title="Dual SOPs where BOTH languages have zero approvals (fully missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · MCQ Approval Missing`, status: 'mcq_approval_missing_dual' })} />
+            <span className="min-w-0 truncate text-[10px] font-semibold leading-none text-black" title="(ENG + GUJ)">{`(E+G)·${d.mcqDualBothCreatedCount ?? 0}`}</span>
+            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
+              <button type="button" title="Dual SOPs with BOTH ENG and GUJ fully approved (SOP-level Approved)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · MCQ Approved (ENG fully + GUJ fully)`, status: 'mcq_approved_dual' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqApprovedDualCount ?? 0}</button>
+              <span className="select-none text-[8px] font-light text-black/35">|</span>
+              <button type="button" title="Dual SOPs with partial progress — at least one language has approvals or is fully approved, but both aren't fully approved" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · MCQ Partially Approved`, status: 'mcq_approval_partial_dual' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqApprovalPartialDualCount ?? 0}</button>
+              <span className="select-none text-[8px] font-light text-black/35">|</span>
+              <RedCountBtn value={d.mcqApprovalMissingDualCount ?? 0} title="Dual SOPs where BOTH languages have zero approvals (fully missing)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · MCQ Approval Missing`, status: 'mcq_approval_missing_dual' })} />
             </div>
           </div>
-          <div className="flex w-full min-w-0 flex-nowrap items-center justify-between gap-x-2 opacity-80">
-            <div className="flex shrink-0 items-center gap-px">
-              <span className="text-gray-900 text-[10px] italic font-semibold leading-none shrink-0">E</span>
-              <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
-                <button type="button" title="Dual SOPs whose ENG slot is fully approved (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot fully approved (display)`, status: 'mcq_dual_slot_eng_all_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualSlotEngAllApprovedCount ?? 0}</button>
-                <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-                <button type="button" title="Dual SOPs whose ENG slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot partially approved (display)`, status: 'mcq_dual_slot_eng_partially_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqDualSlotEngPartiallyApprovedCount ?? 0}</button>
-                <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-                <RedCountBtn variant="sm" value={d.mcqDualSlotEngNotApprovedCount ?? 0} title="Dual SOPs whose ENG slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot zero approvals (display)`, status: 'mcq_dual_slot_eng_not_approved' })} />
+          <div className="grid min-w-0 w-full grid-cols-2 items-center gap-2">
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
+              <span className="min-w-0 truncate text-[10px] italic font-semibold leading-none text-gray-900">E</span>
+              <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
+                <button type="button" title="Dual SOPs whose ENG slot is fully approved (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot fully approved (display)`, status: 'mcq_dual_slot_eng_all_approved' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualSlotEngAllApprovedCount ?? 0}</button>
+                <span className="select-none text-[8px] font-light text-black/35">|</span>
+                <button type="button" title="Dual SOPs whose ENG slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot partially approved (display)`, status: 'mcq_dual_slot_eng_partially_approved' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqDualSlotEngPartiallyApprovedCount ?? 0}</button>
+                <span className="select-none text-[8px] font-light text-black/35">|</span>
+                <RedCountBtn value={d.mcqDualSlotEngNotApprovedCount ?? 0} title="Dual SOPs whose ENG slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · ENG slot zero approvals (display)`, status: 'mcq_dual_slot_eng_not_approved' })} />
               </div>
             </div>
-            <div className="flex shrink-0 items-center gap-px">
-              <span className="text-gray-900 text-[10px] italic font-semibold leading-none shrink-0">G</span>
-              <div className="inline-flex shrink-0 items-center gap-px rounded border border-gray-200/70 bg-white/80 px-px tabular-nums">
-                <button type="button" title="Dual SOPs whose GUJ slot is fully approved (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot fully approved (display)`, status: 'mcq_dual_slot_guj_all_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualSlotGujAllApprovedCount ?? 0}</button>
-                <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-                <button type="button" title="Dual SOPs whose GUJ slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot partially approved (display)`, status: 'mcq_dual_slot_guj_partially_approved' })} className="min-w-[1rem] cursor-pointer rounded-sm px-0.5 py-px text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqDualSlotGujPartiallyApprovedCount ?? 0}</button>
-                <span className="select-none text-[9px] leading-none text-gray-300">|</span>
-                <RedCountBtn variant="sm" value={d.mcqDualSlotGujNotApprovedCount ?? 0} title="Dual SOPs whose GUJ slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot zero approvals (display)`, status: 'mcq_dual_slot_guj_not_approved' })} />
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5">
+              <span className="min-w-0 truncate text-[10px] italic font-semibold leading-none text-gray-900">G</span>
+              <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-gray-200/90 bg-white/95 px-0.5 py-px shadow-sm tabular-nums">
+                <button type="button" title="Dual SOPs whose GUJ slot is fully approved (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot fully approved (display)`, status: 'mcq_dual_slot_guj_all_approved' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-emerald-700 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400">{d.mcqDualSlotGujAllApprovedCount ?? 0}</button>
+                <span className="select-none text-[8px] font-light text-black/35">|</span>
+                <button type="button" title="Dual SOPs whose GUJ slot has some approvals but not full (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot partially approved (display)`, status: 'mcq_dual_slot_guj_partially_approved' })} className="min-w-[1.35rem] cursor-pointer rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400">{d.mcqDualSlotGujPartiallyApprovedCount ?? 0}</button>
+                <span className="select-none text-[8px] font-light text-black/35">|</span>
+                <RedCountBtn value={d.mcqDualSlotGujNotApprovedCount ?? 0} title="Dual SOPs whose GUJ slot has zero approvals (display only)" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · Dual SOPs · GUJ slot zero approvals (display)`, status: 'mcq_dual_slot_guj_not_approved' })} />
               </div>
             </div>
           </div>
         </div>
         </SummaryTopic>
         <SummaryTopic>
+        <div className="flex flex-col rounded-sm bg-gray-100 px-0.5 py-0.5">
+        <RowB
+          label="SOP wise Trainers"
+          green={d.sopTrainersAssigned ?? d.trainersAssigned}
+          red={d.sopTrainersMissing ?? d.trainersMissing}
+          onClickGreen={() =>
+            applySummaryCapsuleFilter({
+              dept,
+              type: 'db',
+              title: `${dept} · SOP wise Trainer assigned`,
+              status: 'all_db',
+            })
+          }
+          onClickRed={() =>
+            applySummaryCapsuleFilter({
+              dept,
+              type: 'db',
+              title: `${dept} · SOP wise Trainer missing`,
+              status: 'all_db',
+            })
+          }
+        />
         <SectionLabel>Trainers / SOP</SectionLabel>
         <div className="flex w-full min-h-[22px] items-center justify-between gap-1 px-1 py-0 text-[10px]">
           <div className="flex items-center gap-0.5" title="SOPs with 2 or more trainers assigned">
-            <span className="text-gray-500 text-[10px] font-medium">2+</span>
+            <span className="text-black text-[10px] font-medium">2+</span>
             <button type="button" title="SOPs with 2 or more trainers" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · SOPs with 2+ Trainers`, status: 'sop_2plus_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-1 focus:ring-emerald-400 tabular-nums">{deptTrainerBuckets.sop2Plus}</button>
           </div>
           <div className="flex items-center gap-0.5" title="SOPs with exactly 1 trainer assigned">
-            <span className="text-gray-500 text-[10px] font-medium">1</span>
+            <span className="text-black text-[10px] font-medium">1</span>
             <button type="button" title="SOPs with 1 trainer" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · SOPs with 1 Trainer`, status: 'sop_1_trainer' })} className="min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-amber-600 shadow-sm transition-colors hover:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400 tabular-nums">{deptTrainerBuckets.sop1}</button>
           </div>
           <div className="flex items-center gap-0.5" title="SOPs with no trainer assigned">
-            <span className="text-gray-500 text-[10px] font-medium">0</span>
-            <button type="button" title="SOPs with 0 trainers" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · SOPs with 0 Trainers`, status: 'sop_0_trainer' })} className={`min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight shadow-sm transition-colors focus:outline-none focus:ring-1 tabular-nums ${(deptTrainerBuckets.sop0 ?? 0) === 0 ? 'text-gray-400 hover:bg-gray-100 focus:ring-gray-400' : 'text-red-600 hover:bg-red-50 focus:ring-red-400'}`}>{deptTrainerBuckets.sop0}</button>
+            <span className="text-black text-[10px] font-medium">0</span>
+            <button type="button" title="SOPs with 0 trainers" onClick={() => applySummaryCapsuleFilter({ dept, type: 'found', title: `${dept} · SOPs with 0 Trainers`, status: 'sop_0_trainer' })} className={`min-w-[1.3rem] cursor-pointer rounded border border-gray-200/80 bg-white/90 px-1 py-0.5 text-center text-[10px] font-bold leading-tight shadow-sm transition-colors focus:outline-none focus:ring-1 tabular-nums text-red-600 hover:bg-red-50 focus:ring-red-400`}>{deptTrainerBuckets.sop0}</button>
           </div>
+        </div>
         </div>
         </SummaryTopic>
         <SummaryTopic>
-        <SectionLabel>SOPs / Month</SectionLabel>
+        <SopsMonthHeaderRow
+          monthSum={deptMonthSum}
+          deptNumerator={data?.totalCard?.departmentCount ?? 0}
+          deptDenominator={data?.totalCard?.totalDepartments ?? DEFAULT_DEPARTMENTS.length}
+          title="Sum of monthly SOP counts (this department). Dept: uploads / configured departments."
+        />
         <MonthStrip
           monthCounts={d.monthCounts}
           onSelectMonth={(m) => {
@@ -5108,6 +5704,7 @@ export default function TrainingMatrixPage() {
     mcqMetrics,
     bottom,
     onClick,
+    onUnassign,
     isActiveMonth,
     engDocxPath,
     gujDocxPath,
@@ -5129,6 +5726,7 @@ export default function TrainingMatrixPage() {
     mcqMetrics?: React.ReactNode;
     bottom?: React.ReactNode;
     onClick?: () => void;
+    onUnassign?: () => void;
     isActiveMonth?: boolean;
     engDocxPath?: string;
     gujDocxPath?: string;
@@ -5153,19 +5751,19 @@ export default function TrainingMatrixPage() {
           className="grid items-center gap-x-1.5 gap-y-0.5 px-3 py-1"
           style={{ gridTemplateColumns: SOP_TABLE_GRID_COLS }}
         >
-          <span className="text-[9px] font-bold text-gray-400 tabular-nums text-right">{sr != null ? sr : ''}</span>
+          <span className="text-[9px] font-bold text-black tabular-nums text-right">{sr != null ? sr : ''}</span>
           <span className="font-mono text-[10px] font-black text-gray-900 truncate" title={sopCode}>{sopCode}</span>
           <div className="flex flex-col min-w-0">
             {title
               ? <span className="text-[11px] font-extrabold text-gray-900 leading-tight break-words">{title}</span>
-              : <span className="text-[9px] text-gray-400 italic">—</span>}
+              : <span className="text-[9px] text-black italic">—</span>}
             {isDualLanguage && gujaratiName && /[઀-૿]/.test(gujaratiName) && (
               <span className="text-[10px] font-bold text-indigo-700 leading-tight break-words">{gujaratiName}</span>
             )}
           </div>
-          <span className="text-[10px] font-semibold text-gray-600 truncate" title={dbDept ? `DB Dept: ${dbDept}` : 'DB Dept: —'}>{dbDept || '—'}</span>
+          <span className="text-[10px] font-semibold text-black truncate" title={dbDept ? `DB Dept: ${dbDept}` : 'DB Dept: —'}>{dbDept || '—'}</span>
           <span className="text-[10px] font-black text-gray-900 truncate" title={dept}>{dept}</span>
-          <span className={`text-[9px] font-bold rounded-full px-1.5 py-0.5 border text-center truncate ${month ? (isActiveMonth ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white/60 text-gray-600 border-white/60') : 'text-gray-400'}`}>
+          <span className={`text-[9px] font-bold rounded-full px-1.5 py-0.5 border text-center truncate ${month ? (isActiveMonth ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white/60 text-black border-white/60') : 'text-black'}`}>
             {month || '—'}
           </span>
           <span className={`text-[10px] font-semibold truncate ${trainer ? 'text-emerald-700' : 'text-red-500'}`} title={trainer || 'No Trainer'}>
@@ -5184,7 +5782,7 @@ export default function TrainingMatrixPage() {
                 ENG DOCX
               </a>
             ) : (
-              <span className="text-[9px] font-bold text-gray-400 whitespace-nowrap" title="No ENG DOCX">ENG —</span>
+              <span className="text-[9px] font-bold text-black whitespace-nowrap" title="No ENG DOCX">ENG —</span>
             )}
             {isDualLanguage ? (
               gujDocxPath ? (
@@ -5199,7 +5797,7 @@ export default function TrainingMatrixPage() {
                   GUJ DOCX
                 </a>
               ) : (
-                <span className="text-[9px] font-bold text-gray-400 whitespace-nowrap" title="No GUJ DOCX">GUJ —</span>
+                <span className="text-[9px] font-bold text-black whitespace-nowrap" title="No GUJ DOCX">GUJ —</span>
               )
             ) : null}
           </div>
@@ -5207,11 +5805,21 @@ export default function TrainingMatrixPage() {
           <span
             className={`text-[9px] font-semibold text-center truncate ${targetDate
               ? expired ? 'text-red-600' : 'text-emerald-700'
-              : 'text-gray-400'}`}
+              : 'text-black'}`}
             title={targetDate ? (expired ? 'Expired' : 'Valid') : 'No date'}
           >
             {expiryLabel}
           </span>
+          {onUnassign ? (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onUnassign(); }}
+              title="Unassign this SOP"
+              className="flex h-6 w-6 items-center justify-center rounded-md border border-red-200 bg-red-50 text-red-400 transition-colors hover:border-red-400 hover:bg-red-100 hover:text-red-600"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          ) : <span />}
           {bottom ? (
             <div className="min-w-0 pb-1" style={{ gridColumn: SOP_EMP_BUBBLE_GRID_COL }}>
               {bottom}
@@ -5349,6 +5957,21 @@ export default function TrainingMatrixPage() {
     const docPaths = data?.dbDocPathsByCode?.[stripVersion(sop.sopCode).toUpperCase()]
       || data?.dbDocPathsByCode?.[stripVersion(sop.sopCode)];
 
+    const handleUnassign = async () => {
+      if (!window.confirm(`Remove "${sop.sopCode}" from the ${dept} matrix? This deletes all training records for this SOP in this department.`)) return;
+      try {
+        const res = await fetch(
+          `/api/training-matrix/assign-sop-to-matrix?sopCode=${encodeURIComponent(sop.sopCode)}&department=${encodeURIComponent(dept)}`,
+          { method: 'DELETE' },
+        );
+        const json = await res.json();
+        if (!res.ok) { alert(`Unassign failed: ${json.error || 'Unknown error'}`); return; }
+        fetchData(true);
+      } catch (err) {
+        alert(`Unassign failed: ${String(err)}`);
+      }
+    };
+
     return (
       <SopRowGrid
         accent={accent}
@@ -5368,6 +5991,7 @@ export default function TrainingMatrixPage() {
         docIdentifier={docPaths?.id}
         trainer={sop.trainer}
         isActiveMonth={!!isActiveMonth}
+        onUnassign={handleUnassign}
         mcqMetrics={
           <SopMcqMetrics
             sopCode={sop.sopCode}
@@ -5406,7 +6030,7 @@ export default function TrainingMatrixPage() {
           <div className="flex items-center justify-between border-b px-5 py-4 bg-gray-50">
             <div className="min-w-0">
               <h2 className="font-bold text-gray-900 truncate">{detailModal.title}</h2>
-              {detailModal.subtitle && <div className="mt-0.5 text-xs text-gray-500 truncate">{detailModal.subtitle}</div>}
+              {detailModal.subtitle && <div className="mt-0.5 text-xs text-black truncate">{detailModal.subtitle}</div>}
             </div>
             <button onClick={close} className="rounded-lg p-1.5 hover:bg-gray-100">
               <X className="h-4 w-4" />
@@ -5446,11 +6070,11 @@ export default function TrainingMatrixPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-mono text-sm font-black text-gray-900">{dm.sopCode}</span>
                       {dm.sopTitle && (
-                        <span className="text-sm font-semibold text-gray-700">{dm.sopTitle}</span>
+                        <span className="text-sm font-semibold text-black">{dm.sopTitle}</span>
                       )}
-                      <span className="text-xs font-semibold text-gray-500">{dm.department}</span>
+                      <span className="text-xs font-semibold text-black">{dm.department}</span>
                       {dm.monthLabel && (
-                        <span className="rounded-full bg-white border border-gray-300 px-2 py-0.5 text-[10px] font-bold text-gray-700">
+                        <span className="rounded-full bg-white border border-gray-300 px-2 py-0.5 text-[10px] font-bold text-black">
                           {dm.monthLabel}
                         </span>
                       )}
@@ -5461,7 +6085,7 @@ export default function TrainingMatrixPage() {
                           Expiry: <span className="font-black">{new Date(dm.targetDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2.5 py-0.5 border bg-gray-100 text-gray-500 border-gray-300">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2.5 py-0.5 border bg-gray-100 text-black border-gray-300">
                           <span className="text-[9px]">—</span> No date
                         </span>
                       )}
@@ -5478,8 +6102,8 @@ export default function TrainingMatrixPage() {
                       )}
                     </div>
                     <div className="flex flex-wrap items-center gap-4">
-                      <span className="text-[11px] text-gray-500">
-                        Applicable: <span className="font-black text-gray-800">{dm.totalApplicable ?? '—'}</span>
+                      <span className="text-[11px] text-black">
+                        Applicable: <span className="font-black text-black">{dm.totalApplicable ?? '—'}</span>
                       </span>
                       {dm.trainer ? (
                         <span className="text-[11px] font-semibold text-emerald-700">{dm.trainer}</span>
@@ -5489,10 +6113,10 @@ export default function TrainingMatrixPage() {
                       {dm.mcqTotal !== undefined && dm.sopCode && (
                         <div className="w-full sm:w-auto" onClick={(e) => e.stopPropagation()}>
                           <div className="grid gap-1.5 mb-1" style={{ gridTemplateColumns: 'repeat(4, minmax(3.25rem, 4.5rem))' }}>
-                            <span className="text-[8px] font-bold uppercase text-gray-400 text-center">ENG MCQs</span>
-                            <span className="text-[8px] font-bold uppercase text-gray-400 text-center">ENG Appr</span>
-                            <span className="text-[8px] font-bold uppercase text-gray-400 text-center">GUJ MCQs</span>
-                            <span className="text-[8px] font-bold uppercase text-gray-400 text-center">GUJ Appr</span>
+                            <span className="text-[8px] font-bold uppercase text-black text-center">ENG MCQs</span>
+                            <span className="text-[8px] font-bold uppercase text-black text-center">ENG Appr</span>
+                            <span className="text-[8px] font-bold uppercase text-black text-center">GUJ MCQs</span>
+                            <span className="text-[8px] font-bold uppercase text-black text-center">GUJ Appr</span>
                           </div>
                           <div className="grid gap-1.5" style={{ gridTemplateColumns: 'repeat(4, minmax(3.25rem, 4.5rem))' }}>
                             <SopMcqMetrics
@@ -5514,7 +6138,7 @@ export default function TrainingMatrixPage() {
                   {/* ── search + counts ── */}
                   <div className="flex items-center justify-between gap-3">
                     <div className="relative flex-1 max-w-xs">
-                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-black" />
                       <input
                         value={sopDetailSearch}
                         onChange={(e) => setSopDetailSearch(e.target.value)}
@@ -5522,7 +6146,7 @@ export default function TrainingMatrixPage() {
                         className="w-full rounded-lg border border-gray-200 py-1.5 pl-8 pr-3 text-xs focus:border-purple-300 focus:outline-none"
                       />
                     </div>
-                    <div className="flex items-center gap-3 text-xs text-gray-500">
+                    <div className="flex items-center gap-3 text-xs text-black">
                       <span><span className="font-black text-emerald-700">{foundRows.length}</span> due</span>
                       <span><span className="font-black text-slate-700">{missingRows.length}</span> not necessary</span>
                     </div>
@@ -5540,16 +6164,16 @@ export default function TrainingMatrixPage() {
                         <table className="w-full text-left text-xs">
                           <thead className="bg-white sticky top-0 z-10">
                             <tr>
-                              <th className="border-b px-3 py-2 font-semibold text-gray-600 cursor-pointer select-none whitespace-nowrap" onClick={() => toggle('name')}>
+                              <th className="border-b px-3 py-2 font-semibold text-black cursor-pointer select-none whitespace-nowrap" onClick={() => toggle('name')}>
                                 Employee <SortIcon field="name" />
                               </th>
-                              <th className="border-b px-3 py-2 font-semibold text-gray-600 cursor-pointer select-none whitespace-nowrap" onClick={() => toggle('designation')}>
+                              <th className="border-b px-3 py-2 font-semibold text-black cursor-pointer select-none whitespace-nowrap" onClick={() => toggle('designation')}>
                                 Designation <SortIcon field="designation" />
                               </th>
-                              <th className="border-b px-3 py-2 font-semibold text-gray-600 cursor-pointer select-none whitespace-nowrap" onClick={() => toggle('department')}>
+                              <th className="border-b px-3 py-2 font-semibold text-black cursor-pointer select-none whitespace-nowrap" onClick={() => toggle('department')}>
                                 Dept <SortIcon field="department" />
                               </th>
-                              <th className="border-b px-3 py-2 font-semibold text-gray-600 whitespace-nowrap">Month</th>
+                              <th className="border-b px-3 py-2 font-semibold text-black whitespace-nowrap">Month</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -5560,13 +6184,13 @@ export default function TrainingMatrixPage() {
                                 onClick={() => openEmployeeModal(r.name, r.department)}
                               >
                                 <td className="px-3 py-2 font-semibold text-gray-900 hover:text-emerald-800">{r.name}</td>
-                                <td className="px-3 py-2 text-gray-600">{r.designation || '—'}</td>
-                                <td className="px-3 py-2 text-gray-600">{r.department || '—'}</td>
+                                <td className="px-3 py-2 text-black">{r.designation || '—'}</td>
+                                <td className="px-3 py-2 text-black">{r.department || '—'}</td>
                                 <td className="px-3 py-2 font-bold text-emerald-700">{dm.monthLabel || '—'}</td>
                               </tr>
                             ))}
                             {foundRows.length === 0 && (
-                              <tr><td colSpan={4} className="px-3 py-10 text-center text-gray-400">No due employees.</td></tr>
+                              <tr><td colSpan={4} className="px-3 py-10 text-center text-black">No due employees.</td></tr>
                             )}
                           </tbody>
                         </table>
@@ -5583,13 +6207,13 @@ export default function TrainingMatrixPage() {
                         <table className="w-full text-left text-xs">
                           <thead className="bg-white sticky top-0 z-10">
                             <tr>
-                              <th className="border-b px-3 py-2 font-semibold text-gray-600 cursor-pointer select-none whitespace-nowrap" onClick={() => toggle('name')}>
+                              <th className="border-b px-3 py-2 font-semibold text-black cursor-pointer select-none whitespace-nowrap" onClick={() => toggle('name')}>
                                 Employee <SortIcon field="name" />
                               </th>
-                              <th className="border-b px-3 py-2 font-semibold text-gray-600 cursor-pointer select-none whitespace-nowrap" onClick={() => toggle('designation')}>
+                              <th className="border-b px-3 py-2 font-semibold text-black cursor-pointer select-none whitespace-nowrap" onClick={() => toggle('designation')}>
                                 Designation <SortIcon field="designation" />
                               </th>
-                              <th className="border-b px-3 py-2 font-semibold text-gray-600 cursor-pointer select-none whitespace-nowrap" onClick={() => toggle('department')}>
+                              <th className="border-b px-3 py-2 font-semibold text-black cursor-pointer select-none whitespace-nowrap" onClick={() => toggle('department')}>
                                 Dept <SortIcon field="department" />
                               </th>
                             </tr>
@@ -5602,12 +6226,12 @@ export default function TrainingMatrixPage() {
                                 onClick={() => openEmployeeModal(r.name, r.department)}
                               >
                                 <td className="px-3 py-2 font-semibold text-gray-900 hover:text-slate-800">{r.name}</td>
-                                <td className="px-3 py-2 text-gray-600">{r.designation || '—'}</td>
-                                <td className="px-3 py-2 text-gray-600">{r.department || '—'}</td>
+                                <td className="px-3 py-2 text-black">{r.designation || '—'}</td>
+                                <td className="px-3 py-2 text-black">{r.department || '—'}</td>
                               </tr>
                             ))}
                             {missingRows.length === 0 && (
-                              <tr><td colSpan={3} className="px-3 py-10 text-center text-gray-400">No "Not Necessary" employees.</td></tr>
+                              <tr><td colSpan={3} className="px-3 py-10 text-center text-black">No "Not Necessary" employees.</td></tr>
                             )}
                           </tbody>
                         </table>
@@ -5684,7 +6308,7 @@ export default function TrainingMatrixPage() {
                       onClick={() => toggleFilter('due')}
                       className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition select-none ${empModalFilter === 'due'
                         ? 'bg-amber-500 border-amber-500 text-white shadow-sm'
-                        : 'bg-gray-100 border-gray-200 text-gray-500 hover:border-amber-300 hover:text-amber-700'
+                        : 'bg-gray-100 border-gray-200 text-black hover:border-amber-300 hover:text-amber-700'
                         }`}
                     >
                       <span className={`h-2 w-2 rounded-full ${empModalFilter === 'due' ? 'bg-white' : 'bg-gray-400'}`} />
@@ -5695,13 +6319,13 @@ export default function TrainingMatrixPage() {
                       onClick={() => toggleFilter('assigned')}
                       className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition select-none ${empModalFilter === 'assigned'
                         ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm'
-                        : 'bg-gray-100 border-gray-200 text-gray-500 hover:border-emerald-300 hover:text-emerald-600'
+                        : 'bg-gray-100 border-gray-200 text-black hover:border-emerald-300 hover:text-emerald-600'
                         }`}
                     >
                       <span className={`h-2 w-2 rounded-full ${empModalFilter === 'assigned' ? 'bg-white' : 'bg-gray-400'}`} />
                       Assigned SOPs: {totalAssigned}
                     </button>
-                    <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${empModalFilter === 'all' && !q ? 'bg-gray-100 border-gray-200 text-gray-600' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
+                    <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${empModalFilter === 'all' && !q ? 'bg-gray-100 border-gray-200 text-black' : 'bg-gray-50 border-gray-200 text-black'}`}>
                       Scheduled: {allSops.length}
                     </span>
                     {allSops.length > 0 && (
@@ -5711,7 +6335,7 @@ export default function TrainingMatrixPage() {
                     )}
                     {/* Search */}
                     <div className="ml-auto relative">
-                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-black" />
                       <input
                         value={empModalSearch}
                         onChange={(e) => setEmpModalSearch(e.target.value)}
@@ -5719,7 +6343,7 @@ export default function TrainingMatrixPage() {
                         className="rounded-lg border border-gray-200 py-1.5 pl-7 pr-3 text-xs focus:border-purple-300 focus:outline-none w-52"
                       />
                       {empModalSearch && (
-                        <button type="button" onClick={() => setEmpModalSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                        <button type="button" onClick={() => setEmpModalSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-black hover:text-black">
                           <X className="h-3 w-3" />
                         </button>
                       )}
@@ -5728,7 +6352,7 @@ export default function TrainingMatrixPage() {
 
                   {/* Active filter hint */}
                   {(empModalFilter !== 'all' || q) && (
-                    <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                    <div className="flex items-center gap-2 text-[11px] text-black">
                       Showing {displayRows.length} of {allSops.length} SOPs
                       {empModalFilter !== 'all' && (
                         <button type="button" onClick={() => setEmpModalFilter('all')} className="ml-1 text-purple-600 hover:underline font-medium">
@@ -5744,27 +6368,27 @@ export default function TrainingMatrixPage() {
                       <table className="w-full text-left text-xs">
                         <thead className="bg-gray-50 sticky top-0 z-10">
                           <tr>
-                            <th className="border-b px-3 py-2 font-semibold text-gray-500 whitespace-nowrap">Status</th>
+                            <th className="border-b px-3 py-2 font-semibold text-black whitespace-nowrap">Status</th>
                             <th
-                              className="border-b px-3 py-2 font-semibold text-gray-500 whitespace-nowrap cursor-pointer select-none hover:text-gray-800"
+                              className="border-b px-3 py-2 font-semibold text-black whitespace-nowrap cursor-pointer select-none hover:text-black"
                               onClick={() => toggleSort('code')}
                             >
                               SOP Code <SortArrow field="code" />
                             </th>
                             <th
-                              className="border-b px-3 py-2 font-semibold text-gray-500 whitespace-nowrap cursor-pointer select-none hover:text-gray-800"
+                              className="border-b px-3 py-2 font-semibold text-black whitespace-nowrap cursor-pointer select-none hover:text-black"
                               onClick={() => toggleSort('name')}
                             >
                               SOP Name <SortArrow field="name" />
                             </th>
                             <th
-                              className="border-b px-3 py-2 font-semibold text-gray-500 whitespace-nowrap cursor-pointer select-none hover:text-gray-800"
+                              className="border-b px-3 py-2 font-semibold text-black whitespace-nowrap cursor-pointer select-none hover:text-black"
                               onClick={() => toggleSort('month')}
                             >
                               Month <SortArrow field="month" />
                             </th>
-                            <th className="border-b px-3 py-2 font-semibold text-gray-500 whitespace-nowrap">Expiry</th>
-                            <th className="border-b px-3 py-2 font-semibold text-gray-500 whitespace-nowrap">MCQs</th>
+                            <th className="border-b px-3 py-2 font-semibold text-black whitespace-nowrap">Expiry</th>
+                            <th className="border-b px-3 py-2 font-semibold text-black whitespace-nowrap">MCQs</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -5812,15 +6436,15 @@ export default function TrainingMatrixPage() {
                                     )}
                                   </td>
                                   <td className="px-3 py-2 font-mono font-bold text-gray-900 whitespace-nowrap">{r.sopCode}</td>
-                                  <td className="px-3 py-2 text-gray-700 max-w-[200px] truncate" title={sopTitle}>{sopTitle}</td>
-                                  <td className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">{r.month || '—'}</td>
+                                  <td className="px-3 py-2 text-black max-w-[200px] truncate" title={sopTitle}>{sopTitle}</td>
+                                  <td className="px-3 py-2 font-semibold text-black whitespace-nowrap">{r.month || '—'}</td>
                                   <td className="px-3 py-2 whitespace-nowrap">
                                     {isExpired ? (
                                       <span className="text-red-600 font-bold">Expired{targetDate ? ` (${targetDate.slice(0, 10)})` : ''}</span>
                                     ) : targetDate ? (
-                                      <span className="text-gray-600">{targetDate.slice(0, 10)}</span>
+                                      <span className="text-black">{targetDate.slice(0, 10)}</span>
                                     ) : (
-                                      <span className="text-gray-400">—</span>
+                                      <span className="text-black">—</span>
                                     )}
                                   </td>
                                   <td className="px-3 py-2 whitespace-nowrap">
@@ -5829,7 +6453,7 @@ export default function TrainingMatrixPage() {
                                         {approvedMcq}/{totalMcq}
                                       </span>
                                     ) : (
-                                      <span className="text-gray-400">—</span>
+                                      <span className="text-black">—</span>
                                     )}
                                   </td>
                                 </tr>
@@ -5838,7 +6462,7 @@ export default function TrainingMatrixPage() {
                           })}
                           {displayRows.length === 0 && (
                             <tr>
-                              <td colSpan={6} className="px-3 py-10 text-center text-gray-400">
+                              <td colSpan={6} className="px-3 py-10 text-center text-black">
                                 {allSops.length === 0 ? 'No SOP schedule found.' : 'No results match your search / filter.'}
                               </td>
                             </tr>
@@ -5854,7 +6478,7 @@ export default function TrainingMatrixPage() {
             {detailModal.kind === 'monthDept' && (
               <div className="space-y-4">
                 {monthDetail.loading ? (
-                  <div className="flex items-center justify-center py-16 text-gray-400">
+                  <div className="flex items-center justify-center py-16 text-black">
                     <RefreshCw className="h-5 w-5 animate-spin mr-2" /> Loading details…
                   </div>
                 ) : monthDetail.error ? (
@@ -5862,17 +6486,17 @@ export default function TrainingMatrixPage() {
                 ) : (
                   <div className="rounded-xl border border-gray-200 overflow-hidden">
                     <div className="px-4 py-2.5 bg-gray-50 flex items-center justify-between">
-                      <div className="text-sm font-bold text-gray-800">SOP Summary</div>
-                      <div className="text-xs font-semibold text-gray-600">{monthDetail.sopRows.length} SOPs</div>
+                      <div className="text-sm font-bold text-black">SOP Summary</div>
+                      <div className="text-xs font-semibold text-black">{monthDetail.sopRows.length} SOPs</div>
                     </div>
                     <table className="w-full text-left text-xs">
                       <thead className="bg-white sticky top-0">
                         <tr>
-                          <th className="border-b px-3 py-2 font-semibold text-gray-600">SOP Code</th>
-                          <th className="border-b px-3 py-2 font-semibold text-gray-600">Found</th>
-                          <th className="border-b px-3 py-2 font-semibold text-gray-600">Missing</th>
-                          <th className="border-b px-3 py-2 font-semibold text-gray-600">Applicable</th>
-                          <th className="border-b px-3 py-2 font-semibold text-gray-600">%</th>
+                          <th className="border-b px-3 py-2 font-semibold text-black">SOP Code</th>
+                          <th className="border-b px-3 py-2 font-semibold text-black">Found</th>
+                          <th className="border-b px-3 py-2 font-semibold text-black">Missing</th>
+                          <th className="border-b px-3 py-2 font-semibold text-black">Applicable</th>
+                          <th className="border-b px-3 py-2 font-semibold text-black">%</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -5881,12 +6505,12 @@ export default function TrainingMatrixPage() {
                             <td className="px-3 py-2 font-mono font-bold text-gray-900">{r.sopCode}</td>
                             <td className="px-3 py-2 font-bold text-emerald-700">{r.trained}</td>
                             <td className="px-3 py-2 font-bold text-red-700">{r.pending}</td>
-                            <td className="px-3 py-2 text-gray-700">{r.totalApplicable}</td>
-                            <td className="px-3 py-2 text-gray-700">{r.completionPct}%</td>
+                            <td className="px-3 py-2 text-black">{r.totalApplicable}</td>
+                            <td className="px-3 py-2 text-black">{r.completionPct}%</td>
                           </tr>
                         ))}
                         {monthDetail.sopRows.length === 0 && (
-                          <tr><td colSpan={5} className="px-3 py-10 text-center text-gray-400">No SOP records.</td></tr>
+                          <tr><td colSpan={5} className="px-3 py-10 text-center text-black">No SOP records.</td></tr>
                         )}
                       </tbody>
                     </table>
@@ -5904,7 +6528,7 @@ export default function TrainingMatrixPage() {
               return (
                 <div className="rounded-xl border border-gray-200 overflow-hidden">
                   <div className="px-4 py-2.5 bg-gray-50 flex items-center justify-between">
-                    <div className="text-sm font-bold text-gray-800">Employees ({visibleRows.length})</div>
+                    <div className="text-sm font-bold text-black">Employees ({visibleRows.length})</div>
                     <div className="flex items-center gap-2">
                       {(['all', 'full', 'incomplete'] as EmployeeListFilter[]).map((f) => (
                         <button
@@ -5913,7 +6537,7 @@ export default function TrainingMatrixPage() {
                           onClick={() => setDetailModal({ ...detailModal, employeeListFilter: f })}
                           className={`px-2 py-0.5 rounded-full text-[10px] font-bold border transition ${activeFilter === f
                             ? 'bg-purple-600 text-white border-purple-600'
-                            : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                            : 'bg-white text-black border-gray-200 hover:bg-gray-50'
                             }`}
                         >
                           {f === 'all' ? 'All' : f === 'full' ? '100% Trained' : 'Incomplete'}
@@ -5924,11 +6548,11 @@ export default function TrainingMatrixPage() {
                   <table className="w-full text-left text-xs">
                     <thead className="bg-white sticky top-0">
                       <tr>
-                        <th className="border-b px-3 py-2 font-semibold text-gray-600">Name</th>
-                        <th className="border-b px-3 py-2 font-semibold text-gray-600">Designation</th>
-                        <th className="border-b px-3 py-2 font-semibold text-gray-600">Department</th>
-                        <th className="border-b px-3 py-2 font-semibold text-gray-600">Trained / Total SOPs</th>
-                        <th className="border-b px-3 py-2 font-semibold text-gray-600">Status</th>
+                        <th className="border-b px-3 py-2 font-semibold text-black">Name</th>
+                        <th className="border-b px-3 py-2 font-semibold text-black">Designation</th>
+                        <th className="border-b px-3 py-2 font-semibold text-black">Department</th>
+                        <th className="border-b px-3 py-2 font-semibold text-black">Trained / Total SOPs</th>
+                        <th className="border-b px-3 py-2 font-semibold text-black">Status</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -5939,9 +6563,9 @@ export default function TrainingMatrixPage() {
                           onClick={() => openEmployeeModal(r.name, r.department)}
                         >
                           <td className="px-3 py-2 font-semibold text-gray-900">{r.name}</td>
-                          <td className="px-3 py-2 text-gray-700">{r.designation || '—'}</td>
-                          <td className="px-3 py-2 text-gray-700">{r.department}</td>
-                          <td className="px-3 py-2 text-gray-700">{r.trainedSops} / {r.totalSops}</td>
+                          <td className="px-3 py-2 text-black">{r.designation || '—'}</td>
+                          <td className="px-3 py-2 text-black">{r.department}</td>
+                          <td className="px-3 py-2 text-black">{r.trainedSops} / {r.totalSops}</td>
                           <td className="px-3 py-2">
                             {r.fullyTrained ? (
                               <span className="rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 text-[10px] font-black">100%</span>
@@ -5954,7 +6578,7 @@ export default function TrainingMatrixPage() {
                         </tr>
                       ))}
                       {visibleRows.length === 0 && (
-                        <tr><td colSpan={5} className="px-3 py-10 text-center text-gray-400">No employees found.</td></tr>
+                        <tr><td colSpan={5} className="px-3 py-10 text-center text-black">No employees found.</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -5997,12 +6621,12 @@ export default function TrainingMatrixPage() {
             className="flex flex-1 min-w-0 items-center gap-2 text-left hover:opacity-80 transition"
           >
             {expanded ? (
-              <ChevronDown className={`h-4 w-4 shrink-0 ${dismissed ? 'text-gray-600' : 'text-red-700'}`} />
+              <ChevronDown className={`h-4 w-4 shrink-0 ${dismissed ? 'text-black' : 'text-red-700'}`} />
             ) : (
-              <ChevronRight className={`h-4 w-4 shrink-0 ${dismissed ? 'text-gray-600' : 'text-red-700'}`} />
+              <ChevronRight className={`h-4 w-4 shrink-0 ${dismissed ? 'text-black' : 'text-red-700'}`} />
             )}
             {!dismissed && <AlertTriangle className="h-4 w-4 text-red-700 shrink-0" />}
-            <span className={`text-sm font-black ${dismissed ? 'text-gray-700' : 'text-red-900'}`}>
+            <span className={`text-sm font-black ${dismissed ? 'text-black' : 'text-red-900'}`}>
               {dismissed ? 'Ignored falsy data' : 'Falsy data'}
             </span>
             <span
@@ -6010,7 +6634,7 @@ export default function TrainingMatrixPage() {
             >
               {rows.length}
             </span>
-            <span className={`text-xs w-full sm:w-auto ${dismissed ? 'text-gray-600' : 'text-red-800/90'}`}>
+            <span className={`text-xs w-full sm:w-auto ${dismissed ? 'text-black' : 'text-red-800/90'}`}>
               {dismissed
                 ? 'Not included in the registry table — ignored and kept below for reference only.'
                 : 'Not included in the registry table — excluded from the training table below.'}
@@ -6034,37 +6658,37 @@ export default function TrainingMatrixPage() {
             <table className="w-full text-left text-xs min-w-[52rem]">
               <thead className={dismissed ? 'bg-gray-100/80' : 'bg-red-100/50'}>
                 <tr>
-                  <th className={`px-3 py-2 font-bold ${dismissed ? 'text-gray-600' : 'text-red-900/70'}`}>#</th>
-                  <th className={`px-3 py-2 font-bold ${dismissed ? 'text-gray-600' : 'text-red-900/70'}`}>SOP Code</th>
-                  <th className={`px-3 py-2 font-bold ${dismissed ? 'text-gray-600' : 'text-red-900/70'}`}>SOP Name</th>
-                  <th className={`px-3 py-2 font-bold ${dismissed ? 'text-gray-600' : 'text-red-900/70'}`}>Dept</th>
-                  <th className={`px-3 py-2 font-bold ${dismissed ? 'text-gray-600' : 'text-red-900/70'}`}>Month</th>
-                  <th className={`px-3 py-2 font-bold ${dismissed ? 'text-gray-600' : 'text-red-900/70'}`}>Trainer</th>
-                  <th className={`px-3 py-2 font-bold ${dismissed ? 'text-gray-600' : 'text-red-900/70'}`}>Trained</th>
-                  <th className={`px-3 py-2 font-bold ${dismissed ? 'text-gray-600' : 'text-red-900/70'}`}>Pending</th>
-                  <th className={`px-3 py-2 font-bold ${dismissed ? 'text-gray-600' : 'text-red-900/70'}`}>%</th>
+                  <th className={`px-3 py-2 font-bold ${dismissed ? 'text-black' : 'text-red-900/70'}`}>#</th>
+                  <th className={`px-3 py-2 font-bold ${dismissed ? 'text-black' : 'text-red-900/70'}`}>SOP Code</th>
+                  <th className={`px-3 py-2 font-bold ${dismissed ? 'text-black' : 'text-red-900/70'}`}>SOP Name</th>
+                  <th className={`px-3 py-2 font-bold ${dismissed ? 'text-black' : 'text-red-900/70'}`}>Dept</th>
+                  <th className={`px-3 py-2 font-bold ${dismissed ? 'text-black' : 'text-red-900/70'}`}>Month</th>
+                  <th className={`px-3 py-2 font-bold ${dismissed ? 'text-black' : 'text-red-900/70'}`}>Trainer</th>
+                  <th className={`px-3 py-2 font-bold ${dismissed ? 'text-black' : 'text-red-900/70'}`}>Trained</th>
+                  <th className={`px-3 py-2 font-bold ${dismissed ? 'text-black' : 'text-red-900/70'}`}>Pending</th>
+                  <th className={`px-3 py-2 font-bold ${dismissed ? 'text-black' : 'text-red-900/70'}`}>%</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r, idx) => (
                   <tr key={r.key} className={`border-t bg-white/70 hover:bg-white ${dismissed ? 'border-gray-100' : 'border-red-100'}`}>
-                    <td className={`px-3 py-2 font-bold tabular-nums ${dismissed ? 'text-gray-400' : 'text-red-400'}`}>{idx + 1}</td>
+                    <td className={`px-3 py-2 font-bold tabular-nums ${dismissed ? 'text-black' : 'text-red-400'}`}>{idx + 1}</td>
                     <td className="px-3 py-2 font-mono font-black text-gray-900">{r.sopCode}</td>
                     <td className="px-3 py-2">
                       <span
-                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${dismissed ? 'bg-gray-100 border-gray-300 text-gray-700' : 'bg-red-100 border-red-300 text-red-800'}`}
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${dismissed ? 'bg-gray-100 border-gray-300 text-black' : 'bg-red-100 border-red-300 text-red-800'}`}
                       >
                         {dismissed ? 'Not in registry' : 'ERROR — empty SOP name'}
                       </span>
                     </td>
-                    <td className="px-3 py-2 font-bold text-gray-800">{r.dept}</td>
-                    <td className="px-3 py-2 text-gray-700">{r.month || '—'}</td>
+                    <td className="px-3 py-2 font-bold text-black">{r.dept}</td>
+                    <td className="px-3 py-2 text-black">{r.month || '—'}</td>
                     <td className={`px-3 py-2 font-semibold ${r.trainer ? 'text-emerald-700' : 'text-red-600'}`}>
                       {r.trainer || 'No Trainer'}
                     </td>
                     <td className="px-3 py-2 font-bold text-emerald-700">{r.completed}</td>
                     <td className="px-3 py-2 font-bold text-red-700">{r.pending}</td>
-                    <td className="px-3 py-2 font-semibold text-gray-800">{r.completionPct}%</td>
+                    <td className="px-3 py-2 font-semibold text-black">{r.completionPct}%</td>
                   </tr>
                 ))}
               </tbody>
@@ -6082,7 +6706,7 @@ export default function TrainingMatrixPage() {
     if (viewMode === 'sop') {
       if (sopWiseGroups.length === 0) {
         return (
-          <div className="rounded-xl border border-gray-100 bg-white p-8 text-center text-sm text-gray-500">
+          <div className="rounded-xl border border-gray-100 bg-white p-8 text-center text-sm text-black">
             No SOP-wise data matches the current filters.
           </div>
         );
@@ -6094,7 +6718,7 @@ export default function TrainingMatrixPage() {
           <button
             type="button"
             onClick={() => { setSopSortField('dept'); setSopSortDir('asc'); }}
-            className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold border bg-white text-gray-500 border-gray-200 hover:border-purple-400 hover:text-purple-700 transition"
+            className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold border bg-white text-black border-gray-200 hover:border-purple-400 hover:text-purple-700 transition"
           >
             ↺ Reset Sort
           </button>
@@ -6131,7 +6755,7 @@ export default function TrainingMatrixPage() {
               if (active) setSopSortDir((d) => d === 'asc' ? 'desc' : 'asc');
               else { setSopSortField(sortKey); setSopSortDir('asc'); }
             }}
-            className={`text-[9px] font-bold uppercase tracking-wider transition ${active ? 'text-purple-700' : 'text-gray-400 hover:text-gray-600'} ${sortKey ? 'cursor-pointer' : ''}`}
+            className={`text-[9px] font-bold uppercase tracking-wider transition ${active ? 'text-purple-700' : 'text-black hover:text-black'} ${sortKey ? 'cursor-pointer' : ''}`}
           >
             {label}
             {active && <span className="ml-0.5">{sopSortDir === 'asc' ? '↑' : '↓'}</span>}
@@ -6141,7 +6765,7 @@ export default function TrainingMatrixPage() {
 
       const colHeader = (
         <div className="grid items-center gap-x-2 px-4 py-1 rounded-xl bg-white/60 border border-gray-100" style={{ gridTemplateColumns: SOP_TABLE_GRID_COLS }}>
-          <span className="text-[9px] font-bold text-gray-400 text-right">#</span>
+          <span className="text-[9px] font-bold text-black text-right">#</span>
           <HeaderCell label="Code" sortKey="sopCode" />
           <HeaderCell label="Title" sortKey="title" />
           <HeaderCell label="Dept (DB)" sortKey="dbDept" />
@@ -6154,6 +6778,7 @@ export default function TrainingMatrixPage() {
           <HeaderCell label="GUJ MCQs" sortKey="mcq_guj" />
           <HeaderCell label="GUJ Appr" sortKey="mcq_guj_approved" />
           <HeaderCell label="Expiry" sortKey="expiry" />
+          <span className="text-[9px] font-bold text-gray-400 text-center"></span>
         </div>
       );
 
@@ -6211,9 +6836,9 @@ export default function TrainingMatrixPage() {
                       <span className="font-mono text-xs font-extrabold px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-100">
                         {s.sopCode} {s.title && <span className="ml-2 font-sans font-bold text-purple-900 opacity-60">{s.title}</span>}
                       </span>
-                      {!!s.month && <span className="text-[10px] font-semibold text-gray-500">{s.month}</span>}
+                      {!!s.month && <span className="text-[10px] font-semibold text-black">{s.month}</span>}
                     </div>
-                    <span className="text-[11px] text-gray-500">{s.items.length} dept{s.items.length !== 1 ? 's' : ''}</span>
+                    <span className="text-[11px] text-black">{s.items.length} dept{s.items.length !== 1 ? 's' : ''}</span>
                   </div>
                   <div className="p-3 space-y-1">
                     {s.items.map((it, idx) => (
@@ -6310,7 +6935,7 @@ export default function TrainingMatrixPage() {
     // Employee-wise / Month-wise: render the existing capsule style, grouped by parent selection
     if (capsuleLoading) {
       return (
-        <div className="flex items-center justify-center py-20 text-gray-400">
+        <div className="flex items-center justify-center py-20 text-black">
           <RefreshCw className="h-5 w-5 animate-spin mr-2" /> Loading…
         </div>
       );
@@ -6326,7 +6951,7 @@ export default function TrainingMatrixPage() {
     if (viewMode === 'employee') {
       if (!empCapsules.length) {
         return (
-          <div className="rounded-xl border border-gray-100 bg-white p-8 text-center text-sm text-gray-500">
+          <div className="rounded-xl border border-gray-100 bg-white p-8 text-center text-sm text-black">
             No employee-wise data matches the current filters.
           </div>
         );
@@ -6367,7 +6992,7 @@ export default function TrainingMatrixPage() {
                   {g.title}
                 </span>
                 <div className="h-px flex-1 bg-gradient-to-r from-gray-200 to-transparent" />
-                <span className="text-[11px] text-gray-400 whitespace-nowrap">{g.items.length} capsule{g.items.length !== 1 ? 's' : ''}</span>
+                <span className="text-[11px] text-black whitespace-nowrap">{g.items.length} capsule{g.items.length !== 1 ? 's' : ''}</span>
               </div>
               <div className="space-y-3">
                 {g.items.map((cap, i) => {
@@ -6409,12 +7034,12 @@ export default function TrainingMatrixPage() {
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-[12px] font-black text-gray-900 truncate">{cap.employeeName}</span>
-                            <span className="text-[10px] font-semibold text-gray-500">{cap.monthName} {cap.year}</span>
+                            <span className="text-[10px] font-semibold text-black">{cap.monthName} {cap.year}</span>
                             <ProgressPill pct={cap.completionPct || 0} />
                           </div>
-                          <div className="mt-1 text-[10px] text-gray-500 truncate">
+                          <div className="mt-1 text-[10px] text-black truncate">
                             {cap.department}{cap.designation ? ` · ${cap.designation}` : ''} · Scheduled:{' '}
-                            <span className="font-black text-gray-800">{cap.totalScheduled}</span>
+                            <span className="font-black text-black">{cap.totalScheduled}</span>
                           </div>
                         </div>
                       }
@@ -6429,10 +7054,10 @@ export default function TrainingMatrixPage() {
                         Array.isArray(cap.pendingSopCodes) && cap.pendingSopCodes.length > 0 ? (
                           <div className="flex flex-wrap gap-1.5">
                             {cap.pendingSopCodes.slice(0, 12).map((c: string) => (
-                              <span key={c} className="font-mono text-[10px] bg-white/70 text-gray-800 border border-white/70 px-2 py-0.5 rounded-md">{c}</span>
+                              <span key={c} className="font-mono text-[10px] bg-white/70 text-black border border-white/70 px-2 py-0.5 rounded-md">{c}</span>
                             ))}
                             {cap.pendingSopCodes.length > 12 ? (
-                              <span className="text-[10px] font-semibold text-gray-500 px-1">+{cap.pendingSopCodes.length - 12} more</span>
+                              <span className="text-[10px] font-semibold text-black px-1">+{cap.pendingSopCodes.length - 12} more</span>
                             ) : null}
                           </div>
                         ) : null
@@ -6450,7 +7075,7 @@ export default function TrainingMatrixPage() {
     // Month-wise: dept capsules grouped by month, or grouped by department
     if (!deptMonthGroups.length) {
       return (
-        <div className="rounded-xl border border-gray-100 bg-white p-8 text-center text-sm text-gray-500">
+        <div className="rounded-xl border border-gray-100 bg-white p-8 text-center text-sm text-black">
           No month-wise data matches the current filters.
         </div>
       );
@@ -6466,7 +7091,7 @@ export default function TrainingMatrixPage() {
                   {mg.monthName} {mg.year}
                 </span>
                 <div className="h-px flex-1 bg-gradient-to-r from-purple-200 to-transparent" />
-                <span className="text-[11px] text-gray-400 whitespace-nowrap">{mg.capsules?.length || 0} dept</span>
+                <span className="text-[11px] text-black whitespace-nowrap">{mg.capsules?.length || 0} dept</span>
               </div>
               <div className="space-y-3">
                 {(mg.capsules || []).map((cap: any) => {
@@ -6491,11 +7116,11 @@ export default function TrainingMatrixPage() {
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-[12px] font-black text-gray-900 truncate">{cap.department}</span>
-                            <span className="text-[10px] font-semibold text-gray-500">{mg.monthName} {mg.year}</span>
+                            <span className="text-[10px] font-semibold text-black">{mg.monthName} {mg.year}</span>
                             <ProgressPill pct={pct} />
                           </div>
-                          <div className="mt-1 text-[10px] text-gray-500">
-                            SOPs scheduled: <span className="font-black text-gray-800">{cap.sopCount}</span>
+                          <div className="mt-1 text-[10px] text-black">
+                            SOPs scheduled: <span className="font-black text-black">{cap.sopCount}</span>
                           </div>
                         </div>
                       }
@@ -6510,10 +7135,10 @@ export default function TrainingMatrixPage() {
                         Array.isArray(cap.topPendingSops) && cap.topPendingSops.length > 0 ? (
                           <div className="flex flex-wrap gap-1.5">
                             {cap.topPendingSops.slice(0, 10).map((c: string) => (
-                              <span key={c} className="font-mono text-[10px] bg-white/70 text-gray-800 border border-white/70 px-2 py-0.5 rounded-md">{c}</span>
+                              <span key={c} className="font-mono text-[10px] bg-white/70 text-black border border-white/70 px-2 py-0.5 rounded-md">{c}</span>
                             ))}
                             {cap.topPendingSops.length > 10 ? (
-                              <span className="text-[10px] font-semibold text-gray-500 px-1">+{cap.topPendingSops.length - 10} more</span>
+                              <span className="text-[10px] font-semibold text-black px-1">+{cap.topPendingSops.length - 10} more</span>
                             ) : null}
                           </div>
                         ) : null
@@ -6550,7 +7175,7 @@ export default function TrainingMatrixPage() {
                   {dept}
                 </span>
                 <div className="h-px flex-1 bg-gradient-to-r from-gray-200 to-transparent" />
-                <span className="text-[11px] text-gray-400 whitespace-nowrap">{caps.length} month{caps.length !== 1 ? 's' : ''}</span>
+                <span className="text-[11px] text-black whitespace-nowrap">{caps.length} month{caps.length !== 1 ? 's' : ''}</span>
               </div>
               <div className="space-y-3">
                 {caps
@@ -6578,8 +7203,8 @@ export default function TrainingMatrixPage() {
                               <span className="text-[12px] font-black text-gray-900 truncate">{cap._monthName} {cap.year}</span>
                               <ProgressPill pct={pct} />
                             </div>
-                            <div className="mt-1 text-[10px] text-gray-500">
-                              SOPs scheduled: <span className="font-black text-gray-800">{cap.sopCount}</span>
+                            <div className="mt-1 text-[10px] text-black">
+                              SOPs scheduled: <span className="font-black text-black">{cap.sopCount}</span>
                             </div>
                           </div>
                         }
@@ -6609,23 +7234,23 @@ export default function TrainingMatrixPage() {
       <header className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-[1400px] items-center justify-between px-5 py-3">
           <div className="flex items-center gap-3">
-            <Link href="/dashboard" className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800">
+            <Link href="/dashboard" className="flex items-center gap-1 text-xs font-medium text-black hover:text-black">
               <ArrowLeft className="h-3.5 w-3.5" /> Dashboard
             </Link>
             <div className="h-4 w-px bg-gray-200" />
-            <h1 className="text-sm font-bold tracking-tight">Training Matrix</h1>
+            <h1 className="text-sm font-semibold tracking-tight">Training Matrix</h1>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => fetchData(true)}
               disabled={loading}
-              className="flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+              className="flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-black hover:bg-gray-50"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
             </button>
             <Link
               href="/employees"
-              className="flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+              className="flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-black hover:bg-gray-50"
             >
               <UserRound className="h-3.5 w-3.5" /> Employees
             </Link>
@@ -6647,11 +7272,11 @@ export default function TrainingMatrixPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1600px] px-5 py-5">
+      <main className="mx-auto max-w-[1920px] px-2 py-3">
         {/* Cards row */}
-        <section className="mb-5 overflow-x-auto">
+        <section className="mb-2 overflow-x-auto">
           {loading && !data ? (
-            <div className="grid gap-2 pb-2" style={{ gridTemplateColumns: `repeat(${departments.length + 1}, minmax(190px, 1fr))` }}>
+            <div className="grid gap-1 pb-2" style={{ gridTemplateColumns: `repeat(${departments.length + 1}, minmax(0, 1fr))` }}>
               {Array.from({ length: departments.length + 1 }).map((_, i) => (
                 <div
                   key={i}
@@ -6660,7 +7285,7 @@ export default function TrainingMatrixPage() {
               ))}
             </div>
           ) : data ? (
-            <div className="grid gap-2 pb-2" style={{ gridTemplateColumns: `repeat(${departments.length + 1}, minmax(190px, 1fr))` }}>
+            <div className="grid gap-1 pb-2" style={{ gridTemplateColumns: `repeat(${departments.length + 1}, minmax(0, 1fr))` }}>
               {renderTotalCard(data.totalCard)}
               {departments.map((dept) => (
                 <Fragment key={dept}>{renderDeptCard(dept, data.perDept[dept])}</Fragment>
@@ -6673,13 +7298,14 @@ export default function TrainingMatrixPage() {
 
         {/* Details panel disabled: summary clicks filter capsules instead */}
 
-        {/* Dept + Month filters — single line, depts left, months right */}
+        {/* Dept filters · search · month filters — export below months */}
         {data && (
-          <section className="mb-4">
-            <div className="flex w-full items-center justify-between gap-2 flex-nowrap overflow-x-auto">
-              <div className="flex items-center gap-1 flex-nowrap shrink-0">
+          <section className="mb-2">
+            <div className="flex w-full min-w-0 items-center gap-2">
+              <div className="flex shrink-0 items-center gap-1 flex-nowrap">
                 <Pill
                   label="All Depts"
+                  compact
                   active={activeDept === 'All'}
                   accent={getDeptAccent('Total')}
                   onClick={() => setActiveDept('All')}
@@ -6688,13 +7314,25 @@ export default function TrainingMatrixPage() {
                   <Pill
                     key={d}
                     label={d}
+                    compact
                     active={activeDept === d}
                     accent={getDeptAccent(d)}
                     onClick={() => setActiveDept(d)}
                   />
                 ))}
               </div>
-              <div className="flex items-center gap-1 flex-nowrap shrink-0">
+              <div className="flex min-w-[11rem] flex-1 items-center justify-center px-2">
+                <div className="relative w-full max-w-sm">
+                  <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-black" />
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder={viewMode === 'sop' ? 'Search SOP / employee…' : 'Search…'}
+                    className="w-full rounded-lg border border-gray-200 py-1.5 pl-7 pr-3 text-xs focus:border-purple-300 focus:outline-none"
+                  />
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center justify-end gap-1 flex-nowrap overflow-x-auto max-w-[min(100%,52rem)]">
                 <MonthCapsule
                   label="All"
                   count={totalUniqueSops}
@@ -6714,23 +7352,7 @@ export default function TrainingMatrixPage() {
                 ))}
               </div>
             </div>
-          </section>
-        )}
-
-        {/* Training table */}
-        {data && (
-          <section ref={tableSectionRef}>
-            <div className="mb-2 flex items-center justify-between">
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder={viewMode === 'sop' ? 'Search SOP / employee…' : 'Search…'}
-                  className="rounded-lg border border-gray-200 py-1.5 pl-7 pr-3 text-xs focus:border-purple-300 focus:outline-none"
-                />
-              </div>
-              <div className="flex items-center gap-3">
+            <div className="mt-1 flex items-center justify-end gap-3">
                 {viewMode === 'sop' && pendingFalsyRows.length > 0 && (
                   <a
                     href="#falsy-sop-data"
@@ -6748,7 +7370,7 @@ export default function TrainingMatrixPage() {
                         capsuleSopFilter.sopCodes.size}{' '}
                       SOPs
                     </span>
-                    <span className="text-[11px] font-semibold text-gray-700 truncate max-w-xs" title={capsuleSopFilter.title}>
+                    <span className="text-[11px] font-semibold text-black truncate max-w-xs" title={capsuleSopFilter.title}>
                       {capsuleSopFilter.title}
                     </span>
                     <button
@@ -6764,13 +7386,18 @@ export default function TrainingMatrixPage() {
                 <button
                   onClick={exportToExcel}
                   disabled={!visibleEmployees.length}
-                  className="flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  className="flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-black hover:bg-gray-50 disabled:opacity-50"
                   title="Exports the uploaded Excel snapshot matrix"
                 >
                   <Download className="h-3.5 w-3.5" /> Export
                 </button>
-              </div>
             </div>
+          </section>
+        )}
+
+        {/* Training table */}
+        {data && (
+          <section ref={tableSectionRef}>
 
             {viewMode === 'sop' && pendingFalsyRows.length > 0 && (
               <FalsySopDataSection
@@ -6809,6 +7436,7 @@ export default function TrainingMatrixPage() {
         <ManageMatrixSOPsModal
           defaultDept={activeDept === 'All' ? departments[0] || 'QA' : activeDept}
           departments={departments}
+          sopMonthMapByDept={data?.sopMonthMapByDept}
           onClose={() => setShowManageSOPs(false)}
           onRefresh={() => fetchData(true)}
         />
@@ -6865,21 +7493,23 @@ function Pill({
   active,
   accent,
   onClick,
+  compact = false,
 }: {
   label: string;
   active: boolean;
   accent: string;
   onClick: () => void;
+  compact?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="rounded-full px-2 py-0.5 text-[10px] font-medium leading-none whitespace-nowrap transition"
+      className={`rounded-full font-medium leading-none whitespace-nowrap transition ${compact ? 'px-2.5 py-1 text-[12px]' : 'px-2 py-0.5 text-[10px]'}`}
       style={
         active
           ? { background: accent, color: '#fff' }
-          : { background: '#f3f4f6', color: '#374151', border: '1px solid #e5e7eb' }
+          : { background: '#f3f4f6', color: '#000', border: '1px solid #e5e7eb' }
       }
     >
       {label}
@@ -6908,14 +7538,16 @@ function MonthCapsule({
       style={
         active
           ? { background: accent, color: '#fff' }
-          : { background: '#f3f4f6', color: '#374151', border: '1px solid #e5e7eb' }
+          : { background: '#f3f4f6', color: '#000', border: '1px solid #e5e7eb' }
       }
     >
       <span>{label}</span>
       <span
         className="rounded-full px-1 text-[8px] font-semibold leading-none"
         style={
-          active ? { background: 'rgba(255,255,255,0.25)', color: '#fff' } : { background: '#fff', color: '#6b7280' }
+          active
+            ? { background: 'rgba(255,255,255,0.25)', color: '#fff' }
+            : { background: '#fff', color: count === 0 ? '#dc2626' : '#000' }
         }
       >
         {count}
@@ -6927,8 +7559,8 @@ function MonthCapsule({
 function EmptyState({ onUpload }: { onUpload: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-200 bg-white p-12 text-center">
-      <FileSpreadsheet className="mb-2 h-10 w-10 text-gray-300" />
-      <p className="mb-3 text-sm text-gray-600">Upload training matrix Excel files to begin</p>
+      <FileSpreadsheet className="mb-2 h-10 w-10 text-purple-400" />
+      <p className="mb-3 text-sm text-black">Upload training matrix Excel files to begin</p>
       <button
         onClick={onUpload}
         className="rounded-lg bg-purple-600 px-4 py-2 text-xs font-medium text-white hover:bg-purple-700"
@@ -6952,7 +7584,7 @@ function TrainingTable({
 }) {
   if (!employees.length) {
     return (
-      <div className="rounded-xl border border-gray-100 bg-white p-8 text-center text-sm text-gray-500">
+      <div className="rounded-xl border border-gray-100 bg-white p-8 text-center text-sm text-black">
         No employees match the current filters.
       </div>
     );
@@ -6975,23 +7607,23 @@ function TrainingTable({
       <table className="min-w-full border-collapse text-left text-[11px]">
         <thead className="sticky top-0 z-10 bg-gray-50">
           <tr>
-            <th className="sticky left-0 z-20 w-[160px] border-b border-gray-200 bg-gray-50 px-3 py-2 font-semibold text-gray-700">
+            <th className="sticky left-0 z-20 w-[160px] border-b border-gray-200 bg-gray-50 px-3 py-2 font-semibold text-black">
               Employee Name
             </th>
-            <th className="sticky left-[160px] z-20 w-[140px] border-b border-gray-200 bg-gray-50 px-3 py-2 font-semibold text-gray-700">
+            <th className="sticky left-[160px] z-20 w-[140px] border-b border-gray-200 bg-gray-50 px-3 py-2 font-semibold text-black">
               Designation
             </th>
             {sops.map((s) => (
               <th
                 key={s.code}
                 title={`${s.code}${s.month ? ` — ${s.month}` : ''}`}
-                className="border-b border-gray-200 px-2 py-2 text-center font-semibold text-gray-700"
+                className="border-b border-gray-200 px-2 py-2 text-center font-semibold text-black"
                 style={{ minWidth: 58 }}
               >
                 {s.code}
               </th>
             ))}
-            <th className="w-[150px] border-b border-gray-200 bg-gray-50 px-3 py-2 font-semibold text-gray-700">
+            <th className="w-[150px] border-b border-gray-200 bg-gray-50 px-3 py-2 font-semibold text-black">
               Summary
             </th>
           </tr>
@@ -7003,10 +7635,10 @@ function TrainingTable({
                 <tr key={`hdr-${department}`}>
                   <td
                     colSpan={sops.length + 3}
-                    className="border-l-[3px] bg-gray-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-600"
+                    className="border-l-[3px] bg-gray-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-black"
                     style={{ borderLeftColor: getDeptAccent(department as Dept) || '#e5e7eb' }}
                   >
-                    {department} <span className="ml-2 text-gray-400">({rows.length})</span>
+                    {department} <span className="ml-2 text-black">({rows.length})</span>
                   </td>
                 </tr>
               )}
@@ -7022,17 +7654,17 @@ function TrainingTable({
                 const pct = total ? Math.round((trained / total) * 100) : 0;
                 return (
                   <tr key={`${e.department}-${e.name}`} className="hover:bg-gray-50">
-                    <td className="sticky left-0 z-10 w-[160px] bg-white px-3 py-1.5 text-gray-800">
+                    <td className="sticky left-0 z-10 w-[160px] bg-white px-3 py-1.5 text-black">
                       {e.name}
                     </td>
-                    <td className="sticky left-[160px] z-10 w-[140px] bg-white px-3 py-1.5 text-gray-600">
+                    <td className="sticky left-[160px] z-10 w-[140px] bg-white px-3 py-1.5 text-black">
                       {e.designation || '—'}
                     </td>
                     {sops.map((s) => {
                       const hasCell = s.code in (e.training || {});
                       if (!hasCell) {
                         return (
-                          <td key={s.code} className="border-gray-100 px-2 py-1.5 text-center text-gray-300">
+                          <td key={s.code} className="border-gray-100 px-2 py-1.5 text-center text-black">
                             —
                           </td>
                         );
@@ -7050,7 +7682,7 @@ function TrainingTable({
                     })}
                     <td className="w-[150px] px-3 py-1.5">
                       <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-semibold text-gray-700">
+                        <span className="text-[11px] font-semibold text-black">
                           {trained}/{total}
                         </span>
                         <div className="h-1.5 w-10 flex-shrink-0 overflow-hidden rounded-full bg-gray-100">
@@ -7070,4 +7702,4 @@ function TrainingTable({
       </table>
     </div>
   );
-}  
+}

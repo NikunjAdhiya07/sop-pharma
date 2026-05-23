@@ -42,5 +42,5 @@ TrainingMatrixRecordSchema.index({ department: 1, year: 1, month: 1 });
 TrainingMatrixRecordSchema.index({ employeeName: 1, department: 1 });
 TrainingMatrixRecordSchema.index({ employeeName: 1, sopCode: 1, month: 1, year: 1, department: 1 }, { unique: true });
 
-export default mongoose.models.TrainingMatrixRecord ||
-  mongoose.model<ITrainingMatrixRecord>('TrainingMatrixRecord', TrainingMatrixRecordSchema);
+export default mongoose.models.TrainingMatricesRecord ||
+  mongoose.model<ITrainingMatrixRecord>('TrainingMatricesRecord', TrainingMatrixRecordSchema, 'trainingmatricesrecord');

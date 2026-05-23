@@ -51,5 +51,5 @@ const TrainingMatrixUploadSchema = new Schema<ITrainingMatrixUpload>({
 
 TrainingMatrixUploadSchema.index({ department: 1, year: 1, month: 1 });
 
-export default mongoose.models.TrainingMatrixUpload ||
-  mongoose.model<ITrainingMatrixUpload>('TrainingMatrixUpload', TrainingMatrixUploadSchema);
+export default mongoose.models.TrainingMatricesUpload ||
+  mongoose.model<ITrainingMatrixUpload>('TrainingMatricesUpload', TrainingMatrixUploadSchema, 'trainingmatricesupload');

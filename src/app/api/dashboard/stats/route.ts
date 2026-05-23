@@ -174,7 +174,7 @@ export async function GET() {
     const totalSOPsDistinct = typeof distinctLib?.totalSOPs === 'number' ? distinctLib.totalSOPs : 0;
     const difficulty = difficultyAgg[0] || { easy: 0, medium: 0, hard: 0 };
 
-    // Calculate videos found: SOPs with BOTH Brief and Explainer videos
+    // Calculate SOP video metrics: Brief, Explainer, and Both
     const allVideos = await TrainingVideo.find({ active: true }).lean();
     const sopVideoKinds = new Map<string, Set<string>>();
 
@@ -190,17 +190,19 @@ export async function GET() {
       }
     });
 
-    // Count SOPs with BOTH Brief and Explainer videos as "Found"
-    const sopsWithBothVideos = Array.from(sopVideoKinds.entries()).filter(([_, kinds]) =>
-      kinds.has('brief') && kinds.has('explainer')
-    ).length;
+    // Count SOPs for each metric
+    const sopsWithBrief = Array.from(sopVideoKinds.entries()).filter(([_, kinds]) => kinds.has('brief')).length;
+    const sopsWithExplainer = Array.from(sopVideoKinds.entries()).filter(([_, kinds]) => kinds.has('explainer')).length;
+    const sopsWithBoth = Array.from(sopVideoKinds.entries()).filter(([_, kinds]) => kinds.has('brief') && kinds.has('explainer')).length;
 
-    console.log(`[SOP Videos] Total videos found: ${allVideos.length}, SOPs with videos: ${sopVideoKinds.size}, SOPs with BOTH: ${sopsWithBothVideos}`);
-
-    const sopsWithVideosCount = sopsWithBothVideos;
+    const sopsWithVideosCount = sopsWithBoth;
     const sopsWithoutVideosCount = totalSOPsDistinct - sopsWithVideosCount;
+    const sopsWithBriefNotFound = totalSOPsDistinct - sopsWithBrief;
+    const sopsWithExplainerNotFound = totalSOPsDistinct - sopsWithExplainer;
     let videosFound = sopsWithVideosCount;
     let videosExpected = totalSOPsDistinct;
+
+    console.log(`[SOP Videos] Total: ${totalSOPsDistinct}, Brief: ${sopsWithBrief}/${sopsWithBriefNotFound}, Explainer: ${sopsWithExplainer}/${sopsWithExplainerNotFound}, Both: ${sopsWithBoth}/${sopsWithoutVideosCount}`);
 
     // Calculate slides found (SOPs with slides)
     const allSlides = await TrainingSlide.find({ active: true }).lean();
@@ -358,6 +360,10 @@ export async function GET() {
         videosExpected,
         sopsWithVideos: sopsWithVideosCount,
         sopsWithoutVideos: sopsWithoutVideosCount,
+        sopsWithBrief,
+        sopsWithoutBrief: sopsWithBriefNotFound,
+        sopsWithExplainer,
+        sopsWithoutExplainer: sopsWithExplainerNotFound,
         slidesFound,
         slidesExpected,
         totalTrainers: finalTotalTrainers,

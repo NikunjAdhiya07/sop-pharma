@@ -110,6 +110,10 @@ export default function DashboardPageClient() {
   // Global SOP video stats
   const [sopsWithVideos, setSopsWithVideos] = useState(0);
   const [sopsWithoutVideos, setSopsWithoutVideos] = useState(0);
+  const [sopsWithBrief, setSopsWithBrief] = useState(0);
+  const [sopsWithoutBrief, setSopsWithoutBrief] = useState(0);
+  const [sopsWithExplainer, setSopsWithExplainer] = useState(0);
+  const [sopsWithoutExplainer, setSopsWithoutExplainer] = useState(0);
   // User State
   const [user, setUser] = useState<any>(null);
 
@@ -301,6 +305,10 @@ export default function DashboardPageClient() {
         if (j.success && j.stats) {
           setSopsWithVideos(j.stats.sopsWithVideos ?? 0);
           setSopsWithoutVideos(j.stats.sopsWithoutVideos ?? 0);
+          setSopsWithBrief(j.stats.sopsWithBrief ?? 0);
+          setSopsWithoutBrief(j.stats.sopsWithoutBrief ?? 0);
+          setSopsWithExplainer(j.stats.sopsWithExplainer ?? 0);
+          setSopsWithoutExplainer(j.stats.sopsWithoutExplainer ?? 0);
         }
       })
       .catch(() => { /* non-fatal */ });
@@ -1894,6 +1902,10 @@ export default function DashboardPageClient() {
                 filterSnapshot={capsuleFilterSnapshot}
                 sopsWithVideos={sopsWithVideos}
                 sopsWithoutVideos={sopsWithoutVideos}
+                sopsWithBrief={sopsWithBrief}
+                sopsWithoutBrief={sopsWithoutBrief}
+                sopsWithExplainer={sopsWithExplainer}
+                sopsWithoutExplainer={sopsWithoutExplainer}
               />
             </div>
           </div>

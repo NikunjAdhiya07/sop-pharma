@@ -209,3 +209,78 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
+
+// DELETE /api/training-matrix/assign-sop-to-matrix?sopCode=QAGE01-10&department=QA
+// Removes all records for this SOP+dept combo and patches the upload snapshot.
+export async function DELETE(req: NextRequest) {
+  try {
+    await connectDB();
+    const sopCodeRaw = req.nextUrl.searchParams.get('sopCode');
+    const department = req.nextUrl.searchParams.get('department');
+    if (!sopCodeRaw || !department) {
+      return NextResponse.json({ error: 'sopCode and department are required' }, { status: 400 });
+    }
+    const base = stripVersion(sopCodeRaw);
+    const codeRegex = new RegExp(`^${base}(-\\d+)?$`, 'i');
+
+    // 1. Delete TrainingMatrixRecord rows
+    const { deletedCount: recDeleted } = await TrainingMatrixRecord.deleteMany({
+      sopCode: { $regex: codeRegex },
+      department,
+    });
+
+    // 2. Delete MatrixEntry rows
+    await (MatrixEntry as any).deleteMany({ sopCode: { $regex: codeRegex }, department });
+
+    // 3. Deactivate MatrixSOPAssignment
+    await MatrixSOPAssignment.deleteMany({ sopCode: { $regex: codeRegex }, department });
+
+    // 4. Patch the latest upload snapshot to remove this sopCode
+    const latestUpload = await TrainingMatrixUpload.findOne({
+      department, fileType: 'main',
+    }).sort({ uploadedAt: -1 });
+
+    if (latestUpload) {
+      const snap = (latestUpload.snapshot as any) || {};
+      const existingCodes: string[] = (snap.sopCodes || []).filter(
+        (c: string) => !codeRegex.test(c),
+      );
+      const sopMonthMap: Record<string, string> = { ...(snap.sopMonthMap || {}) };
+      delete sopMonthMap[base];
+
+      // Remove sopCode from each employee's training map
+      const snapshotEmployees: Array<{ name: string; designation: string; training: Record<string, boolean> }> =
+        (snap.employees || []).map((e: any) => {
+          const t = { ...(e.training || {}) };
+          delete t[base];
+          return { ...e, training: t };
+        });
+
+      await TrainingMatrixUpload.findByIdAndUpdate(latestUpload._id, {
+        $set: {
+          'snapshot.sopCodes':    existingCodes,
+          'snapshot.sopMonthMap': sopMonthMap,
+          'snapshot.employees':   snapshotEmployees,
+          sopCount: existingCodes.length,
+        },
+      });
+    }
+
+    // 5. Bust overview cache
+    const g = globalThis as any;
+    if (g.__tm_overview_cache) g.__tm_overview_cache = {};
+
+    return NextResponse.json({
+      success: true,
+      sopCode: base,
+      department,
+      recordsDeleted: recDeleted,
+      message: `SOP ${base} unassigned from ${department}.`,
+    });
+  } catch (err: unknown) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : String(err) },
+      { status: 500 },
+    );
+  }
+}

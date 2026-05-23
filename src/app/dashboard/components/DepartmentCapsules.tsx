@@ -1089,6 +1089,10 @@ function DepartmentCapsuleCard({
   variant = "department",
   sopsWithVideos,
   sopsWithoutVideos,
+  sopsWithBrief,
+  sopsWithoutBrief,
+  sopsWithExplainer,
+  sopsWithoutExplainer,
 }: {
   stat: DeptCapsuleStats;
   applyCapsuleFilter: (dept: string, mode: CapsuleFilterMode) => void;
@@ -1113,6 +1117,10 @@ function DepartmentCapsuleCard({
   variant?: "department" | "grand";
   sopsWithVideos?: number;
   sopsWithoutVideos?: number;
+  sopsWithBrief?: number;
+  sopsWithoutBrief?: number;
+  sopsWithExplainer?: number;
+  sopsWithoutExplainer?: number;
 }) {
   const isGrand = variant === "grand";
   const label = isGrand ? "Total" : (stat.department ?? "Other");
@@ -1618,8 +1626,44 @@ function DepartmentCapsuleCard({
                 capsuleAvailMissMatches(deptForFilter, "video", "available", filterSnapshot) ||
                 capsuleAvailMissMatches(deptForFilter, "video", "missing", filterSnapshot)
               }
-              titleSummary={`${sopsWithVideos ?? 0} SOPs with videos · ${sopsWithoutVideos ?? 0} SOPs without videos`}
+              titleSummary={`${sopsWithVideos ?? 0} SOPs with both · ${sopsWithoutVideos ?? 0} incomplete`}
             />
+            <div className="h-0.5" />
+            {(sopsWithBrief !== undefined || sopsWithoutBrief !== undefined) && (
+              <CapsuleMetricAvailMissing
+                label="Brief Video"
+                totalExpected={stat.totalSOPs}
+                available={sopsWithBrief ?? 0}
+                missingCount={sopsWithoutBrief ?? 0}
+                onFilterClick={() => apply("brief")}
+                onAvailableClick={() => applyCapsuleAvailMiss(deptForFilter, "brief", "available")}
+                onMissingClick={() => applyCapsuleAvailMiss(deptForFilter, "brief", "missing")}
+                highlightAvailable={capsuleAvailMissMatches(deptForFilter, "brief", "available", filterSnapshot)}
+                highlightMissing={capsuleAvailMissMatches(deptForFilter, "brief", "missing", filterSnapshot)}
+                filterRowActive={
+                  capsuleAvailMissMatches(deptForFilter, "brief", "available", filterSnapshot) ||
+                  capsuleAvailMissMatches(deptForFilter, "brief", "missing", filterSnapshot)
+                }
+              />
+            )}
+            <div className="h-0.5" />
+            {(sopsWithExplainer !== undefined || sopsWithoutExplainer !== undefined) && (
+              <CapsuleMetricAvailMissing
+                label="Explainer Video"
+                totalExpected={stat.totalSOPs}
+                available={sopsWithExplainer ?? 0}
+                missingCount={sopsWithoutExplainer ?? 0}
+                onFilterClick={() => apply("explainer")}
+                onAvailableClick={() => applyCapsuleAvailMiss(deptForFilter, "explainer", "available")}
+                onMissingClick={() => applyCapsuleAvailMiss(deptForFilter, "explainer", "missing")}
+                highlightAvailable={capsuleAvailMissMatches(deptForFilter, "explainer", "available", filterSnapshot)}
+                highlightMissing={capsuleAvailMissMatches(deptForFilter, "explainer", "missing", filterSnapshot)}
+                filterRowActive={
+                  capsuleAvailMissMatches(deptForFilter, "explainer", "available", filterSnapshot) ||
+                  capsuleAvailMissMatches(deptForFilter, "explainer", "missing", filterSnapshot)
+                }
+              />
+            )}
           </>
         )}
 
@@ -1689,6 +1733,10 @@ export default function DepartmentCapsules({
   filterSnapshot,
   sopsWithVideos,
   sopsWithoutVideos,
+  sopsWithBrief,
+  sopsWithoutBrief,
+  sopsWithExplainer,
+  sopsWithoutExplainer,
 }: {
   data: any[];
   showTotalCapsule?: boolean;
@@ -1713,6 +1761,10 @@ export default function DepartmentCapsules({
   filterSnapshot: CapsuleFilterSnapshot;
   sopsWithVideos?: number;
   sopsWithoutVideos?: number;
+  sopsWithBrief?: number;
+  sopsWithoutBrief?: number;
+  sopsWithExplainer?: number;
+  sopsWithoutExplainer?: number;
 }) {
   const stats = useMemo(() => computeDepartmentStats(data), [data]);
 
@@ -1737,6 +1789,10 @@ export default function DepartmentCapsules({
             variant="grand"
             sopsWithVideos={sopsWithVideos}
             sopsWithoutVideos={sopsWithoutVideos}
+            sopsWithBrief={sopsWithBrief}
+            sopsWithoutBrief={sopsWithoutBrief}
+            sopsWithExplainer={sopsWithExplainer}
+            sopsWithoutExplainer={sopsWithoutExplainer}
           />
         ) : null}
         {stats.map((s, idx) => (
@@ -1750,6 +1806,10 @@ export default function DepartmentCapsules({
             filterSnapshot={filterSnapshot}
             sopsWithVideos={sopsWithVideos}
             sopsWithoutVideos={sopsWithoutVideos}
+            sopsWithBrief={sopsWithBrief}
+            sopsWithoutBrief={sopsWithoutBrief}
+            sopsWithExplainer={sopsWithExplainer}
+            sopsWithoutExplainer={sopsWithoutExplainer}
           />
         ))}
       </div>

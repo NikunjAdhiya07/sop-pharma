@@ -26,11 +26,13 @@ function MetricPill({
   value,
   valueColor,
   onClick,
+  totalValue,
 }: {
   label: string;
   value: number | string;
   valueColor: string;
   onClick?: () => void;
+  totalValue?: number | string;
 }) {
   const isClickable = !!onClick;
   const hoverClass = isClickable ? 'hover:bg-gray-100 focus:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-1' : '';
@@ -45,7 +47,15 @@ function MetricPill({
       <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
         {label}
       </span>
-      <span className={'text-base font-bold tabular-nums ' + valueColor}>{value}</span>
+      <span className={'text-base font-bold tabular-nums ' + valueColor}>
+        {value}
+        {totalValue !== undefined && (
+          <>
+            <span className="text-gray-400 mx-0.5">/</span>
+            {totalValue}
+          </>
+        )}
+      </span>
     </button>
   );
 }
@@ -62,6 +72,7 @@ function KeyMetricsRow({
   slidesUploaded,
   totalGuidelines,
   folders,
+  sopVideoAvailability,
   onFilterExpired,
   onFilterNearExpiry,
   onFilterActive,
@@ -82,6 +93,7 @@ function KeyMetricsRow({
   slidesUploaded: number;
   totalGuidelines: number;
   folders: any[];
+  sopVideoAvailability?: any;
   onFilterExpired: () => void;
   onFilterNearExpiry: () => void;
   onFilterActive: () => void;
@@ -127,10 +139,39 @@ function KeyMetricsRow({
 
       <span className="h-4 w-px bg-gray-300" aria-hidden />
 
-      <MetricPill label="Videos" value={videosUploaded} valueColor="text-blue-600" onClick={onFilterVideo} />
-      <MetricPill label="Slides" value={slidesUploaded} valueColor="text-indigo-600" onClick={onFilterSlides} />
+      <MetricPill label="Videos" value={videosUploaded} valueColor="text-blue-600" totalValue={0} onClick={onFilterVideo} />
+      <MetricPill label="Slides" value={slidesUploaded} valueColor="text-indigo-600" totalValue={0} onClick={onFilterSlides} />
 
       <span className="h-4 w-px bg-gray-300" aria-hidden />
+
+      {sopVideoAvailability && (
+        <>
+          <div className="flex items-baseline gap-2 rounded-md px-3 py-1.5 text-left">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+              Video Coverage
+            </span>
+            <div className="flex gap-3">
+              <div className="text-center">
+                <div className="text-base font-bold text-emerald-600 tabular-nums">{sopVideoAvailability.bothVideos}</div>
+                <div className="text-[9px] text-gray-500">Both</div>
+              </div>
+              <div className="text-center">
+                <div className="text-base font-bold text-blue-600 tabular-nums">{sopVideoAvailability.briefOnly}</div>
+                <div className="text-[9px] text-gray-500">Brief</div>
+              </div>
+              <div className="text-center">
+                <div className="text-base font-bold text-purple-600 tabular-nums">{sopVideoAvailability.explainerOnly}</div>
+                <div className="text-[9px] text-gray-500">Explainer</div>
+              </div>
+              <div className="text-center">
+                <div className="text-base font-bold text-red-600 tabular-nums">{sopVideoAvailability.noVideos}</div>
+                <div className="text-[9px] text-gray-500">None</div>
+              </div>
+            </div>
+          </div>
+          <span className="h-4 w-px bg-gray-300" aria-hidden />
+        </>
+      )}
 
       <div className="relative flex items-center" ref={guidelinesRef}>
         <button
@@ -228,6 +269,7 @@ export default function CompactDataHeader({
       slidesUploaded={slidesUploaded}
       totalGuidelines={totalGuidelines}
       folders={folders}
+      sopVideoAvailability={stats?.sopVideoAvailability}
       onFilterExpired={onFilterExpired}
       onFilterNearExpiry={onFilterNearExpiry}
       onFilterActive={onFilterActive}

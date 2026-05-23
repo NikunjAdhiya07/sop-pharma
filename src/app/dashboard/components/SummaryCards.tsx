@@ -48,19 +48,37 @@ export default function SummaryCards({ stats, alertsCount, guidelines, onFilterD
       <div className="bg-white border border-gray-200 shadow-sm rounded-xl p-5 min-w-[200px] flex-1">
         <h3 className="text-gray-500 text-sm font-semibold uppercase tracking-wider mb-3">Media Status</h3>
         <div className="flex flex-col gap-3">
-          <div 
+          <div
             onClick={() => onFilterMedia('video')}
             className="flex justify-between items-center cursor-pointer p-2 rounded-lg bg-gray-50 hover:bg-purple-50 transition-colors border border-transparent hover:border-purple-200"
           >
             <span className="font-medium text-gray-700 text-sm">Videos Uploaded</span>
             <span className="font-bold text-purple-700">{stats?.totalVideos || 0}</span>
           </div>
-          <div 
+          <div
             onClick={() => onFilterMedia('slides')}
             className="flex justify-between items-center cursor-pointer p-2 rounded-lg bg-gray-50 hover:bg-purple-50 transition-colors border border-transparent hover:border-purple-200"
           >
             <span className="font-medium text-gray-700 text-sm">Slides Uploaded</span>
             <span className="font-bold text-purple-700">{stats?.totalSlides || 0}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Card 3b: Video Status Breakdown */}
+      <div className="bg-white border border-gray-200 shadow-sm rounded-xl p-5 min-w-[220px] flex-1">
+        <h3 className="text-gray-500 text-sm font-semibold uppercase tracking-wider mb-3">Video Status</h3>
+        <div className="flex flex-col gap-3">
+          <div className="flex justify-between items-center p-2 rounded-lg bg-green-50">
+            <span className="font-medium text-gray-700 text-sm">✓ Found</span>
+            <span className="font-bold text-green-600">{stats?.videosFound || 0}</span>
+          </div>
+          <div className="flex justify-between items-center p-2 rounded-lg bg-red-50">
+            <span className="font-medium text-gray-700 text-sm">✗ Not Found</span>
+            <span className="font-bold text-red-600">{stats?.videosExpected - (stats?.videosFound || 0) || 0}</span>
+          </div>
+          <div className="text-xs text-gray-500 text-center pt-1 border-t border-gray-200">
+            Out of {stats?.videosExpected || 0} SOPs
           </div>
         </div>
       </div>

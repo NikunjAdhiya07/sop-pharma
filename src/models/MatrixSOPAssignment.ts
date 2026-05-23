@@ -43,5 +43,5 @@ MatrixSOPAssignmentSchema.index(
   { unique: true, partialFilterExpression: { isActive: true } },
 );
 
-export default mongoose.models.MatrixSOPAssignment ||
-  mongoose.model<IMatrixSOPAssignment>('MatrixSOPAssignment', MatrixSOPAssignmentSchema);
+export default mongoose.models.MatricesSOPAssignment ||
+  mongoose.model<IMatrixSOPAssignment>('MatricesSOPAssignment', MatrixSOPAssignmentSchema, 'matricessopassignment');
