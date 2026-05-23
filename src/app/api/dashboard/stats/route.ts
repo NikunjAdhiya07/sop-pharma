@@ -179,9 +179,25 @@ export async function GET() {
     const sopVideoKinds = new Map<string, Set<string>>();
 
     console.log(`[SOP Videos] Total videos in DB: ${allVideos.length}`);
-    console.log(`[SOP Videos] Sample videos:`, allVideos.slice(0, 2).map(v => ({ sopNo: v.sopNo, title: v.title, videoKind: v.videoKind })));
+
+    // Helper to normalize SOP code: pad the prefix number to 2 digits
+    // e.g., "STGE1-7" → "STGE01", "STGE01-07" → "STGE01"
+    const normalizeSopCode = (code: string): string => {
+      if (!code) return '';
+      const match = code.match(/^([A-Z]{2,6})(\d{1,2})(-\d+)?$/i);
+      if (match) {
+        const prefix = match[1].toUpperCase();
+        const num = match[2].padStart(2, '0');
+        return prefix + num;
+      }
+      return code.replace(/-\d+$/, '').trim().toUpperCase();
+    };
 
     allVideos.forEach((v: any) => {
+      // Skip Gujarati versions (they're duplicates of English versions)
+      const title = String(v.title || '').toUpperCase();
+      if (title.includes('_GUJ')) return;
+
       // Extract SOP code from title if sopNo is not set (e.g., "STGE01-07_Brief" → "STGE01-07")
       let sopCode = String(v.sopNo || '').toUpperCase().trim();
       if (!sopCode && v.title) {
@@ -190,9 +206,11 @@ export async function GET() {
           sopCode = titleMatch[1].toUpperCase();
         }
       }
-      const baseCode = sopCode.replace(/-\d+$/, '').trim();
 
-      // Extract video kind from title if videoKind is not set (e.g., "STGE01-07_Brief" → "brief")
+      // Normalize the base code (remove version number and pad number to 2 digits)
+      const baseCode = normalizeSopCode(sopCode);
+
+      // Extract video kind from title if videoKind is not set
       let videoKind = String(v.videoKind || '').trim().toLowerCase();
       if (!videoKind && v.title) {
         if (v.title.toLowerCase().includes('brief')) {
@@ -210,7 +228,7 @@ export async function GET() {
       }
     });
 
-    console.log(`[SOP Videos] Found SOPs with videos:`, Array.from(sopVideoKinds.keys()).slice(0, 5));
+    console.log(`[SOP Videos] Found SOPs with videos:`, Array.from(sopVideoKinds.keys()).sort());
 
     // Count SOPs for each metric
     const sopsWithBrief = Array.from(sopVideoKinds.entries()).filter(([_, kinds]) => kinds.has('brief')).length;
@@ -224,7 +242,7 @@ export async function GET() {
     let videosFound = sopsWithVideosCount;
     let videosExpected = totalSOPsDistinct;
 
-    console.log(`[SOP Videos] Total: ${totalSOPsDistinct}, Brief: ${sopsWithBrief}/${sopsWithBriefNotFound}, Explainer: ${sopsWithExplainer}/${sopsWithExplainerNotFound}, Both: ${sopsWithBoth}/${sopsWithoutVideosCount}`);
+    console.log(`[SOP Videos] Total SOPs: ${totalSOPsDistinct}, Brief: ${sopsWithBrief}/${sopsWithBriefNotFound}, Explainer: ${sopsWithExplainer}/${sopsWithExplainerNotFound}, Both: ${sopsWithBoth}/${sopsWithoutVideosCount}`);
 
     // Calculate slides found (SOPs with slides)
     const allSlides = await TrainingSlide.find({ active: true }).lean();
