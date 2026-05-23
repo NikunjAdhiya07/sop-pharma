@@ -7,6 +7,8 @@ import SOPLibrary from '@/models/SOPLibrary';
 import SOPGuideline from '@/models/SOPGuideline';
 import { Notification } from '@/models/Notification';
 import { getRedis, REDIS_TTL } from '@/lib/redis';
+import TrainingVideo from '@/models/TrainingVideo';
+import TrainingSlide from '@/models/TrainingSlide';
 
 export const dynamic = 'force-dynamic';
 
@@ -172,6 +174,45 @@ export async function GET() {
     const totalSOPsDistinct = typeof distinctLib?.totalSOPs === 'number' ? distinctLib.totalSOPs : 0;
     const difficulty = difficultyAgg[0] || { easy: 0, medium: 0, hard: 0 };
 
+    // Calculate videos found: SOPs with BOTH Brief and Explainer videos
+    const allVideos = await TrainingVideo.find({ active: true }).lean();
+    const sopVideoKinds = new Map<string, Set<string>>();
+
+    allVideos.forEach((v: any) => {
+      const baseCode = String(v.sopNo || '').toUpperCase().replace(/-\d+$/, '').trim();
+      const videoKind = String(v.videoKind || '').trim().toLowerCase();
+
+      if (!sopVideoKinds.has(baseCode)) {
+        sopVideoKinds.set(baseCode, new Set());
+      }
+      if (videoKind) {
+        sopVideoKinds.get(baseCode)!.add(videoKind);
+      }
+    });
+
+    // Count SOPs with BOTH Brief and Explainer videos as "Found"
+    const sopsWithBothVideos = Array.from(sopVideoKinds.entries()).filter(([_, kinds]) =>
+      kinds.has('brief') && kinds.has('explainer')
+    ).length;
+
+    console.log(`[SOP Videos] Total videos found: ${allVideos.length}, SOPs with videos: ${sopVideoKinds.size}, SOPs with BOTH: ${sopsWithBothVideos}`);
+
+    const sopsWithVideosCount = sopsWithBothVideos;
+    const sopsWithoutVideosCount = totalSOPsDistinct - sopsWithVideosCount;
+    let videosFound = sopsWithVideosCount;
+    let videosExpected = totalSOPsDistinct;
+
+    // Calculate slides found (SOPs with slides)
+    const allSlides = await TrainingSlide.find({ active: true }).lean();
+    const slidesBySopCode = new Map<string, number>();
+    allSlides.forEach((s: any) => {
+      const baseCode = String(s.sopNo || '').toUpperCase().replace(/-\d+$/, '').trim();
+      slidesBySopCode.set(baseCode, (slidesBySopCode.get(baseCode) || 0) + 1);
+    });
+
+    const slidesFound = slidesBySopCode.size;
+    const slidesExpected = totalSOPsDistinct;
+
     const tmTrainers: string[] = Array.isArray(tmTrainersRaw) ? tmTrainersRaw : [];
     const tmDistribution: Array<{ _id: string; sopCount: number }> = Array.isArray(tmDistributionRaw) ? tmDistributionRaw : [];
 
@@ -313,6 +354,12 @@ export async function GET() {
         totalMCQBanks: mcqStats.totalBanks,
         totalVideos: libStats.totalVideos,
         totalSlides: libStats.totalSlides,
+        videosFound,
+        videosExpected,
+        sopsWithVideos: sopsWithVideosCount,
+        sopsWithoutVideos: sopsWithoutVideosCount,
+        slidesFound,
+        slidesExpected,
         totalTrainers: finalTotalTrainers,
         totalGuidelines: guidelineCount,
         languageDistribution: languageMap,
