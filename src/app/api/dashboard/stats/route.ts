@@ -178,17 +178,39 @@ export async function GET() {
     const allVideos = await TrainingVideo.find({ active: true }).lean();
     const sopVideoKinds = new Map<string, Set<string>>();
 
-    allVideos.forEach((v: any) => {
-      const baseCode = String(v.sopNo || '').toUpperCase().replace(/-\d+$/, '').trim();
-      const videoKind = String(v.videoKind || '').trim().toLowerCase();
+    console.log(`[SOP Videos] Total videos in DB: ${allVideos.length}`);
+    console.log(`[SOP Videos] Sample videos:`, allVideos.slice(0, 2).map(v => ({ sopNo: v.sopNo, title: v.title, videoKind: v.videoKind })));
 
-      if (!sopVideoKinds.has(baseCode)) {
-        sopVideoKinds.set(baseCode, new Set());
+    allVideos.forEach((v: any) => {
+      // Extract SOP code from title if sopNo is not set (e.g., "STGE01-07_Brief" → "STGE01-07")
+      let sopCode = String(v.sopNo || '').toUpperCase().trim();
+      if (!sopCode && v.title) {
+        const titleMatch = v.title.match(/^([A-Z]{2,6}\d{1,4}-\d{1,3})/i);
+        if (titleMatch) {
+          sopCode = titleMatch[1].toUpperCase();
+        }
       }
-      if (videoKind) {
+      const baseCode = sopCode.replace(/-\d+$/, '').trim();
+
+      // Extract video kind from title if videoKind is not set (e.g., "STGE01-07_Brief" → "brief")
+      let videoKind = String(v.videoKind || '').trim().toLowerCase();
+      if (!videoKind && v.title) {
+        if (v.title.toLowerCase().includes('brief')) {
+          videoKind = 'brief';
+        } else if (v.title.toLowerCase().includes('explainer')) {
+          videoKind = 'explainer';
+        }
+      }
+
+      if (baseCode && videoKind) {
+        if (!sopVideoKinds.has(baseCode)) {
+          sopVideoKinds.set(baseCode, new Set());
+        }
         sopVideoKinds.get(baseCode)!.add(videoKind);
       }
     });
+
+    console.log(`[SOP Videos] Found SOPs with videos:`, Array.from(sopVideoKinds.keys()).slice(0, 5));
 
     // Count SOPs for each metric
     const sopsWithBrief = Array.from(sopVideoKinds.entries()).filter(([_, kinds]) => kinds.has('brief')).length;
