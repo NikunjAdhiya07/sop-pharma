@@ -176,9 +176,7 @@ export async function GET() {
 
     // Calculate SOP video metrics: Brief, Explainer, and Both
     const allVideos = await TrainingVideo.find({ active: true }).lean();
-    const sopVideoKinds = new Map<string, Set<string>>();
-
-    console.log(`[SOP Videos] Total videos in DB: ${allVideos.length}`);
+    const allSlides = await TrainingSlide.find({ active: true }).lean();
 
     // Helper to normalize SOP code: pad the prefix number to 2 digits
     // e.g., "STGE1-7" → "STGE01", "STGE01-07" → "STGE01"
@@ -193,10 +191,25 @@ export async function GET() {
       return code.replace(/-\d+$/, '').trim().toUpperCase();
     };
 
-    allVideos.forEach((v: any) => {
+    // Build set of SOPs with slides
+    const sopsWithSlidesSet = new Set<string>();
+    allSlides.forEach((s: any) => {
+      const sopCode = String(s.sopNo || '').toUpperCase().trim();
+      const baseCode = normalizeSopCode(sopCode);
+      if (baseCode) sopsWithSlidesSet.add(baseCode);
+    });
+
+    const sopVideoKinds = new Map<string, Set<string>>();
+
+    console.log(`[SOP Videos] SOPs with slides:`, Array.from(sopsWithSlidesSet).sort());
+
+    allVideos.forEach((v: any, idx: number) => {
       // Skip Gujarati versions (they're duplicates of English versions)
       const title = String(v.title || '').toUpperCase();
-      if (title.includes('_GUJ')) return;
+      if (title.includes('_GUJ')) {
+        console.log(`  [${idx + 1}] SKIP Gujarati: ${v.title}`);
+        return;
+      }
 
       // Extract SOP code from title if sopNo is not set (e.g., "STGE01-07_Brief" → "STGE01-07")
       let sopCode = String(v.sopNo || '').toUpperCase().trim();
@@ -220,6 +233,14 @@ export async function GET() {
         }
       }
 
+      const hasSlides = sopsWithSlidesSet.has(baseCode);
+      console.log(`  [${idx + 1}] ${v.title} → baseCode: ${baseCode}, kind: ${videoKind}, hasSlides: ${hasSlides}`);
+
+      // Only count videos for SOPs that have slides
+      if (!hasSlides) {
+        return;
+      }
+
       if (baseCode && videoKind) {
         if (!sopVideoKinds.has(baseCode)) {
           sopVideoKinds.set(baseCode, new Set());
@@ -239,17 +260,20 @@ export async function GET() {
     const sopsWithoutVideosCount = totalSOPsDistinct - sopsWithVideosCount;
     const sopsWithBriefNotFound = totalSOPsDistinct - sopsWithBrief;
     const sopsWithExplainerNotFound = totalSOPsDistinct - sopsWithExplainer;
-    let videosFound = sopsWithVideosCount;
+    let videosFound = sopsWithSlidesSet.size;  // Match slide count
     let videosExpected = totalSOPsDistinct;
 
     console.log(`[SOP Videos] Total SOPs: ${totalSOPsDistinct}, Brief: ${sopsWithBrief}/${sopsWithBriefNotFound}, Explainer: ${sopsWithExplainer}/${sopsWithExplainerNotFound}, Both: ${sopsWithBoth}/${sopsWithoutVideosCount}`);
 
-    // Calculate slides found (SOPs with slides)
-    const allSlides = await TrainingSlide.find({ active: true }).lean();
+    // Calculate slides found (SOPs with slides) - reuse allSlides from earlier
+    // Use same normalization as videos
     const slidesBySopCode = new Map<string, number>();
     allSlides.forEach((s: any) => {
-      const baseCode = String(s.sopNo || '').toUpperCase().replace(/-\d+$/, '').trim();
-      slidesBySopCode.set(baseCode, (slidesBySopCode.get(baseCode) || 0) + 1);
+      let sopCode = String(s.sopNo || '').toUpperCase().trim();
+      const baseCode = normalizeSopCode(sopCode);
+      if (baseCode) {
+        slidesBySopCode.set(baseCode, (slidesBySopCode.get(baseCode) || 0) + 1);
+      }
     });
 
     const slidesFound = slidesBySopCode.size;
