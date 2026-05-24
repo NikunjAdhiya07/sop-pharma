@@ -139,18 +139,26 @@ export default function TrainingMatrixPage() {
       }
     });
 
-    // Build training data map
-    const trainingMap = new Map<string, Map<string, Map<number, number>>>();
+    // Build training data map: sopCode -> dept -> designation -> month -> count
+    const trainingMap = new Map<string, Map<string, Map<string, Map<number, number>>>>();
     trainingRecords.forEach((record) => {
       const sopKey = stripVersion(record.sopCode);
+      const dept = normalizeDept(record.department);
+
       if (!trainingMap.has(sopKey)) {
         trainingMap.set(sopKey, new Map());
       }
       const deptMap = trainingMap.get(sopKey)!;
-      if (!deptMap.has(record.designation)) {
-        deptMap.set(record.designation, new Map());
+
+      if (!deptMap.has(dept)) {
+        deptMap.set(dept, new Map());
       }
-      const monthMap = deptMap.get(record.designation)!;
+      const designationMap = deptMap.get(dept)!;
+
+      if (!designationMap.has(record.designation)) {
+        designationMap.set(record.designation, new Map());
+      }
+      const monthMap = designationMap.get(record.designation)!;
       const count = monthMap.get(record.month) || 0;
       monthMap.set(record.month, count + 1);
     });
@@ -158,9 +166,11 @@ export default function TrainingMatrixPage() {
     let filtered = sops.map((sop) => {
       const strippedCode = stripVersion(sop.identifier);
       const assigned = assignedSopCodes.has(strippedCode);
-      const deptTraining = trainingMap.get(strippedCode) || new Map();
+      const sopDeptMap = trainingMap.get(strippedCode) || new Map();
+      const sopDept = normalizeDept(sop.department);
+      const deptTraining = sopDeptMap.get(sopDept) || new Map();
 
-      // Build designation-month data
+      // Build designation-month data for this SOP's department
       const designationMonthData: Record<string, Record<number, number>> = {};
       DESIGNATIONS.forEach((desig) => {
         designationMonthData[desig] = {};
@@ -173,9 +183,11 @@ export default function TrainingMatrixPage() {
       // Build department-designation data with checkbox status
       const deptDesignations: Record<string, { hasTraining: boolean; count: number }> = {};
       DESIGNATIONS.forEach((desig) => {
+        const monthCounts = designationMonthData[desig] || {};
+        const count = Object.values(monthCounts).reduce((a, b) => a + b, 0);
         deptDesignations[desig] = {
-          hasTraining: Object.values(designationMonthData[desig] || {}).some((count) => count > 0),
-          count: Object.values(designationMonthData[desig] || {}).reduce((a, b) => a + b, 0),
+          hasTraining: count > 0,
+          count,
         };
       });
 
@@ -183,7 +195,7 @@ export default function TrainingMatrixPage() {
         id: sop._id,
         sopNo: sop.identifier,
         sopName: cleanSopName(sop.name, sop.identifier),
-        department: normalizeDept(sop.department),
+        department: sopDept,
         assigned,
         designationMonthData,
         deptDesignations,
