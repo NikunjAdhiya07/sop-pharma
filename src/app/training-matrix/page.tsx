@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { Fragment, useEffect, useState, useMemo } from 'react';
 import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { CheckCircle, Circle } from 'lucide-react';
 
@@ -485,5 +485,3 @@ export default function TrainingMatrixPage() {
     </div>
   );
 }
-
-import { Fragment } from 'react';
