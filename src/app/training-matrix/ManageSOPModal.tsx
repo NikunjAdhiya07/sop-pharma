@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { X, Download, Search, Filter, ChevronDown } from 'lucide-react';
+import { X, Download, Search, Filter } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type { ManageSOPViewResponse, SOPViewRow } from '@/app/api/training-matrix/manage-sop-view/route';
 
@@ -29,14 +29,6 @@ const DEPT_COLORS: Record<string, string> = {
 
 const MONTH_SHORT = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
-// Generate 2-letter abbreviations for designations
-function getDesignationAbbr(designation: string): string {
-  const parts = designation.split(' ').filter(p => p.length > 0);
-  if (parts.length === 0) return '--';
-  if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
-  return (parts[0][0] + parts[1][0]).toUpperCase();
-}
-
 type FilterType = 'all' | 'assigned' | 'unassigned';
 
 interface ManageSOPModalProps {
@@ -59,8 +51,7 @@ export default function ManageSOPModal({ onClose }: ManageSOPModalProps) {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const year = new Date().getFullYear();
-        const res = await fetch(`/api/training-matrix/manage-sop-view?year=${year}`);
+        const res = await fetch(`/api/training-matrix/manage-sop-view?year=all`);
         if (!res.ok) throw new Error('Failed to fetch');
         const data = await res.json();
         setViewData(data);
@@ -82,11 +73,13 @@ export default function ManageSOPModal({ onClose }: ManageSOPModalProps) {
         sop.sopCode.toLowerCase().includes(search.toLowerCase()) ||
         sop.sopName.toLowerCase().includes(search.toLowerCase());
 
-      const hasAssignments = sop.deptStats.some(ds => ds.isAssigned);
+      // Match the main training-matrix page: an SOP is "assigned" when it has
+      // a scheduled month in any dept (from TrainingMatrixUpload snapshot).
+      const isScheduled = sop.deptStats.some(ds => ds.scheduledMonth);
       let matchFilter = true;
 
-      if (filterType === 'assigned') matchFilter = hasAssignments;
-      if (filterType === 'unassigned') matchFilter = !hasAssignments;
+      if (filterType === 'assigned') matchFilter = isScheduled;
+      if (filterType === 'unassigned') matchFilter = !isScheduled;
 
       return matchSearch && matchFilter;
     });
@@ -101,20 +94,18 @@ export default function ManageSOPModal({ onClose }: ManageSOPModalProps) {
 
   const stats = useMemo(() => {
     if (!viewData) return { all: 0, assigned: 0, unassigned: 0 };
-    const assigned = viewData.sops.filter(s => s.deptStats.some(ds => ds.isAssigned)).length;
+    // Use the server's pre-computed counts so the cards match the main
+    // training-matrix page (e.g. 702 assigned / 43 unassigned).
     return {
-      all: viewData.sops.length,
-      assigned,
-      unassigned: viewData.sops.length - assigned
+      all: viewData.stats.total,
+      assigned: viewData.stats.assigned,
+      unassigned: viewData.stats.unassigned,
     };
   }, [viewData]);
 
-  // Build all designation columns: dept → designations
-  const allDesigCols = useMemo(() =>
-    viewData?.departments.flatMap(dept =>
-      (viewData.designationsByDept[dept] || []).map(desig => ({ dept, desig }))
-    ) || [],
-    [viewData]
+  const visibleDepartments = useMemo(
+    () => (viewData?.departments || []).filter(d => activeDepts.has(d)),
+    [viewData, activeDepts]
   );
 
   const toggleDept = (dept: string) => {
@@ -125,14 +116,6 @@ export default function ManageSOPModal({ onClose }: ManageSOPModalProps) {
       newDepts.add(dept);
     }
     setActiveDepts(newDepts);
-  };
-
-  const toggleAllDepts = () => {
-    if (activeDepts.size === DEFAULT_DEPARTMENTS.length) {
-      setActiveDepts(new Set());
-    } else {
-      setActiveDepts(new Set(DEFAULT_DEPARTMENTS));
-    }
   };
 
   if (loading) {
@@ -275,214 +258,212 @@ export default function ManageSOPModal({ onClose }: ManageSOPModalProps) {
             </div>
           ) : (
             <>
+              {/* Department filter chips */}
+              <div className="bg-white border-b border-gray-200 px-6 py-2 flex flex-wrap items-center gap-2 flex-shrink-0">
+                <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Departments:</span>
+                {viewData?.departments.map(dept => {
+                  const active = activeDepts.has(dept);
+                  return (
+                    <button
+                      key={`chip-${dept}`}
+                      onClick={() => toggleDept(dept)}
+                      className={`px-2 py-1 rounded text-[11px] font-bold border transition ${
+                        active ? 'bg-white' : 'bg-gray-50 opacity-50'
+                      }`}
+                      style={{
+                        borderColor: DEPT_COLORS[dept],
+                        color: DEPT_COLORS[dept]
+                      }}
+                    >
+                      {DEPT_ABBR[dept]}
+                    </button>
+                  );
+                })}
+              </div>
+
               <div className="flex-1 overflow-auto">
                 <table className="w-full bg-white border-collapse">
                   <thead className="sticky top-0 z-20 bg-white">
-                    {/* Row 1: Section Headers */}
                     <tr className="border-b border-gray-300">
-                      <th rowSpan={3} className="px-3 py-2 text-left text-xs font-bold text-gray-600 sticky left-0 z-30 bg-white border-r border-gray-300 w-[40px]">
+                      <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 sticky left-0 z-30 bg-gray-50 border-r border-gray-300 w-[50px]">
                         SR NO
                       </th>
-                      <th rowSpan={3} className="px-3 py-2 text-left text-xs font-bold text-gray-600 sticky bg-white border-r border-gray-300 w-[80px]" style={{ left: '40px', zIndex: 29 }}>
+                      <th
+                        className="px-3 py-2 text-left text-xs font-bold text-gray-600 sticky bg-gray-50 border-r border-gray-300 w-[110px]"
+                        style={{ left: '50px', zIndex: 29 }}
+                      >
                         SOP NO
                       </th>
-                      <th rowSpan={3} className="px-3 py-2 text-left text-xs font-bold text-gray-600 sticky bg-white border-r border-gray-300 w-[160px]" style={{ left: '120px', zIndex: 28 }}>
+                      <th
+                        className="px-3 py-2 text-left text-xs font-bold text-gray-600 sticky bg-gray-50 border-r border-gray-300 w-[240px]"
+                        style={{ left: '160px', zIndex: 28 }}
+                      >
                         SOP NAME
                       </th>
-
-                      {/* DEPARTMENTS Section */}
-                      <th colSpan={7} className="px-3 py-2 text-center text-xs font-bold text-gray-600 bg-white border-r border-gray-300">
+                      <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 bg-gray-50 border-r border-gray-300 w-[120px] align-top">
                         DEPARTMENTS
                       </th>
-
-                      {/* DEPARTMENT WITH DESIGNATION Section */}
-                      <th colSpan={allDesigCols.length} className="px-3 py-2 text-center text-xs font-bold text-gray-600 bg-white border-r border-gray-300">
+                      <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 bg-gray-50 border-r border-gray-300 w-[260px] align-top">
                         DEPARTMENT WITH DESIGNATION
                       </th>
-
-                      {/* Monthly columns */}
-                      {MONTH_SHORT.map(month => (
-                        <th key={`mh-${month}`} rowSpan={3} className="px-2 py-2 text-center text-xs font-bold text-gray-600 bg-blue-50 border-r border-gray-300 w-10">
-                          {month}
-                        </th>
-                      ))}
-
-                      {/* TOTAL */}
-                      <th rowSpan={3} className="px-3 py-2 text-center text-xs font-bold text-white bg-purple-600 border-l border-gray-300 w-12">
+                      <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 bg-gray-50 border-r border-gray-300 w-[220px] align-top">
+                        MONTHS
+                      </th>
+                      <th className="px-3 py-2 text-center text-xs font-bold text-white bg-purple-600 w-[70px] align-top">
                         TOTAL
                       </th>
-                    </tr>
-
-                    {/* Row 2: Department Names */}
-                    <tr className="border-b border-gray-300">
-                      {/* DEPARTMENTS section: dept names with checkboxes */}
-                      {viewData?.departments.map(dept => (
-                        activeDepts.has(dept) && (
-                          <th key={`dh-${dept}`} rowSpan={2} className="px-2 py-2 text-center border-r border-gray-300 bg-white" style={{ minWidth: '60px' }}>
-                            <div className="flex items-center justify-center gap-1">
-                              <input
-                                type="checkbox"
-                                checked={activeDepts.has(dept)}
-                                onChange={() => toggleDept(dept)}
-                                className="w-3 h-3 cursor-pointer"
-                              />
-                              <span className="text-xs font-bold" style={{ color: DEPT_COLORS[dept] }}>
-                                {DEPT_ABBR[dept]}
-                              </span>
-                            </div>
-                          </th>
-                        )
-                      ))}
-
-                      {/* DEPT+DESIG section: dept headers spanning designations */}
-                      {viewData?.departments.map(dept => {
-                        if (!activeDepts.has(dept)) return null;
-                        const desigCount = viewData.designationsByDept[dept]?.length || 0;
-                        return desigCount > 0 ? (
-                          <th
-                            key={`ddh-${dept}`}
-                            colSpan={desigCount}
-                            className="px-3 py-2 text-center text-sm font-bold bg-white border-r border-gray-300"
-                            style={{ color: DEPT_COLORS[dept], borderLeft: `4px solid ${DEPT_COLORS[dept]}`, minWidth: `${desigCount * 80}px` }}
-                          >
-                            {DEPT_ABBR[dept]}
-                          </th>
-                        ) : null;
-                      })}
-                    </tr>
-
-                    {/* Row 3: Designation Names */}
-                    <tr className="border-b border-gray-200">
-                      {/* DEPT+DESIG section: individual designation headers */}
-                      {allDesigCols.map((col, idx) => {
-                        if (!activeDepts.has(col.dept)) return null;
-                        const empCount = viewData?.employeeCountsByDeptDesig[col.dept]?.[col.desig] || 0;
-                        const abbr = getDesignationAbbr(col.desig);
-                        return (
-                          <th
-                            key={`dsh-${col.dept}-${col.desig}-${idx}`}
-                            className="px-1.5 py-2 text-center border-r border-gray-300 bg-white"
-                            style={{ minWidth: '80px', borderTop: `2px solid ${DEPT_COLORS[col.dept]}` }}
-                          >
-                            <div className="text-xs font-bold text-gray-900 leading-tight">
-                              {abbr}
-                            </div>
-                            <div className="text-xs text-gray-600 leading-tight">
-                              {col.desig}
-                            </div>
-                            <div className="text-xs text-gray-500 leading-tight">
-                              {empCount} emp
-                            </div>
-                          </th>
-                        );
-                      })}
                     </tr>
                   </thead>
 
                   <tbody>
-                    {paginatedSops.map((sop, rowIdx) => (
-                      <tr key={sop.sopCode} className="border-b border-gray-200 hover:bg-gray-50">
-                        {/* SR NO */}
-                        <td className="px-3 py-2 text-xs text-gray-700 sticky left-0 z-10 bg-white border-r border-gray-300 font-medium w-[40px]">
-                          {(page - 1) * rowsPerPage + rowIdx + 1}
-                        </td>
+                    {paginatedSops.map((sop, rowIdx) => {
+                      const assignedDepts = visibleDepartments.filter(dept => {
+                        const ds = sop.deptStats.find(s => s.department === dept);
+                        return ds?.isAssigned;
+                      });
 
-                        {/* SOP NO */}
-                        <td
-                          className="px-3 py-2 text-xs font-bold sticky bg-white border-r border-gray-300 w-[80px]"
-                          style={{ left: '40px', zIndex: 9, color: DEPT_COLORS.QA }}
-                        >
-                          {sop.sopCode}
-                        </td>
+                      const monthBlocks = MONTH_SHORT.map((month, mIdx) => {
+                        const monthNum = mIdx + 1;
+                        const deptEntries = visibleDepartments
+                          .map(dept => {
+                            const ds = sop.deptStats.find(s => s.department === dept);
+                            return { dept, count: ds?.monthlyCounts[monthNum] || 0 };
+                          })
+                          .filter(e => e.count > 0);
+                        return { month, entries: deptEntries };
+                      }).filter(b => b.entries.length > 0);
 
-                        {/* SOP NAME */}
-                        <td
-                          className="px-3 py-2 text-xs font-semibold text-gray-900 sticky bg-white border-r border-gray-300 w-[160px]"
-                          style={{ left: '120px', zIndex: 8 }}
-                        >
-                          <div className="line-clamp-2">{sop.sopName}</div>
-                        </td>
+                      // Assigned = SOP has at least one scheduled month in any dept
+                      // (same definition as the assigned/unassigned filter cards above).
+                      const isAssignedRow = sop.deptStats.some(ds => ds.scheduledMonth);
+                      const rowBg = isAssignedRow ? 'bg-green-50' : 'bg-red-50';
+                      const rowHover = isAssignedRow ? 'hover:bg-green-100' : 'hover:bg-red-100';
+                      const totalBg = isAssignedRow ? 'bg-green-100' : 'bg-red-100';
 
-                        {/* DEPARTMENTS section: assignment indicators */}
-                        {viewData?.departments.map(dept => {
-                          if (!activeDepts.has(dept)) return null;
-                          const deptStat = sop.deptStats.find(ds => ds.department === dept);
-                          return (
-                            <td
-                              key={`db-${sop.sopCode}-${dept}`}
-                              className="px-2 py-2 text-center border-r border-gray-300 bg-white"
-                            >
-                              <div
-                                className="text-xs font-bold"
-                                style={{ color: deptStat?.isAssigned ? DEPT_COLORS[dept] : '#999' }}
-                              >
-                                {deptStat?.isAssigned ? '✓' : '—'}
+                      return (
+                        <tr key={sop.sopCode} className={`border-b border-gray-200 ${rowHover} align-top`}>
+                          {/* SR NO */}
+                          <td className={`px-3 py-3 text-xs text-gray-700 sticky left-0 z-10 ${rowBg} border-r border-gray-200 font-medium w-[50px] align-top`}>
+                            {(page - 1) * rowsPerPage + rowIdx + 1}
+                          </td>
+
+                          {/* SOP NO */}
+                          <td
+                            className={`px-3 py-3 text-xs font-bold sticky ${rowBg} border-r border-gray-200 w-[110px] align-top`}
+                            style={{ left: '50px', zIndex: 9, color: DEPT_COLORS.QA }}
+                          >
+                            {sop.sopCode}
+                          </td>
+
+                          {/* SOP NAME */}
+                          <td
+                            className={`px-3 py-3 text-xs font-semibold text-gray-900 sticky ${rowBg} border-r border-gray-200 w-[240px] align-top`}
+                            style={{ left: '160px', zIndex: 8 }}
+                          >
+                            <div className="whitespace-normal break-words leading-snug" title={sop.sopName}>
+                              {sop.sopName || '—'}
+                            </div>
+                          </td>
+
+                          {/* DEPARTMENTS — vertical list */}
+                          <td className={`px-3 py-3 border-r border-gray-200 align-top w-[120px] ${rowBg}`}>
+                            {assignedDepts.length === 0 ? (
+                              <span className="text-xs text-gray-400">—</span>
+                            ) : (
+                              <div className="flex flex-col gap-0.5">
+                                {assignedDepts.map(dept => (
+                                  <span
+                                    key={`dep-${sop.sopCode}-${dept}`}
+                                    className="text-xs font-bold leading-tight"
+                                    style={{ color: DEPT_COLORS[dept] }}
+                                  >
+                                    {DEPT_ABBR[dept]}
+                                  </span>
+                                ))}
                               </div>
-                            </td>
-                          );
-                        })}
+                            )}
+                          </td>
 
-                        {/* DEPT+DESIG section: per-designation training counts */}
-                        {allDesigCols.map((col, idx) => {
-                          if (!activeDepts.has(col.dept)) return null;
-                          const deptStat = sop.deptStats.find(ds => ds.department === col.dept);
-                          const desigStat = deptStat?.designations.find(d => d.designation === col.desig);
-                          const count = desigStat?.count || 0;
-                          const isAssigned = desigStat?.isAssigned ?? false;
-
-                          return (
-                            <td
-                              key={`dd-${sop.sopCode}-${col.dept}-${col.desig}-${idx}`}
-                              className="px-1.5 py-2 text-center border-r border-gray-300 bg-white"
-                            >
-                              <div className="flex items-center justify-center gap-1">
-                                <input
-                                  type="checkbox"
-                                  checked={isAssigned}
-                                  disabled
-                                  className="w-3 h-3 cursor-default"
-                                />
+                          {/* DEPARTMENT WITH DESIGNATION — nested vertical */}
+                          <td className={`px-3 py-3 border-r border-gray-200 align-top w-[260px] ${rowBg}`}>
+                            {assignedDepts.length === 0 ? (
+                              <span className="text-xs text-gray-400">—</span>
+                            ) : (
+                              <div className="flex flex-col gap-2">
+                                {assignedDepts.map(dept => {
+                                  const ds = sop.deptStats.find(s => s.department === dept);
+                                  const desigs = (ds?.designations || []).filter(d => d.isAssigned);
+                                  if (desigs.length === 0) return null;
+                                  return (
+                                    <div key={`dwd-${sop.sopCode}-${dept}`} className="leading-tight">
+                                      <div
+                                        className="text-xs font-bold mb-0.5"
+                                        style={{ color: DEPT_COLORS[dept] }}
+                                      >
+                                        {DEPT_ABBR[dept]}
+                                      </div>
+                                      <div className="flex flex-col gap-0.5 pl-2 border-l-2" style={{ borderColor: DEPT_COLORS[dept] }}>
+                                        {desigs.map(d => {
+                                          const empCount = viewData?.employeeCountsByDeptDesig[dept]?.[d.designation] || 0;
+                                          return (
+                                            <div
+                                              key={`dwd-${sop.sopCode}-${dept}-${d.designation}`}
+                                              className="text-[11px] text-gray-700 flex items-baseline gap-1"
+                                            >
+                                              <span className="font-medium">{d.designation}</span>
+                                              <span className="text-gray-400">→</span>
+                                              <span className="font-semibold text-gray-900">{empCount} emp</span>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
                               </div>
-                              <div
-                                className="text-xs font-bold mt-0.5"
-                                style={{ color: count > 0 && isAssigned ? DEPT_COLORS[col.dept] : '#999' }}
-                              >
-                                {count > 0 ? count : '—'}
+                            )}
+                          </td>
+
+                          {/* MONTHS — nested month → depts */}
+                          <td className={`px-3 py-3 border-r border-gray-200 align-top w-[220px] ${rowBg}`}>
+                            {monthBlocks.length === 0 ? (
+                              <span className="text-xs text-gray-400">—</span>
+                            ) : (
+                              <div className="flex flex-col gap-2">
+                                {monthBlocks.map(block => (
+                                  <div key={`mo-${sop.sopCode}-${block.month}`} className="leading-tight">
+                                    <div className="text-xs font-bold text-blue-700 mb-0.5">
+                                      {block.month}
+                                    </div>
+                                    <div className="flex flex-col gap-0.5 pl-2 border-l-2 border-blue-200">
+                                      {block.entries.map(e => (
+                                        <div
+                                          key={`mo-${sop.sopCode}-${block.month}-${e.dept}`}
+                                          className="text-[11px] flex items-baseline gap-1"
+                                        >
+                                          <span className="font-medium" style={{ color: DEPT_COLORS[e.dept] }}>
+                                            {DEPT_ABBR[e.dept]}
+                                          </span>
+                                          <span className="text-gray-400">→</span>
+                                          <span className="font-semibold text-gray-900">{e.count}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
-                            </td>
-                          );
-                        })}
+                            )}
+                          </td>
 
-                        {/* Monthly columns */}
-                        {MONTH_SHORT.map((month, monthIdx) => {
-                          const monthTotal = viewData?.departments.reduce((sum, dept) => {
-                            const ds = sop.deptStats.find(d => d.department === dept);
-                            return sum + (ds?.monthlyCounts[monthIdx + 1] || 0);
-                          }, 0) || 0;
-
-                          return (
-                            <td
-                              key={`m-${sop.sopCode}-${month}`}
-                              className="px-2 py-2 text-center border-r border-gray-300 bg-blue-50"
-                            >
-                              <span
-                                className="text-xs font-bold"
-                                style={{ color: monthTotal > 0 ? '#1e40af' : '#999' }}
-                              >
-                                {monthTotal > 0 ? monthTotal : '—'}
-                              </span>
-                            </td>
-                          );
-                        })}
-
-                        {/* TOTAL */}
-                        <td className="px-3 py-2 text-center bg-purple-50 border-l border-gray-300">
-                          <span className="text-xs font-bold text-purple-700">
-                            {sop.grandTotal > 0 ? sop.grandTotal : '—'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                          {/* TOTAL */}
+                          <td className={`px-3 py-3 text-center ${totalBg} align-top w-[70px]`}>
+                            <span className={`text-sm font-bold ${isAssignedRow ? 'text-green-700' : 'text-red-700'}`}>
+                              {sop.grandTotal > 0 ? sop.grandTotal : '—'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
